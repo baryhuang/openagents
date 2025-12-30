@@ -431,9 +431,46 @@
       "enable": "启用",
       "disable": "禁用",
       "remove": "移除",
+      "settings": "设置",
       "enableSuccess": "模块已启用: {{modName}}",
       "disableSuccess": "模块已禁用: {{modName}}",
       "toggleFailed": "切换模块失败: {{error}}"
+    },
+    "settings": {
+      "title": "{{modName}} 设置",
+      "cancel": "取消",
+      "save": "保存设置",
+      "saving": "保存中...",
+      "saveSuccess": "设置保存成功",
+      "saveFailed": "保存设置失败",
+      "validationFailed": "请检查表单错误",
+      "loadingSchema": "加载配置模式...",
+      "notConnected": "未连接到网络",
+      "generalSettings": "常规设置",
+      "maxMessageHistory": "最大消息历史",
+      "messageRetentionDays": "消息保留天数",
+      "enableThreadReplies": "启用线程回复",
+      "fileUpload": "文件上传",
+      "maxFileSize": "最大文件大小 (字节)",
+      "allowedFileTypes": "允许的文件类型",
+      "maxPagesPerAgent": "每个代理最大页面数",
+      "maxPageContentLength": "最大页面内容长度",
+      "configJson": "配置 (JSON)",
+      "noSchema": {
+        "title": "暂无配置模式",
+        "description": "此 Mod 尚未定义配置模式。配置模式将在 Mod 的 manifest.json 文件中定义。"
+      }
+    },
+    "restart": {
+      "success": "✅ 设置保存成功！",
+      "warning": "⚠️ 需要重启网络才能使更改生效。",
+      "later": "稍后重启",
+      "now": "立即重启",
+      "restarting": "正在重启网络..."
+    },
+    "descriptions": {
+      "messaging": "线程式消息与频道功能",
+      "wiki": "协作式 Wiki 带版本控制"
     },
     "addMod": {
       "button": "添加模块",
