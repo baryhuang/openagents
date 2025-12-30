@@ -10,7 +10,9 @@ import { Button } from '@/components/layout/ui/button';
 import { Badge } from '@/components/layout/ui/badge';
 import { Card, CardContent } from '@/components/layout/ui/card';
 import { ScrollArea } from '@/components/layout/ui/scroll-area';
-import { Lock, RefreshCw, Layers, CheckCircle, XCircle, Plus, Zap, Trash2, Power, Loader2 } from 'lucide-react';
+import { Lock, RefreshCw, Layers, CheckCircle, XCircle, Plus, Zap, Trash2, Power, Loader2, Settings } from 'lucide-react';
+import ModSettingsDialog from './ModSettingsDialog';
+import RestartDialog from './RestartDialog';
 
 interface StaticModInfo {
   name: string;
@@ -36,6 +38,9 @@ const ModManagementPage: React.FC = () => {
   const [staticMods, setStaticMods] = useState<StaticModInfo[]>([]);
   const [dynamicMods, setDynamicMods] = useState<DynamicModInfo[]>([]);
   const [loadingMod, setLoadingMod] = useState<string | null>(null);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [selectedMod, setSelectedMod] = useState<StaticModInfo | null>(null);
+  const [restartDialogOpen, setRestartDialogOpen] = useState(false);
 
   // Extract mods information from healthData
   useEffect(() => {
@@ -101,6 +106,24 @@ const ModManagementPage: React.FC = () => {
       setLoadingMod(null);
     }
   }, [connector, agentName, refresh, t]);
+
+  // Handle open settings dialog
+  const handleOpenSettings = (mod: StaticModInfo) => {
+    setSelectedMod(mod);
+    setSettingsDialogOpen(true);
+  };
+
+  // Handle settings saved
+  const handleSettingsSaved = () => {
+    setRestartDialogOpen(true);
+    refresh();
+  };
+
+  // Handle restart now
+  const handleRestartNow = () => {
+    // TODO: Implement network restart
+    toast.info(t('modManagement.restart.restarting', '正在重启网络...'));
+  };
 
   // Handle toggle static mod (enable/disable)
   const handleToggleMod = useCallback(async (modName: string, currentEnabled: boolean) => {
@@ -261,27 +284,45 @@ const ModManagementPage: React.FC = () => {
                           <div className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate mt-0.5">
                             {mod.name}
                           </div>
+                          {/* Mod description */}
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {mod.name.includes('messaging') 
+                              ? t('modManagement.descriptions.messaging', '线程式消息与频道功能')
+                              : mod.name.includes('wiki')
+                              ? t('modManagement.descriptions.wiki', '协作式 Wiki 带版本控制')
+                              : ''}
+                          </div>
                         </div>
                       </div>
-                      <Button
-                        variant={mod.enabled ? "outline" : "primary"}
-                        size="sm"
-                        onClick={() => handleToggleMod(mod.name, mod.enabled)}
-                        disabled={isLoading || loadingMod !== null}
-                        className="flex-shrink-0 ml-4"
-                      >
-                        {isLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <Power className="w-3.5 h-3.5 mr-1" />
-                            {mod.enabled
-                              ? t('modManagement.actions.disable', 'Disable')
-                              : t('modManagement.actions.enable', 'Enable')
-                            }
-                          </>
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenSettings(mod)}
+                          disabled={isLoading || loadingMod !== null}
+                          title={t('modManagement.actions.settings', '设置')}
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant={mod.enabled ? "outline" : "primary"}
+                          size="sm"
+                          onClick={() => handleToggleMod(mod.name, mod.enabled)}
+                          disabled={isLoading || loadingMod !== null}
+                        >
+                          {isLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Power className="w-3.5 h-3.5 mr-1" />
+                              {mod.enabled
+                                ? t('modManagement.actions.disable', 'Disable')
+                                : t('modManagement.actions.enable', 'Enable')
+                              }
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -348,6 +389,25 @@ const ModManagementPage: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Settings Dialog */}
+      {selectedMod && (
+        <ModSettingsDialog
+          open={settingsDialogOpen}
+          onOpenChange={setSettingsDialogOpen}
+          modName={selectedMod.name}
+          modConfig={selectedMod.config}
+          onSave={handleSettingsSaved}
+        />
+      )}
+
+      {/* Restart Dialog */}
+      <RestartDialog
+        open={restartDialogOpen}
+        onOpenChange={setRestartDialogOpen}
+        onRestartNow={handleRestartNow}
+        onRestartLater={() => {}}
+      />
     </ScrollArea>
   );
 };
