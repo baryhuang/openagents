@@ -34,6 +34,8 @@ from openagents.utils.network_export import NetworkExporter
 from openagents.utils.network_import import NetworkImporter
 from io import BytesIO
 from aiohttp import web
+from openagents.models.mod_settings import ModInfo
+from openagents.models.manifest import ModManifest
 
 # No need for external CORS library, implement manually
 
@@ -4787,10 +4789,7 @@ class HttpTransport(Transport):
                 )
             
             import importlib
-            import json
             from pathlib import Path
-            from openagents.models.mod_settings import ModInfo
-            from openagents.models.manifest import ModManifest
             
             mods_list = []
             
@@ -4947,9 +4946,7 @@ class HttpTransport(Transport):
                 )
             
             import importlib
-            import json
             from pathlib import Path
-            from openagents.models.manifest import ModManifest
             
             # Find mod in config
             mod_name = None
@@ -5042,11 +5039,9 @@ class HttpTransport(Transport):
             
             # Find mod in config
             mod_config = None
-            mod_index = None
             for i, mod in enumerate(self.network_instance.config.mods):
                 if mod.name.endswith(f'.{mod_id}') or mod.name == mod_id:
                     mod_config = mod
-                    mod_index = i
                     break
             
             if not mod_config:
