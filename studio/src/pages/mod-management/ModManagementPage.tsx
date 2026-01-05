@@ -10,105 +10,66 @@ import { Button } from '@/components/layout/ui/button';
 import { Badge } from '@/components/layout/ui/badge';
 import { Card, CardContent } from '@/components/layout/ui/card';
 import { ScrollArea } from '@/components/layout/ui/scroll-area';
-import { Lock, RefreshCw, Layers, CheckCircle, XCircle, Plus, Zap, Trash2, Power, Loader2, Settings } from 'lucide-react';
+import { Lock, RefreshCw, Layers, CheckCircle, XCircle, Plus, Power, Loader2, Settings } from 'lucide-react';
 import ModSettingsDialog from './ModSettingsDialog';
 import RestartDialog from './RestartDialog';
-
-interface StaticModInfo {
-  name: string;
-  enabled: boolean;
-  config?: Record<string, any>;
-}
-
-interface DynamicModInfo {
-  mod_id: string;
-  mod_path: string;
-  loaded_at: string;
-}
+import { getModsList, createApiOptions, restartNetwork } from '@/services/modManagementApi';
+import { ModInfo } from '@/types/modConfig';
 
 const ModManagementPage: React.FC = () => {
   const { t } = useTranslation('admin');
   const navigate = useNavigate();
-  const { healthData, refresh } = useProfileData();
+  const { refresh } = useProfileData();
   const { isAdmin, isLoading: isCheckingAdmin } = useIsAdmin();
   const { connector } = useOpenAgents();
-  const { agentName } = useAuthStore();
+  const { agentName, selectedNetwork } = useAuthStore();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [staticMods, setStaticMods] = useState<StaticModInfo[]>([]);
-  const [dynamicMods, setDynamicMods] = useState<DynamicModInfo[]>([]);
+  const [modsList, setModsList] = useState<ModInfo[]>([]);
   const [loadingMod, setLoadingMod] = useState<string | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [selectedMod, setSelectedMod] = useState<StaticModInfo | null>(null);
+  const [selectedMod, setSelectedMod] = useState<ModInfo | null>(null);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Extract mods information from healthData
+  // Load mods list from API
+  const loadModsList = useCallback(async () => {
+    const apiOptions = createApiOptions(selectedNetwork);
+    if (!apiOptions) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const mods = await getModsList(apiOptions);
+      setModsList(mods.mods);
+    } catch (error: any) {
+      console.error('Failed to load mods list:', error);
+      toast.error(t('modManagement.loadModsFailed', 'Failed to load mods list') + ': ' + (error.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedNetwork, t]);
+
+  // Load mods on mount and when network changes
   useEffect(() => {
-    // Extract static mods from config
-    if (healthData?.data?.mods) {
-      setStaticMods(healthData.data.mods as StaticModInfo[]);
-    } else {
-      setStaticMods([]);
+    if (selectedNetwork && isAdmin) {
+      loadModsList();
     }
-    // Extract dynamic mods (loaded at runtime)
-    // dynamic_mods is an object with {loaded: [], count: number, details: {}}
-    if (healthData?.data?.dynamic_mods?.loaded && Array.isArray(healthData.data.dynamic_mods.loaded)) {
-      // Map the loaded array to DynamicModInfo format
-      const details = healthData.data.dynamic_mods.details || {};
-      const dynamicModsList: DynamicModInfo[] = healthData.data.dynamic_mods.loaded.map((modId: string) => ({
-        mod_id: modId,
-        mod_path: details[modId]?.mod_path || modId,
-        loaded_at: details[modId]?.loaded_at || '',
-      }));
-      setDynamicMods(dynamicModsList);
-    } else {
-      setDynamicMods([]);
-    }
-  }, [healthData]);
+  }, [selectedNetwork, isAdmin, loadModsList]);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    await loadModsList();
     await refresh();
     setRefreshing(false);
-  }, [refresh]);
+  }, [loadModsList, refresh]);
 
-  // Handle unload dynamic mod
-  const handleUnloadMod = useCallback(async (modId: string, modPath: string) => {
-    if (!connector) {
-      toast.error(t('modManagement.loadMod.notConnected'));
-      return;
-    }
-
-    setLoadingMod(modId);
-    try {
-      const response = await connector.sendEvent({
-        event_name: 'system.mod.unload',
-        source_id: agentName || 'system',
-        destination_id: 'system:system',
-        payload: {
-          mod_path: modPath,
-        },
-      });
-
-      if (response.success) {
-        toast.success(t('modManagement.loadedMods.unloadSuccess', { modId: modPath.split('.').pop() }));
-        setTimeout(() => {
-          refresh();
-        }, 500);
-      } else {
-        toast.error(t('modManagement.loadedMods.unloadFailed', { error: response.message || 'Unknown error' }));
-      }
-    } catch (error: any) {
-      console.error('Failed to unload Mod:', error);
-      toast.error(t('modManagement.loadedMods.unloadFailed', { error: error.message || 'Unknown error' }));
-    } finally {
-      setLoadingMod(null);
-    }
-  }, [connector, agentName, refresh, t]);
 
   // Handle open settings dialog
-  const handleOpenSettings = (mod: StaticModInfo) => {
+  const handleOpenSettings = (mod: ModInfo) => {
     setSelectedMod(mod);
     setSettingsDialogOpen(true);
   };
@@ -120,35 +81,48 @@ const ModManagementPage: React.FC = () => {
   };
 
   // Handle restart now
-  const handleRestartNow = () => {
-    // TODO: Implement network restart
-    toast.info(t('modManagement.restart.restarting', '正在重启网络...'));
-  };
+  const handleRestartNow = useCallback(async () => {
+    const apiOptions = createApiOptions(selectedNetwork);
+    if (!apiOptions) {
+      toast.error(t('modManagement.restart.notConnected', 'Not connected to network'));
+      return;
+    }
 
-  // Handle toggle static mod (enable/disable)
-  const handleToggleMod = useCallback(async (modName: string, currentEnabled: boolean) => {
+    try {
+      const result = await restartNetwork(apiOptions);
+      // Show info message since manual restart is required
+      toast.info(result.message || t('modManagement.restart.manualRestartRequired', 'Please manually restart the OpenAgents process to apply changes.'));
+    } catch (error: any) {
+      console.error('Failed to restart network:', error);
+      toast.error(t('modManagement.restart.restartFailed', 'Failed to restart network') + ': ' + (error.message || 'Unknown error'));
+    }
+  }, [selectedNetwork, t]);
+
+  // Handle toggle mod (enable/disable) - still using event system for now
+  const handleToggleMod = useCallback(async (modId: string, currentEnabled: boolean) => {
     if (!connector) {
       toast.error(t('modManagement.loadMod.notConnected'));
       return;
     }
 
-    setLoadingMod(modName);
+    setLoadingMod(modId);
     try {
       const response = await connector.sendEvent({
         event_name: currentEnabled ? 'system.mod.disable' : 'system.mod.enable',
         source_id: agentName || 'system',
         destination_id: 'system:system',
         payload: {
-          mod_path: modName,
+          mod_path: modId,
         },
       });
 
       if (response.success) {
         toast.success(currentEnabled
-          ? t('modManagement.actions.disableSuccess', { modName: modName.split('.').pop() })
-          : t('modManagement.actions.enableSuccess', { modName: modName.split('.').pop() })
+          ? t('modManagement.actions.disableSuccess', { modName: modId.split('.').pop() })
+          : t('modManagement.actions.enableSuccess', { modName: modId.split('.').pop() })
         );
         setTimeout(() => {
+          loadModsList();
           refresh();
         }, 500);
       } else {
@@ -160,7 +134,7 @@ const ModManagementPage: React.FC = () => {
     } finally {
       setLoadingMod(null);
     }
-  }, [connector, agentName, refresh, t]);
+  }, [connector, agentName, loadModsList, refresh, t]);
 
   // Check admin permission
   if (isCheckingAdmin) {
@@ -248,18 +222,26 @@ const ModManagementPage: React.FC = () => {
                 </h2>
               </div>
               <Badge variant="secondary" appearance="light" size="sm">
-                {t('modManagement.enabledMods.total', 'Total')}: {staticMods.filter(m => m.enabled).length + dynamicMods.length}
+                {t('modManagement.enabledMods.total', 'Total')}: {modsList.length}
               </Badge>
             </div>
 
-            {(staticMods.length > 0 || dynamicMods.length > 0) ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {t('modManagement.loading', 'Loading mods...')}
+                  </p>
+                </div>
+              </div>
+            ) : modsList.length > 0 ? (
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {/* Static Mods */}
-                {staticMods.map((mod, index) => {
-                  const isLoading = loadingMod === mod.name;
+                {modsList.map((mod) => {
+                  const isLoading = loadingMod === mod.id;
                   return (
                     <div
-                      key={mod.name || index}
+                      key={mod.id}
                       className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -275,39 +257,36 @@ const ModManagementPage: React.FC = () => {
                                 ? 'text-gray-900 dark:text-gray-100'
                                 : 'text-gray-500 dark:text-gray-400'
                             }`}>
-                              {mod.name.split('.').pop() || mod.name}
+                              {mod.displayName || mod.name || mod.id}
                             </span>
-                            <Badge variant="secondary" appearance="light" size="sm" className="flex-shrink-0">
-                              {t('modManagement.modTypes.static', 'Static')}
-                            </Badge>
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate mt-0.5">
-                            {mod.name}
+                            {mod.id}
                           </div>
                           {/* Mod description */}
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {mod.name.includes('messaging') 
-                              ? t('modManagement.descriptions.messaging', '线程式消息与频道功能')
-                              : mod.name.includes('wiki')
-                              ? t('modManagement.descriptions.wiki', '协作式 Wiki 带版本控制')
-                              : ''}
-                          </div>
+                          {mod.description && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              {mod.description}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenSettings(mod)}
-                          disabled={isLoading || loadingMod !== null}
-                          title={t('modManagement.actions.settings', '设置')}
-                        >
-                          <Settings className="w-4 h-4" />
-                        </Button>
+                        {mod.hasConfig && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenSettings(mod)}
+                            disabled={isLoading || loadingMod !== null}
+                            title={t('modManagement.actions.settings', '设置')}
+                          >
+                            <Settings className="w-4 h-4" />
+                          </Button>
+                        )}
                         <Button
                           variant={mod.enabled ? "outline" : "primary"}
                           size="sm"
-                          onClick={() => handleToggleMod(mod.name, mod.enabled)}
+                          onClick={() => handleToggleMod(mod.id, mod.enabled)}
                           disabled={isLoading || loadingMod !== null}
                         >
                           {isLoading ? (
@@ -323,49 +302,6 @@ const ModManagementPage: React.FC = () => {
                           )}
                         </Button>
                       </div>
-                    </div>
-                  );
-                })}
-                {/* Dynamic Mods */}
-                {dynamicMods.map((mod) => {
-                  const isLoading = loadingMod === mod.mod_id;
-                  return (
-                    <div
-                      key={mod.mod_id}
-                      className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <Zap className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium truncate text-gray-900 dark:text-gray-100">
-                              {mod.mod_path.split('.').pop() || mod.mod_path}
-                            </span>
-                            <Badge variant="info" appearance="light" size="sm" className="flex-shrink-0">
-                              {t('modManagement.enabledMods.dynamic', 'Dynamic')}
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate mt-0.5">
-                            {mod.mod_path}
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleUnloadMod(mod.mod_id, mod.mod_path)}
-                        disabled={isLoading || loadingMod !== null}
-                        className="flex-shrink-0 ml-4"
-                      >
-                        {isLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <Trash2 className="w-3.5 h-3.5 mr-1" />
-                            {t('modManagement.actions.remove', 'Remove')}
-                          </>
-                        )}
-                      </Button>
                     </div>
                   );
                 })}
@@ -395,8 +331,8 @@ const ModManagementPage: React.FC = () => {
         <ModSettingsDialog
           open={settingsDialogOpen}
           onOpenChange={setSettingsDialogOpen}
-          modName={selectedMod.name}
-          modConfig={selectedMod.config}
+          modId={selectedMod.id}
+          modName={selectedMod.name || selectedMod.displayName || selectedMod.id}
           onSave={handleSettingsSaved}
         />
       )}
