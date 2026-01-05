@@ -5,284 +5,25 @@ import { useOpenAgents } from '@/context/OpenAgentsProvider';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfigSchema, SaveConfigResponse } from '@/types/modConfig';
 import ConfigFieldRenderer from './ConfigFieldRenderer';
-
-// Mock schema data for testing (will be replaced by actual manifest data)
-const getMockSchema = (modName: string): ConfigSchema | null => {
-  if (modName.includes('messaging')) {
-    return {
-      sections: [
-        {
-          id: 'general',
-          title: '常规设置',
-          fields: [
-            {
-              key: 'max_message_history',
-              type: 'number',
-              label: '最大消息历史',
-              description: '保留的最大消息数量',
-              default: 10000,
-              min: 1,
-              max: 1000000,
-            },
-            {
-              key: 'message_retention_days',
-              type: 'number',
-              label: '消息保留天数',
-              description: '消息保留的天数',
-              default: 180,
-              min: 1,
-              max: 3650,
-            },
-            {
-              key: 'enable_thread_replies',
-              type: 'boolean',
-              label: '启用线程回复',
-              description: '允许在消息中创建线程回复',
-              default: true,
-            },
-          ],
-        },
-        {
-          id: 'fileUpload',
-          title: '文件上传',
-          fields: [
-            {
-              key: 'max_file_size',
-              type: 'number',
-              label: '最大文件大小 (字节)',
-              description: '允许上传的最大文件大小',
-              default: 10485760,
-              min: 1024,
-              max: 1073741824,
-            },
-            {
-              key: 'allowed_file_types',
-              type: 'multiselect',
-              label: '允许的文件类型',
-              description: '允许上传的文件扩展名',
-              default: ['txt', 'md', 'py', 'json'],
-              options: [
-                { value: 'txt', label: 'txt' },
-                { value: 'md', label: 'md' },
-                { value: 'py', label: 'py' },
-                { value: 'json', label: 'json' },
-                { value: 'yaml', label: 'yaml' },
-                { value: 'pdf', label: 'pdf' },
-                { value: 'jpg', label: 'jpg' },
-                { value: 'png', label: 'png' },
-                { value: 'csv', label: 'csv' },
-                { value: 'xlsx', label: 'xlsx' },
-              ],
-            },
-          ],
-        },
-      ],
-    };
-  }
-
-  if (modName.includes('documents')) {
-    return {
-      sections: [
-        {
-          id: 'general',
-          title: '常规设置',
-          fields: [
-            {
-              key: 'max_document_size',
-              type: 'number',
-              label: '最大文档大小 (字节)',
-              description: '单个文档的最大大小',
-              default: 10485760,
-              min: 1024,
-              max: 1073741824,
-            },
-            {
-              key: 'max_documents_per_agent',
-              type: 'number',
-              label: '每个代理最大文档数',
-              description: '每个代理可以创建的最大文档数量',
-              default: 100,
-              min: 1,
-              max: 10000,
-            },
-            {
-              key: 'document_retention_days',
-              type: 'number',
-              label: '文档保留天数',
-              description: '文档保留的天数',
-              default: 365,
-              min: 1,
-              max: 3650,
-            },
-          ],
-        },
-        {
-          id: 'collaboration',
-          title: '协作设置',
-          fields: [
-            {
-              key: 'max_concurrent_editors',
-              type: 'number',
-              label: '最大并发编辑者',
-              description: '同时编辑文档的最大用户数',
-              default: 50,
-              min: 1,
-              max: 1000,
-            },
-            {
-              key: 'line_lock_timeout',
-              type: 'number',
-              label: '行锁定超时 (秒)',
-              description: '行锁定的超时时间',
-              default: 30,
-              min: 5,
-              max: 300,
-            },
-            {
-              key: 'presence_timeout',
-              type: 'number',
-              label: '在线状态超时 (秒)',
-              description: '用户在线状态的超时时间',
-              default: 300,
-              min: 60,
-              max: 3600,
-            },
-          ],
-        },
-        {
-          id: 'versioning',
-          title: '版本控制',
-          fields: [
-            {
-              key: 'max_version_history',
-              type: 'number',
-              label: '最大版本历史',
-              description: '保留的最大版本数量',
-              default: 1000,
-              min: 1,
-              max: 10000,
-            },
-            {
-              key: 'auto_save_interval',
-              type: 'number',
-              label: '自动保存间隔 (秒)',
-              description: '自动保存的时间间隔',
-              default: 5,
-              min: 1,
-              max: 60,
-            },
-          ],
-        },
-      ],
-    };
-  }
-
-  if (modName.includes('wiki')) {
-    return {
-      sections: [
-        {
-          id: 'general',
-          title: '常规设置',
-          fields: [
-            {
-              key: 'max_pages_per_agent',
-              type: 'number',
-              label: '每个代理最大页面数',
-              description: '每个代理可以创建的最大页面数量',
-              default: 100,
-              min: 1,
-              max: 10000,
-            },
-            {
-              key: 'max_page_content_length',
-              type: 'number',
-              label: '最大页面内容长度',
-              description: '单个页面的最大内容长度（字符数）',
-              default: 50000,
-              min: 1000,
-              max: 1000000,
-            },
-            {
-              key: 'max_page_title_length',
-              type: 'number',
-              label: '最大页面标题长度',
-              description: '页面标题的最大长度',
-              default: 200,
-              min: 1,
-              max: 1000,
-            },
-          ],
-        },
-      ],
-    };
-  }
-
-  if (modName.includes('project')) {
-    return {
-      sections: [
-        {
-          id: 'general',
-          title: '常规设置',
-          fields: [
-            {
-              key: 'max_concurrent_projects',
-              type: 'number',
-              label: '最大并发项目数',
-              description: '同时运行的最大项目数量',
-              default: 10,
-              min: 1,
-              max: 100,
-            },
-            {
-              key: 'auto_invite_service_agents',
-              type: 'boolean',
-              label: '自动邀请服务代理',
-              description: '自动将服务代理添加到新项目',
-              default: true,
-            },
-            {
-              key: 'project_timeout_hours',
-              type: 'number',
-              label: '项目超时时间 (小时)',
-              description: '项目自动超时的时间',
-              default: 24,
-              min: 1,
-              max: 720,
-            },
-            {
-              key: 'enable_project_persistence',
-              type: 'boolean',
-              label: '启用项目持久化',
-              description: '是否持久化项目状态',
-              default: true,
-            },
-          ],
-        },
-      ],
-    };
-  }
-
-  return null;
-};
+import { getModConfig, getModSchema, updateModConfig, createApiOptions } from '@/services/modManagementApi';
 
 interface ModSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  modId: string;
   modName: string;
-  modConfig?: Record<string, any>;
   onSave?: () => void;
 }
 
 const ModSettingsDialog: React.FC<ModSettingsDialogProps> = ({
   open,
   onOpenChange,
+  modId,
   modName,
-  modConfig = {},
   onSave,
 }) => {
   const { t } = useTranslation('admin');
-  const { connector } = useOpenAgents();
-  const { agentName, selectedNetwork } = useAuthStore();
+  const { selectedNetwork } = useAuthStore();
 
   // Extract mod display name
   const modDisplayName = modName.split('.').pop() || modName;
@@ -303,71 +44,54 @@ const ModSettingsDialog: React.FC<ModSettingsDialogProps> = ({
     }
   }, [open]);
 
-  // Load config schema from mod manifest
+  // Load config schema and current config from API
   useEffect(() => {
-    if (!open) return;
+    if (!open || !selectedNetwork) return;
 
-    const loadConfigSchema = async () => {
+    const loadConfigData = async () => {
       setIsLoadingSchema(true);
+      const apiOptions = createApiOptions(selectedNetwork);
       
-      // First, try to get schema from backend
-      if (connector) {
-        try {
-          const response = await connector.sendEvent({
-            event_name: 'system.get_mod_manifest',
-            source_id: agentName || 'system',
-            destination_id: 'system:system',
-            payload: {
-              mod_name: modName,
-            },
-          });
-
-          if (response.success && response.data?.manifest) {
-            const manifest = response.data.manifest;
-            if (manifest.config_schema) {
-              setConfigSchema(manifest.config_schema);
-              
-              // Merge default values from schema with current config
-              const mergedConfig = { ...manifest.default_config, ...modConfig };
-              setFormData(mergedConfig);
-              setIsLoadingSchema(false);
-              return;
-            } else if (manifest.default_config) {
-              // If no schema but has default_config, use it
-              const mergedConfig = { ...manifest.default_config, ...modConfig };
-              setFormData(mergedConfig);
-            }
-          }
-        } catch (error) {
-          console.error('Failed to load config schema from backend:', error);
-        }
+      if (!apiOptions) {
+        toast.error(t('modManagement.settings.notConnected'));
+        setIsLoadingSchema(false);
+        return;
       }
 
-      // Fallback: Use mock schema for testing
-      const mockSchema = getMockSchema(modName);
-      if (mockSchema) {
-        setConfigSchema(mockSchema);
-        
+      try {
+        // Load schema and config in parallel
+        const [schema, config] = await Promise.all([
+          getModSchema(apiOptions, modId),
+          getModConfig(apiOptions, modId).catch(() => ({})) // Fallback to empty object if config doesn't exist
+        ]);
+
+        setConfigSchema(schema);
+
         // Initialize form data with defaults from schema
         const defaultValues: Record<string, any> = {};
-        mockSchema.sections.forEach((section) => {
-          section.fields.forEach((field) => {
-            if (field.default !== undefined) {
-              defaultValues[field.key] = field.default;
-            }
+        if (schema) {
+          schema.sections.forEach((section) => {
+            section.fields.forEach((field) => {
+              if (field.default !== undefined) {
+                defaultValues[field.key] = field.default;
+              }
+            });
           });
-        });
-        
-        // Merge with current config
-        const mergedConfig = { ...defaultValues, ...modConfig };
+        }
+
+        // Merge defaults with current config
+        const mergedConfig = { ...defaultValues, ...config };
         setFormData(mergedConfig);
+      } catch (error: any) {
+        console.error('Failed to load config data:', error);
+        toast.error(t('modManagement.settings.loadFailed', 'Failed to load configuration') + ': ' + (error.message || 'Unknown error'));
+      } finally {
+        setIsLoadingSchema(false);
       }
-      
-      setIsLoadingSchema(false);
     };
 
-    loadConfigSchema();
-  }, [open, modName, modConfig, connector, agentName]);
+    loadConfigData();
+  }, [open, modId, selectedNetwork, t]);
 
   // Handle field value change
   const handleFieldChange = (fieldPath: string, value: any) => {
@@ -487,7 +211,9 @@ const ModSettingsDialog: React.FC<ModSettingsDialogProps> = ({
 
   // Handle save
   const handleSave = async () => {
-    if (!connector || !selectedNetwork) {
+    const apiOptions = createApiOptions(selectedNetwork);
+    
+    if (!apiOptions) {
       toast.error(t('modManagement.settings.notConnected'));
       return;
     }
@@ -500,35 +226,27 @@ const ModSettingsDialog: React.FC<ModSettingsDialogProps> = ({
 
     setIsSaving(true);
     try {
-      // Update mod config via system event
-      const response = await connector.sendEvent({
-        event_name: 'system.mod.update_config',
-        source_id: agentName || 'system',
-        destination_id: 'system:system',
-        payload: {
-          mod_path: modName,
-          config: formData,
-        },
-      });
-
-      if (response.success) {
-        const saveResponse = response.data as SaveConfigResponse;
-        toast.success(saveResponse.message || t('modManagement.settings.saveSuccess'));
-        onSave?.();
-        // Show restart dialog will be handled by parent if requiresRestart is true
-        onOpenChange(false);
-      } else {
-        // Handle validation errors from backend
-        if (response.data?.errors) {
-          setErrors(response.data.errors);
-          toast.error(response.message || t('modManagement.settings.saveFailed'));
-        } else {
-          toast.error(response.message || t('modManagement.settings.saveFailed'));
-        }
+      const saveResponse = await updateModConfig(apiOptions, modId, formData);
+      
+      toast.success(saveResponse.message || t('modManagement.settings.saveSuccess', 'Configuration saved successfully'));
+      onSave?.();
+      
+      // Show restart dialog will be handled by parent if requiresRestart is true
+      if (saveResponse.requiresRestart) {
+        // Parent will handle showing restart dialog
       }
+      
+      onOpenChange(false);
     } catch (error: any) {
       console.error('Failed to save mod config:', error);
-      toast.error(t('modManagement.settings.saveFailed'));
+      
+      // Handle validation errors from backend
+      if (error.errors) {
+        setErrors(error.errors);
+        toast.error(error.message || t('modManagement.settings.saveFailed', 'Failed to save configuration'));
+      } else {
+        toast.error(error.message || t('modManagement.settings.saveFailed', 'Failed to save configuration'));
+      }
     } finally {
       setIsSaving(false);
     }

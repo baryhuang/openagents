@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog,
@@ -9,12 +9,12 @@ import {
   DialogBody,
 } from '@/components/layout/ui/dialog';
 import { Button } from '@/components/layout/ui/button';
-import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface RestartDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onRestartNow?: () => void;
+  onRestartNow?: () => void | Promise<void>;
   onRestartLater?: () => void;
 }
 
@@ -25,10 +25,18 @@ const RestartDialog: React.FC<RestartDialogProps> = ({
   onRestartLater,
 }) => {
   const { t } = useTranslation('admin');
+  const [isRestarting, setIsRestarting] = useState(false);
 
-  const handleRestartNow = () => {
-    onRestartNow?.();
-    onOpenChange(false);
+  const handleRestartNow = async () => {
+    setIsRestarting(true);
+    try {
+      await onRestartNow?.();
+      onOpenChange(false);
+    } catch (error) {
+      // Error handling is done in parent component
+    } finally {
+      setIsRestarting(false);
+    }
   };
 
   const handleRestartLater = () => {
@@ -67,8 +75,16 @@ const RestartDialog: React.FC<RestartDialogProps> = ({
           <Button
             variant="primary"
             onClick={handleRestartNow}
+            disabled={isRestarting}
           >
-            {t('modManagement.restart.now', '立即重启')}
+            {isRestarting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {t('modManagement.restart.restarting', '正在重启...')}
+              </>
+            ) : (
+              t('modManagement.restart.now', '立即重启')
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

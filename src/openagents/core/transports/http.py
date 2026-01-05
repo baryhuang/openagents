@@ -283,7 +283,7 @@ class HttpTransport(Transport):
 
         # Add CORS headers
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = (
             "Content-Type, Authorization, Accept, Mcp-Session-Id"
         )
@@ -5086,8 +5086,11 @@ class HttpTransport(Transport):
     async def restart_network(self, request):
         """Restart the network to apply configuration changes.
         
+        Note: Network restart must be performed manually by restarting the OpenAgents process.
+        This endpoint provides information about the restart requirement.
+        
         Returns:
-            JSON response with restart status
+            JSON response with restart information
         """
         try:
             if not self.network_instance:
@@ -5099,10 +5102,14 @@ class HttpTransport(Transport):
             # Note: In a real implementation, this would trigger a network restart
             # For now, we just indicate that restart is not implemented in the API
             # The user will need to manually restart the network
+            # Return success=True because the API call succeeded, even though manual restart is required
+            
+            logger.info("Network restart requested - manual restart required")
             
             return web.json_response({
-                "success": False,
-                "message": "Network restart must be performed manually. Please restart the OpenAgents process."
+                "success": True,
+                "message": "Network restart must be performed manually. Please restart the OpenAgents process.",
+                "requires_manual_restart": True
             })
             
         except Exception as e:
