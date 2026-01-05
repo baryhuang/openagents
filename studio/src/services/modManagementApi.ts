@@ -159,6 +159,7 @@ export async function restartNetwork(options: ModManagementApiOptions): Promise<
     };
 }
 
+
 /**
  * Helper function to create API options from NetworkConnection
  */

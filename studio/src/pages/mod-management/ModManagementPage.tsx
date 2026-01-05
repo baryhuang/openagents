@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { ColumnDef } from "@tanstack/react-table";
 import { useProfileData } from "@/pages/profile/hooks/useProfileData";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useOpenAgents } from "@/context/OpenAgentsProvider";
 import { useAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/layout/ui/button";
 import { Badge } from "@/components/layout/ui/badge";
-import { Card, CardContent } from "@/components/layout/ui/card";
 import { ScrollArea } from "@/components/layout/ui/scroll-area";
+import { DataTable } from "@/components/layout/ui/data-table";
 import {
   Lock,
   RefreshCw,
@@ -86,10 +87,10 @@ const ModManagementPage: React.FC = () => {
   }, [loadModsList, refresh]);
 
   // Handle open settings dialog
-  const handleOpenSettings = (mod: ModInfo) => {
+  const handleOpenSettings = useCallback((mod: ModInfo) => {
     setSelectedMod(mod);
     setSettingsDialogOpen(true);
-  };
+  }, []);
 
   // Handle settings saved
   const handleSettingsSaved = () => {
@@ -183,6 +184,120 @@ const ModManagementPage: React.FC = () => {
     [connector, agentName, loadModsList, refresh, t]
   );
 
+  // Define columns for DataTable
+  const columns: ColumnDef<ModInfo>[] = useMemo(
+    () => [
+      {
+        accessorKey: "status",
+        header: () => (
+          <div className="text-center w-10">
+            {t("modManagement.table.status", "状态")}
+          </div>
+        ),
+        cell: ({ row }) => {
+          const mod = row.original;
+          return (
+            <div className="flex justify-center">
+              {mod.enabled ? (
+                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+              ) : (
+                <XCircle className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              )}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "name",
+        header: t("modManagement.table.name", "模块名称"),
+        cell: ({ row }) => {
+          const mod = row.original;
+          return (
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`font-medium truncate ${
+                    mod.enabled
+                      ? "text-gray-900 dark:text-gray-100"
+                      : "text-gray-500 dark:text-gray-400"
+                  }`}
+                >
+                  {mod.id || mod.displayName || mod.name}
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate mt-0.5">
+                {mod.displayName}
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "description",
+        header: t("modManagement.table.description", "描述"),
+        cell: ({ row }) => {
+          const mod = row.original;
+          return (
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {mod.description || "-"}
+            </span>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: () => (
+          <div className="text-center">
+            {t("modManagement.table.actions", "操作")}
+          </div>
+        ),
+        cell: ({ row }) => {
+          const mod = row.original;
+          const isLoading = loadingMod === mod.id;
+          return (
+            <div className="flex items-center justify-start gap-2">
+              {mod.hasConfig && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenSettings(mod);
+                  }}
+                  disabled={isLoading || loadingMod !== null}
+                  title={t("modManagement.actions.settings", "设置")}
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              )}
+              <Button
+                variant={mod.enabled ? "outline" : "primary"}
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleMod(mod.id, mod.enabled);
+                }}
+                disabled={isLoading || loadingMod !== null}
+              >
+                {isLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <Power className="w-3.5 h-3.5 mr-1" />
+                    {mod.enabled
+                      ? t("modManagement.actions.disable", "Disable")
+                      : t("modManagement.actions.enable", "Enable")}
+                  </>
+                )}
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [t, loadingMod, handleOpenSettings, handleToggleMod]
+  );
+
   // Check admin permission
   if (isCheckingAdmin) {
     return (
@@ -258,122 +373,32 @@ const ModManagementPage: React.FC = () => {
         </div>
 
         {/* Enabled Mods Section */}
-        <Card className="border-gray-200 dark:border-gray-700">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  {t("modManagement.enabledMods.title", "Enabled Mods")}
-                </h2>
-              </div>
-              <Badge variant="secondary" appearance="light" size="sm">
-                {t("modManagement.enabledMods.total", "Total")}:{" "}
-                {modsList.length}
-              </Badge>
-            </div>
-
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {t("modManagement.loading", "Loading mods...")}
-                  </p>
-                </div>
-              </div>
-            ) : modsList.length > 0 ? (
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {modsList.map((mod) => {
-                  const isLoading = loadingMod === mod.id;
-                  return (
-                    <div
-                      key={mod.id}
-                      className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        {mod.enabled ? (
-                          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                        ) : (
-                          <XCircle className="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`font-medium truncate ${
-                                mod.enabled
-                                  ? "text-gray-900 dark:text-gray-100"
-                                  : "text-gray-500 dark:text-gray-400"
-                              }`}
-                            >
-                              {mod.id || mod.displayName || mod.name}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate mt-0.5">
-                            {mod.id}
-                          </div>
-                          {/* Mod description */}
-                          {mod.description && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              {mod.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                        {mod.hasConfig && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenSettings(mod)}
-                            disabled={isLoading || loadingMod !== null}
-                            title={t("modManagement.actions.settings", "设置")}
-                          >
-                            <Settings className="w-4 h-4" />
-                          </Button>
-                        )}
-                        <Button
-                          variant={mod.enabled ? "outline" : "primary"}
-                          size="sm"
-                          onClick={() => handleToggleMod(mod.id, mod.enabled)}
-                          disabled={isLoading || loadingMod !== null}
-                        >
-                          {isLoading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <Power className="w-3.5 h-3.5 mr-1" />
-                              {mod.enabled
-                                ? t("modManagement.actions.disable", "Disable")
-                                : t("modManagement.actions.enable", "Enable")}
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Layers className="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  {t("modManagement.enabledMods.empty", "No mods configured")}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate("/admin/mods/add")}
-                >
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  {t("modManagement.addMod.button")}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <DataTable
+          columns={columns}
+          data={modsList}
+          loading={loading}
+          searchable={true}
+          searchPlaceholder={t(
+            "modManagement.searchPlaceholder",
+            "搜索模块..."
+          )}
+          searchColumn={["id", "name", "displayName", "description"]}
+          pagination={true}
+          pageSize={10}
+          emptyMessage={t(
+            "modManagement.enabledMods.empty",
+            "No mods configured"
+          )}
+          emptyIcon={
+            <Layers className="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600" />
+          }
+          title={t("modManagement.enabledMods.title", "Enabled Mods")}
+          toolbar={
+            <Badge variant="secondary" appearance="light" size="sm">
+              {t("modManagement.enabledMods.total", "Total")}: {modsList.length}
+            </Badge>
+          }
+        />
       </div>
 
       {/* Settings Dialog */}

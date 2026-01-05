@@ -77,12 +77,6 @@ const AdminSidebar: React.FC = () => {
           icon: ArrowLeftRight,
         },
         {
-          id: "mods",
-          label: t("sidebar.items.modManagement"),
-          path: "/admin/mods",
-          icon: Settings,
-        },
-        {
           id: "publish",
           label: t("sidebar.items.publishNetwork"),
           path: "/admin/publish",
@@ -136,6 +130,17 @@ const AdminSidebar: React.FC = () => {
           label: t("sidebar.items.agentGroups"),
           path: "/admin/groups",
           icon: UserCog,
+        },
+      ],
+    },
+    {
+      title: t("sidebar.sections.modules"),
+      items: [
+        {
+          id: "mods",
+          label: t("sidebar.items.modManagement"),
+          path: "/admin/mods",
+          icon: Settings,
         },
       ],
     },

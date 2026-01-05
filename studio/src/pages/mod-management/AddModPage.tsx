@@ -22,8 +22,10 @@ import {
   Globe,
   Gamepad2,
   Search,
-  CheckCircle
+  CheckCircle,
+  Layers
 } from 'lucide-react';
+import { getModsList, createApiOptions } from '@/services/modManagementApi';
 
 interface StaticModInfo {
   name: string;
@@ -47,115 +49,48 @@ interface AvailableMod {
   icon: React.ReactNode;
 }
 
-const AVAILABLE_MODS: AvailableMod[] = [
-  // Communication
-  {
-    id: 'simple_messaging',
-    name: 'Simple Messaging',
-    path: 'openagents.mods.communication.simple_messaging',
-    description: 'Direct and broadcast messaging with text and file attachments',
-    category: 'Communication',
-    icon: <MessageSquare className="w-5 h-5" />,
-  },
-  // Discovery
-  {
-    id: 'agent_discovery',
-    name: 'Agent Discovery',
-    path: 'openagents.mods.discovery.agent_discovery',
-    description: 'Agent capability announcement and discovery',
-    category: 'Discovery',
-    icon: <Search className="w-5 h-5" />,
-  },
-  // Coordination
-  {
-    id: 'task_delegation',
-    name: 'Task Delegation',
-    path: 'openagents.mods.coordination.task_delegation',
-    description: 'Structured task delegation with status tracking and timeout support',
-    category: 'Coordination',
-    icon: <Users className="w-5 h-5" />,
-  },
-  // Core
-  {
-    id: 'shared_cache',
-    name: 'Shared Cache',
-    path: 'openagents.mods.core.shared_cache',
-    description: 'Shared caching system with agent group-based access control',
-    category: 'Core',
-    icon: <Folder className="w-5 h-5" />,
-  },
-  // Workspace
-  {
-    id: 'workspace_messaging',
-    name: 'Thread Messaging',
-    path: 'openagents.mods.workspace.messaging',
-    description: 'Discord/Slack-like messaging with threading and reactions',
-    category: 'Workspace',
-    icon: <MessageSquare className="w-5 h-5" />,
-  },
-  {
-    id: 'workspace_forum',
-    name: 'Forum',
-    path: 'openagents.mods.workspace.forum',
-    description: 'Reddit-like forum with topics, nested comments, and voting',
-    category: 'Workspace',
-    icon: <MessageSquare className="w-5 h-5" />,
-  },
-  {
-    id: 'workspace_wiki',
-    name: 'Wiki',
-    path: 'openagents.mods.workspace.wiki',
-    description: 'Collaborative wiki with ownership-based editing and proposals',
-    category: 'Workspace',
-    icon: <Globe className="w-5 h-5" />,
-  },
-  {
-    id: 'workspace_documents',
-    name: 'Shared Documents',
-    path: 'openagents.mods.workspace.documents',
-    description: 'Real-time collaborative document editing',
-    category: 'Workspace',
-    icon: <FileText className="w-5 h-5" />,
-  },
-  {
-    id: 'workspace_feed',
-    name: 'Feed',
-    path: 'openagents.mods.workspace.feed',
-    description: 'One-way information broadcasting with immutable posts',
-    category: 'Workspace',
-    icon: <FileText className="w-5 h-5" />,
-  },
-  {
-    id: 'workspace_project',
-    name: 'Project Management',
-    path: 'openagents.mods.workspace.project',
-    description: 'Project management with templates and state management',
-    category: 'Workspace',
-    icon: <Folder className="w-5 h-5" />,
-  },
-  {
-    id: 'shared_artifact',
-    name: 'Shared Artifacts',
-    path: 'openagents.mods.workspace.shared_artifact',
-    description: 'Persistent file storage with access control',
-    category: 'Workspace',
-    icon: <Folder className="w-5 h-5" />,
-  },
-  // Games
-  {
-    id: 'agentworld',
-    name: 'Agent World',
-    path: 'openagents.mods.games.agentworld',
-    description: '2D MMORPG game environment for AI agents',
-    category: 'Games',
-    icon: <Gamepad2 className="w-5 h-5" />,
-  },
-];
+// Get category from mod path
+const getModCategory = (path: string): string => {
+  const parts = path.split('.');
+  if (parts.length >= 3) {
+    const categoryPart = parts[2]; // e.g., "workspace", "communication", "discovery"
+    return categoryPart.charAt(0).toUpperCase() + categoryPart.slice(1);
+  }
+  return 'Other';
+};
+
+// Icon mapping based on mod path
+const getModIcon = (path: string): React.ReactNode => {
+  const pathLower = path.toLowerCase();
+  if (pathLower.includes('messaging') || pathLower.includes('forum')) {
+    return <MessageSquare className="w-5 h-5" />;
+  }
+  if (pathLower.includes('discovery') || pathLower.includes('search')) {
+    return <Search className="w-5 h-5" />;
+  }
+  if (pathLower.includes('delegation') || pathLower.includes('coordination')) {
+    return <Users className="w-5 h-5" />;
+  }
+  if (pathLower.includes('wiki')) {
+    return <Globe className="w-5 h-5" />;
+  }
+  if (pathLower.includes('document') || pathLower.includes('feed')) {
+    return <FileText className="w-5 h-5" />;
+  }
+  if (pathLower.includes('cache') || pathLower.includes('artifact') || pathLower.includes('project')) {
+    return <Folder className="w-5 h-5" />;
+  }
+  if (pathLower.includes('game') || pathLower.includes('agentworld')) {
+    return <Gamepad2 className="w-5 h-5" />;
+  }
+  // Default icon
+  return <Layers className="w-5 h-5" />;
+};
 
 const AddModPage: React.FC = () => {
   const { t } = useTranslation('admin');
   const navigate = useNavigate();
-  const { agentName } = useAuthStore();
+  const { agentName, selectedNetwork } = useAuthStore();
   const { connector } = useOpenAgents();
   const { healthData, refresh } = useProfileData();
   const { isAdmin, isLoading: isCheckingAdmin } = useIsAdmin();
@@ -163,6 +98,40 @@ const AddModPage: React.FC = () => {
   const [staticMods, setStaticMods] = useState<StaticModInfo[]>([]);
   const [dynamicMods, setDynamicMods] = useState<DynamicModInfo[]>([]);
   const [loadingMod, setLoadingMod] = useState<string | null>(null);
+  const [availableMods, setAvailableMods] = useState<AvailableMod[]>([]);
+  const [loadingAvailableMods, setLoadingAvailableMods] = useState(false);
+
+  // Load available mods from API
+  const loadAvailableMods = useCallback(async () => {
+    const apiOptions = createApiOptions(selectedNetwork);
+    if (!apiOptions) {
+      return;
+    }
+
+    try {
+      setLoadingAvailableMods(true);
+      const response = await getModsList(apiOptions);
+      // Convert ModInfo to AvailableMod format
+      const modsWithIcons: AvailableMod[] = response.mods.map((mod) => ({
+        id: mod.id,
+        name: mod.displayName || mod.name.split('.').pop() || mod.id,
+        path: mod.name, // mod.name is the full path like "openagents.mods.workspace.messaging"
+        description: mod.description || '',
+        category: getModCategory(mod.name),
+        icon: getModIcon(mod.name),
+      }));
+      setAvailableMods(modsWithIcons);
+    } catch (error: any) {
+      console.error('Failed to load available mods:', error);
+      toast.error(
+        t('modManagement.loadAvailableModsFailed', 'Failed to load available mods') +
+          ': ' +
+          (error.message || 'Unknown error')
+      );
+    } finally {
+      setLoadingAvailableMods(false);
+    }
+  }, [selectedNetwork, t]);
 
   // Extract mods information from healthData
   useEffect(() => {
@@ -185,6 +154,13 @@ const AddModPage: React.FC = () => {
       setDynamicMods([]);
     }
   }, [healthData]);
+
+  // Load available mods when component mounts or network changes
+  useEffect(() => {
+    if (isAdmin) {
+      loadAvailableMods();
+    }
+  }, [isAdmin, loadAvailableMods]);
 
   // Check if a mod is already enabled (either static or dynamic)
   const isModEnabled = useCallback((modPath: string) => {
@@ -232,7 +208,7 @@ const AddModPage: React.FC = () => {
   }, [connector, agentName, refresh, t]);
 
   // Group available mods by category
-  const modsByCategory = AVAILABLE_MODS.reduce((acc, mod) => {
+  const modsByCategory = availableMods.reduce((acc, mod) => {
     if (!acc[mod.category]) {
       acc[mod.category] = [];
     }
@@ -302,13 +278,30 @@ const AddModPage: React.FC = () => {
         </div>
 
         {/* Mods by Category */}
-        <div className="space-y-8">
-          {Object.entries(modsByCategory).map(([category, mods]) => (
+        {loadingAvailableMods ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {t('modManagement.loadingAvailableMods', 'Loading available mods...')}
+              </p>
+            </div>
+          </div>
+        ) : Object.keys(modsByCategory).length === 0 ? (
+          <div className="text-center py-12">
+            <Layers className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {t('modManagement.noAvailableMods', 'No available mods found')}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {Object.entries(modsByCategory).map(([category, mods]) => (
             <div key={category}>
               <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
                 {category}
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {mods.map((mod) => {
                   const enabled = isModEnabled(mod.path);
                   const isLoading = loadingMod === mod.id;
@@ -333,7 +326,7 @@ const AddModPage: React.FC = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="font-medium text-gray-900 dark:text-gray-100">
-                                {mod.name}
+                                {mod.id}
                               </span>
                               {enabled && (
                                 <Badge variant="success" appearance="light" size="sm">
@@ -378,7 +371,8 @@ const AddModPage: React.FC = () => {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        )}
       </div>
     </ScrollArea>
   );
