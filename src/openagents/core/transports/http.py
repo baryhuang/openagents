@@ -4829,7 +4829,8 @@ class HttpTransport(Transport):
                             enabled=mod_enabled,
                             hasConfig=bool(manifest.default_config or manifest.config_schema),
                             configSchema=manifest.config_schema,
-                            version=manifest.version
+                            version=manifest.version,
+                            currentConfig=current_config
                         )
                         
                         mods_list.append(mod_info.model_dump(exclude_none=True))
