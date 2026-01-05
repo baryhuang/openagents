@@ -308,7 +308,7 @@ const AddModPage: React.FC = () => {
               <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
                 {category}
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 gap-4">
                 {mods.map((mod) => {
                   const enabled = isModEnabled(mod.path);
                   const isLoading = loadingMod === mod.id;
