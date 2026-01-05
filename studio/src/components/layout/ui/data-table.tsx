@@ -40,7 +40,7 @@ export interface DataTableProps<TData, TValue> {
   data: TData[]
   searchable?: boolean
   searchPlaceholder?: string
-  searchColumn?: string
+  searchColumn?: string | string[]
   pagination?: boolean
   pageSize?: number
   loading?: boolean
@@ -91,9 +91,19 @@ export function DataTable<TData, TValue>({
     onGlobalFilterChange: setGlobalFilter,
     globalFilterFn: searchColumn
       ? (row, columnId, filterValue) => {
-          const value =
-            (row.getValue(columnId) as string)?.toString().toLowerCase() || ""
-          return value.includes(filterValue.toLowerCase())
+          // When searchColumn is specified, search in that/those specific column(s)
+          if (!filterValue) return true
+          const filterLower = filterValue.toLowerCase()
+          
+          // Support both single column (string) and multiple columns (array)
+          const columnsToSearch = Array.isArray(searchColumn) ? searchColumn : [searchColumn]
+          
+          // Search in all specified columns
+          return columnsToSearch.some(col => {
+            const searchValue = row.getValue(col)
+            const value = (searchValue as string)?.toString().toLowerCase() || ""
+            return value.includes(filterLower)
+          })
         }
       : undefined,
     state: {
@@ -112,7 +122,8 @@ export function DataTable<TData, TValue>({
 
   const handleSearch = (value: string) => {
     if (searchColumn) {
-      table.getColumn(searchColumn)?.setFilterValue(value)
+      // When searchColumn is specified, use global filter with custom filter function
+      setGlobalFilter(value)
     } else {
       setGlobalFilter(value)
     }
