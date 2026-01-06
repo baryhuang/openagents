@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useProfileData } from '@/pages/profile/hooks/useProfileData';
-import { useAuthStore } from '@/stores/authStore';
 import { useOpenAgents } from '@/context/OpenAgentsProvider';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { Button } from '@/components/layout/ui/button';
@@ -155,7 +154,6 @@ const AVAILABLE_MODS: AvailableMod[] = [
 const AddModPage: React.FC = () => {
   const { t } = useTranslation('admin');
   const navigate = useNavigate();
-  const { agentName } = useAuthStore();
   const { connector } = useOpenAgents();
   const { healthData, refresh } = useProfileData();
   const { isAdmin, isLoading: isCheckingAdmin } = useIsAdmin();
@@ -197,7 +195,7 @@ const AddModPage: React.FC = () => {
     return isStatic || isDynamic;
   }, [staticMods, dynamicMods]);
 
-  // Handle enabling a mod
+  // Handle loading a mod
   const handleLoadMod = useCallback(async (mod: AvailableMod) => {
     if (!connector) {
       toast.error(t('modManagement.loadMod.notConnected'));
@@ -207,12 +205,15 @@ const AddModPage: React.FC = () => {
     setLoadingMod(mod.id);
     try {
       const response = await connector.sendEvent({
-        event_name: 'system.mod.enable',
-        source_id: agentName || 'system',
+        event_name: 'system.mod.load',
+        source_id: 'admin',
         destination_id: 'system:system',
         payload: {
           mod_path: mod.path,
+          config: {},
         },
+        metadata: {},
+        visibility: 'network',
       });
 
       if (response.success) {
@@ -233,7 +234,7 @@ const AddModPage: React.FC = () => {
         );
       }
     } catch (error: any) {
-      console.error('Failed to enable Mod:', error);
+      console.error('Failed to load Mod:', error);
       toast.error(
         t('modManagement.actions.toggleFailed', {
           error: error.message || 'Unknown error',
@@ -242,7 +243,7 @@ const AddModPage: React.FC = () => {
     } finally {
       setLoadingMod(null);
     }
-  }, [connector, agentName, refresh, t]);
+  }, [connector, refresh, t]);
 
   // Group available mods by category
   const modsByCategory = AVAILABLE_MODS.reduce((acc, mod) => {
@@ -321,7 +322,7 @@ const AddModPage: React.FC = () => {
                 <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
                   {category}
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                   {mods.map((mod) => {
                     const enabled = isModEnabled(mod.path);
                     const isLoading = loadingMod === mod.id;

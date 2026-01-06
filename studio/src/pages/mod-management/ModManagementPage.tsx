@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -25,7 +25,6 @@ import {
 import ModSettingsDialog from "./ModSettingsDialog";
 import RestartDialog from "./RestartDialog";
 import {
-  getModsList,
   createApiOptions,
   restartNetwork,
 } from "@/services/modManagementApi";
@@ -34,57 +33,80 @@ import { ModInfo } from "@/types/modConfig";
 const ModManagementPage: React.FC = () => {
   const { t } = useTranslation("admin");
   const navigate = useNavigate();
-  const { refresh } = useProfileData();
+  const { healthData, refresh, loading: healthLoading } = useProfileData();
   const { isAdmin, isLoading: isCheckingAdmin } = useIsAdmin();
   const { connector } = useOpenAgents();
   const { agentName, selectedNetwork } = useAuthStore();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [modsList, setModsList] = useState<ModInfo[]>([]);
   const [loadingMod, setLoadingMod] = useState<string | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [selectedMod, setSelectedMod] = useState<ModInfo | null>(null);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  // Load mods list from API
-  const loadModsList = useCallback(async () => {
-    const apiOptions = createApiOptions(selectedNetwork);
-    if (!apiOptions) {
-      setLoading(false);
-      return;
+  // Convert health data to ModInfo list
+  const modsList = useMemo<ModInfo[]>(() => {
+    if (!healthData?.data) {
+      return [];
     }
 
-    try {
-      setLoading(true);
-      const mods = await getModsList(apiOptions);
-      setModsList(mods.mods);
-    } catch (error: any) {
-      console.error("Failed to load mods list:", error);
-      toast.error(
-        t("modManagement.loadModsFailed", "Failed to load mods list") +
-          ": " +
-          (error.message || "Unknown error")
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedNetwork, t]);
+    const modsMap = new Map<string, ModInfo>();
+    const { mods = [], dynamic_mods } = healthData.data;
 
-  // Load mods on mount and when network changes
-  useEffect(() => {
-    if (selectedNetwork && isAdmin) {
-      loadModsList();
+    // Process static mods from data.mods
+    mods.forEach((mod: any) => {
+      const modName = mod.name;
+      const modId = modName.split('.').pop() || modName;
+      const displayName = modId
+        .split('_')
+        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
+      modsMap.set(modName, {
+        id: modName,
+        name: modName,
+        displayName: displayName,
+        description: '', // Health API doesn't provide description
+        enabled: mod.enabled || false,
+        hasConfig: mod.config && Object.keys(mod.config).length > 0,
+      });
+    });
+
+    // Process dynamic mods
+    if (dynamic_mods?.loaded && Array.isArray(dynamic_mods.loaded)) {
+      const details = dynamic_mods.details || {};
+      dynamic_mods.loaded.forEach((modId: string) => {
+        const detail = details[modId];
+        const modPath = detail?.mod_path || modId;
+        
+        // Only add if not already in the map (from static mods)
+        if (!modsMap.has(modPath)) {
+          const displayName = modId
+            .split('_')
+            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+
+          modsMap.set(modPath, {
+            id: modPath,
+            name: modPath,
+            displayName: displayName,
+            description: '', // Health API doesn't provide description
+            enabled: true, // Dynamic mods are loaded, so they're enabled
+            hasConfig: false, // Dynamic mods typically don't have config in health data
+          });
+        }
+      });
     }
-  }, [selectedNetwork, isAdmin, loadModsList]);
+
+    return Array.from(modsMap.values());
+  }, [healthData]);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadModsList();
     await refresh();
     setRefreshing(false);
-  }, [loadModsList, refresh]);
+  }, [refresh]);
 
   // Handle open settings dialog
   const handleOpenSettings = useCallback((mod: ModInfo) => {
@@ -160,7 +182,6 @@ const ModManagementPage: React.FC = () => {
                 })
           );
           setTimeout(() => {
-            loadModsList();
             refresh();
           }, 500);
         } else {
@@ -181,7 +202,7 @@ const ModManagementPage: React.FC = () => {
         setLoadingMod(null);
       }
     },
-    [connector, agentName, loadModsList, refresh, t]
+    [connector, agentName, refresh, t]
   );
 
   // Define columns for DataTable
@@ -255,7 +276,7 @@ const ModManagementPage: React.FC = () => {
           const mod = row.original;
           const isLoading = loadingMod === mod.id;
           return (
-            <div className="flex items-center justify-start gap-2">
+            <div className="flex items-center justify-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -381,7 +402,7 @@ const ModManagementPage: React.FC = () => {
         <DataTable
           columns={columns}
           data={modsList}
-          loading={loading}
+          loading={healthLoading || refreshing}
           searchable={true}
           searchPlaceholder={t(
             "modManagement.searchPlaceholder",
