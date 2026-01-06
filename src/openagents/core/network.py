@@ -791,9 +791,11 @@ class AgentNetwork:
                     mod_found = False
                     for i, mod_dict in enumerate(config_dict['network']['mods']):
                         if mod_dict.get('name') == mod_config.name:
-                            # Update the config if it exists
-                            if hasattr(mod_config, 'config') and mod_config.config:
-                                mod_dict['config'] = mod_config.config
+                            # Update the config - always update even if empty to ensure consistency
+                            if hasattr(mod_config, 'config'):
+                                mod_dict['config'] = mod_config.config if mod_config.config else {}
+                            # Also update enabled status
+                            mod_dict['enabled'] = mod_config.enabled
                             mod_found = True
                             break
                     
