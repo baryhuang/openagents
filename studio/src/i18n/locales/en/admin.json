@@ -440,6 +440,7 @@
       "disable": "Disable",
       "remove": "Remove",
       "settings": "Settings",
+      "noConfig": "This mod has no configuration options",
       "enableSuccess": "Mod enabled: {{modName}}",
       "disableSuccess": "Mod disabled: {{modName}}",
       "toggleFailed": "Failed to toggle mod: {{error}}"
@@ -480,6 +481,7 @@
       "messaging": "Thread-based messaging and channel functionality",
       "wiki": "Collaborative Wiki with version control"
     },
+    "searchPlaceholder": "Search modules...",
     "addMod": {
       "button": "Add Mod",
       "title": "Available Mods",

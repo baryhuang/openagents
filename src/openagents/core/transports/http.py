@@ -5055,7 +5055,20 @@ class HttpTransport(Transport):
             if not hasattr(mod_config, 'config') or mod_config.config is None:
                 mod_config.config = {}
             
-            mod_config.config.update(config_update)
+            # Deep merge the config update to preserve nested structures
+            def deep_merge(base_dict: dict, update_dict: dict) -> dict:
+                """Recursively merge update_dict into base_dict."""
+                result = base_dict.copy()
+                for key, value in update_dict.items():
+                    if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                        # Recursively merge nested dictionaries
+                        result[key] = deep_merge(result[key], value)
+                    else:
+                        # Replace or add the value
+                        result[key] = value
+                return result
+            
+            mod_config.config = deep_merge(mod_config.config, config_update)
             
             # Save the updated config to network.yaml
             success = self.network_instance.save_config()
@@ -5069,7 +5082,11 @@ class HttpTransport(Transport):
             # Update the running mod instance if it exists
             mod_instance = self.network_instance.mods.get(mod_config.name)
             if mod_instance:
-                mod_instance.update_config(config_update)
+                # Use the same deep merge logic for mod instance
+                if hasattr(mod_instance, '_config') and mod_instance._config:
+                    mod_instance._config = deep_merge(mod_instance._config, config_update)
+                else:
+                    mod_instance._config = config_update.copy()
             
             return web.json_response({
                 "success": True,
