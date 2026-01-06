@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ColumnDef } from "@tanstack/react-table";
 import { useProfileData } from "@/pages/profile/hooks/useProfileData";
@@ -16,6 +17,7 @@ import {
   Layers,
   CheckCircle,
   XCircle,
+  Plus,
   Power,
   Loader2,
   Settings,
@@ -31,6 +33,7 @@ import { ModInfo } from "@/types/modConfig";
 
 const ModManagementPage: React.FC = () => {
   const { t } = useTranslation("admin");
+  const navigate = useNavigate();
   const { refresh } = useProfileData();
   const { isAdmin, isLoading: isCheckingAdmin } = useIsAdmin();
   const { connector } = useOpenAgents();
@@ -350,6 +353,14 @@ const ModManagementPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              onClick={() => navigate("/admin/mods/add")}
+              variant="primary"
+              size="sm"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              {t("modManagement.addMod.button")}
+            </Button>
             <Button
               onClick={handleRefresh}
               disabled={refreshing}

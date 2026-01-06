@@ -10,6 +10,7 @@ import AgentGroupsManagement from "@/pages/profile/AgentGroupsManagement";
 import EventLogs from "@/pages/profile/EventLogs";
 import EventDebugger from "@/pages/profile/EventDebugger";
 import ModManagementPage from "@/pages/mod-management/ModManagementPage";
+import AddModPage from "@/pages/mod-management/AddModPage";
 import NetworkImportExport from "@/pages/profile/NetworkImportExport";
 import TransportConfig from "./TransportConfig";
 import ConnectionGuide from "./ConnectionGuide";
@@ -56,6 +57,7 @@ const AdminMainPage: React.FC = () => {
 
         {/* Modules */}
         <Route path="mods" element={<ModManagementPage />} />
+        <Route path="mods/add" element={<AddModPage />} />
 
         {/* Monitoring */}
         <Route path="events" element={<EventLogs />} />
