@@ -48,16 +48,18 @@ class AgentManager:
     and log file management for all agents in workspace/agents/ directory.
     """
     
-    def __init__(self, workspace_path: Path):
+    def __init__(self, workspace_path: Path, auto_start_agents: bool = False):
         """Initialize agent manager.
 
         Args:
             workspace_path: Path to workspace directory
+            auto_start_agents: If True, automatically start all discovered agents during initialization
         """
         self.workspace_path = Path(workspace_path)
         self.agents_dir = self.workspace_path / "agents"
         self.logs_dir = self.workspace_path / "logs" / "agents"
         self.env_vars_dir = self.workspace_path / "config" / "agent_env"
+        self.auto_start_agents = auto_start_agents
 
         # Ensure directories exist
         self.logs_dir.mkdir(parents=True, exist_ok=True)
@@ -73,7 +75,7 @@ class AgentManager:
         # Reference to network for agent unregistration on stop
         self._network = None
 
-        logger.info(f"AgentManager initialized for workspace: {self.workspace_path}")
+        logger.info(f"AgentManager initialized for workspace: {self.workspace_path} (auto_start_agents={auto_start_agents})")
 
     def set_network(self, network) -> None:
         """Set the network reference for agent unregistration.
@@ -102,6 +104,11 @@ class AgentManager:
             
             self.is_running = True
             logger.info(f"AgentManager started with {len(self.agents)} discovered agents")
+
+            # Auto-start agents if configured
+            if self.auto_start_agents:
+                await self._auto_start_all_agents()
+
             return True
         
         except Exception as e:
@@ -950,7 +957,56 @@ class AgentManager:
             except Exception as e:
                 logger.error(f"Error in process monitor: {e}")
                 await asyncio.sleep(2.0)
-    
+
+    async def _auto_start_all_agents(self) -> None:
+        """Automatically start all discovered agents when auto_start_agents is enabled.
+
+        This method is called during AgentManager initialization if auto_start_agents is True.
+        It starts all agents that have been discovered.
+        """
+        all_agents_status = self.get_all_agents_status()
+
+        if not all_agents_status:
+            logger.info("No agents discovered, skipping auto-start")
+            return
+
+        # Filter out agents that are already running
+        agents_to_start = [
+            agent_status
+            for agent_status in all_agents_status
+            if agent_status and agent_status.get("status") != "running"
+        ]
+
+        if not agents_to_start:
+            logger.info("All discovered agents are already running")
+            return
+
+        logger.info(f"Auto-starting {len(agents_to_start)} agent(s)...")
+
+        # Start agents with a small delay between each to avoid overwhelming the system
+        for agent_status in agents_to_start:
+            agent_id = agent_status.get("agent_id")
+            if not agent_id:
+                continue
+
+            try:
+                logger.info(f"Auto-starting agent: {agent_id}")
+                result = await self.start_agent(agent_id)
+                if result.get("success"):
+                    logger.info(f"✅ Successfully auto-started agent: {agent_id}")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    logger.warning(
+                        f"⚠️  Failed to auto-start agent '{agent_id}': {error_msg}"
+                    )
+
+                # Small delay between starts to avoid overwhelming the system
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Error auto-starting agent '{agent_id}': {e}")
+
+        logger.info(f"Auto-start completed for {len(agents_to_start)} agent(s)")
+
     async def _stop_all_agents(self) -> None:
         """Stop all running agents."""
         running_agents = [
