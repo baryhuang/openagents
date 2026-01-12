@@ -89,7 +89,11 @@ class AgentNetwork:
         if self.workspace_manager:
             from openagents.core.agent_manager import AgentManager
 
-            self.agent_manager = AgentManager(self.workspace_manager.workspace_path)
+            # Pass auto_start_agents config to AgentManager
+            self.agent_manager = AgentManager(
+                self.workspace_manager.workspace_path,
+                auto_start_agents=self.config.auto_start_agents
+            )
             # Set network reference for agent unregistration on stop
             self.agent_manager.set_network(self)
 

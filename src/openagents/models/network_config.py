@@ -162,6 +162,12 @@ class NetworkConfig(BaseModel):
                     "When False, agents without password_hash are assigned to default_agent_group.",
     )
 
+    # Agent lifecycle
+    auto_start_agents: bool = Field(
+        default=False,
+        description="When True, automatically start all discovered agents during network initialization.",
+    )
+
     # Network initialization state
     initialized: bool = Field(
         default=False,
