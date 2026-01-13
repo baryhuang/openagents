@@ -72,7 +72,13 @@ network:
   message_queue_size: 1000           # Internal message queue size
   message_timeout: 30.0              # Message processing timeout
   message_routing_enabled: true      # Enable intelligent message routing
+
+  # Agent lifecycle
+  auto_start_agents: false            # Automatically start all discovered agents during network initialization
 ```
+
+**Agent Lifecycle:**
+- `auto_start_agents` - When `true`, automatically starts all agents discovered in `workspace/agents/` directory during network initialization. Useful for development and debugging workflows to avoid manual agent startup via admin interface.
 
 ## Transport Configuration
 
@@ -445,6 +451,7 @@ network:
   # Development-friendly settings
   encryption_enabled: false
   disable_agent_secret_verification: true
+  auto_start_agents: true              # Auto-start agents for easier debugging
   
   mods:
     - name: "openagents.mods.workspace.messaging"
