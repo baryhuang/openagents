@@ -1716,6 +1716,7 @@ def publish_network_to_openagents(
     port: int,
     network_name: Optional[str] = None,
     relay_url: Optional[str] = None,
+    network_profile: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Publish a network to the OpenAgents discovery server.
 
@@ -1726,23 +1727,38 @@ def publish_network_to_openagents(
         port: Public port number
         network_name: Optional display name for the network
         relay_url: Optional relay URL if using relay tunneling
+        network_profile: Optional profile dict from network's health endpoint
 
     Returns:
         Dict with success status and any error messages
     """
     publish_url = f"{OPENAGENTS_API_BASE}/networks/"
 
+    # Use profile from network if available, otherwise use defaults
+    if network_profile:
+        profile_name = network_profile.get("name") or network_name or network_id
+        profile_description = network_profile.get("description") or f"Network {network_id}"
+        profile_tags = network_profile.get("tags", ["network"])
+        profile_categories = network_profile.get("categories", [])
+        profile_discoverable = network_profile.get("discoverable", True)
+    else:
+        profile_name = network_name or network_id
+        profile_description = f"Network published via CLI"
+        profile_tags = ["network", "cli"]
+        profile_categories = []
+        profile_discoverable = True
+
     # Prepare the network data
     network_data = {
         "id": network_id,
         "profile": {
-            "name": network_name or network_id,
-            "description": f"Network published via CLI",
+            "name": profile_name,
+            "description": profile_description,
             "host": host,
             "port": port,
-            "discoverable": True,
-            "tags": ["network", "cli"],
-            "categories": [],
+            "discoverable": profile_discoverable,
+            "tags": profile_tags,
+            "categories": profile_categories,
             "country": "",
             "capacity": 100,
             "authentication": {"type": "none"},
@@ -1840,6 +1856,7 @@ def network_start(
     publish_to: Optional[str] = typer.Option(None, "--publish-to", help="Publish network to OpenAgents (e.g., 'my-network' or 'openagents://my-network'). Requires OPENAGENTS_API_KEY env var."),
     network_host: Optional[str] = typer.Option(None, "--network-host", help="External host for network discovery (default: auto-detect or use relay)"),
     network_port: Optional[int] = typer.Option(None, "--network-port", help="External port for network discovery (default: same as --port or config)"),
+    description: Optional[str] = typer.Option(None, "--description", help="Network description for discovery listing"),
 ):
     """🚀 Start a network"""
 
@@ -1890,6 +1907,7 @@ def network_start(
             "network_host": network_host,
             "network_port": network_port,
             "org_name": org_name,
+            "description": description,
         }
 
     # Use default workspace if no path provided
@@ -2084,13 +2102,34 @@ def network_start(
 
             self.console.print(f"[dim]Publishing as: {network_id}[/dim]")
 
+            # Try to fetch network profile from local health endpoint
+            network_profile = None
+            try:
+                health_url = f"http://localhost:{local_port}/api/health"
+                health_response = requests.get(health_url, timeout=5)
+                if health_response.status_code == 200:
+                    health_data = health_response.json()
+                    if health_data.get("success") and health_data.get("data", {}).get("network_profile"):
+                        network_profile = health_data["data"]["network_profile"]
+                        self.console.print(f"[dim]Using network profile: {network_profile.get('name', network_id)}[/dim]")
+            except Exception as e:
+                self.console.print(f"[dim]Could not fetch network profile: {e}[/dim]")
+
+            # Allow CLI --description to override network profile description
+            cli_description = self.publish_config.get("description")
+            if cli_description:
+                if network_profile is None:
+                    network_profile = {}
+                network_profile["description"] = cli_description
+
             publish_result = publish_network_to_openagents(
                 network_id=network_id,
                 api_key=api_key,
                 host=publish_host,
                 port=publish_port,
-                network_name=network_id,  # Use network_id as name for now
+                network_name=network_id,  # Fallback name
                 relay_url=relay_url,
+                network_profile=network_profile,
             )
 
             if publish_result.get("success"):
