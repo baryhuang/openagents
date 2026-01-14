@@ -102,6 +102,18 @@ config:
       instruction: "Custom handling..."
 ```
 
+### Runner Config Options
+
+The `runner_config` section controls runtime behavior of the agent runner:
+
+```yaml
+runner_config:
+  interval: 1                      # Polling interval in seconds (default: 1)
+  ignored_sender_ids:             # List of agent IDs to ignore messages from
+    - "agent:spam_bot"
+    - "agent:noisy_agent"
+```
+
 ### Connection Options
 
 ```yaml
