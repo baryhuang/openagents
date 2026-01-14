@@ -402,6 +402,86 @@ config:
         finally:
             TestYAMLFileCreation.cleanup_temp_file(yaml_file)
 
+    def test_load_with_runner_config(self):
+        """Test loading agent with runner_config section."""
+        yaml_content = """
+agent_id: "runner_config_test"
+
+config:
+  instruction: "Test agent with runner config"
+  model_name: "gpt-4o-mini"
+  triggers: []
+
+runner_config:
+  interval: 5
+  ignored_sender_ids:
+    - "agent:spam_bot"
+    - "agent:noisy_agent"
+"""
+
+        yaml_file = TestYAMLFileCreation.create_temp_yaml(yaml_content)
+
+        try:
+            agent, _ = load_agent_from_yaml(str(yaml_file))
+
+            assert isinstance(agent, AgentRunner)
+            assert agent._interval == 5
+            assert "agent:spam_bot" in agent._ignored_sender_ids
+            assert "agent:noisy_agent" in agent._ignored_sender_ids
+
+        finally:
+            TestYAMLFileCreation.cleanup_temp_file(yaml_file)
+
+    def test_load_with_runner_config_defaults(self):
+        """Test loading agent without runner_config uses defaults."""
+        yaml_content = """
+agent_id: "default_runner_config_test"
+
+config:
+  instruction: "Test agent without runner config"
+  model_name: "gpt-4o-mini"
+  triggers: []
+"""
+
+        yaml_file = TestYAMLFileCreation.create_temp_yaml(yaml_content)
+
+        try:
+            agent, _ = load_agent_from_yaml(str(yaml_file))
+
+            assert isinstance(agent, AgentRunner)
+            assert agent._interval == 1  # Default value
+            assert len(agent._ignored_sender_ids) == 0  # Default empty set
+
+        finally:
+            TestYAMLFileCreation.cleanup_temp_file(yaml_file)
+
+    def test_load_with_runner_config_partial(self):
+        """Test loading agent with partial runner_config."""
+        yaml_content = """
+agent_id: "partial_runner_config_test"
+
+config:
+  instruction: "Test agent with partial runner config"
+  model_name: "gpt-4o-mini"
+  triggers: []
+
+runner_config:
+  ignored_sender_ids:
+    - "agent:test_agent"
+"""
+
+        yaml_file = TestYAMLFileCreation.create_temp_yaml(yaml_content)
+
+        try:
+            agent, _ = load_agent_from_yaml(str(yaml_file))
+
+            assert isinstance(agent, AgentRunner)
+            assert agent._interval == 1  # Default when not specified
+            assert "agent:test_agent" in agent._ignored_sender_ids
+
+        finally:
+            TestYAMLFileCreation.cleanup_temp_file(yaml_file)
+
 
 class TestAgentRunnerFromYAML:
     """Test the AgentRunner.from_yaml() class method."""
