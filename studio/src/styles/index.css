@@ -1,7 +1,5 @@
-/* Tailwind Core */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind CSS v4 */
+@import "tailwindcss";
 
 /** Colors - https://tailwindcss.com/docs/colors **/
 :root {
@@ -59,14 +57,48 @@
   --ring: #3b82f6;
 }
 
+/** Theme Setup for custom colors **/
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
 /** Global Styles **/
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--border);
   }
 
   *:focus-visible {
-    @apply outline-ring outline-2 outline-offset-2 outline rounded-sm;
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 0.125rem;
   }
 }
 
@@ -94,47 +126,61 @@ html {
 }
 
 /** Custom Utilities **/
-@layer utilities {
-  .container {
-    @apply mx-auto max-w-full px-4 lg:px-5;
+@utility container {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+
+  @media (min-width: 1024px) {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
   }
 
   @media (min-width: 1280px) {
-    .container {
-      @apply max-w-[1280px];
-    }
+    max-width: 1280px;
   }
+}
 
-  .container-fluid {
-    @apply w-full mx-auto px-4 lg:px-5;
-  }
+@utility container-fluid {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
 
-  /* Marquee animations */
-  @keyframes marquee {
-    from {
-      transform: translateX(0);
-    }
-    to {
-      transform: translateX(calc(-100% - var(--gap, 1rem)));
-    }
+  @media (min-width: 1024px) {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
   }
+}
 
-  @keyframes marquee-vertical {
-    from {
-      transform: translateY(0);
-    }
-    to {
-      transform: translateY(calc(-100% - var(--gap, 1rem)));
-    }
+/* Marquee animations */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
   }
+  to {
+    transform: translateX(calc(-100% - var(--gap, 1rem)));
+  }
+}
 
-  .animate-marquee {
-    animation: marquee var(--duration, 20s) infinite linear;
+@keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
   }
+  to {
+    transform: translateY(calc(-100% - var(--gap, 1rem)));
+  }
+}
 
-  .animate-marquee-vertical {
-    animation: marquee-vertical var(--duration, 20s) linear infinite;
-  }
+@utility animate-marquee {
+  animation: marquee var(--duration, 20s) infinite linear;
+}
+
+@utility animate-marquee-vertical {
+  animation: marquee-vertical var(--duration, 20s) linear infinite;
 }
 
 /* Metronic Configs */

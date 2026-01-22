@@ -1,6 +1,24 @@
 const path = require("path");
 
 module.exports = {
+  style: {
+    postcss: {
+      mode: 'extends',
+      plugins: [
+        require('@tailwindcss/postcss'),
+        require('autoprefixer'),
+      ],
+      loaderOptions: (postcssLoaderOptions) => {
+        // Override react-scripts' built-in tailwindcss plugin
+        postcssLoaderOptions.postcssOptions.plugins = [
+          require('@tailwindcss/postcss'),
+          require('postcss-flexbugs-fixes'),
+          require('autoprefixer'),
+        ];
+        return postcssLoaderOptions;
+      },
+    },
+  },
   webpack: {
     alias: {
       "@": path.resolve(__dirname, "src"),
