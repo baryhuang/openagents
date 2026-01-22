@@ -5,7 +5,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { ItemInstance } from '@headless-tree/core';
 import { ChevronDownIcon, SquareMinus, SquarePlus } from 'lucide-react';
-import { Slot as SlotPrimitive } from 'radix-ui';
+import { Slot } from '@radix-ui/react-slot';
 
 type ToggleIconType = 'chevron' | 'plus-minus';
 
@@ -75,7 +75,7 @@ function TreeItem<T = any>({ item, className, asChild, children, ...props }: Omi
     '--tree-padding': `${item.getItemMeta().level * indent}px`,
   } as React.CSSProperties;
 
-  const Comp = asChild ? SlotPrimitive.Slot : 'button';
+  const Comp = asChild ? Slot.Slot : 'button';
 
   return (
     <TreeContext.Provider value={{ ...parentContext, currentItem: item }}>

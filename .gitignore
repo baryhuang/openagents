@@ -219,3 +219,4 @@ studio/my_first_network/tools/.keep
 studio/.nvmrc
 
 **/logs/**
+*.lock

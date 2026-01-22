@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Check, Copy } from 'lucide-react';
-import { Slot as SlotPrimitive } from 'radix-ui';
+import { Slot } from '@radix-ui/react-slot';
 
 export interface CodeProps extends React.HTMLAttributes<HTMLElement>, VariantProps<typeof codeVariants> {
   asChild?: boolean;
@@ -42,7 +42,7 @@ function Code({
   ...props
 }: CodeProps) {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
-  const Comp = asChild ? SlotPrimitive.Slot : 'code';
+  const Comp = asChild ? Slot.Slot : 'code';
   const textToCopy = copyText || (typeof children === 'string' ? children : '');
 
   return (
