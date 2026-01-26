@@ -14,6 +14,8 @@ import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
 import { toast } from "sonner";
 import { eventLogService } from "./eventLogService";
+import { NETWORK_CONFIG } from "@/constants/appConfig";
+import { eventLogger } from "@/utils/logger";
 
 export interface ConnectionOptions {
   host: string;
@@ -49,7 +51,7 @@ export class HttpEventConnector {
   private pollingInterval: NodeJS.Timeout | null = null;
   private eventHandlers: Map<string, Set<EventHandler>> = new Map();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = NETWORK_CONFIG.MAX_RECONNECT_ATTEMPTS;
   private timeout: number;
   private secret: string | null = null;
   private passwordHash: string | null = null;
@@ -69,10 +71,10 @@ export class HttpEventConnector {
     const existing = HttpEventConnector.activeConnectors.get(key);
 
     if (existing && !existing.connectionAborted) {
-      console.log(`♻️ Reusing existing connector for ${options.agentId} (instance: ${existing.instanceId})`);
+      eventLogger.info(`♻️ Reusing existing connector for ${options.agentId} (instance: ${existing.instanceId})`);
       // Update credentials if they changed (e.g., after login)
       if (options.passwordHash !== existing.passwordHash) {
-        console.log(`🔑 Password hash changed, will re-authenticate on next request`);
+        eventLogger.info(`🔑 Password hash changed, will re-authenticate on next request`);
         existing.passwordHash = options.passwordHash || null;
         existing.secret = null; // Clear secret to force re-registration
       }
@@ -84,14 +86,14 @@ export class HttpEventConnector {
 
     // Clean up old connector if it exists but was aborted
     if (existing) {
-      console.log(`🧹 Cleaning up aborted connector for ${options.agentId}`);
+      eventLogger.info(`🧹 Cleaning up aborted connector for ${options.agentId}`);
       HttpEventConnector.activeConnectors.delete(key);
     }
 
     // Create new connector and register it
     const connector = new HttpEventConnector(options);
     HttpEventConnector.activeConnectors.set(key, connector);
-    console.log(`🆕 Created new connector for ${options.agentId} (instance: ${connector.instanceId})`);
+    eventLogger.info(`🆕 Created new connector for ${options.agentId} (instance: ${connector.instanceId})`);
     return connector;
   }
 
@@ -106,9 +108,9 @@ export class HttpEventConnector {
    * Clear all active connectors (useful for logout/cleanup)
    */
   static clearAllConnectors(): void {
-    console.log(`🧹 Clearing all ${HttpEventConnector.activeConnectors.size} active connectors`);
+    eventLogger.info(`🧹 Clearing all ${HttpEventConnector.activeConnectors.size} active connectors`);
     for (const [key, connector] of HttpEventConnector.activeConnectors) {
-      connector.disconnect().catch(err => console.warn(`Error disconnecting ${key}:`, err));
+      connector.disconnect().catch(err => eventLogger.warn(`Error disconnecting ${key}:`, err));
     }
     HttpEventConnector.activeConnectors.clear();
   }
@@ -137,7 +139,7 @@ export class HttpEventConnector {
   async connect(retryWithUniqueId: boolean = true): Promise<boolean> {
     try {
       if (this.isConnecting) {
-        console.log("⚠️ Connection attempt ignored - already connecting");
+        eventLogger.warn("⚠️ Connection attempt ignored - already connecting");
         return false;
       }
 
@@ -149,14 +151,14 @@ export class HttpEventConnector {
         this.pollingInterval = null;
       }
 
-      console.log(`🔌 Connecting to OpenAgents network...`);
-      console.log(`🌐 Target: ${this.baseUrl}`);
-      console.log(`👤 Agent: ${this.agentId}`);
+      eventLogger.info(`🔌 Connecting to OpenAgents network...`);
+      eventLogger.info(`🌐 Target: ${this.baseUrl}`);
+      eventLogger.info(`👤 Agent: ${this.agentId}`);
 
       // Health check
-      console.log(`📡 Sending health check to ${this.baseUrl}/api/health`);
+      eventLogger.debug(`📡 Sending health check to ${this.baseUrl}/api/health`);
       const healthResponse = await this.sendHttpRequest("/api/health", "GET");
-      console.log("📡 Health check response:", healthResponse);
+      eventLogger.debug("📡 Health check response:", healthResponse);
       if (!healthResponse.success) {
         throw new Error(
           `Health check failed: ${healthResponse.message || "Unknown error"}`
@@ -164,7 +166,7 @@ export class HttpEventConnector {
       }
 
       // Register agent
-      console.log(`📡 Sending registration to ${this.baseUrl}/api/register`);
+      eventLogger.debug(`📡 Sending registration to ${this.baseUrl}/api/register`);
       const registerResponse = await this.sendHttpRequest(
         "/api/register",
         "POST",
@@ -180,7 +182,7 @@ export class HttpEventConnector {
         }
       );
 
-      console.log("📡 Registration response:", registerResponse);
+      eventLogger.debug("📡 Registration response:", registerResponse);
       if (!registerResponse.success) {
         throw new Error(
           registerResponse.error_message || "Registration failed"
@@ -190,9 +192,9 @@ export class HttpEventConnector {
       // Store authentication secret from registration response
       if (registerResponse.secret) {
         this.secret = registerResponse.secret;
-        console.log("🔑 Authentication secret received and stored");
+        eventLogger.info("🔑 Authentication secret received and stored");
       } else {
-        console.warn("⚠️ No authentication secret received from network");
+        eventLogger.warn("⚠️ No authentication secret received from network");
       }
 
       this.connected = true;
@@ -202,19 +204,19 @@ export class HttpEventConnector {
       // Start polling for events
       this.startEventPolling();
 
-      console.log("✅ Connected to OpenAgents network successfully");
+      eventLogger.info("✅ Connected to OpenAgents network successfully");
       this.emit("connected", { agentId: this.agentId });
 
       return true;
     } catch (error: any) {
-      console.error("❌ Connection failed:", error);
+      eventLogger.error("❌ Connection failed:", error);
       this.isConnecting = false;
 
       // Handle agent ID conflicts
       if (error.message?.includes("agent_id_conflict") && retryWithUniqueId) {
-        console.log("🔄 Agent ID conflict detected, generating unique ID...");
+        eventLogger.info("🔄 Agent ID conflict detected, generating unique ID...");
         this.agentId = this.generateUniqueAgentId(this.originalAgentId);
-        console.log(`🆔 New agent ID: ${this.agentId}`);
+        eventLogger.info(`🆔 New agent ID: ${this.agentId}`);
         return this.connect(false);
       }
 
@@ -228,7 +230,7 @@ export class HttpEventConnector {
    * Disconnect from the network
    */
   async disconnect(): Promise<void> {
-    console.log(`🔌 Disconnecting from OpenAgents network... (instance: ${this.instanceId})`);
+    eventLogger.info(`🔌 Disconnecting from OpenAgents network... (instance: ${this.instanceId})`);
 
     this.connectionAborted = true;
     this.connected = false;
@@ -242,7 +244,7 @@ export class HttpEventConnector {
 
     // Remove from the static registry
     HttpEventConnector.activeConnectors.delete(this.registryKey);
-    console.log(`🗑️ Removed connector from registry (instance: ${this.instanceId})`);
+    eventLogger.info(`🗑️ Removed connector from registry (instance: ${this.instanceId})`);
 
     try {
       await this.sendHttpRequest("/api/unregister", "POST", {
@@ -251,7 +253,7 @@ export class HttpEventConnector {
       });
     } catch (error) {
       // Don't log unregister errors as errors since they often happen during cleanup
-      console.warn(
+      eventLogger.warn(
         "Failed to unregister agent (this is usually harmless):",
         error
       );
@@ -271,12 +273,12 @@ export class HttpEventConnector {
   private async reregister(): Promise<boolean> {
     // If already re-registering, return the existing promise so callers wait for the same result
     if (this.isReregistering && this.reregisterPromise) {
-      console.log("🔄 Already re-registering, waiting for existing re-registration to complete...");
+      eventLogger.debug("🔄 Already re-registering, waiting for existing re-registration to complete...");
       return this.reregisterPromise;
     }
 
     this.isReregistering = true;
-    console.log("🔄 Re-registering with network to refresh authentication secret...");
+    eventLogger.debug("🔄 Re-registering with network to refresh authentication secret...");
 
     // Create the re-registration promise
     this.reregisterPromise = this.doReregister();
@@ -315,22 +317,22 @@ export class HttpEventConnector {
       );
 
       if (!registerResponse.success) {
-        console.error("❌ Re-registration failed:", registerResponse.error_message);
+        eventLogger.error("❌ Re-registration failed:", registerResponse.error_message);
         return false;
       }
 
       // Store new authentication secret
       if (registerResponse.secret) {
         this.secret = registerResponse.secret;
-        console.log("🔑 New authentication secret received and stored");
+        eventLogger.debug("🔑 New authentication secret received and stored");
       } else {
-        console.warn("⚠️ No authentication secret received from re-registration");
+        eventLogger.warn("⚠️ No authentication secret received from re-registration");
       }
 
-      console.log("✅ Re-registration successful");
+      eventLogger.debug("✅ Re-registration successful");
       return true;
     } catch (error) {
-      console.error("❌ Re-registration error:", error);
+      eventLogger.error("❌ Re-registration error:", error);
       return false;
     }
   }
@@ -377,11 +379,11 @@ export class HttpEventConnector {
   /**
    * Wait for connection to be established with timeout
    */
-  private async waitForConnection(timeoutMs: number = 5000): Promise<boolean> {
+  private async waitForConnection(timeoutMs: number = NETWORK_CONFIG.DEFAULT_TIMEOUT): Promise<boolean> {
     if (this.connected) return true;
 
     const startTime = Date.now();
-    const checkInterval = 100; // Check every 100ms
+    const checkInterval = NETWORK_CONFIG.CONNECTION_CHECK_INTERVAL;
 
     while (Date.now() - startTime < timeoutMs) {
       if (this.connected) return true;
@@ -397,16 +399,16 @@ export class HttpEventConnector {
   async sendEvent(event: Event, isRetry: boolean = false): Promise<EventResponse> {
     // Wait for connection if not yet connected (handles race condition after login)
     if (!this.connected) {
-      console.log(`⏳ Waiting for connection before sending event: ${event.event_name}`);
+      eventLogger.debug(`⏳ Waiting for connection before sending event: ${event.event_name}`);
       const connected = await this.waitForConnection(5000);
       if (!connected) {
-        console.warn(`Agent ${this.agentId} is not connected to network after waiting`);
+        eventLogger.warn(`Agent ${this.agentId} is not connected to network after waiting`);
         return {
           success: false,
           message: "Agent is not connected to network",
         };
       }
-      console.log(`✅ Connection established, proceeding with event: ${event.event_name}`);
+      eventLogger.debug(`✅ Connection established, proceeding with event: ${event.event_name}`);
     }
 
     try {
@@ -430,7 +432,7 @@ export class HttpEventConnector {
       // Add authentication secret (use current secret, may have been refreshed)
       event.secret = this.secret || "";
 
-      console.log(
+      eventLogger.debug(
         `📤 Sending event: ${event.event_name} from ${event.source_id}`
       );
 
@@ -454,18 +456,18 @@ export class HttpEventConnector {
 
       // Handle authentication failure - try to re-register and retry once
       if (this.isAuthenticationError(eventResponse) && !isRetry) {
-        console.log("🔄 Authentication failed, attempting to re-register...");
+        eventLogger.debug("🔄 Authentication failed, attempting to re-register...");
         const reregistered = await this.reregister();
         if (reregistered) {
-          console.log("🔄 Retrying event after re-registration...");
+          eventLogger.debug("🔄 Retrying event after re-registration...");
           return this.sendEvent(event, true);
         }
       }
 
       if (eventResponse.success) {
-        console.log(`✅ Event sent successfully: ${event.event_name}`);
+        eventLogger.debug(`✅ Event sent successfully: ${event.event_name}`);
       } else {
-        console.error(
+        eventLogger.error(
           `❌ Event failed: ${event.event_name} - ${eventResponse.message}`
         );
       }
@@ -476,7 +478,7 @@ export class HttpEventConnector {
       return eventResponse;
     } catch (error: any) {
       const errorMessage = `Failed to send event ${event.event_name}: ${error.message}`;
-      console.error(errorMessage);
+      eventLogger.error(errorMessage);
 
       const errorResponse: EventResponse = {
         success: false,
@@ -627,7 +629,7 @@ export class HttpEventConnector {
       const response = await this.sendHttpRequest("/api/health", "GET");
       return response.data || {};
     } catch (error) {
-      console.error("Failed to get network health:", error);
+      eventLogger.error("Failed to get network health:", error);
       return {};
     }
   }
@@ -652,7 +654,7 @@ export class HttpEventConnector {
 
       return agents;
     } catch (error) {
-      console.error("Failed to get connected agents:", error);
+      eventLogger.error("Failed to get connected agents:", error);
       return [];
     }
   }
@@ -689,7 +691,7 @@ export class HttpEventConnector {
         try {
           handler(data);
         } catch (error) {
-          console.error(`Error in event handler for ${eventName}:`, error);
+          eventLogger.error(`Error in event handler for ${eventName}:`, error);
         }
       });
     }
@@ -707,7 +709,7 @@ export class HttpEventConnector {
       try {
         await this.pollEvents();
       } catch (error) {
-        console.error("Event polling error:", error);
+        eventLogger.error("Event polling error:", error);
         this.handleReconnect();
       }
     }, 2000); // Poll every 2 seconds
@@ -738,12 +740,12 @@ export class HttpEventConnector {
       } else {
         // Handle authentication failure - re-register to get new secret
         if (this.isAuthenticationError(response)) {
-          console.log("🔄 Polling authentication failed, attempting to re-register...");
+          eventLogger.debug("🔄 Polling authentication failed, attempting to re-register...");
           const reregistered = await this.reregister();
           if (reregistered) {
-            console.log("🔄 Re-registration successful, polling will resume with new secret");
+            eventLogger.debug("🔄 Re-registration successful, polling will resume with new secret");
           } else {
-            console.warn("⚠️ Re-registration failed during polling, will retry on next poll");
+            eventLogger.warn("⚠️ Re-registration failed during polling, will retry on next poll");
           }
           return;
         }
@@ -763,17 +765,17 @@ export class HttpEventConnector {
           useAuthStore.getState().clearAgentName();
           useAuthStore.getState().clearAgentGroup(); // Clear agent group
           useAuthStore.getState().clearPasswordHash(); // Explicitly clear password hash
-          console.log("🧹 Network state, agent group and password hash cleared");
+          eventLogger.debug("🧹 Network state, agent group and password hash cleared");
 
           // Clear chat store data
           useChatStore.getState().clearAllChatData();
-          console.log("🧹 Chat store data cleared");
+          eventLogger.debug("🧹 Chat store data cleared");
 
           // Clear all OpenAgents-related data (preserve theme settings)
           clearAllOpenAgentsDataForLogout();
 
           // Navigate to network selection page
-          console.log("🔄 Navigating to network selection");
+          eventLogger.debug("🔄 Navigating to network selection");
           // }, 1000);
         }
       }
@@ -787,7 +789,7 @@ export class HttpEventConnector {
    */
   private handleIncomingEvent(event: Event): void {
     try {
-      console.log(
+      eventLogger.debug(
         `📨 Received event: ${event.event_name} from source_id: ${event.source_id}`
       );
 
@@ -805,7 +807,7 @@ export class HttpEventConnector {
       // Emit legacy 'message' for compatibility
       this.emit("message", event);
     } catch (error) {
-      console.error("Error handling incoming event:", error);
+      eventLogger.error("Error handling incoming event:", error);
     }
   }
 
@@ -821,7 +823,7 @@ export class HttpEventConnector {
     const isPolling = endpoint.includes("/api/poll?agent_id=");
 
     if (!isPolling) {
-      console.log(`🌐 ${method} ${endpoint}`, data ? { body: data } : "");
+      eventLogger.debug(`🌐 ${method} ${endpoint}`, data ? { body: data } : "");
     }
 
     // HTTPS Feature: Pass useHttps parameter to networkFetch
@@ -847,7 +849,7 @@ export class HttpEventConnector {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ HTTP Error ${response.status}:`, errorText);
+        eventLogger.error(`❌ HTTP Error ${response.status}:`, errorText);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -857,20 +859,20 @@ export class HttpEventConnector {
       if (isPolling) {
         const hasMessages = result.messages && result.messages.length > 0;
         if (hasMessages) {
-          console.log(`🌐 ${method} ${endpoint}`);
-          console.log(
+          eventLogger.debug(`🌐 ${method} ${endpoint}`);
+          eventLogger.debug(
             `📡 Response ${response.status} for ${method} ${endpoint}`
           );
-          console.log(`📦 Response data for ${endpoint}:`, result);
+          eventLogger.debug(`📦 Response data for ${endpoint}:`, result);
         }
       } else {
-        console.log(`📡 Response ${response.status} for ${method} ${endpoint}`);
-        console.log(`📦 Response data for ${endpoint}:`, result);
+        eventLogger.debug(`📡 Response ${response.status} for ${method} ${endpoint}`);
+        eventLogger.debug(`📦 Response data for ${endpoint}:`, result);
       }
 
       return result;
     } catch (error) {
-      console.error(`❌ Request failed for ${method} ${endpoint}:`, error);
+      eventLogger.error(`❌ Request failed for ${method} ${endpoint}:`, error);
       throw error;
     }
   }
@@ -890,19 +892,19 @@ export class HttpEventConnector {
    */
   private handleReconnect(): void {
     if (this.connectionAborted) {
-      console.log("🔄 Connection was manually aborted, skipping reconnect");
+      eventLogger.debug("🔄 Connection was manually aborted, skipping reconnect");
       return;
     }
 
     if (this.isConnecting) {
-      console.log("🔄 Already attempting to reconnect, skipping");
+      eventLogger.debug("🔄 Already attempting to reconnect, skipping");
       return;
     }
 
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-      console.log(
+      eventLogger.debug(
         `🔄 Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
       );
 
@@ -918,20 +920,20 @@ export class HttpEventConnector {
         }
 
         try {
-          console.log(
+          eventLogger.debug(
             `🔄 Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
           );
           const success = await this.connect();
 
           if (success) {
-            console.log("🔄 ✅ Reconnection successful!");
+            eventLogger.debug("🔄 ✅ Reconnection successful!");
             this.emit("reconnected", { attempts: this.reconnectAttempts });
           } else {
-            console.log("🔄 ❌ Reconnection failed, will retry...");
+            eventLogger.debug("🔄 ❌ Reconnection failed, will retry...");
             this.handleReconnect();
           }
         } catch (error) {
-          console.log(
+          eventLogger.debug(
             `🔄 ❌ Reconnection attempt ${this.reconnectAttempts} failed:`,
             error
           );
@@ -939,7 +941,7 @@ export class HttpEventConnector {
         }
       }, delay);
     } else {
-      console.log(
+      eventLogger.debug(
         `🔄 Max reconnection attempts (${this.maxReconnectAttempts}) reached. Giving up.`
       );
       this.emit("connectionLost", {

@@ -1,6 +1,8 @@
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import * as awarenessProtocol from 'y-protocols/awareness';
+import { RETRY_CONFIG, NETWORK_CONFIG } from '@/constants/appConfig';
+import { collaborationLogger } from '@/utils/logger';
 
 // User information interface
 export interface CollaborationUser {
@@ -43,8 +45,8 @@ export class CollaborationService {
   private connectionStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED;
   private users: Map<string, CollaborationUser> = new Map();
   private retryCount = 0;
-  private maxRetries = 5;
-  private retryDelay = 1000;
+  private maxRetries = RETRY_CONFIG.MAX_RETRY_ATTEMPTS;
+  private retryDelay = RETRY_CONFIG.INITIAL_RETRY_DELAY;
 
   // User color pool
   private static COLORS = [
@@ -65,10 +67,10 @@ export class CollaborationService {
     this.websocketUrl = websocketUrl;
     this.userName = userName;
 
-    console.log('🔧 [CollaborationService] Initializing service...');
-    console.log('   🏠 Room:', roomName);
-    console.log('   👤 User ID:', this.userId);
-    console.log('   🌐 WebSocket:', websocketUrl);
+    collaborationLogger.debug('🔧 [CollaborationService] Initializing service...');
+    collaborationLogger.debug('   🏠 Room:', roomName);
+    collaborationLogger.debug('   👤 User ID:', this.userId);
+    collaborationLogger.debug('   🌐 WebSocket:', websocketUrl);
 
     // Create Yjs document
     this.ydoc = new Y.Doc();
@@ -81,7 +83,7 @@ export class CollaborationService {
       this.ydoc
     );
 
-    console.log('🔌 [CollaborationService] WebSocket provider created');
+    collaborationLogger.debug('🔌 [CollaborationService] WebSocket provider created');
 
     // Get awareness instance
     this.awareness = this.provider.awareness;
@@ -110,22 +112,22 @@ export class CollaborationService {
 
   // Set up event listeners
   private setupEventListeners() {
-    console.log('👂 [CollaborationService] Setting up event listeners...');
+    collaborationLogger.debug('👂 [CollaborationService] Setting up event listeners...');
 
     // Connection status listener
     this.provider.on('status', (event: { status: string }) => {
       const prevStatus = this.connectionStatus;
-      console.log(`📡 [CollaborationService] Provider status event:`, event.status);
+      collaborationLogger.debug(`📡 [CollaborationService] Provider status event:`, event.status);
 
       switch (event.status) {
         case 'connecting':
           this.connectionStatus = ConnectionStatus.CONNECTING;
-          console.log('🔄 [CollaborationService] Connecting to server...');
+          collaborationLogger.debug('🔄 [CollaborationService] Connecting to server...');
           break;
         case 'connected':
           this.connectionStatus = ConnectionStatus.CONNECTED;
           this.retryCount = 0;
-          console.log('✅ [CollaborationService] Connected to server!');
+          collaborationLogger.debug('✅ [CollaborationService] Connected to server!');
 
           // Set local user information
           const userName = this.userName || this.generateUserName();
@@ -135,43 +137,43 @@ export class CollaborationService {
             name: userName,
             color: userColor
           });
-          console.log(`👤 [CollaborationService] User registered: ${userName} (${userColor})`);
+          collaborationLogger.debug(`👤 [CollaborationService] User registered: ${userName} (${userColor})`);
           break;
         case 'disconnected':
           this.connectionStatus = ConnectionStatus.DISCONNECTED;
-          console.log('❌ [CollaborationService] Disconnected from server');
+          collaborationLogger.debug('❌ [CollaborationService] Disconnected from server');
           this.handleDisconnection();
           break;
       }
 
       if (prevStatus !== this.connectionStatus) {
-        console.log(`🔗 [CollaborationService] Connection status changed: ${prevStatus} → ${this.connectionStatus}`);
+        collaborationLogger.debug(`🔗 [CollaborationService] Connection status changed: ${prevStatus} → ${this.connectionStatus}`);
         this.onStatusChange?.(this.connectionStatus);
       }
     });
 
     // Awareness change listener
     this.awareness.on('change', () => {
-      console.log('👥 [CollaborationService] Awareness changed, updating users...');
+      collaborationLogger.debug('👥 [CollaborationService] Awareness changed, updating users...');
       this.updateUsersFromAwareness();
     });
 
     // Document change listener
     this.ytext.observe((event) => {
       const content = this.ytext.toString();
-      console.log('📝 [CollaborationService] Document content changed, length:', content.length);
+      collaborationLogger.debug('📝 [CollaborationService] Document content changed, length:', content.length);
       this.onContentChange?.(content);
     });
 
     // WebSocket error handling
     this.provider.ws?.addEventListener('error', (error) => {
-      console.error('🔴 WebSocket error:', error);
+      collaborationLogger.error('🔴 WebSocket error:', error);
       this.onError?.(new Error('WebSocket connection error'));
     });
 
     // WebSocket close handling
     this.provider.ws?.addEventListener('close', (event) => {
-      console.log('🔌 WebSocket closed:', event.code, event.reason);
+      collaborationLogger.debug('🔌 WebSocket closed:', event.code, event.reason);
       if (!event.wasClean) {
         this.handleDisconnection();
       }
@@ -213,13 +215,13 @@ export class CollaborationService {
       this.retryCount++;
       const delay = this.retryDelay * Math.pow(2, this.retryCount - 1); // Exponential backoff
 
-      console.log(`🔄 Attempting to reconnect (${this.retryCount}/${this.maxRetries}) in ${delay}ms`);
+      collaborationLogger.debug(`🔄 Attempting to reconnect (${this.retryCount}/${this.maxRetries}) in ${delay}ms`);
 
       setTimeout(() => {
         this.reconnect();
       }, delay);
     } else {
-      console.error('🔴 Max reconnection attempts reached');
+      collaborationLogger.error('🔴 Max reconnection attempts reached');
       this.onError?.(new Error('Failed to reconnect after multiple attempts'));
     }
   }
@@ -240,7 +242,7 @@ export class CollaborationService {
       );
       this.setupEventListeners();
     } catch (error) {
-      console.error('🔴 Reconnection failed:', error);
+      collaborationLogger.error('🔴 Reconnection failed:', error);
       this.handleDisconnection();
     }
   }
@@ -250,7 +252,7 @@ export class CollaborationService {
     try {
       this.awareness.setLocalStateField('cursor', { line, column });
     } catch (error) {
-      console.error('🔴 Failed to update cursor:', error);
+      collaborationLogger.error('🔴 Failed to update cursor:', error);
     }
   }
 
@@ -335,9 +337,9 @@ export class CollaborationService {
       // Destroy document
       this.ydoc.destroy();
 
-      console.log('🧹 Collaboration service destroyed');
+      collaborationLogger.debug('🧹 Collaboration service destroyed');
     } catch (error) {
-      console.error('🔴 Error destroying collaboration service:', error);
+      collaborationLogger.error('🔴 Error destroying collaboration service:', error);
     }
   }
 }
@@ -357,4 +359,4 @@ export function createCollaborationService(
 
 // Export constants
 export const DEFAULT_WEBSOCKET_URL = 'ws://localhost:1234';
-export const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+export const HEARTBEAT_INTERVAL = NETWORK_CONFIG.HEARTBEAT_INTERVAL;

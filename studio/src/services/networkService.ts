@@ -1,6 +1,7 @@
 import { ConnectionStatusEnum, NetworkConnection } from "../types/connection";
 import { networkFetch } from "../utils/httpClient";
 import { HealthResponse } from "../utils/moduleUtils";
+import { getTimeout } from "@/constants/appConfig";
 
 export interface NetworkProfile {
   name: string;
@@ -63,7 +64,7 @@ export const detectLocalNetwork =
           "/api/health",
           {
             method: "GET",
-            timeout: 3000,
+            timeout: getTimeout('short'),
             useHttps,
             // Disable cache to ensure we get fresh data
             headers: {
@@ -123,7 +124,7 @@ export const detectLocalNetwork =
             "/api/health",
             {
               method: "GET",
-              timeout: 3000,
+              timeout: getTimeout('short'),
               useHttps,
               headers: {
                 "Cache-Control": "no-cache",
@@ -168,7 +169,7 @@ export const detectLocalNetwork =
           "/api/health",
           {
             method: "GET",
-            timeout: 3000,
+            timeout: getTimeout('short'),
             // Disable cache to ensure we get fresh data
             headers: {
               "Cache-Control": "no-cache",
@@ -228,7 +229,7 @@ export const ManualNetworkConnection = async (
     // HTTPS Feature: Pass useHttps parameter to networkFetch
     const response = await networkFetch(host, port, "/api/health", {
       method: "GET",
-      timeout: 5000, // 5 second timeout
+      timeout: getTimeout('default'),
       headers: {
         Accept: "application/json",
       },
@@ -288,7 +289,7 @@ export const connectViaNetworkId = async (
       "/api/health",
       {
         method: "GET",
-        timeout: 10000, // 10 second timeout (relay might take longer)
+        timeout: getTimeout('long'),
         headers: {
           Accept: "application/json",
         },

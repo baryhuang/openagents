@@ -7,6 +7,7 @@
  */
 
 import { eventLogService } from "@/services/eventLogService";
+import { networkLogger } from "@/utils/logger";
 
 // Network bridge URL for published networks (handles direct + relay connections)
 const NETWORK_BRIDGE_URL = 'https://network.openagents.org';
@@ -41,7 +42,7 @@ export const extractHostPort = (url: string): { host: string; port?: string } =>
     const port = urlObj.port;
     return { host, port };
   } catch (error) {
-    console.error('Failed to parse URL:', url, error);
+    networkLogger.error('Failed to parse URL:', url, error);
     return { host: '', port: undefined };
   }
 };
@@ -84,17 +85,17 @@ export const httpFetch = async (
   }
   
   try {
-    console.log(`🌐 HTTP Request: ${options.method || 'GET'} ${url}`);
+    networkLogger.debug(`🌐 HTTP Request: ${options.method || 'GET'} ${url}`);
 
     const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
-      console.error(`❌ HTTP Error ${response.status}: ${response.statusText}`);
+      networkLogger.error(`❌ HTTP Error ${response.status}: ${response.statusText}`);
     }
 
     return response;
-  } catch (error: any) {
-    console.error(`❌ Request failed for ${url}:`, error);
+  } catch (error: unknown) {
+    networkLogger.error(`❌ Request failed for ${url}:`, error);
     throw error;
   }
 };
@@ -164,7 +165,7 @@ export const networkFetch = async (
   const startTime = Date.now();
   
   // Parse request body if present
-  let requestBody: any = undefined;
+  let requestBody: unknown = undefined;
   if (options.body) {
     try {
       if (typeof options.body === "string") {
@@ -176,17 +177,17 @@ export const networkFetch = async (
       requestBody = options.body;
     }
   }
-  
+
   try {
     const response = await httpFetch(url, {
       ...options,
       headers
     });
-    
+
     const duration = Date.now() - startTime;
-    
+
     // Parse response body for logging (try to read it without consuming the stream)
-    let responseBody: any = undefined;
+    let responseBody: unknown = undefined;
     try {
       const clone = response.clone();
       const contentType = clone.headers.get("content-type");
@@ -220,9 +221,9 @@ export const networkFetch = async (
     });
     
     return response;
-  } catch (error: any) {
+  } catch (error: unknown) {
     const duration = Date.now() - startTime;
-    
+
     // Log failed HTTP request
     eventLogService.logHttpRequest({
       method,
@@ -232,9 +233,9 @@ export const networkFetch = async (
       endpoint,
       requestBody,
       duration,
-      error: error.message || "Request failed",
+      error: error instanceof Error ? error.message : "Request failed",
     });
-    
+
     throw error;
   }
 };

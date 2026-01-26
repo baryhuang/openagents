@@ -7,6 +7,7 @@
 
 import { networkFetch } from './httpClient';
 import CryptoJS from 'crypto-js';
+import { logger } from './logger';
 
 /**
  * Hash a password using SHA-256 (matching backend implementation)
@@ -37,7 +38,7 @@ export async function hashPassword(password: string): Promise<string> {
     return hashHex;
   } else {
     // Fallback to crypto-js for non-secure HTTP contexts
-    console.warn('crypto.subtle not available (requires HTTPS or localhost), using crypto-js fallback');
+    logger.warn('crypto.subtle not available (requires HTTPS or localhost), using crypto-js fallback');
     const hash = CryptoJS.SHA256(password);
     return hash.toString(CryptoJS.enc.Hex);
   }
@@ -51,7 +52,7 @@ export interface GroupConfig {
   description?: string;
   password_hash?: string;
   agent_count?: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -81,7 +82,7 @@ export interface PasswordVerificationResult {
  * @example
  * const result = await verifyPasswordWithBackend("ModSecure2024!", "localhost", 8700);
  * if (result.success && result.valid) {
- *   console.log(`Matched group: ${result.groupName}`);
+ *   logger.debug(`Matched group: ${result.groupName}`);
  *   // Use result.passwordHash for registration
  * }
  */
@@ -168,7 +169,7 @@ export async function verifyPasswordWithBackend(
       };
     }
   } catch (error) {
-    console.error('Failed to verify password with backend:', error);
+    logger.error('Failed to verify password with backend:', error);
     return {
       success: false,
       valid: false,

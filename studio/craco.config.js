@@ -69,6 +69,13 @@ module.exports = {
                 chunks: "async",
                 priority: 20,
               },
+              // Separate React and React-DOM
+              react: {
+                test: /[\\/]node_modules[\\/](react|react-dom|react-router-dom)[\\/]/,
+                name: "react-vendor",
+                chunks: "all",
+                priority: 15,
+              },
               // Vendor chunk for other large libraries
               vendor: {
                 test: /[\\/]node_modules[\\/]/,
@@ -78,6 +85,17 @@ module.exports = {
               },
             },
           },
+          // Minimize bundle size
+          minimize: true,
+          // Use content hash for better caching
+          runtimeChunk: 'single',
+        };
+
+        // Optimize output filenames for better caching
+        webpackConfig.output = {
+          ...webpackConfig.output,
+          filename: 'static/js/[name].[contenthash:8].js',
+          chunkFilename: 'static/js/[name].[contenthash:8].chunk.js',
         };
       }
 
