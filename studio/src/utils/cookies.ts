@@ -1,6 +1,8 @@
 const MANUAL_CONNECTION_COOKIE_NAME = "openagents_manual_connection";
 const OPENAGENTS_AGENT_NAMES = "openagents_agent_names";
 
+import { logger } from './logger';
+
 /**
  * Cookie utility functions for storing and retrieving data
  */
@@ -138,7 +140,7 @@ export const getSavedManualConnection = (): {
       };
     }
   } catch (error) {
-    console.warn("Failed to parse saved manual connection:", error);
+    logger.warn("Failed to parse saved manual connection:", error);
   }
 
   return null;
@@ -191,7 +193,7 @@ export const saveAgentNameForNetwork = (
       expires: 365,
     });
   } catch (error) {
-    console.warn("Failed to save agent name for network:", error);
+    logger.warn("Failed to save agent name for network:", error);
   }
 };
 
@@ -215,7 +217,7 @@ export const getSavedAgentNameForNetwork = (
       return networkData.name;
     }
   } catch (error) {
-    console.warn("Failed to get saved agent name for network:", error);
+    logger.warn("Failed to get saved agent name for network:", error);
   }
 
   return null;
@@ -234,7 +236,7 @@ export const getAllSavedAgentNames = (): Record<
       return JSON.parse(agentNamesData);
     }
   } catch (error) {
-    console.warn("Failed to get all saved agent names:", error);
+    logger.warn("Failed to get all saved agent names:", error);
   }
 
   return {};
@@ -264,7 +266,7 @@ export const clearSavedAgentNameForNetwork = (
       });
     }
   } catch (error) {
-    console.warn("Failed to clear saved agent name for network:", error);
+    logger.warn("Failed to clear saved agent name for network:", error);
   }
 };
 
@@ -312,44 +314,44 @@ export const clearAllOpenAgentsData = (): void => {
     });
 
   } catch (error) {
-    console.warn("Failed to clear some localStorage data:", error);
+    logger.warn("Failed to clear some localStorage data:", error);
   }
 
-  console.log("🧹 Cleared all OpenAgents data from cookies and localStorage");
+  logger.info("🧹 Cleared all OpenAgents data from cookies and localStorage");
 };
 
 /**
  * Clear all OpenAgents data for logout (preserves theme preference, saved agent names, and network connection info)
  */
 export const clearAllOpenAgentsDataForLogout = (): void => {
-  console.log("🚪 Starting logout data cleanup...");
+  logger.info("🚪 Starting logout data cleanup...");
 
   // Keep manual connection info for easier reconnection (just like agent names)
-  console.log("🍪 Network connection data preserved for easier reconnection");
+  logger.info("🍪 Network connection data preserved for easier reconnection");
 
   // Clear all OpenAgents related localStorage except theme
   try {
     // Thread store (channels, current selection) - this is the most important
     const threadData = localStorage.getItem("openagents_thread");
-    console.log("📋 Thread data before cleanup:", threadData);
+    logger.info("📋 Thread data before cleanup:", threadData);
     localStorage.removeItem("openagents_thread");
-    console.log("📋 Thread store cleared");
+    logger.info("📋 Thread store cleared");
 
     // Chat messages store
     localStorage.removeItem("openagents_chat_messages");
-    console.log("💬 Chat messages cleared");
+    logger.info("💬 Chat messages cleared");
 
     // Conversations store
     localStorage.removeItem("openagents_conversations");
-    console.log("🗣️ Conversations cleared");
+    logger.info("🗣️ Conversations cleared");
 
     // View store
     localStorage.removeItem("openagents_view");
-    console.log("👁️ View store cleared");
+    logger.info("👁️ View store cleared");
 
     // Network store (if persisted)
     localStorage.removeItem("openagents_network");
-    console.log("🌐 Network store cleared");
+    logger.info("🌐 Network store cleared");
 
     // Clear other OpenAgents data but preserve theme
     const keys = Object.keys(localStorage);
@@ -362,14 +364,14 @@ export const clearAllOpenAgentsDataForLogout = (): void => {
     });
 
     if (clearedKeys.length > 0) {
-      console.log("🧹 Additional keys cleared:", clearedKeys);
+      logger.info("🧹 Additional keys cleared:", clearedKeys);
     }
 
-    console.log("✅ Thread data after cleanup:", localStorage.getItem("openagents_thread"));
+    logger.info("✅ Thread data after cleanup:", localStorage.getItem("openagents_thread"));
 
   } catch (error) {
-    console.warn("Failed to clear some localStorage data:", error);
+    logger.warn("Failed to clear some localStorage data:", error);
   }
 
-  console.log("🚪 Cleared OpenAgents session data (theme + agent names + network connection preserved)");
+  logger.info("🚪 Cleared OpenAgents session data (theme + agent names + network connection preserved)");
 };

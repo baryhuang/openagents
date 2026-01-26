@@ -2,6 +2,12 @@
   "name": "openagents-studio",
   "version": "1.0.7",
   "description": "OpenAgents Studio - Web interface for OpenAgents networks",
+  "license": "MIT",
+  "author": "OpenAgents Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openagents/studio"
+  },
   "proxy": "http://localhost:5000",
   "bin": {
     "openagents-studio": "./bin/cli.js"
@@ -122,10 +128,18 @@
     "start": "HOST=0.0.0.0 PORT=8050 DANGEROUSLY_DISABLE_HOST_CHECK=true craco start",
     "start:win": "cross-env HOST=0.0.0.0 PORT=8050 DANGEROUSLY_DISABLE_HOST_CHECK=true craco start",
     "build": "craco build",
+    "build:analyze": "cross-env GENERATE_SOURCEMAP=false craco build && npx source-map-explorer 'build/static/js/*.js'",
     "test": "craco test",
+    "test:coverage": "craco test --coverage --watchAll=false",
     "eject": "react-scripts eject",
     "lint": "eslint 'src/**/*.{js,jsx,ts,tsx}'",
-    "typecheck": "tsc --noEmit"
+    "lint:fix": "eslint 'src/**/*.{js,jsx,ts,tsx}' --fix",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write 'src/**/*.{js,jsx,ts,tsx,json,css,md}'",
+    "format:check": "prettier --check 'src/**/*.{js,jsx,ts,tsx,json,css,md}'",
+    "clean": "rm -rf build node_modules/.cache",
+    "deps:check": "yarn outdated",
+    "deps:update": "yarn upgrade-interactive --latest"
   },
   "eslintConfig": {
     "extends": [

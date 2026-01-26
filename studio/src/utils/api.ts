@@ -4,7 +4,7 @@
 const activeRequests = new Map<string, AbortController>();
 
 // Parse SSE event to JSON object
-const parseSSEEvent = (eventText: string): any => {
+const parseSSEEvent = (eventText: string): unknown => {
   try {
     // Try direct JSON parsing first for the backend format
     return JSON.parse(eventText);
@@ -21,10 +21,10 @@ export const sendChatMessage = async (
   options: {
     onChunk?: (chunk: string) => void,
     onComplete?: (fullMessage: string) => void,
-    onError?: (error: any) => void,
+    onError?: (error: Error) => void,
     streamOutput?: boolean
   } = {}
-): Promise<any> => {
+): Promise<unknown> => {
   const {
     onChunk,
     onComplete,
@@ -176,13 +176,13 @@ export const sendChatMessage = async (
 
       return data;
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Check if this was an abort error
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       console.log('Request aborted');
     } else {
       console.error('Error sending chat message:', error);
-      if (onError) {
+      if (onError && error instanceof Error) {
         onError(error);
       }
     }

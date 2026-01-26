@@ -5,6 +5,8 @@
  * enabling localhost networks to be accessible publicly.
  */
 
+import { NETWORK_CONFIG } from "@/constants/appConfig";
+
 export interface RelayConfig {
   relayUrl: string;
   networkId: string;
@@ -34,8 +36,8 @@ type MessageHandler = (message: any) => void;
 type StatusHandler = (status: RelayConnection['status'], error?: string) => void;
 
 const DEFAULT_RELAY_URL = 'wss://relay.openagents.org';
-const RECONNECT_DELAY = 3000;
-const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = NETWORK_CONFIG.RECONNECT_DELAY;
+const MAX_RECONNECT_ATTEMPTS = NETWORK_CONFIG.MAX_RECONNECT_ATTEMPTS;
 
 class RelayClient {
   private ws: WebSocket | null = null;
