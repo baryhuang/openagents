@@ -229,7 +229,7 @@ class AgentNetwork:
                         # Already a dictionary
                         mod_configs.append(mod_config)
 
-                mods = load_network_mods(mod_configs)
+                mods = load_network_mods(mod_configs, workspace_path=workspace_path)
 
                 for mod_name, mod_instance in mods.items():
                     mod_instance.bind_network(network)

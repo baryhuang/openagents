@@ -3,11 +3,18 @@ Simplified Mod Loading System for OpenAgents.
 
 This module provides simple, convention-based loading of mods and adapters.
 Removed complex manifest system and multiple naming fallbacks for clarity.
+
+Supports both:
+- Python module paths (e.g., "openagents.mods.workspace.messaging")
+- Local mods in network folder (e.g., "./requirement_network" loads from mods/ directory)
 """
 
 from typing import List, Optional, Dict, Any, Type
+from pathlib import Path
 import importlib
+import importlib.util
 import logging
+import sys
 from openagents.core.base_mod_adapter import BaseModAdapter
 from openagents.core.base_mod import BaseMod
 
@@ -18,15 +25,198 @@ NETWORK_MOD_CLASS_NAME = "NetworkMod"
 AGENT_ADAPTER_CLASS_NAME = "AgentAdapter"
 
 
-def load_network_mods(mod_configs: List[Dict[str, Any]]) -> Dict[str, BaseMod]:
-    """Load network-level mods with flexible naming patterns (restored compatibility).
+def _load_mod_from_file(
+    mod_path: Path,
+    mod_name: str,
+) -> Optional[BaseMod]:
+    """Load a mod from a local file path.
+
+    Args:
+        mod_path: Path to the mod directory (should contain mod.py)
+        mod_name: Name to use for the mod
+
+    Returns:
+        BaseMod class or None if loading fails
+    """
+    mod_file = mod_path / "mod.py"
+    if not mod_file.exists():
+        logger.error(f"Mod file not found: {mod_file}")
+        return None
+
+    try:
+        # Add parent directory to sys.path so the mod package can be imported
+        parent_dir = str(mod_path.parent)
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+
+        # Get the package name from the directory name
+        package_name = mod_path.name
+
+        # First, try to import as a regular package (this handles relative imports)
+        try:
+            # Import the package first (loads __init__.py)
+            package = importlib.import_module(package_name)
+            # Then import the mod submodule
+            mod_module = importlib.import_module(f"{package_name}.mod")
+            module = mod_module
+        except ImportError as e:
+            logger.debug(f"Package import failed, trying direct file load: {e}")
+            # Fallback: Load directly from file (for mods without __init__.py)
+            module_name = f"_local_mod_{mod_name.replace('.', '_').replace('/', '_')}"
+            spec = importlib.util.spec_from_file_location(module_name, mod_file)
+            if spec is None or spec.loader is None:
+                logger.error(f"Could not load module spec from {mod_file}")
+                return None
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+
+        # Find the mod class using flexible naming patterns
+        mod_class = None
+        mod_short_name = mod_path.name
+
+        class_name_candidates = [
+            NETWORK_MOD_CLASS_NAME,  # "NetworkMod"
+            f"{mod_short_name.title().replace('_', '')}NetworkMod",
+            f"{mod_short_name.title().replace('_', '')}Mod",
+            "Mod",
+        ]
+
+        for class_name in class_name_candidates:
+            if hasattr(module, class_name):
+                candidate_class = getattr(module, class_name)
+                if isinstance(candidate_class, type) and issubclass(candidate_class, BaseMod):
+                    mod_class = candidate_class
+                    logger.debug(f"Found local mod class: {class_name}")
+                    break
+
+        # If no candidate found, search for any BaseMod subclass
+        if mod_class is None:
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if isinstance(attr, type) and issubclass(attr, BaseMod) and attr != BaseMod:
+                    mod_class = attr
+                    logger.debug(f"Found local mod class by inheritance: {attr_name}")
+                    break
+
+        if mod_class is None:
+            logger.error(f"Could not find a suitable mod class in {mod_file}")
+            return None
+
+        return mod_class
+
+    except Exception as e:
+        logger.error(f"Error loading local mod from {mod_file}: {e}")
+        return None
+
+
+def _load_adapter_from_file(
+    mod_path: Path,
+    mod_name: str,
+) -> Optional[Type[BaseModAdapter]]:
+    """Load a mod adapter from a local file path.
+
+    Args:
+        mod_path: Path to the mod directory (should contain adapter.py)
+        mod_name: Name to use for the mod
+
+    Returns:
+        BaseModAdapter class or None if loading fails
+    """
+    adapter_file = mod_path / "adapter.py"
+    if not adapter_file.exists():
+        logger.warning(f"Adapter file not found: {adapter_file}")
+        return None
+
+    try:
+        # Add parent directory to sys.path so the mod package can be imported
+        parent_dir = str(mod_path.parent)
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+
+        # Get the package name from the directory name
+        package_name = mod_path.name
+
+        # First, try to import as a regular package (this handles relative imports)
+        try:
+            # Import the package first (loads __init__.py)
+            package = importlib.import_module(package_name)
+            # Then import the adapter submodule
+            adapter_module = importlib.import_module(f"{package_name}.adapter")
+            module = adapter_module
+        except ImportError as e:
+            logger.debug(f"Package import failed, trying direct file load: {e}")
+            # Fallback: Load directly from file
+            module_name = f"_local_adapter_{mod_name.replace('.', '_').replace('/', '_')}"
+            spec = importlib.util.spec_from_file_location(module_name, adapter_file)
+            if spec is None or spec.loader is None:
+                logger.error(f"Could not load module spec from {adapter_file}")
+                return None
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+
+        # Find the adapter class
+        adapter_class = None
+        mod_short_name = mod_path.name
+
+        class_name_candidates = [
+            AGENT_ADAPTER_CLASS_NAME,  # "AgentAdapter"
+            f"{mod_short_name.title().replace('_', '')}AgentClient",
+            f"{mod_short_name.title().replace('_', '')}Adapter",
+            "Adapter",
+        ]
+
+        for class_name in class_name_candidates:
+            if hasattr(module, class_name):
+                candidate_class = getattr(module, class_name)
+                if isinstance(candidate_class, type) and issubclass(candidate_class, BaseModAdapter):
+                    adapter_class = candidate_class
+                    logger.debug(f"Found local adapter class: {class_name}")
+                    break
+
+        if adapter_class is None:
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if isinstance(attr, type) and issubclass(attr, BaseModAdapter) and attr != BaseModAdapter:
+                    adapter_class = attr
+                    logger.debug(f"Found local adapter class by inheritance: {attr_name}")
+                    break
+
+        return adapter_class
+
+    except Exception as e:
+        logger.error(f"Error loading local adapter from {adapter_file}: {e}")
+        return None
+
+
+# Store workspace path for adapter loading (set when loading network mods)
+_current_workspace_path: Optional[Path] = None
+
+
+def load_network_mods(
+    mod_configs: List[Dict[str, Any]],
+    workspace_path: Optional[str] = None,
+) -> Dict[str, BaseMod]:
+    """Load network-level mods with flexible naming patterns.
+
+    Supports both Python module paths and local mods:
+    - Python module: "openagents.mods.workspace.messaging"
+    - Local mod: "./requirement_network" (loads from {workspace_path}/mods/requirement_network/)
 
     Args:
         mod_configs: List of mod configuration dictionaries with 'name' and 'enabled' keys.
+        workspace_path: Optional path to the network workspace directory for local mods.
 
     Returns:
         Dict[str, BaseMod]: Dictionary mapping mod names to mod instances
     """
+    global _current_workspace_path
+    if workspace_path:
+        _current_workspace_path = Path(workspace_path)
+
     mods = {}
 
     for mod_config in mod_configs:
@@ -38,6 +228,51 @@ def load_network_mods(mod_configs: List[Dict[str, Any]]) -> Dict[str, BaseMod]:
             logger.debug(f"Skipping disabled or unnamed mod: {mod_config}")
             continue
 
+        # Check if this is a local mod (starts with ./)
+        is_local_mod = mod_name.startswith("./")
+
+        if is_local_mod:
+            # Load from local mods directory
+            if not workspace_path:
+                logger.error(f"Cannot load local mod '{mod_name}' without workspace_path")
+                continue
+
+            # Strip "./" prefix and construct path
+            local_mod_name = mod_name[2:]  # Remove "./"
+            mod_path = Path(workspace_path) / "mods" / local_mod_name
+
+            if not mod_path.exists():
+                logger.error(f"Local mod directory not found: {mod_path}")
+                continue
+
+            logger.info(f"Loading local mod from: {mod_path}")
+            mod_class = _load_mod_from_file(mod_path, local_mod_name)
+
+            if mod_class is None:
+                continue
+
+            try:
+                # Instantiate the mod
+                mod_instance = mod_class(mod_name)
+
+                # Set config if provided
+                if config:
+                    mod_instance.update_config(config)
+
+                # Initialize the mod
+                mod_instance.initialize()
+
+                # Store the local path for adapter loading
+                mod_instance._local_mod_path = mod_path
+
+                mods[mod_name] = mod_instance
+                logger.info(f"Successfully loaded local mod: {mod_name}")
+            except Exception as e:
+                logger.error(f"Error initializing local mod {mod_name}: {e}")
+
+            continue
+
+        # Standard Python module loading
         try:
             # Import the mod module
             module_path = f"{mod_name}.mod"
@@ -109,15 +344,48 @@ def load_network_mods(mod_configs: List[Dict[str, Any]]) -> Dict[str, BaseMod]:
     return mods
 
 
-def load_mod_adapter(mod_name: str) -> Optional[BaseModAdapter]:
-    """Load a mod adapter with flexible naming patterns (restored compatibility).
+def load_mod_adapter(mod_name: str, workspace_path: Optional[str] = None) -> Optional[BaseModAdapter]:
+    """Load a mod adapter with flexible naming patterns.
+
+    Supports both Python module paths and local mods:
+    - Python module: "openagents.mods.workspace.messaging"
+    - Local mod: "./requirement_network" (loads from {workspace_path}/mods/requirement_network/)
 
     Args:
-        mod_name: Name of the mod (e.g., 'openagents.mods.communication.simple_messaging')
+        mod_name: Name of the mod (e.g., 'openagents.mods.communication.simple_messaging' or './my_mod')
+        workspace_path: Optional path to the network workspace directory for local mods.
+                       If not provided, uses the workspace path from load_network_mods().
 
     Returns:
         BaseModAdapter class or None if loading fails
     """
+    # Check if this is a local mod
+    is_local_mod = mod_name.startswith("./")
+
+    if is_local_mod:
+        # Use provided workspace_path or fall back to stored path
+        ws_path = Path(workspace_path) if workspace_path else _current_workspace_path
+
+        if not ws_path:
+            logger.error(f"Cannot load local adapter '{mod_name}' without workspace_path")
+            return None
+
+        # Strip "./" prefix and construct path
+        local_mod_name = mod_name[2:]  # Remove "./"
+        mod_path = ws_path / "mods" / local_mod_name
+
+        if not mod_path.exists():
+            logger.error(f"Local mod directory not found: {mod_path}")
+            return None
+
+        logger.info(f"Loading local adapter from: {mod_path}")
+        adapter_class = _load_adapter_from_file(mod_path, local_mod_name)
+
+        if adapter_class:
+            logger.info(f"Successfully loaded local adapter: {mod_name}")
+        return adapter_class
+
+    # Standard Python module loading
     try:
         # Import the adapter module
         module_path = f"{mod_name}.adapter"
