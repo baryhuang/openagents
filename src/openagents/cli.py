@@ -1607,11 +1607,19 @@ certs_app = typer.Typer(
     rich_markup_mode="rich"
 )
 
+# AgentID command group for agent identity management
+agentid_app = typer.Typer(
+    name="agentid",
+    help="🪪 Agent Identity verification and authentication",
+    rich_markup_mode="rich"
+)
+
 # Add subcommands to main app
 app.add_typer(network_app, name="network")
 app.add_typer(agent_app, name="agent")
 app.add_typer(agents_app, name="agents")
 app.add_typer(certs_app, name="certs")
+app.add_typer(agentid_app, name="agentid")
 
 
 # OpenAgents API constants
@@ -3297,6 +3305,397 @@ def verbose_callback(value: bool):
     global VERBOSE_MODE
     VERBOSE_MODE = value
     return value
+
+
+# ============================================================================
+# AgentID Commands
+# ============================================================================
+
+@agentid_app.command("parse")
+def agentid_parse(
+    agent_id: str = typer.Argument(..., help="Agent ID to parse (e.g., openagents:my-agent or did:openagents:my-agent@org)")
+):
+    """🔍 Parse an Agent ID format (no API call)"""
+    from openagents.agentid import parse_agent_id, AgentIDFormatError
+
+    try:
+        parsed = parse_agent_id(agent_id)
+
+        table = Table(title="📋 Parsed Agent ID", box=box.ROUNDED)
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Input", agent_id)
+        table.add_row("Agent Name", parsed.agent_name)
+        table.add_row("Organization", parsed.org or "[dim]None[/dim]")
+        table.add_row("Format", parsed.format.value)
+        table.add_row("Level 2 ID", parsed.level_2_id)
+        table.add_row("Level 3 ID", parsed.level_3_id)
+
+        console.print(table)
+
+    except AgentIDFormatError as e:
+        console.print(f"[red]❌ Invalid format: {e.message}[/red]")
+        raise typer.Exit(1)
+
+
+@agentid_app.command("verify")
+def agentid_verify(
+    agent_id: str = typer.Argument(..., help="Agent ID to verify (e.g., openagents:my-agent)")
+):
+    """✅ Verify an Agent ID exists in the registry"""
+    from openagents.agentid import AgentIDVerifier, AgentIDFormatError, AgentIDConnectionError
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task(f"🔍 Verifying {agent_id}...", total=None)
+
+            client = AgentIDVerifier()
+            result = client.validate(agent_id)
+
+        if result.verified:
+            panel_content = f"""[green]✅ Agent Verified[/green]
+
+[bold]Agent Name:[/bold] {result.agent_name}
+[bold]Organization:[/bold] {result.org or '[dim]None[/dim]'}
+[bold]Status:[/bold] {result.status or 'active'}
+
+[bold]Level 2 ID:[/bold] [cyan]{result.level_2_id}[/cyan]
+[bold]Level 3 ID:[/bold] [cyan]{result.level_3_id}[/cyan]"""
+            console.print(Panel(panel_content, title="🪪 Agent Identity", border_style="green"))
+        else:
+            console.print(Panel(
+                f"[red]❌ Agent not found[/red]\n\n{result.message}",
+                title="🪪 Agent Identity",
+                border_style="red"
+            ))
+            raise typer.Exit(1)
+
+    except AgentIDFormatError as e:
+        console.print(f"[red]❌ Invalid format: {e.message}[/red]")
+        raise typer.Exit(1)
+    except AgentIDConnectionError as e:
+        console.print(f"[red]❌ Connection error: {e.message}[/red]")
+        raise typer.Exit(1)
+
+
+@agentid_app.command("info")
+def agentid_info(
+    agent_name: str = typer.Argument(..., help="Agent name to look up"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope")
+):
+    """📋 Get detailed agent information"""
+    from openagents.agentid import AgentIDVerifier, AgentIDNotFoundError, AgentIDConnectionError
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task(f"🔍 Looking up {agent_name}...", total=None)
+
+            client = AgentIDVerifier()
+            info = client.get_agent_info(agent_name, org=org)
+
+        table = Table(title="📋 Agent Information", box=box.ROUNDED)
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Agent Name", info.agent_name)
+        table.add_row("Organization", info.org or "[dim]None[/dim]")
+        table.add_row("Status", info.status)
+        table.add_row("Algorithm", info.algorithm or "[dim]Not specified[/dim]")
+        table.add_row("Certificate Serial", info.cert_serial or "[dim]None[/dim]")
+        if info.created_at:
+            table.add_row("Created At", str(info.created_at))
+
+        console.print(table)
+
+    except AgentIDNotFoundError:
+        full_id = f"{agent_name}@{org}" if org else agent_name
+        console.print(f"[red]❌ Agent not found: {full_id}[/red]")
+        raise typer.Exit(1)
+    except AgentIDConnectionError as e:
+        console.print(f"[red]❌ Connection error: {e.message}[/red]")
+        raise typer.Exit(1)
+
+
+@agentid_app.command("resolve")
+def agentid_resolve(
+    did: str = typer.Argument(..., help="DID to resolve (e.g., did:openagents:my-agent)")
+):
+    """🔗 Resolve a DID document"""
+    from openagents.agentid import AgentIDVerifier, AgentIDNotFoundError, AgentIDConnectionError, AgentIDFormatError
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task(f"🔍 Resolving {did}...", total=None)
+
+            client = AgentIDVerifier()
+            doc = client.resolve_did(did)
+
+        # Display DID Document
+        console.print(Panel(
+            f"[bold]DID:[/bold] [cyan]{doc.id}[/cyan]",
+            title="🔗 DID Document",
+            border_style="blue"
+        ))
+
+        # Verification Methods
+        if doc.verification_method:
+            table = Table(title="🔑 Verification Methods", box=box.ROUNDED)
+            table.add_column("ID", style="cyan")
+            table.add_column("Type", style="green")
+
+            for method in doc.verification_method:
+                method_id = method.id.split("#")[-1] if "#" in method.id else method.id
+                table.add_row(method_id, method.type)
+
+            console.print(table)
+
+        # Authentication
+        if doc.authentication:
+            console.print(f"[bold]Authentication:[/bold] {', '.join(doc.authentication)}")
+
+        # Services
+        if doc.service:
+            table = Table(title="🌐 Services", box=box.ROUNDED)
+            table.add_column("Type", style="cyan")
+            table.add_column("Endpoint", style="green")
+
+            for svc in doc.service:
+                table.add_row(svc.type, svc.service_endpoint)
+
+            console.print(table)
+
+    except AgentIDFormatError as e:
+        console.print(f"[red]❌ Invalid format: {e.message}[/red]")
+        raise typer.Exit(1)
+    except AgentIDNotFoundError:
+        console.print(f"[red]❌ DID not found: {did}[/red]")
+        raise typer.Exit(1)
+    except AgentIDConnectionError as e:
+        console.print(f"[red]❌ Connection error: {e.message}[/red]")
+        raise typer.Exit(1)
+
+
+@agentid_app.command("verify-token")
+def agentid_verify_token(
+    token: str = typer.Argument(..., help="JWT token to verify")
+):
+    """🔐 Verify a JWT token"""
+    from openagents.agentid import AgentIDVerifier, AgentIDConnectionError
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task("🔍 Verifying token...", total=None)
+
+            client = AgentIDVerifier()
+            result = client.verify_token(token)
+
+        if result.valid:
+            table = Table(title="✅ Token Valid", box=box.ROUNDED)
+            table.add_column("Field", style="cyan")
+            table.add_column("Value", style="green")
+
+            table.add_row("Agent Name", result.agent_name or "[dim]Unknown[/dim]")
+            table.add_row("Organization", result.org or "[dim]None[/dim]")
+            table.add_row("Verification Level", str(result.verification_level or 2))
+            if result.expires_at:
+                table.add_row("Expires At", str(result.expires_at))
+
+            console.print(table)
+        else:
+            console.print(Panel(
+                f"[red]❌ Token Invalid[/red]\n\nReason: {result.reason or 'Unknown'}",
+                title="🔐 Token Verification",
+                border_style="red"
+            ))
+            raise typer.Exit(1)
+
+    except AgentIDConnectionError as e:
+        console.print(f"[red]❌ Connection error: {e.message}[/red]")
+        raise typer.Exit(1)
+
+
+@agentid_app.command("challenge")
+def agentid_challenge(
+    agent_name: str = typer.Argument(..., help="Agent name to request challenge for"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    algorithm: str = typer.Option("RS256", "--algorithm", "-a", help="Signing algorithm (RS256 or Ed25519)")
+):
+    """🎯 Request an authentication challenge"""
+    from openagents.agentid import AgentIDVerifier, AgentIDNotFoundError, AgentIDConnectionError
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task(f"🔍 Requesting challenge for {agent_name}...", total=None)
+
+            client = AgentIDVerifier()
+            challenge = client.request_challenge(agent_name, org=org, algorithm=algorithm)
+
+        console.print(Panel(
+            f"""[bold]Challenge requested successfully![/bold]
+
+[bold]Nonce:[/bold] [cyan]{challenge.nonce}[/cyan]
+[bold]Algorithm:[/bold] {challenge.algorithm}
+[bold]Expires In:[/bold] {challenge.expires_in} seconds
+
+[bold]Challenge (Base64):[/bold]
+[dim]{challenge.challenge}[/dim]
+
+[yellow]Sign this challenge with your private key and use the 'token' command to get a JWT.[/yellow]""",
+            title="🎯 Authentication Challenge",
+            border_style="blue"
+        ))
+
+    except AgentIDNotFoundError:
+        full_id = f"{agent_name}@{org}" if org else agent_name
+        console.print(f"[red]❌ Agent not found: {full_id}[/red]")
+        raise typer.Exit(1)
+    except AgentIDConnectionError as e:
+        console.print(f"[red]❌ Connection error: {e.message}[/red]")
+        raise typer.Exit(1)
+
+
+@agentid_app.command("token")
+def agentid_token(
+    agent_name: str = typer.Argument(..., help="Agent name"),
+    nonce: str = typer.Option(..., "--nonce", "-n", help="Challenge nonce"),
+    signature: str = typer.Option(..., "--signature", "-s", help="Base64-encoded signature"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Output only the token")
+):
+    """🎫 Exchange a signature for a JWT token"""
+    from openagents.agentid import AgentIDVerifier, AgentIDAuthenticationError, AgentIDConnectionError
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task("🔍 Exchanging signature for token...", total=None)
+
+            client = AgentIDVerifier()
+            token = client.get_token(agent_name, nonce, signature, org=org)
+
+        if quiet:
+            console.print(token.access_token)
+        else:
+            console.print(Panel(
+                f"""[green]✅ Token obtained successfully![/green]
+
+[bold]Token Type:[/bold] {token.token_type}
+[bold]Expires In:[/bold] {token.expires_in} seconds
+[bold]Verification Level:[/bold] {token.verification_level}
+
+[bold]Access Token:[/bold]
+[dim]{token.access_token[:50]}...{token.access_token[-20:]}[/dim]
+
+Use with: [cyan]Authorization: Bearer <token>[/cyan]""",
+                title="🎫 JWT Token",
+                border_style="green"
+            ))
+
+    except AgentIDAuthenticationError as e:
+        console.print(f"[red]❌ Authentication failed: {e.message}[/red]")
+        raise typer.Exit(1)
+    except AgentIDConnectionError as e:
+        console.print(f"[red]❌ Connection error: {e.message}[/red]")
+        raise typer.Exit(1)
+
+
+@agentid_app.command("auth")
+def agentid_auth(
+    agent_name: str = typer.Argument(..., help="Agent name"),
+    key: str = typer.Option(..., "--key", "-k", help="Path to private key PEM file"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    algorithm: str = typer.Option("RS256", "--algorithm", "-a", help="Signing algorithm"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Output only the token")
+):
+    """🔑 Authenticate and get a JWT token (complete flow)"""
+    from openagents.agentid import AgentIDAuth, AgentIDAuthenticationError, AgentIDConnectionError, AgentIDNotFoundError
+    from pathlib import Path
+
+    key_path = Path(key)
+    if not key_path.exists():
+        console.print(f"[red]❌ Private key file not found: {key}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task(f"🔐 Authenticating as {agent_name}...", total=None)
+
+            auth = AgentIDAuth(
+                agent_name=agent_name,
+                org=org,
+                private_key_path=key_path,
+                algorithm=algorithm
+            )
+            token = auth.get_token()
+
+        if quiet:
+            console.print(token.access_token)
+        else:
+            full_id = f"{agent_name}@{org}" if org else agent_name
+            console.print(Panel(
+                f"""[green]✅ Authentication successful![/green]
+
+[bold]Agent:[/bold] [cyan]{full_id}[/cyan]
+[bold]Token Type:[/bold] {token.token_type}
+[bold]Expires In:[/bold] {token.expires_in} seconds
+[bold]Verification Level:[/bold] {token.verification_level}
+
+[bold]Access Token:[/bold]
+[dim]{token.access_token[:50]}...{token.access_token[-20:]}[/dim]
+
+Use with: [cyan]Authorization: Bearer <token>[/cyan]""",
+                title="🔑 Authenticated",
+                border_style="green"
+            ))
+
+    except AgentIDNotFoundError:
+        full_id = f"{agent_name}@{org}" if org else agent_name
+        console.print(f"[red]❌ Agent not found: {full_id}[/red]")
+        raise typer.Exit(1)
+    except AgentIDAuthenticationError as e:
+        console.print(f"[red]❌ Authentication failed: {e.message}[/red]")
+        raise typer.Exit(1)
+    except AgentIDConnectionError as e:
+        console.print(f"[red]❌ Connection error: {e.message}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/red]")
+        raise typer.Exit(1)
 
 
 def show_banner():
