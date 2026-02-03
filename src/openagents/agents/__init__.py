@@ -17,6 +17,12 @@ from .llamaindex_agent import (
     openagents_tool_to_llamaindex,
     llamaindex_tool_to_openagents,
 )
+from .crewai_agent import (
+    CrewAIAgentRunner,
+    create_crewai_runner,
+    openagents_tool_to_crewai,
+    crewai_tool_to_openagents,
+)
 
 __all__ = [
     "AgentRunner",
@@ -32,4 +38,9 @@ __all__ = [
     "create_llamaindex_runner",
     "openagents_tool_to_llamaindex",
     "llamaindex_tool_to_openagents",
+    # CrewAI integration
+    "CrewAIAgentRunner",
+    "create_crewai_runner",
+    "openagents_tool_to_crewai",
+    "crewai_tool_to_openagents",
 ]
