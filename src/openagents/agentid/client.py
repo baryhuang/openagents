@@ -419,7 +419,14 @@ class AgentIDVerifier:
     # =========================================================================
 
     def _run_async(self, coro):
-        """Run an async coroutine synchronously."""
+        """Run an async coroutine synchronously with proper cleanup."""
+
+        async def run_with_cleanup():
+            try:
+                return await coro
+            finally:
+                await self.close()
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -430,10 +437,10 @@ class AgentIDVerifier:
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, coro)
+                future = executor.submit(asyncio.run, run_with_cleanup())
                 return future.result()
         else:
-            return asyncio.run(coro)
+            return asyncio.run(run_with_cleanup())
 
     def validate(self, agent_id: str) -> VerificationResult:
         """Validate that an agent ID exists (sync version)."""
