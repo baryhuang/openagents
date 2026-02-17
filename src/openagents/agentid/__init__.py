@@ -2,11 +2,12 @@
 OpenAgents AgentID - Cryptographic Identity for AI Agents.
 
 This module provides tools for verifying and authenticating AI agents
-using the OpenAgents AgentID system.
+using the OpenAgents AgentID system. Agent names are globally unique
+(like Twitter handles) — no organization scope required.
 
 Two identifier formats are supported:
-- Level 2: openagents:agent-name[@org] - For JWT-based authentication
-- Level 3: did:openagents:agent-name[@org] - For W3C DID verification
+- Level 2: openagents:agent-name - For JWT-based authentication
+- Level 3: did:openagents:agent-name - For W3C DID verification
 
 Quick Start:
 
@@ -22,7 +23,6 @@ Quick Start:
 
     auth = AgentIDAuth(
         agent_name="my-agent",
-        org="my-org",
         private_key_path="agent_private.pem"
     )
     token = auth.get_token()
