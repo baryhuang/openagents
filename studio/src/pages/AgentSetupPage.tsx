@@ -405,7 +405,7 @@ const AgentNamePicker: React.FC = () => {
             variant="minimal"
             align="right"
             size="sm"
-            direction="down"
+            direction="up"
           />
         </div>
 

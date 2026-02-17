@@ -138,6 +138,7 @@ const LocalNetwork: React.FC = () => {
           variant="minimal"
           align="right"
           size="lg"
+          direction="up"
         />
       </div>
       {isLoadingLocal ? (

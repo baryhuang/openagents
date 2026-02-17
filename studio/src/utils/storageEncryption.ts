@@ -7,6 +7,7 @@
  */
 
 import CryptoJS from 'crypto-js';
+import { logger } from './logger';
 
 // Secret key for encryption/decryption
 // In production, this could be made more complex or derived from other sources
@@ -29,10 +30,10 @@ export function encryptForStorage(plainText: string): string {
 
   try {
     const encrypted = CryptoJS.AES.encrypt(plainText, SECRET_KEY).toString();
-    console.log('🔒 Data encrypted for storage');
+    logger.debug('🔒 Data encrypted for storage');
     return encrypted;
   } catch (error) {
-    console.error('❌ Encryption failed:', error);
+    logger.error('❌ Encryption failed:', error);
     throw new Error('Failed to encrypt data');
   }
 }
@@ -60,10 +61,10 @@ export function decryptFromStorage(encryptedText: string): string {
       throw new Error('Decryption resulted in empty string - wrong key or corrupted data');
     }
 
-    console.log('🔓 Data decrypted from storage');
+    logger.debug('🔓 Data decrypted from storage');
     return decrypted;
   } catch (error) {
-    console.error('❌ Decryption failed:', error);
+    logger.error('❌ Decryption failed:', error);
     throw new Error('Failed to decrypt data - data may be corrupted');
   }
 }
