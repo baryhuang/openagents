@@ -2,7 +2,8 @@
 PydanticAI Agent Runner for OpenAgents.
 
 This module provides a wrapper that allows any PydanticAI agent to connect
-to and participate in the OpenAgents network.
+to and participate in the OpenAgents network. PydanticAI enables type-safe
+agent interactions with validated responses, reducing runtime errors.
 
 Example usage:
     from pydantic_ai import Agent
