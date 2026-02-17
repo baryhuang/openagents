@@ -99,10 +99,25 @@ def llamaindex_tool_to_openagents(llamaindex_tool: Any) -> AgentTool:
     """
     import asyncio
 
-    name = getattr(llamaindex_tool, 'metadata', {}).get('name', '') or \
-           getattr(llamaindex_tool, 'name', llamaindex_tool.__class__.__name__)
-    description = getattr(llamaindex_tool, 'metadata', {}).get('description', '') or \
-                  getattr(llamaindex_tool, 'description', '')
+    # Extract name and description - handle both dict and ToolMetadata objects
+    metadata = getattr(llamaindex_tool, 'metadata', None)
+    if metadata is not None:
+        if isinstance(metadata, dict):
+            name = metadata.get('name', '')
+            description = metadata.get('description', '')
+        else:
+            # ToolMetadata object - access as attributes
+            name = getattr(metadata, 'name', '') or ''
+            description = getattr(metadata, 'description', '') or ''
+    else:
+        name = ''
+        description = ''
+
+    # Fallback to direct attributes if metadata didn't provide values
+    if not name:
+        name = getattr(llamaindex_tool, 'name', llamaindex_tool.__class__.__name__)
+    if not description:
+        description = getattr(llamaindex_tool, 'description', '')
 
     # Get schema if available
     input_schema = {}
