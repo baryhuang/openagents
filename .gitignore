@@ -220,3 +220,5 @@ studio/.nvmrc
 
 **/logs/**
 *.lock
+
+docs/marketing

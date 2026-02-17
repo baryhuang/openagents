@@ -23,6 +23,7 @@ from openagents.agentid.models import (
     ChallengeResponse,
     TokenResponse,
     TokenValidationResult,
+    ClaimResponse,
     DIDDocument,
     AgentIDLevel,
 )
@@ -414,6 +415,82 @@ class AgentIDVerifier:
                 raise AgentIDConnectionError(f"Connection error: {e}")
             raise
 
+    async def claim_agent_id_async(
+        self,
+        agent_name: str,
+        public_key_pem: str,
+        org: str = None,
+        api_key: str = None,
+        namespace_type: str = "org",
+    ) -> ClaimResponse:
+        """Claim/register a new agent ID.
+
+        Args:
+            agent_name: Desired agent name
+            public_key_pem: Public key in PEM format
+            org: Organization scope (required if using org namespace)
+            api_key: API key for authentication
+            namespace_type: Namespace type ("org" or "global")
+
+        Returns:
+            ClaimResponse with the claimed agent details and certificate
+
+        Raises:
+            AgentIDConnectionError: On network errors or API failures
+            AgentIDAuthenticationError: If authentication fails
+        """
+        session = await self._get_session()
+        url = f"{self.endpoint}/v1/agent-ids/create"
+
+        payload = {
+            "agentName": agent_name,
+            "publicKeyPem": public_key_pem,
+            "namespaceType": namespace_type,
+        }
+        if org:
+            payload["org"] = org
+
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                data = await resp.json()
+
+                if resp.status == 401:
+                    raise AgentIDAuthenticationError(
+                        data.get("message", "Authentication failed")
+                    )
+
+                if resp.status == 409:
+                    raise AgentIDConnectionError(
+                        f"Agent ID already exists: {agent_name}",
+                        status_code=resp.status,
+                        response=str(data),
+                    )
+
+                if resp.status not in (200, 201):
+                    raise AgentIDConnectionError(
+                        f"API error: {data.get('message', 'Unknown error')}",
+                        status_code=resp.status,
+                        response=str(data),
+                    )
+
+                claim_data = data.get("data", data)
+                return ClaimResponse(
+                    agent_name=claim_data.get("agentName", agent_name),
+                    org=claim_data.get("org", org),
+                    cert_pem=claim_data.get("certPem"),
+                    serial=claim_data.get("serial"),
+                    status=claim_data.get("status", "active"),
+                )
+
+        except Exception as e:
+            if aiohttp and isinstance(e, aiohttp.ClientError):
+                raise AgentIDConnectionError(f"Connection error: {e}")
+            raise
+
     # =========================================================================
     # Sync API Methods (wrappers around async methods)
     # =========================================================================
@@ -479,6 +556,25 @@ class AgentIDVerifier:
         """Exchange a signature for a JWT token (sync version)."""
         return self._run_async(
             self.get_token_async(agent_name, nonce, signature, org=org)
+        )
+
+    def claim_agent_id(
+        self,
+        agent_name: str,
+        public_key_pem: str,
+        org: str = None,
+        api_key: str = None,
+        namespace_type: str = "org",
+    ) -> ClaimResponse:
+        """Claim/register a new agent ID (sync version)."""
+        return self._run_async(
+            self.claim_agent_id_async(
+                agent_name,
+                public_key_pem,
+                org=org,
+                api_key=api_key,
+                namespace_type=namespace_type,
+            )
         )
 
 

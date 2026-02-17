@@ -170,6 +170,22 @@ class DIDServiceEndpoint(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ClaimResponse(BaseModel):
+    """Response from claiming/registering an agent ID."""
+
+    agent_name: str = Field(..., alias="agentName", description="The claimed agent name")
+    org: Optional[str] = Field(None, description="Organization scope")
+    cert_pem: Optional[str] = Field(
+        None, alias="certPem", description="Issued certificate in PEM format"
+    )
+    serial: Optional[str] = Field(
+        None, description="Certificate serial number"
+    )
+    status: str = Field(default="active", description="Agent status")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class DIDDocument(BaseModel):
     """W3C DID Document for an agent."""
 

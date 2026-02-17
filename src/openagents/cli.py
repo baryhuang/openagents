@@ -3698,6 +3698,96 @@ Use with: [cyan]Authorization: Bearer <token>[/cyan]""",
         raise typer.Exit(1)
 
 
+@agentid_app.command("claim")
+def agentid_claim(
+    agent_name: str = typer.Argument(..., help="Agent name to claim"),
+    key: str = typer.Option(..., "--key", "-k", help="Path to public key PEM file"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", "-a", help="API key for authentication"),
+    save_cert: Optional[str] = typer.Option(None, "--save-cert", "-c", help="Path to save the issued certificate"),
+):
+    """📝 Claim/register a new Agent ID"""
+    from openagents.agentid import AgentIDVerifier, AgentIDAuthenticationError, AgentIDConnectionError
+    from pathlib import Path
+    import os
+
+    key_path = Path(key)
+    if not key_path.exists():
+        console.print(f"[red]❌ Public key file not found: {key}[/red]")
+        raise typer.Exit(1)
+
+    # Read public key
+    try:
+        with open(key_path, "r") as f:
+            public_key_pem = f.read()
+    except Exception as e:
+        console.print(f"[red]❌ Failed to read public key: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Try to get API key from environment if not provided
+    if not api_key:
+        api_key = os.environ.get("OPENAGENTS_API_KEY")
+
+    if not api_key:
+        console.print("[yellow]⚠️  No API key provided. Use --api-key or set OPENAGENTS_API_KEY environment variable.[/yellow]")
+        raise typer.Exit(1)
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task(f"📝 Claiming {agent_name}...", total=None)
+
+            client = AgentIDVerifier()
+            result = client.claim_agent_id(
+                agent_name=agent_name,
+                public_key_pem=public_key_pem,
+                org=org,
+                api_key=api_key,
+            )
+
+        # Save certificate if requested
+        if save_cert and result.cert_pem:
+            cert_path = Path(save_cert)
+            cert_path.write_text(result.cert_pem)
+            cert_saved_msg = f"\n[bold]Certificate saved to:[/bold] [cyan]{save_cert}[/cyan]"
+        else:
+            cert_saved_msg = ""
+
+        full_id = f"{result.agent_name}@{result.org}" if result.org else result.agent_name
+        console.print(Panel(
+            f"""[green]✅ Agent ID claimed successfully![/green]
+
+[bold]Agent Name:[/bold] {result.agent_name}
+[bold]Organization:[/bold] {result.org or '[dim]None[/dim]'}
+[bold]Status:[/bold] {result.status}
+[bold]Certificate Serial:[/bold] {result.serial or '[dim]None[/dim]'}
+
+[bold]Level 2 ID:[/bold] [cyan]openagents:{full_id}[/cyan]
+[bold]Level 3 ID:[/bold] [cyan]did:openagents:{full_id}[/cyan]{cert_saved_msg}""",
+            title="📝 Agent ID Claimed",
+            border_style="green"
+        ))
+
+    except AgentIDAuthenticationError as e:
+        console.print(f"[red]❌ Authentication failed: {e.message}[/red]")
+        console.print("[dim]Make sure your API key is valid and belongs to the specified organization.[/dim]")
+        raise typer.Exit(1)
+    except AgentIDConnectionError as e:
+        if "already exists" in str(e.message).lower():
+            console.print(f"[red]❌ Agent ID already exists: {agent_name}[/red]")
+            console.print("[dim]Choose a different agent name or check if you already own this agent.[/dim]")
+        else:
+            console.print(f"[red]❌ Error: {e.message}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
 def show_banner():
     """Show a beautiful startup banner"""
     banner_text = """
