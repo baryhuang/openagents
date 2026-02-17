@@ -87,3 +87,4 @@ class N8nAgentAdapter(BaseModAdapter):
                 func=self.interact_with_n8n_agent
             )
         ]
+
