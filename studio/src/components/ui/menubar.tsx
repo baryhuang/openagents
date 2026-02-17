@@ -58,7 +58,7 @@ function MenubarSubTrigger({
 }) {
   return (
     <MenubarPrimitive.SubTrigger
-      data-slot="menubar-sub-tirgger"
+      data-slot="menubar-sub-trigger"
       className={cn(
         'flex cursor-pointer select-none items-center rounded-md px-2 py-1.5 text-sm outline-hidden',
         'focus:bg-accent focus:text-accent-foreground',

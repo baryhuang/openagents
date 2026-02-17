@@ -26,8 +26,8 @@ from openagents.config.globals import (
     SYSTEM_EVENT_REGISTER_AGENT,
     SYSTEM_EVENT_UNREGISTER_AGENT,
     SYSTEM_EVENT_POLL_MESSAGES,
-    SYSTEM_NOTIFICAITON_REGISTER_AGENT,
-    SYSTEM_NOTIFICAITON_UNREGISTER_AGENT,
+    SYSTEM_NOTIFICATION_REGISTER_AGENT,
+    SYSTEM_NOTIFICATION_UNREGISTER_AGENT,
     WORKSPACE_DEFAULT_MOD_NAME,
 )
 from openagents.core.base_mod import BaseMod
@@ -538,7 +538,7 @@ class AgentNetwork:
 
             # Notify mods about agent registration
             registration_notification = Event(
-                event_name=SYSTEM_NOTIFICAITON_REGISTER_AGENT,
+                event_name=SYSTEM_NOTIFICATION_REGISTER_AGENT,
                 source_id=SYSTEM_AGENT_ID,
                 payload={"agent_id": agent_id, "metadata": metadata},
             )
@@ -586,7 +586,7 @@ class AgentNetwork:
             logger.info(f"Unregistered agent {agent_id} from network")
             await self.process_external_event(
                 Event(
-                    event_name=SYSTEM_NOTIFICAITON_UNREGISTER_AGENT,
+                    event_name=SYSTEM_NOTIFICATION_UNREGISTER_AGENT,
                     source_id=SYSTEM_AGENT_ID,
                     payload={"agent_id": agent_id},
                 )
