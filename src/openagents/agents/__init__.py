@@ -11,6 +11,12 @@ from .langchain_agent import (
     openagents_tool_to_langchain,
     langchain_tool_to_openagents,
 )
+from .llamaindex_agent import (
+    LlamaIndexAgentRunner,
+    create_llamaindex_runner,
+    openagents_tool_to_llamaindex,
+    llamaindex_tool_to_openagents,
+)
 
 __all__ = [
     "AgentRunner",
@@ -21,4 +27,9 @@ __all__ = [
     "create_langchain_runner",
     "openagents_tool_to_langchain",
     "langchain_tool_to_openagents",
+    # LlamaIndex integration
+    "LlamaIndexAgentRunner",
+    "create_llamaindex_runner",
+    "openagents_tool_to_llamaindex",
+    "llamaindex_tool_to_openagents",
 ]
