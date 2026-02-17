@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class N8nClient:
     """Helper client to interact with n8n API and webhooks."""
 
@@ -17,9 +18,22 @@ class N8nClient:
         """
         self.base_url = base_url or os.environ.get("N8N_BASE_URL", "http://localhost:5678")
         self.api_key = api_key or os.environ.get("N8N_API_KEY", "")
-        
+        self._session: Optional[aiohttp.ClientSession] = None
+
         if not self.api_key:
             logger.warning("N8N_API_KEY not set. Some n8n interactions may fail.")
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create the aiohttp session."""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        """Close the client session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     async def call_workflow(self, workflow_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Trigger an n8n workflow via webhook.
@@ -31,32 +45,33 @@ class N8nClient:
         Returns:
             Dict[str, Any]: The response from n8n.
         """
-        # Ensure base_url doesn't end with slash for consistent joining
         base = self.base_url.rstrip("/")
-        # n8n webhooks usually follow the pattern: BASE_URL/webhook/WORKFLOW_ID
         url = f"{base}/webhook/{workflow_id}"
 
-        headers = {
-            "Content-Type": "application/json"
-        }
+        headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["X-N8N-API-KEY"] = self.api_key
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers) as response:
-                    if response.status >= 400:
-                        error_text = await response.text()
-                        logger.error(f"n8n workflow call failed: {response.status} - {error_text}")
-                        return {"success": False, "error": error_text, "status": response.status}
-                    
-                    data = await response.json()
-                    return {"success": True, "data": data}
+            session = await self._get_session()
+            async with session.post(url, json=payload, headers=headers) as response:
+                if response.status >= 400:
+                    error_text = await response.text()
+                    logger.error(f"n8n workflow call failed: {response.status} - {error_text}")
+                    return {"success": False, "error": error_text, "status": response.status}
+
+                data = await response.json()
+                return {"success": True, "data": data}
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error calling n8n workflow {workflow_id}: {e}")
+            return {"success": False, "error": str(e)}
         except Exception as e:
             logger.exception(f"Error calling n8n workflow {workflow_id}")
             return {"success": False, "error": str(e)}
 
-    async def interact_with_agent(self, session_id: str, message: str, chat_webhook_id: Optional[str] = None) -> Dict[str, Any]:
+    async def interact_with_agent(
+        self, session_id: str, message: str, chat_webhook_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Interact with an n8n AI Agent node.
 
         Args:
@@ -67,12 +82,11 @@ class N8nClient:
         Returns:
             Dict[str, Any]: The response from the n8n agent.
         """
-        # Default webhook path for chat if not provided
         webhook_id = chat_webhook_id or "chat"
         payload = {
             "sessionId": session_id,
             "action": "sendMessage",
-            "chatInput": message
+            "chatInput": message,
         }
-        
+
         return await self.call_workflow(webhook_id, payload)

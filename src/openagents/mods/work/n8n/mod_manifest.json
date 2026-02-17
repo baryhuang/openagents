@@ -1,9 +1,0 @@
-{
-  "id": "work/n8n",
-  "name": "n8n Integration",
-  "version": "0.1.0",
-  "description": "Integration with n8n workflows and AI Agents.",
-  "category": "work",
-  "author": "OpenAgents",
-  "adapter_class": "N8nAgentAdapter"
-}

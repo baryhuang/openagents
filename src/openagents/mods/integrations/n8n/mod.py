@@ -8,9 +8,8 @@ logger = logging.getLogger(__name__)
 class N8nMod(BaseMod):
     """Network-level mod for n8n integration."""
 
-    def __init__(self, network=None, config: Optional[Dict[str, Any]] = None):
-        super().__init__("work/n8n")
-        self.network = network
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__("n8n")
         if config:
             self._config.update(config)
 

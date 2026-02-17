@@ -14,7 +14,7 @@ class N8nAgentAdapter(BaseModAdapter):
     """
 
     def __init__(self):
-        super().__init__("work/n8n")
+        super().__init__("n8n")
         self.n8n_client = None
 
     def initialize(self) -> bool:
@@ -23,6 +23,12 @@ class N8nAgentAdapter(BaseModAdapter):
         api_key = self.config.get("api_key")
         self.n8n_client = N8nClient(base_url=base_url, api_key=api_key)
         logger.info(f"N8nAgentAdapter initialized for agent {self.agent_id}")
+        return True
+
+    def shutdown(self) -> bool:
+        """Shutdown the n8n adapter."""
+        logger.info(f"Shutting down N8nAgentAdapter for agent {self.agent_id}")
+        self.n8n_client = None
         return True
 
     async def call_n8n_workflow(self, workflow_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
