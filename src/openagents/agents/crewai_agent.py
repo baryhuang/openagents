@@ -77,7 +77,6 @@ def openagents_tool_to_crewai(agent_tool: AgentTool) -> Any:
     """
     try:
         from crewai.tools import BaseTool
-        from pydantic import Field
         import asyncio
     except ImportError:
         raise ImportError(
