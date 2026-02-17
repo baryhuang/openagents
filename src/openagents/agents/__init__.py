@@ -23,6 +23,12 @@ from .crewai_agent import (
     openagents_tool_to_crewai,
     crewai_tool_to_openagents,
 )
+from .pydantic_ai_agent import (
+    PydanticAIAgentRunner,
+    create_pydantic_runner,
+    openagents_tool_to_pydantic,
+    pydantic_tool_to_openagents,
+)
 
 __all__ = [
     "AgentRunner",
@@ -43,4 +49,9 @@ __all__ = [
     "create_crewai_runner",
     "openagents_tool_to_crewai",
     "crewai_tool_to_openagents",
+    # PydanticAI integration
+    "PydanticAIAgentRunner",
+    "create_pydantic_runner",
+    "openagents_tool_to_pydantic",
+    "pydantic_tool_to_openagents",
 ]
