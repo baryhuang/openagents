@@ -3387,7 +3387,7 @@ def agentid_verify(
 @agentid_app.command("info")
 def agentid_info(
     agent_name: str = typer.Argument(..., help="Agent name to look up"),
-    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope")
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Legacy organization scope (deprecated)")
 ):
     """📋 Get detailed agent information"""
     from openagents.agentid import AgentIDVerifier, AgentIDNotFoundError, AgentIDConnectionError
@@ -3538,7 +3538,7 @@ def agentid_verify_token(
 @agentid_app.command("challenge")
 def agentid_challenge(
     agent_name: str = typer.Argument(..., help="Agent name to request challenge for"),
-    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Legacy organization scope (deprecated)"),
     algorithm: str = typer.Option("RS256", "--algorithm", "-a", help="Signing algorithm (RS256 or Ed25519)")
 ):
     """🎯 Request an authentication challenge"""
@@ -3585,7 +3585,7 @@ def agentid_token(
     agent_name: str = typer.Argument(..., help="Agent name"),
     nonce: str = typer.Option(..., "--nonce", "-n", help="Challenge nonce"),
     signature: str = typer.Option(..., "--signature", "-s", help="Base64-encoded signature"),
-    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Legacy organization scope (deprecated)"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Output only the token")
 ):
     """🎫 Exchange a signature for a JWT token"""
@@ -3633,7 +3633,7 @@ Use with: [cyan]Authorization: Bearer <token>[/cyan]""",
 def agentid_auth(
     agent_name: str = typer.Argument(..., help="Agent name"),
     key: str = typer.Option(..., "--key", "-k", help="Path to private key PEM file"),
-    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Legacy organization scope (deprecated)"),
     algorithm: str = typer.Option("RS256", "--algorithm", "-a", help="Signing algorithm"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Output only the token")
 ):
@@ -3702,7 +3702,7 @@ Use with: [cyan]Authorization: Bearer <token>[/cyan]""",
 def agentid_claim(
     agent_name: str = typer.Argument(..., help="Agent name to claim"),
     key: str = typer.Option(..., "--key", "-k", help="Path to public key PEM file"),
-    org: Optional[str] = typer.Option(None, "--org", "-o", help="Organization scope"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Legacy organization scope (deprecated)"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-a", help="API key for authentication"),
     save_cert: Optional[str] = typer.Option(None, "--save-cert", "-c", help="Path to save the issued certificate"),
 ):
@@ -3774,7 +3774,7 @@ def agentid_claim(
 
     except AgentIDAuthenticationError as e:
         console.print(f"[red]❌ Authentication failed: {e.message}[/red]")
-        console.print("[dim]Make sure your API key is valid and belongs to the specified organization.[/dim]")
+        console.print("[dim]Make sure your API key is valid.[/dim]")
         raise typer.Exit(1)
     except AgentIDConnectionError as e:
         if "already exists" in str(e.message).lower():

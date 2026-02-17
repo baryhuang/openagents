@@ -22,16 +22,16 @@ class AgentIDLevel(str, Enum):
 class AgentIDFormat(str, Enum):
     """Format type of an Agent ID string."""
 
-    SIMPLE = "simple"  # Just the name: my-agent or my-agent@org
-    LEVEL_2 = "level_2"  # openagents:my-agent or openagents:my-agent@org
-    LEVEL_3 = "level_3"  # did:openagents:my-agent or did:openagents:my-agent@org
+    SIMPLE = "simple"  # Just the name: my-agent (or legacy my-agent@org)
+    LEVEL_2 = "level_2"  # openagents:my-agent (or legacy openagents:my-agent@org)
+    LEVEL_3 = "level_3"  # did:openagents:my-agent (or legacy did:openagents:my-agent@org)
 
 
 class ParsedAgentID(BaseModel):
     """Parsed components of an Agent ID."""
 
-    agent_name: str = Field(..., description="The agent's unique name")
-    org: Optional[str] = Field(None, description="Organization scope (optional)")
+    agent_name: str = Field(..., description="The agent's globally unique name")
+    org: Optional[str] = Field(None, description="Legacy organization scope (deprecated, kept for backward compat)")
     format: AgentIDFormat = Field(..., description="The format of the original ID")
 
     @property
@@ -55,8 +55,8 @@ class ParsedAgentID(BaseModel):
 class AgentInfo(BaseModel):
     """Agent information from the registry."""
 
-    agent_name: str = Field(..., description="The agent's name")
-    org: Optional[str] = Field(None, description="Organization scope")
+    agent_name: str = Field(..., description="The agent's globally unique name")
+    org: Optional[str] = Field(None, description="Legacy organization scope (deprecated)")
     status: str = Field(..., description="Agent status (active, inactive, etc.)")
     created_at: Optional[datetime] = Field(None, description="When the agent was created")
     public_key_pem: Optional[str] = Field(
@@ -77,8 +77,8 @@ class VerificationResult(BaseModel):
 
     verified: bool = Field(..., description="Whether the agent was verified")
     level: AgentIDLevel = Field(..., description="Verification level achieved")
-    agent_name: str = Field(..., description="The agent's name")
-    org: Optional[str] = Field(None, description="Organization scope")
+    agent_name: str = Field(..., description="The agent's globally unique name")
+    org: Optional[str] = Field(None, description="Legacy organization scope (deprecated)")
     status: Optional[str] = Field(None, description="Agent status")
     message: Optional[str] = Field(None, description="Additional verification message")
 
@@ -130,7 +130,7 @@ class TokenValidationResult(BaseModel):
     agent_name: Optional[str] = Field(
         None, alias="agentName", description="Agent name from token"
     )
-    org: Optional[str] = Field(None, description="Organization from token")
+    org: Optional[str] = Field(None, description="Legacy organization from token (deprecated)")
     expires_at: Optional[datetime] = Field(
         None, alias="expiresAt", description="Token expiration time"
     )
@@ -174,7 +174,7 @@ class ClaimResponse(BaseModel):
     """Response from claiming/registering an agent ID."""
 
     agent_name: str = Field(..., alias="agentName", description="The claimed agent name")
-    org: Optional[str] = Field(None, description="Organization scope")
+    org: Optional[str] = Field(None, description="Legacy organization scope (deprecated)")
     cert_pem: Optional[str] = Field(
         None, alias="certPem", description="Issued certificate in PEM format"
     )

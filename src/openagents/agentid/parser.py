@@ -4,10 +4,13 @@ Agent ID format parsing utilities.
 This module provides functions for parsing, validating, and normalizing
 Agent ID strings in different formats (Level 2 and Level 3).
 
+Agent names are globally unique. The @org suffix is supported for
+backward compatibility with legacy agents but is not required.
+
 Supported formats:
-- Simple: my-agent, my-agent@org
-- Level 2: openagents:my-agent, openagents:my-agent@org
-- Level 3: did:openagents:my-agent, did:openagents:my-agent@org
+- Simple: my-agent (or legacy my-agent@org)
+- Level 2: openagents:my-agent (or legacy openagents:my-agent@org)
+- Level 3: did:openagents:my-agent (or legacy did:openagents:my-agent@org)
 """
 
 import re

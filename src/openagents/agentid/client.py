@@ -62,7 +62,7 @@ class AgentIDVerifier:
         result = client.validate("openagents:my-agent")
 
         # Get agent info
-        info = client.get_agent_info("my-agent", org="my-org")
+        info = client.get_agent_info("my-agent")
 
         # Resolve DID
         did_doc = client.resolve_did("did:openagents:my-agent")
@@ -166,8 +166,8 @@ class AgentIDVerifier:
         """Get agent information from the registry.
 
         Args:
-            agent_name: Agent name
-            org: Optional organization scope
+            agent_name: Agent name (globally unique)
+            org: Deprecated. Legacy organization scope, ignored for new agents.
 
         Returns:
             AgentInfo with agent details
@@ -304,8 +304,8 @@ class AgentIDVerifier:
         """Request an authentication challenge.
 
         Args:
-            agent_name: Agent name
-            org: Optional organization scope
+            agent_name: Agent name (globally unique)
+            org: Deprecated. Legacy organization scope, kept for backward compat.
             algorithm: Signing algorithm (RS256 or Ed25519)
 
         Returns:
@@ -362,10 +362,10 @@ class AgentIDVerifier:
         """Exchange a signature for a JWT token.
 
         Args:
-            agent_name: Agent name
+            agent_name: Agent name (globally unique)
             nonce: Challenge nonce
             signature: Base64-encoded signature of the challenge
-            org: Optional organization scope
+            org: Deprecated. Legacy organization scope, kept for backward compat.
 
         Returns:
             TokenResponse with JWT token
@@ -421,16 +421,19 @@ class AgentIDVerifier:
         public_key_pem: str,
         org: str = None,
         api_key: str = None,
-        namespace_type: str = "org",
+        namespace_type: str = "global",
     ) -> ClaimResponse:
         """Claim/register a new agent ID.
 
+        Agent names are globally unique (like Twitter handles). The org parameter
+        is deprecated and only kept for backward compatibility with legacy agents.
+
         Args:
-            agent_name: Desired agent name
+            agent_name: Desired agent name (must be globally unique)
             public_key_pem: Public key in PEM format
-            org: Organization scope (required if using org namespace)
+            org: Deprecated. Legacy organization scope, kept for backward compat.
             api_key: API key for authentication
-            namespace_type: Namespace type ("org" or "global")
+            namespace_type: Namespace type (default "global")
 
         Returns:
             ClaimResponse with the claimed agent details and certificate
@@ -524,7 +527,12 @@ class AgentIDVerifier:
         return self._run_async(self.validate_async(agent_id))
 
     def get_agent_info(self, agent_name: str, org: str = None) -> AgentInfo:
-        """Get agent information (sync version)."""
+        """Get agent information (sync version).
+
+        Args:
+            agent_name: Agent name (globally unique)
+            org: Deprecated. Legacy organization scope.
+        """
         return self._run_async(self.get_agent_info_async(agent_name, org=org))
 
     def resolve_did(self, did: str) -> DIDDocument:
@@ -564,7 +572,7 @@ class AgentIDVerifier:
         public_key_pem: str,
         org: str = None,
         api_key: str = None,
-        namespace_type: str = "org",
+        namespace_type: str = "global",
     ) -> ClaimResponse:
         """Claim/register a new agent ID (sync version)."""
         return self._run_async(
@@ -587,7 +595,6 @@ class AgentIDAuth:
     Usage:
         auth = AgentIDAuth(
             agent_name="my-agent",
-            org="my-org",
             private_key_path="agent_private.pem"
         )
 
@@ -610,8 +617,8 @@ class AgentIDAuth:
         """Initialize the authentication helper.
 
         Args:
-            agent_name: Agent name
-            org: Optional organization scope
+            agent_name: Agent name (globally unique)
+            org: Deprecated. Legacy organization scope, kept for backward compat.
             private_key_path: Path to private key PEM file
             private_key_pem: Private key in PEM format (alternative to path)
             algorithm: Signing algorithm (RS256 or Ed25519)
