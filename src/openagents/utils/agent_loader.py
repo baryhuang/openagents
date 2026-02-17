@@ -45,6 +45,12 @@ def load_agent_from_yaml(
       react_to_all_messages: false
       max_iterations: 10
 
+    runner_config:  # Optional - AgentRunner runtime configuration
+      interval: 1  # Interval in seconds between checking for new messages
+      ignored_sender_ids:  # List of sender IDs to ignore messages from
+        - "agent:other_agent_1"
+        - "agent:other_agent_2"
+
     mcps:  # Optional - MCP (Model Context Protocol) servers
       - name: "filesystem"
         type: "stdio"
@@ -113,6 +119,11 @@ def load_agent_from_yaml(
         config_data.get("config", {}), config_data.get("mcps", [])
     )
 
+    # Extract runner_config (AgentRunner runtime configuration)
+    runner_config = config_data.get("runner_config", {})
+    interval = runner_config.get("interval", 1)
+    ignored_sender_ids = runner_config.get("ignored_sender_ids")
+
     # Load AgentRunner class first to check if special handling is needed
     agent_class = _load_agent_class(agent_type)
 
@@ -122,7 +133,11 @@ def load_agent_from_yaml(
     # Create AgentRunner instance
     logger.info(f"Creating {agent_type} instance with ID '{agent_id}'")
     agent = agent_class(
-        agent_id=agent_id, agent_config=agent_config, mod_names=mod_names
+        agent_id=agent_id,
+        agent_config=agent_config,
+        mod_names=mod_names,
+        interval=interval,
+        ignored_sender_ids=ignored_sender_ids,
     )
 
     # Extract connection settings
