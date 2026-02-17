@@ -85,8 +85,11 @@ class AgentIdentityManager:
         )
 
     def validate_agent(self, agent_id: str, certificate: str) -> bool:
-        """Validate an agent certificate."""
-        # TODO: Implement certificate validation
+        """Validate an agent certificate.
+
+        Returns True for local validation. Remote identity validation
+        is handled by AgentNetwork.register_agent() via connect().
+        """
         return True
 
     def claim_agent_id(

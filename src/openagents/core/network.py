@@ -528,6 +528,30 @@ class AgentNetwork:
             requested_group=requested_group
         )
         if success:
+            # Remote identity registration (if enabled)
+            if (
+                getattr(self.config, 'identity_enabled', False)
+                and getattr(self.config, 'identity_api_key', None)
+                and getattr(self.config, 'identity_auto_register', True)
+            ):
+                try:
+                    from openagents.connect import connect as identity_connect
+                    identity_result = await identity_connect(
+                        name=agent_id,
+                        api_key=self.config.identity_api_key,
+                        origin=getattr(self.config, 'identity_origin', 'network'),
+                        endpoint=getattr(self.config, 'identity_endpoint', 'https://endpoint.openagents.org'),
+                    )
+                    metadata['identity'] = {
+                        'profile_url': identity_result.profile_url,
+                        'did': identity_result.did,
+                        'cert_serial': identity_result.cert_serial,
+                    }
+                    logger.info(f"Remote identity registered for {agent_id}: {identity_result.profile_url}")
+                except Exception as e:
+                    # Graceful degradation: never block local registration
+                    logger.warning(f"Remote identity registration failed for {agent_id}: {e}")
+
             # Generate and store authentication secret
             secret = self.secret_manager.generate_secret(agent_id)
 
