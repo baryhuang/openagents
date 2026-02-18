@@ -189,6 +189,10 @@ class NetworkConfig(BaseModel):
         default="network",
         description="Origin tag for agents registered via this network (e.g., 'network', 'openclaw')",
     )
+    identity_cache_ttl: int = Field(
+        default=3600,
+        description="Seconds to trust cached identity without re-verifying (default 1 hour)",
+    )
 
     # Version tracking
     created_by_version: Optional[str] = Field(

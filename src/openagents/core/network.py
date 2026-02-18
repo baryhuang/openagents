@@ -541,6 +541,7 @@ class AgentNetwork:
                         api_key=self.config.identity_api_key,
                         origin=getattr(self.config, 'identity_origin', 'network'),
                         endpoint=getattr(self.config, 'identity_endpoint', 'https://endpoint.openagents.org'),
+                        cache_ttl=getattr(self.config, 'identity_cache_ttl', 3600),
                     )
                     metadata['identity'] = {
                         'profile_url': identity_result.profile_url,

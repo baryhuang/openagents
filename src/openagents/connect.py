@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -58,8 +59,26 @@ def _load_cache(name: str) -> Optional[dict]:
     return None
 
 
+def _is_cache_fresh(cached: dict, cache_ttl: Optional[int]) -> bool:
+    """Check if cached credentials are within the TTL window."""
+    if cache_ttl is None:
+        return False
+    cached_at = cached.get("cached_at")
+    if not cached_at:
+        return False
+    try:
+        cached_time = datetime.fromisoformat(cached_at)
+        if cached_time.tzinfo is None:
+            cached_time = cached_time.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - cached_time).total_seconds()
+        return age < cache_ttl
+    except (ValueError, TypeError):
+        return False
+
+
 def _save_cache(name: str, data: dict) -> None:
     """Save credentials to local cache."""
+    data["cached_at"] = datetime.now(timezone.utc).isoformat()
     path = _cache_path(name)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, default=str))
@@ -79,6 +98,7 @@ async def connect(
     endpoint: str = DEFAULT_ENDPOINT,
     tags: Optional[list] = None,
     force_register: bool = False,
+    cache_ttl: Optional[int] = None,
 ) -> AgentIdentity:
     """
     Connect to the OpenAgents identity registry.
@@ -95,6 +115,8 @@ async def connect(
         endpoint: API endpoint URL
         tags: Optional list of topic/capability tags
         force_register: Force re-registration even if cached
+        cache_ttl: Seconds to trust cached identity without re-verifying.
+                   If set and cache is fresh, skips the verify-key API call.
 
     Returns:
         AgentIdentity with connection details
@@ -117,6 +139,21 @@ async def connect(
         cached = _load_cache(name)
         if cached:
             agent_api_key = cached["agent_api_key"]
+
+            # If cache is fresh (within TTL), skip verification
+            if _is_cache_fresh(cached, cache_ttl):
+                logger.info(f"Agent '{name}' loaded from fresh cache (TTL)")
+                return AgentIdentity(
+                    name=name,
+                    api_key=agent_api_key,
+                    profile_url=cached.get("profile_url"),
+                    did=cached.get("did"),
+                    cert_serial=cached.get("cert_serial"),
+                    origin=cached.get("origin"),
+                    created_at=cached.get("created_at"),
+                )
+
+            # Cache exists but stale — verify with server
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
@@ -129,6 +166,21 @@ async def connect(
                         result = data.get("data", data)
                         if result.get("valid"):
                             logger.info(f"Agent '{name}' verified from cache")
+                            # Refresh cached_at timestamp on successful verify
+                            _save_cache(
+                                name,
+                                {
+                                    "agent_api_key": agent_api_key,
+                                    "profile_url": cached.get("profile_url"),
+                                    "did": cached.get("did"),
+                                    "cert_serial": cached.get("cert_serial"),
+                                    "origin": cached.get("origin"),
+                                    "created_at": cached.get("created_at"),
+                                    "account_api_key_prefix": cached.get(
+                                        "account_api_key_prefix"
+                                    ),
+                                },
+                            )
                             return AgentIdentity(
                                 name=name,
                                 api_key=agent_api_key,

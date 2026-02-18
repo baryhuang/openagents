@@ -239,8 +239,9 @@ class NetworkDiscoveryConnector:
             return False
 
         try:
-            # Get the current number of connected agents
-            num_agents = len(self.network.get_connected_agents())
+            # Get the current agent registry
+            agent_registry = self.network.get_agent_registry()
+            num_agents = len(agent_registry)
 
             self._logger.debug(
                 f"Sending heartbeat for network {self.network_profile.network_id} with {num_agents} agents"
@@ -252,6 +253,7 @@ class NetworkDiscoveryConnector:
                     json={
                         "network_id": self.network_profile.network_id,
                         "num_agents": num_agents,
+                        "agents": list(agent_registry.keys()),
                         "management_token": self._management_token,
                     },
                     headers={"Content-Type": "application/json"},
