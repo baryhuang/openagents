@@ -15,6 +15,8 @@ from openagents.config.globals import (
     SYSTEM_EVENT_LIST_AGENTS,
     SYSTEM_EVENT_LIST_MODS,
     SYSTEM_EVENT_GET_MOD_MANIFEST,
+    SYSTEM_EVENT_ENABLE_MOD,
+    SYSTEM_EVENT_DISABLE_MOD,
     SYSTEM_EVENT_GET_NETWORK_INFO,
     SYSTEM_EVENT_CLAIM_AGENT_ID,
     SYSTEM_EVENT_VALIDATE_CERTIFICATE,
@@ -65,6 +67,8 @@ class SystemCommandProcessor:
             SYSTEM_EVENT_LIST_AGENTS: self.handle_list_agents,
             SYSTEM_EVENT_LIST_MODS: self.handle_list_mods,
             SYSTEM_EVENT_GET_MOD_MANIFEST: self.handle_get_mod_manifest,
+            SYSTEM_EVENT_ENABLE_MOD: self.handle_enable_mod,
+            SYSTEM_EVENT_DISABLE_MOD: self.handle_disable_mod,
             SYSTEM_EVENT_GET_NETWORK_INFO: self.handle_get_network_info,
             SYSTEM_EVENT_PING_AGENT: self.handle_heartbeat,
             SYSTEM_EVENT_CLAIM_AGENT_ID: self.handle_claim_agent_id,
@@ -357,6 +361,261 @@ class SystemCommandProcessor:
                     "mod_name": mod_name,
                 },
             )
+
+    async def handle_enable_mod(self, event: Event) -> EventResponse:
+        """Handle the enable_mod command.
+        
+        Enables a mod by updating its enabled status in the network configuration
+        and saving to the YAML config file.
+        """
+        requesting_agent_id = event.payload.get("agent_id", event.source_id)
+        mod_path = event.payload.get("mod_path")
+        
+        # Check admin access
+        if not self._check_admin_access(requesting_agent_id):
+            self.logger.warning(
+                f"Unauthorized mod enable attempt by {requesting_agent_id}"
+            )
+            return EventResponse(
+                success=False,
+                message="Access denied. Admin group required.",
+                data={
+                    "type": "system_response",
+                    "command": "enable_mod",
+                    "requesting_agent": requesting_agent_id,
+                }
+            )
+        
+        if not mod_path:
+            return EventResponse(
+                success=False,
+                message="Missing mod_path parameter",
+                data={
+                    "type": "system_response",
+                    "command": "enable_mod",
+                }
+            )
+        
+        try:
+            # Find the mod in config by matching the mod_path (last part of mod name)
+            mod_found = False
+            for mod_config in self.network.config.mods:
+                mod_name = mod_config.name
+                # Extract mod_id (last part of the module path)
+                mod_id = mod_name.split('.')[-1]
+                
+                if mod_id == mod_path or mod_name == mod_path:
+                    # Found the mod, enable it
+                    mod_config.enabled = True
+                    mod_found = True
+                    self.logger.info(f"Enabled mod: {mod_name}")
+                    break
+            
+            if not mod_found:
+                return EventResponse(
+                    success=False,
+                    message=f"Mod '{mod_path}' not found in configuration",
+                    data={
+                        "type": "system_response",
+                        "command": "enable_mod",
+                        "mod_path": mod_path,
+                    }
+                )
+            
+            # Save to YAML file
+            await self._save_mod_config_to_file()
+            
+            return EventResponse(
+                success=True,
+                message=f"Mod '{mod_path}' enabled successfully",
+                data={
+                    "type": "system_response",
+                    "command": "enable_mod",
+                    "mod_path": mod_path,
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error enabling mod {mod_path}: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return EventResponse(
+                success=False,
+                message=f"Internal error while enabling mod: {str(e)}",
+                data={
+                    "type": "system_response",
+                    "command": "enable_mod",
+                    "mod_path": mod_path,
+                }
+            )
+
+    async def handle_disable_mod(self, event: Event) -> EventResponse:
+        """Handle the disable_mod command.
+        
+        Disables a mod by updating its enabled status in the network configuration
+        and saving to the YAML config file.
+        """
+        requesting_agent_id = event.payload.get("agent_id", event.source_id)
+        mod_path = event.payload.get("mod_path")
+        
+        # Check admin access
+        if not self._check_admin_access(requesting_agent_id):
+            self.logger.warning(
+                f"Unauthorized mod disable attempt by {requesting_agent_id}"
+            )
+            return EventResponse(
+                success=False,
+                message="Access denied. Admin group required.",
+                data={
+                    "type": "system_response",
+                    "command": "disable_mod",
+                    "requesting_agent": requesting_agent_id,
+                }
+            )
+        
+        if not mod_path:
+            return EventResponse(
+                success=False,
+                message="Missing mod_path parameter",
+                data={
+                    "type": "system_response",
+                    "command": "disable_mod",
+                }
+            )
+        
+        try:
+            # Find the mod in config by matching the mod_path (last part of mod name)
+            mod_found = False
+            for mod_config in self.network.config.mods:
+                mod_name = mod_config.name
+                # Extract mod_id (last part of the module path)
+                mod_id = mod_name.split('.')[-1]
+                
+                if mod_id == mod_path or mod_name == mod_path:
+                    # Found the mod, disable it
+                    mod_config.enabled = False
+                    mod_found = True
+                    self.logger.info(f"Disabled mod: {mod_name}")
+                    break
+            
+            if not mod_found:
+                return EventResponse(
+                    success=False,
+                    message=f"Mod '{mod_path}' not found in configuration",
+                    data={
+                        "type": "system_response",
+                        "command": "disable_mod",
+                        "mod_path": mod_path,
+                    }
+                )
+            
+            # Save to YAML file
+            await self._save_mod_config_to_file()
+            
+            return EventResponse(
+                success=True,
+                message=f"Mod '{mod_path}' disabled successfully",
+                data={
+                    "type": "system_response",
+                    "command": "disable_mod",
+                    "mod_path": mod_path,
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error disabling mod {mod_path}: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return EventResponse(
+                success=False,
+                message=f"Internal error while disabling mod: {str(e)}",
+                data={
+                    "type": "system_response",
+                    "command": "disable_mod",
+                    "mod_path": mod_path,
+                }
+            )
+
+    async def _save_mod_config_to_file(self) -> None:
+        """Save mod configuration to YAML file.
+        
+        Updates the mods section in the network config file with current enabled/disabled status.
+        """
+        from pathlib import Path
+        
+        config_path = None
+        if hasattr(self.network, "config_path") and self.network.config_path:
+            config_path = Path(self.network.config_path)
+        
+        if not config_path or not config_path.exists():
+            self.logger.warning("Config file path not available, skipping file save")
+            return
+        
+        try:
+            import yaml
+            import os
+            import tempfile
+            import shutil
+            import threading
+            
+            # Use a lock for thread-safe file operations
+            lock = threading.Lock()
+            
+            with lock:
+                # Read existing config
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_data = yaml.safe_load(f) or {}
+                
+                # Update mods section
+                if "network" not in config_data:
+                    config_data["network"] = {}
+                
+                mods_list = []
+                for mod_config in self.network.config.mods:
+                    mod_dict = {
+                        "name": mod_config.name,
+                        "enabled": mod_config.enabled,
+                    }
+                    if mod_config.config:
+                        mod_dict["config"] = mod_config.config
+                    mods_list.append(mod_dict)
+                
+                config_data["network"]["mods"] = mods_list
+                
+                # Write to temporary file
+                temp_fd, temp_path = tempfile.mkstemp(
+                    suffix='.yaml',
+                    dir=config_path.parent,
+                    text=True
+                )
+                
+                try:
+                    with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                        yaml.dump(
+                            config_data,
+                            f,
+                            default_flow_style=False,
+                            allow_unicode=True,
+                            sort_keys=False
+                        )
+                        f.flush()
+                        os.fsync(f.fileno())
+                    
+                    # Atomic rename
+                    shutil.move(temp_path, config_path)
+                    self.logger.info(f"Mod configuration written to {config_path}")
+                    
+                except Exception as e:
+                    # Clean up temp file on error
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    raise
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to save mod config to file: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            # Don't raise - allow the operation to succeed even if file save fails
 
     async def handle_get_network_info(self, event: Event) -> EventResponse:
         """Handle the get_network_info command."""

@@ -439,10 +439,49 @@
       "enable": "Enable",
       "disable": "Disable",
       "remove": "Remove",
+      "settings": "Settings",
+      "noConfig": "This mod has no configuration options",
       "enableSuccess": "Mod enabled: {{modName}}",
       "disableSuccess": "Mod disabled: {{modName}}",
       "toggleFailed": "Failed to toggle mod: {{error}}"
     },
+    "settings": {
+      "title": "{{modName}} Settings",
+      "cancel": "Cancel",
+      "save": "Save Settings",
+      "saving": "Saving...",
+      "saveSuccess": "Settings saved successfully",
+      "saveFailed": "Failed to save settings",
+      "validationFailed": "Please check form errors",
+      "loadingSchema": "Loading configuration schema...",
+      "notConnected": "Not connected to network",
+      "generalSettings": "General Settings",
+      "maxMessageHistory": "Max Message History",
+      "messageRetentionDays": "Message Retention Days",
+      "enableThreadReplies": "Enable Thread Replies",
+      "fileUpload": "File Upload",
+      "maxFileSize": "Max File Size (bytes)",
+      "allowedFileTypes": "Allowed File Types",
+      "maxPagesPerAgent": "Max Pages Per Agent",
+      "maxPageContentLength": "Max Page Content Length",
+      "configJson": "Config (JSON)",
+      "noSchema": {
+        "title": "No Configuration Schema",
+        "description": "This mod has not defined a configuration schema. The schema will be defined in the mod's manifest.json file."
+      }
+    },
+    "restart": {
+      "success": "✅ Settings saved successfully!",
+      "warning": "⚠️ Network restart is required for changes to take effect.",
+      "later": "Restart Later",
+      "now": "Restart Now",
+      "restarting": "Restarting network..."
+    },
+    "descriptions": {
+      "messaging": "Thread-based messaging and channel functionality",
+      "wiki": "Collaborative Wiki with version control"
+    },
+    "searchPlaceholder": "Search modules...",
     "addMod": {
       "button": "Add Mod",
       "title": "Available Mods",

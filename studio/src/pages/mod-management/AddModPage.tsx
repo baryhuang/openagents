@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useProfileData } from '@/pages/profile/hooks/useProfileData';
-import { useAuthStore } from '@/stores/authStore';
 import { useOpenAgents } from '@/context/OpenAgentsProvider';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { Button } from '@/components/layout/ui/button';
@@ -155,7 +154,6 @@ const AVAILABLE_MODS: AvailableMod[] = [
 const AddModPage: React.FC = () => {
   const { t } = useTranslation('admin');
   const navigate = useNavigate();
-  const { agentName } = useAuthStore();
   const { connector } = useOpenAgents();
   const { healthData, refresh } = useProfileData();
   const { isAdmin, isLoading: isCheckingAdmin } = useIsAdmin();
@@ -188,14 +186,16 @@ const AddModPage: React.FC = () => {
 
   // Check if a mod is already enabled (either static or dynamic)
   const isModEnabled = useCallback((modPath: string) => {
-    // Check in static mods
+    // Check in static mods (from healthData) - use enabled field
     const isStatic = staticMods.some(m => m.name === modPath && m.enabled);
-    // Check in dynamic mods
+    
+    // Check in dynamic mods (runtime loaded)
     const isDynamic = dynamicMods.some(m => m.mod_path === modPath);
+    
     return isStatic || isDynamic;
   }, [staticMods, dynamicMods]);
 
-  // Handle loading a mod dynamically
+  // Handle loading a mod
   const handleLoadMod = useCallback(async (mod: AvailableMod) => {
     if (!connector) {
       toast.error(t('modManagement.loadMod.notConnected'));
@@ -206,30 +206,44 @@ const AddModPage: React.FC = () => {
     try {
       const response = await connector.sendEvent({
         event_name: 'system.mod.load',
-        source_id: agentName || 'system',
+        source_id: 'admin',
         destination_id: 'system:system',
         payload: {
           mod_path: mod.path,
           config: {},
         },
+        metadata: {},
+        visibility: 'network',
       });
 
       if (response.success) {
-        toast.success(t('modManagement.loadMod.loadSuccess', { modId: mod.name }));
+        toast.success(
+          t('modManagement.actions.enableSuccess', {
+            modName: mod.name,
+          })
+        );
         // Refresh data
         setTimeout(() => {
           refresh();
         }, 500);
       } else {
-        toast.error(t('modManagement.loadMod.loadFailed', { error: response.message || 'Unknown error' }));
+        toast.error(
+          t('modManagement.actions.toggleFailed', {
+            error: response.message || 'Unknown error',
+          })
+        );
       }
     } catch (error: any) {
       console.error('Failed to load Mod:', error);
-      toast.error(t('modManagement.loadMod.loadFailed', { error: error.message || 'Unknown error' }));
+      toast.error(
+        t('modManagement.actions.toggleFailed', {
+          error: error.message || 'Unknown error',
+        })
+      );
     } finally {
       setLoadingMod(null);
     }
-  }, [connector, agentName, refresh, t]);
+  }, [connector, refresh, t]);
 
   // Group available mods by category
   const modsByCategory = AVAILABLE_MODS.reduce((acc, mod) => {
@@ -303,82 +317,82 @@ const AddModPage: React.FC = () => {
 
         {/* Mods by Category */}
         <div className="space-y-8">
-          {Object.entries(modsByCategory).map(([category, mods]) => (
-            <div key={category}>
-              <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
-                {category}
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {mods.map((mod) => {
-                  const enabled = isModEnabled(mod.path);
-                  const isLoading = loadingMod === mod.id;
-                  return (
-                    <Card
-                      key={mod.id}
-                      className={`border transition-colors ${
-                        enabled
-                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                          : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'
-                      }`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2.5 rounded-lg flex-shrink-0 ${
-                            enabled
-                              ? 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400'
-                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                          }`}>
-                            {mod.icon}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-gray-900 dark:text-gray-100">
-                                {mod.name}
-                              </span>
-                              {enabled && (
-                                <Badge variant="success" appearance="light" size="sm">
-                                  <CheckCircle className="w-3 h-3 mr-1" />
-                                  {t('modManagement.addMod.enabled')}
-                                </Badge>
+            {Object.entries(modsByCategory).map(([category, mods]) => (
+              <div key={category}>
+                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+                  {category}
+                </h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {mods.map((mod) => {
+                    const enabled = isModEnabled(mod.path);
+                    const isLoading = loadingMod === mod.id;
+                    return (
+                      <Card
+                        key={mod.id}
+                        className={`border transition-colors ${
+                          enabled
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'
+                        }`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className={`p-2.5 rounded-lg flex-shrink-0 ${
+                              enabled
+                                ? 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                            }`}>
+                              {mod.icon}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-gray-900 dark:text-gray-100">
+                                  {mod.name}
+                                </span>
+                                {enabled && (
+                                  <Badge variant="success" appearance="light" size="sm">
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    {t('modManagement.addMod.enabled')}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                                {mod.description}
+                              </p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 font-mono truncate mb-3">
+                                {mod.path}
+                              </p>
+                              {!enabled && (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => handleLoadMod(mod)}
+                                  disabled={isLoading || loadingMod !== null}
+                                  className="w-full"
+                                >
+                                  {isLoading ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                      {t('modManagement.addMod.loading')}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="w-4 h-4 mr-2" />
+                                      {t('modManagement.addMod.add')}
+                                    </>
+                                  )}
+                                </Button>
                               )}
                             </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                              {mod.description}
-                            </p>
-                            <p className="text-xs text-gray-400 dark:text-gray-500 font-mono truncate mb-3">
-                              {mod.path}
-                            </p>
-                            {!enabled && (
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => handleLoadMod(mod)}
-                                disabled={isLoading || loadingMod !== null}
-                                className="w-full"
-                              >
-                                {isLoading ? (
-                                  <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    {t('modManagement.addMod.loading')}
-                                  </>
-                                ) : (
-                                  <>
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    {t('modManagement.addMod.add')}
-                                  </>
-                                )}
-                              </Button>
-                            )}
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
       </div>
     </ScrollArea>
   );
