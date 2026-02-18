@@ -1,6 +1,6 @@
 # OpenAgents Identity & Ecosystem Project
 
-**Status:** Phase 2 COMPLETE — Core Experience Shipped
+**Status:** Phase 3 COMPLETE — Reputation Infrastructure Shipped
 **Last Updated:** 2026-02-18
 **Codebases:** `~/works/openagents` (core SDK), `~/works/openagents-web` (web service + frontends)
 
@@ -11,7 +11,13 @@
 | Phase 0 | DONE | Removed org layer, globally unique agent names |
 | Phase 1 | DONE | Origin tracking, connect() API, identity bridge, profile URL fix |
 | Phase 2 | DONE | Agent listing/search, cache TTL, presence tracking, integration docs |
-| Phase 3+ | Not started | Reputation infrastructure, activity events |
+| Phase 3 | DONE | Reputation data model, reputation API, activity tracking via heartbeat |
+
+### Phase 3 Details (2026-02-18)
+
+- **4.1 Reputation Data Model:** `agent_reputation` + `agent_activity_log` tables. Score formula: volume (log-scale events) + reliability (task success rate) + longevity (uptime hours).
+- **4.2 Activity Event Persistence:** Per-agent event counters in EventGateway (messages_sent, messages_received). Agent uptimes tracked via `_connect_time` metadata. Heartbeat reports activity to backend which upserts reputation scores.
+- **4.3 Reputation API:** `GET /v1/reputation/{name}` (score + breakdown), `GET /v1/reputation/leaderboard` (ranked, paginated, sortable by metric), `GET /v1/reputation/{name}/activity` (activity history).
 
 ### Phase 2 Details (2026-02-17)
 
@@ -695,9 +701,9 @@ last_active_at      DateTime
 updated_at          DateTime
 ```
 
-**Status:** Not started
+**Status:** DONE
 **Effort:** Small-Medium
-**Files:** `backend/app/models.py`, new migration, new `backend/app/routers/reputation.py`
+**Files:** `backend/app/models.py`, `backend/migrations/add_reputation.sql`, `backend/app/routers/reputation.py`
 
 #### 4.2 Activity Event Persistence
 
@@ -711,9 +717,9 @@ updated_at          DateTime
 - Backend `AgentActivityLog` table: (agent_name, event_type, count, period_start, period_end)
 - Reputation score recalculated on activity batch receipt
 
-**Status:** Not started — depends on Workstream 1
+**Status:** DONE (per-agent counters in EventGateway, uptimes via _connect_time, heartbeat reports activity)
 **Effort:** Medium-Large
-**Files:** SDK: `core/network.py` or new `core/activity_reporter.py`. Backend: new model, new router
+**Files:** SDK: `core/event_gateway.py`, `core/network.py`, `launchers/discovery_connector.py`. Backend: `routers/networks.py`
 
 #### 4.3 Reputation API
 
@@ -735,9 +741,9 @@ GET /v1/agents/{name}/activity
   Returns: activity summary
 ```
 
-**Status:** Not started
+**Status:** DONE
 **Effort:** Medium
-**Files:** New `backend/app/routers/reputation.py`, `backend/app/schemas.py`
+**Files:** `backend/app/routers/reputation.py`
 
 ---
 
@@ -918,15 +924,18 @@ GET /v1/workspace/activity
 - [x] Implement `connect()` API (3.1)
 
 ### Phase 2 — Core Experience (P1)
-- [ ] Agent listing/search endpoints (2.3)
-- [ ] Identity cache layer (1.3)
-- [ ] Presence reporting from networks (1.4)
-- [ ] Agent presence tracking in backend (2.4)
-- [ ] Standalone `openagents-identity` package (3.2)
-- [ ] Integration documentation (3.3)
+- [x] Agent listing/search endpoints (2.3)
+- [x] Identity cache layer (1.3)
+- [x] Presence reporting from networks (1.4)
+- [x] Agent presence tracking in backend (2.4)
+- [x] Standalone `openagents-identity` package (3.2) — SKIPPED
+- [x] Integration documentation (3.3)
 
-### Phase 3 — Value Layer (P2/P3)
-- [ ] Reputation data model + API (4.1, 4.3)
-- [ ] Activity event persistence (4.2)
+### Phase 3 — Reputation Infrastructure (P2)
+- [x] Reputation data model (4.1)
+- [x] Activity event persistence (4.2)
+- [x] Reputation API + leaderboard (4.3)
+
+### Phase 4 — Workspace (P3, not started)
 - [ ] Workspace backend API (5.1)
 - [ ] Real-time event stream (5.2)

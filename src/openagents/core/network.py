@@ -495,7 +495,8 @@ class AgentNetwork:
                 message=f"Agent {agent_id} was recently kicked. Please wait {remaining:.0f} seconds before re-registering.",
             )
 
-        # Create agent info
+        # Create agent info (store connect_time for uptime tracking)
+        metadata["_connect_time"] = time.time()
         agent_info = AgentConnection(
             agent_id=agent_id,
             metadata=metadata,
@@ -632,6 +633,19 @@ class AgentNetwork:
             Dict[str, AgentInfo]: Dictionary of agent ID to agent info
         """
         return self.topology.get_agent_registry()
+
+    def get_agent_uptimes(self) -> Dict[str, float]:
+        """Get session uptime in hours for each connected agent.
+
+        Returns:
+            Dict[str, float]: Dictionary of agent ID to uptime hours
+        """
+        now = time.time()
+        result = {}
+        for agent_id, conn in self.get_agent_registry().items():
+            connect_time = conn.metadata.get("_connect_time", conn.last_seen)
+            result[agent_id] = (now - connect_time) / 3600.0
+        return result
 
     def get_agent(self, agent_id: str) -> Optional[AgentConnection]:
         """Get information about a specific agent.

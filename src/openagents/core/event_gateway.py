@@ -103,6 +103,8 @@ class EventGateway:
         self.agent_event_queues: Dict[str, asyncio.Queue] = {}
         self.system_command_processor = SystemCommandProcessor(network)
         self.mod_event_processor = ModEventProcessor(network.mods)
+        # Activity counters for reputation reporting
+        self._activity_counters: Dict[str, Dict[str, int]] = {}  # agent_id -> {event_type: count}
 
     async def process_system_command(self, event: Event) -> Optional[EventResponse]:
         """
@@ -165,6 +167,15 @@ class EventGateway:
                 event.source_agent_group = self.network.topology.agent_group_membership.get(
                     parsed_source.source_id, None
                 )
+
+        # Track activity: count messages sent by source agent
+        if event.source_id and not event.event_name.startswith("system."):
+            parsed_source = event.parse_source()
+            if parsed_source.role == NetworkRole.AGENT:
+                src = parsed_source.source_id
+                if src not in self._activity_counters:
+                    self._activity_counters[src] = {}
+                self._activity_counters[src]["messages_sent"] = self._activity_counters[src].get("messages_sent", 0) + 1
 
         # Process the event through the pipeline
         response = None
@@ -275,6 +286,11 @@ class EventGateway:
                 f"Agent {agent_id} has no active subscriptions, delivering event {event.event_name}"
             )
 
+        # Track activity: count messages received
+        if agent_id not in self._activity_counters:
+            self._activity_counters[agent_id] = {}
+        self._activity_counters[agent_id]["messages_received"] = self._activity_counters[agent_id].get("messages_received", 0) + 1
+
         # Deliver the event to the agent's queue
         await self.agent_event_queues[agent_id].put(event)
         logger.debug(f"Delivered event {event.event_name} to agent {agent_id}")
@@ -367,6 +383,17 @@ class EventGateway:
             "total_events": len(self.processed_event_ids),
             "active_subscriptions": len(self.agent_subscriptions),
         }
+
+    def get_activity_counters(self) -> Dict[str, Dict[str, int]]:
+        """
+        Get and reset per-agent activity counters.
+
+        Returns a snapshot of counters since the last call, then resets them.
+        Used by the heartbeat to report activity to the backend.
+        """
+        snapshot = self._activity_counters
+        self._activity_counters = {}
+        return snapshot
 
     def remove_agent_event_queue(self, agent_id: str):
         """

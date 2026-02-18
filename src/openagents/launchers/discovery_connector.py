@@ -243,19 +243,40 @@ class NetworkDiscoveryConnector:
             agent_registry = self.network.get_agent_registry()
             num_agents = len(agent_registry)
 
+            # Gather activity counters (returns and resets)
+            activity_counters = self.network.event_gateway.get_activity_counters()
+            agent_uptimes = self.network.get_agent_uptimes()
+
+            # Build per-agent activity summary
+            activity = {}
+            for agent_id in agent_registry:
+                counters = activity_counters.get(agent_id, {})
+                agent_activity = {
+                    "messages_sent": counters.get("messages_sent", 0),
+                    "messages_received": counters.get("messages_received", 0),
+                    "uptime_hours": round(agent_uptimes.get(agent_id, 0.0), 4),
+                }
+                # Only include agents with actual activity
+                if any(v > 0 for v in agent_activity.values()):
+                    activity[agent_id] = agent_activity
+
             self._logger.debug(
                 f"Sending heartbeat for network {self.network_profile.network_id} with {num_agents} agents"
             )
 
             async with aiohttp.ClientSession() as session:
+                payload = {
+                    "network_id": self.network_profile.network_id,
+                    "num_agents": num_agents,
+                    "agents": list(agent_registry.keys()),
+                    "management_token": self._management_token,
+                }
+                if activity:
+                    payload["activity"] = json.dumps(activity)
+
                 async with session.post(
                     f"{self.discovery_server_url}/heartbeat",
-                    json={
-                        "network_id": self.network_profile.network_id,
-                        "num_agents": num_agents,
-                        "agents": list(agent_registry.keys()),
-                        "management_token": self._management_token,
-                    },
+                    json=payload,
                     headers={"Content-Type": "application/json"},
                 ) as response:
                     if response.status == 200:
