@@ -3862,10 +3862,16 @@ def connect_claude(
                     console.print(
                         f"[green]Agent registered:[/green] {agent_name}"
                     )
+                # Save identity — use api_key from registration or keep existing
+                new_api_key = (
+                    result.get("api_key")
+                    or (result.get("data") or {}).get("api_key")
+                    or (identity.api_key if identity else None)
+                )
                 save_identity(LocalAgentIdentity(
                     agent_name=agent_name,
                     agent_type="claude",
-                    api_key=result.get("api_key", result.get("data", {}).get("api_key")),
+                    api_key=new_api_key,
                 ))
             except Exception as e:
                 console.print(f"[red]Registration failed: {e}[/red]")
