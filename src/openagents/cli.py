@@ -3912,6 +3912,293 @@ def connect_claude(
         console.print("\n[yellow]Disconnected.[/yellow]")
 
 
+@connect_app.command("openclaw")
+def connect_openclaw(
+    api_key: str = typer.Option(
+        None, "--api-key", envvar="OA_API_KEY",
+        help="OpenAgents API key (oa-xxxxx)",
+    ),
+    name: Optional[str] = typer.Option(
+        None, "--name",
+        help="Custom agent name (default: auto-generated)",
+    ),
+    workspace_name: Optional[str] = typer.Option(
+        None, "--workspace-name",
+        help="Custom workspace name",
+    ),
+    endpoint: str = typer.Option(
+        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        help="API endpoint URL",
+    ),
+    openclaw_host: str = typer.Option(
+        "127.0.0.1", "--openclaw-host",
+        help="OpenClaw Gateway host",
+    ),
+    openclaw_port: int = typer.Option(
+        18789, "--openclaw-port",
+        help="OpenClaw Gateway port",
+    ),
+    openclaw_token: Optional[str] = typer.Option(
+        None, "--openclaw-token", envvar="OPENCLAW_TOKEN",
+        help="OpenClaw Gateway auth token",
+    ),
+    openclaw_agent_id: str = typer.Option(
+        "main", "--openclaw-agent-id",
+        help="OpenClaw agent ID to use",
+    ),
+):
+    """Connect OpenClaw to an OpenAgents workspace."""
+    import asyncio
+    from openagents.workspace_client import (
+        WorkspaceClient, get_identity, save_identity,
+        generate_agent_name, LocalAgentIdentity, _load_identities,
+    )
+
+    # Resolve API key: flag > env > stored
+    if not api_key:
+        data = _load_identities()
+        api_key = data.get("api_key")
+    if not api_key:
+        console.print("[red]Error: API key required.[/red]")
+        console.print(
+            "Provide via --api-key, OA_API_KEY env var, "
+            "or run 'openagents login' first."
+        )
+        raise typer.Exit(1)
+
+    # Get or create agent identity
+    identity = get_identity("openclaw")
+    if identity and not name:
+        agent_name = identity.agent_name
+        console.print(f"Using saved identity: [cyan]{agent_name}[/cyan]")
+    else:
+        agent_name = name or generate_agent_name("openclaw")
+        console.print(f"Creating agent: [cyan]{agent_name}[/cyan]")
+
+    async def _run():
+        client = WorkspaceClient(endpoint=endpoint)
+
+        # Step 0: Check OpenClaw Gateway is reachable
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"http://{openclaw_host}:{openclaw_port}"
+                async with session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    console.print(
+                        f"[green]OpenClaw Gateway reachable[/green] "
+                        f"at {openclaw_host}:{openclaw_port}"
+                    )
+        except Exception:
+            console.print(
+                f"[red]Cannot reach OpenClaw Gateway at "
+                f"{openclaw_host}:{openclaw_port}[/red]"
+            )
+            console.print(
+                "Make sure OpenClaw is running: "
+                "[bold]openclaw gateway start[/bold]"
+            )
+            raise typer.Exit(1)
+
+        # Step 1: Register agent
+        with console.status("Registering agent..."):
+            try:
+                result = await client.register_agent(agent_name, api_key)
+                if result.get("already_exists"):
+                    console.print(
+                        f"Agent [cyan]{agent_name}[/cyan] already registered"
+                    )
+                else:
+                    console.print(
+                        f"[green]Agent registered:[/green] {agent_name}"
+                    )
+                new_api_key = (
+                    result.get("api_key")
+                    or (result.get("data") or {}).get("api_key")
+                    or (identity.api_key if identity else None)
+                )
+                save_identity(LocalAgentIdentity(
+                    agent_name=agent_name,
+                    agent_type="openclaw",
+                    api_key=new_api_key,
+                ))
+            except Exception as e:
+                console.print(f"[red]Registration failed: {e}[/red]")
+                raise typer.Exit(1)
+
+        # Step 2: Create workspace
+        with console.status("Creating workspace..."):
+            try:
+                ws = await client.create_workspace(agent_name, workspace_name)
+                console.print(f"[green]Workspace created:[/green] {ws.name}")
+                console.print(
+                    f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
+                )
+            except Exception as e:
+                console.print(f"[red]Workspace creation failed: {e}[/red]")
+                raise typer.Exit(1)
+
+        # Step 3: Start adapter
+        console.print(
+            f"\n[bold green]Agent is online![/bold green] "
+            f"Waiting for messages..."
+        )
+        console.print("[dim]Press Ctrl+C to disconnect[/dim]\n")
+
+        from openagents.adapters.openclaw import OpenClawAdapter
+        adapter = OpenClawAdapter(
+            workspace_id=ws.workspace_id,
+            session_id=ws.session_id,
+            token=ws.token,
+            agent_name=agent_name,
+            endpoint=endpoint,
+            openclaw_host=openclaw_host,
+            openclaw_port=openclaw_port,
+            openclaw_token=openclaw_token,
+            openclaw_agent_id=openclaw_agent_id,
+        )
+        await adapter.run()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Disconnected.[/yellow]")
+
+
+@connect_app.command("codex")
+def connect_codex(
+    api_key: str = typer.Option(
+        None, "--api-key", envvar="OA_API_KEY",
+        help="OpenAgents API key (oa-xxxxx)",
+    ),
+    name: Optional[str] = typer.Option(
+        None, "--name",
+        help="Custom agent name (default: auto-generated)",
+    ),
+    workspace_name: Optional[str] = typer.Option(
+        None, "--workspace-name",
+        help="Custom workspace name",
+    ),
+    endpoint: str = typer.Option(
+        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        help="API endpoint URL",
+    ),
+):
+    """Connect OpenAI Codex CLI to an OpenAgents workspace."""
+    import asyncio
+    from openagents.workspace_client import (
+        WorkspaceClient, get_identity, save_identity,
+        generate_agent_name, LocalAgentIdentity, _load_identities,
+    )
+
+    # Resolve API key: flag > env > stored
+    if not api_key:
+        data = _load_identities()
+        api_key = data.get("api_key")
+    if not api_key:
+        console.print("[red]Error: API key required.[/red]")
+        console.print(
+            "Provide via --api-key, OA_API_KEY env var, "
+            "or run 'openagents login' first."
+        )
+        raise typer.Exit(1)
+
+    # Check codex CLI is installed
+    if not shutil.which("codex"):
+        console.print(
+            "[red]Error: codex CLI not found.[/red]"
+        )
+        console.print(
+            "Install with: [bold]npm install -g @openai/codex[/bold]"
+        )
+        raise typer.Exit(1)
+
+    # Check Codex auth (CODEX_API_KEY or OPENAI_API_KEY)
+    if not (os.environ.get("CODEX_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")):
+        console.print(
+            "[yellow]Warning: No CODEX_API_KEY or OPENAI_API_KEY "
+            "env var found.[/yellow]"
+        )
+        console.print(
+            "Codex needs one of these for API access, or use "
+            "'codex login' for ChatGPT auth."
+        )
+
+    # Get or create agent identity
+    identity = get_identity("codex")
+    if identity and not name:
+        agent_name = identity.agent_name
+        console.print(f"Using saved identity: [cyan]{agent_name}[/cyan]")
+    else:
+        agent_name = name or generate_agent_name("codex")
+        console.print(f"Creating agent: [cyan]{agent_name}[/cyan]")
+
+    async def _run():
+        client = WorkspaceClient(endpoint=endpoint)
+
+        # Step 1: Register agent
+        with console.status("Registering agent..."):
+            try:
+                result = await client.register_agent(agent_name, api_key)
+                if result.get("already_exists"):
+                    console.print(
+                        f"Agent [cyan]{agent_name}[/cyan] already registered"
+                    )
+                else:
+                    console.print(
+                        f"[green]Agent registered:[/green] {agent_name}"
+                    )
+                new_api_key = (
+                    result.get("api_key")
+                    or (result.get("data") or {}).get("api_key")
+                    or (identity.api_key if identity else None)
+                )
+                save_identity(LocalAgentIdentity(
+                    agent_name=agent_name,
+                    agent_type="codex",
+                    api_key=new_api_key,
+                ))
+            except Exception as e:
+                console.print(f"[red]Registration failed: {e}[/red]")
+                raise typer.Exit(1)
+
+        # Step 2: Create workspace
+        with console.status("Creating workspace..."):
+            try:
+                ws = await client.create_workspace(agent_name, workspace_name)
+                console.print(f"[green]Workspace created:[/green] {ws.name}")
+                console.print(
+                    f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
+                )
+            except Exception as e:
+                console.print(f"[red]Workspace creation failed: {e}[/red]")
+                raise typer.Exit(1)
+
+        # Step 3: Start adapter
+        console.print(
+            f"\n[bold green]Agent is online![/bold green] "
+            f"Waiting for messages..."
+        )
+        console.print("[dim]Press Ctrl+C to disconnect[/dim]\n")
+
+        from openagents.adapters.codex import CodexAdapter
+        adapter = CodexAdapter(
+            workspace_id=ws.workspace_id,
+            session_id=ws.session_id,
+            token=ws.token,
+            agent_name=agent_name,
+            endpoint=endpoint,
+        )
+        await adapter.run()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Disconnected.[/yellow]")
+
+
 @app.command(name="login")
 def login_cmd(
     api_key: str = typer.Option(
