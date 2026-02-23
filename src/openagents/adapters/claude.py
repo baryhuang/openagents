@@ -9,6 +9,7 @@ Bridges Claude Code to an OpenAgents workspace via:
 
 import asyncio
 import logging
+import os
 import sys
 from typing import Optional
 
@@ -36,6 +37,8 @@ class ClaudeAdapter:
         self.client = WorkspaceClient(endpoint=endpoint)
         self.last_seen_id: Optional[str] = None
         self._running = False
+        self._processed_ids: set = set()
+        self._rate_limit_backoff: float = 0
 
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
@@ -83,7 +86,7 @@ class ClaudeAdapter:
                 await asyncio.sleep(5)
                 continue
 
-            # Filter: only process messages from others, skip status messages
+            # Filter: only process messages from others, skip status/processed
             incoming = []
             for msg in messages:
                 msg_id = msg.get("id") or msg.get("messageId")
@@ -93,11 +96,21 @@ class ClaudeAdapter:
                     continue
                 if msg.get("messageType") == "status":
                     continue
+                if msg_id and msg_id in self._processed_ids:
+                    continue
                 incoming.append(msg)
 
             if incoming:
                 idle_count = 0
+                # Rate limit backoff
+                if self._rate_limit_backoff > 0:
+                    logger.info(f"Rate limit backoff: waiting {self._rate_limit_backoff}s")
+                    await asyncio.sleep(self._rate_limit_backoff)
+                    self._rate_limit_backoff = 0
                 for msg in incoming:
+                    msg_id = msg.get("id") or msg.get("messageId")
+                    if msg_id:
+                        self._processed_ids.add(msg_id)
                     await self._handle_message(msg)
                 # Sync cursor to skip messages posted during execution
                 await self._sync_cursor()
@@ -156,6 +169,7 @@ class ClaudeAdapter:
                 ToolUseBlock,
                 ResultMessage,
             )
+            from claude_agent_sdk._errors import MessageParseError
         except ImportError:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
@@ -171,6 +185,12 @@ class ClaudeAdapter:
             return
 
         try:
+            # Build a clean env without CLAUDECODE to allow nested sessions
+            clean_env = {
+                k: v for k, v in os.environ.items()
+                if k not in ("CLAUDECODE", "CLAUDE_CODE_SESSION")
+            }
+
             options = ClaudeAgentOptions(
                 system_prompt={
                     "type": "preset",
@@ -186,6 +206,7 @@ class ClaudeAdapter:
                         f"Use workspace_get_agents to see other agents.\n"
                     ),
                 },
+                env=clean_env,
                 mcp_servers={
                     "openagents-workspace": {
                         "type": "stdio",
@@ -223,17 +244,40 @@ class ClaudeAdapter:
             used_send_tool = False
             response_text = []
 
-            async for message in query(prompt=content, options=options):
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text.append(block.text)
-                        elif isinstance(block, ToolUseBlock):
-                            if "workspace_send_message" in block.name:
-                                used_send_tool = True
-                elif isinstance(message, ResultMessage):
-                    if message.is_error:
-                        logger.warning(f"Claude error: {message.result}")
+            try:
+                async for message in query(prompt=content, options=options):
+                    if isinstance(message, AssistantMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                response_text.append(block.text)
+                            elif isinstance(block, ToolUseBlock):
+                                if "workspace_send_message" in block.name:
+                                    used_send_tool = True
+                                else:
+                                    # Stream intermediate tool use as status
+                                    tool_label = block.name
+                                    tool_input = str(block.input)[:200]
+                                    try:
+                                        await self.client.send_message(
+                                            workspace_id=self.workspace_id,
+                                            session_id=self.session_id,
+                                            token=self.token,
+                                            content=f"**Using tool:** `{tool_label}`\n```\n{tool_input}\n```",
+                                            sender_type="agent",
+                                            sender_name=self.agent_name,
+                                            message_type="status",
+                                        )
+                                    except Exception:
+                                        pass
+                    elif isinstance(message, ResultMessage):
+                        if message.is_error:
+                            logger.warning(f"Claude error: {message.result}")
+            except MessageParseError as e:
+                if "rate_limit" in str(e):
+                    self._rate_limit_backoff = 30
+                    logger.warning(f"Rate limited — will back off 30s")
+                else:
+                    logger.warning(f"Skipping unknown SDK message: {e}")
 
             # Fallback: if Claude didn't use workspace_send_message,
             # post the text response directly
