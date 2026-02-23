@@ -17,6 +17,10 @@ from openagents.workspace_client import WorkspaceClient, DEFAULT_ENDPOINT
 
 logger = logging.getLogger(__name__)
 
+# Max retries on rate limit before giving up on a message
+MAX_RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_BASE_DELAY = 15  # seconds
+
 
 class ClaudeAdapter:
     """Connects Claude Code to an OpenAgents workspace."""
@@ -38,7 +42,7 @@ class ClaudeAdapter:
         self.last_seen_id: Optional[str] = None
         self._running = False
         self._processed_ids: set = set()
-        self._rate_limit_backoff: float = 0
+        self._conversation_id: Optional[str] = None
 
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
@@ -102,11 +106,6 @@ class ClaudeAdapter:
 
             if incoming:
                 idle_count = 0
-                # Rate limit backoff
-                if self._rate_limit_backoff > 0:
-                    logger.info(f"Rate limit backoff: waiting {self._rate_limit_backoff}s")
-                    await asyncio.sleep(self._rate_limit_backoff)
-                    self._rate_limit_backoff = 0
                 for msg in incoming:
                     msg_id = msg.get("id") or msg.get("messageId")
                     if msg_id:
@@ -184,125 +183,170 @@ class ClaudeAdapter:
             )
             return
 
-        try:
-            # Build a clean env without CLAUDECODE to allow nested sessions
-            clean_env = {
-                k: v for k, v in os.environ.items()
-                if k not in ("CLAUDECODE", "CLAUDE_CODE_SESSION")
-            }
+        # Build a clean env without CLAUDECODE to allow nested sessions
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if k not in ("CLAUDECODE", "CLAUDE_CODE_SESSION")
+        }
 
-            options = ClaudeAgentOptions(
-                system_prompt={
-                    "type": "preset",
-                    "preset": "claude_code",
-                    "append": (
-                        f"\nYou are agent '{self.agent_name}' connected to an "
-                        f"OpenAgents workspace.\n"
-                        f"You MUST use the workspace_send_message MCP tool to "
-                        f"communicate your responses.\n"
-                        f"Text you generate is NOT visible to anyone unless you "
-                        f"call workspace_send_message.\n"
-                        f"Use workspace_get_history to read previous messages.\n"
-                        f"Use workspace_get_agents to see other agents.\n"
-                    ),
-                },
-                env=clean_env,
-                mcp_servers={
-                    "openagents-workspace": {
-                        "type": "stdio",
-                        "command": "openagents",
-                        "args": [
-                            "mcp-server",
-                            "--workspace-id",
-                            self.workspace_id,
-                            "--session-id",
-                            self.session_id,
-                            "--agent-name",
-                            self.agent_name,
-                            "--endpoint",
-                            self.endpoint,
-                        ],
-                        "env": {"OA_WORKSPACE_TOKEN": self.token},
-                    },
-                },
-                allowed_tools=[
-                    "mcp__openagents-workspace__workspace_send_message",
-                    "mcp__openagents-workspace__workspace_get_history",
-                    "mcp__openagents-workspace__workspace_get_agents",
-                    "mcp__openagents-workspace__workspace_status",
-                    "Read",
-                    "Write",
-                    "Edit",
-                    "Bash",
-                    "Glob",
-                    "Grep",
-                ],
-                permission_mode="acceptEdits",
-                max_turns=25,
-            )
-
-            used_send_tool = False
-            response_text = []
-
+        # Retry loop for rate limits
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
             try:
-                async for message in query(prompt=content, options=options):
-                    if isinstance(message, AssistantMessage):
-                        for block in message.content:
-                            if isinstance(block, TextBlock):
-                                response_text.append(block.text)
-                            elif isinstance(block, ToolUseBlock):
-                                if "workspace_send_message" in block.name:
-                                    used_send_tool = True
-                                else:
-                                    # Stream intermediate tool use as status
-                                    tool_label = block.name
-                                    tool_input = str(block.input)[:200]
-                                    try:
-                                        await self.client.send_message(
-                                            workspace_id=self.workspace_id,
-                                            session_id=self.session_id,
-                                            token=self.token,
-                                            content=f"**Using tool:** `{tool_label}`\n```\n{tool_input}\n```",
-                                            sender_type="agent",
-                                            sender_name=self.agent_name,
-                                            message_type="status",
-                                        )
-                                    except Exception:
-                                        pass
-                    elif isinstance(message, ResultMessage):
-                        if message.is_error:
-                            logger.warning(f"Claude error: {message.result}")
-            except MessageParseError as e:
-                if "rate_limit" in str(e):
-                    self._rate_limit_backoff = 30
-                    logger.warning(f"Rate limited — will back off 30s")
-                else:
-                    logger.warning(f"Skipping unknown SDK message: {e}")
+                options = ClaudeAgentOptions(
+                    system_prompt={
+                        "type": "preset",
+                        "preset": "claude_code",
+                        "append": (
+                            f"\nYou are agent '{self.agent_name}' connected to an "
+                            f"OpenAgents workspace.\n"
+                            f"You MUST use the workspace_send_message MCP tool to "
+                            f"communicate your responses.\n"
+                            f"Text you generate is NOT visible to anyone unless you "
+                            f"call workspace_send_message.\n"
+                            f"Use workspace_get_history to read previous messages.\n"
+                            f"Use workspace_get_agents to see other agents.\n"
+                        ),
+                    },
+                    env=clean_env,
+                    continue_conversation=self._conversation_id is not None,
+                    resume=self._conversation_id,
+                    mcp_servers={
+                        "openagents-workspace": {
+                            "type": "stdio",
+                            "command": "openagents",
+                            "args": [
+                                "mcp-server",
+                                "--workspace-id",
+                                self.workspace_id,
+                                "--session-id",
+                                self.session_id,
+                                "--agent-name",
+                                self.agent_name,
+                                "--endpoint",
+                                self.endpoint,
+                            ],
+                            "env": {"OA_WORKSPACE_TOKEN": self.token},
+                        },
+                    },
+                    allowed_tools=[
+                        "mcp__openagents-workspace__workspace_send_message",
+                        "mcp__openagents-workspace__workspace_get_history",
+                        "mcp__openagents-workspace__workspace_get_agents",
+                        "mcp__openagents-workspace__workspace_status",
+                        "Read",
+                        "Write",
+                        "Edit",
+                        "Bash",
+                        "Glob",
+                        "Grep",
+                    ],
+                    permission_mode="acceptEdits",
+                    max_turns=25,
+                )
 
-            # Fallback: if Claude didn't use workspace_send_message,
-            # post the text response directly
-            if not used_send_tool and response_text:
-                full_response = "\n".join(response_text).strip()
-                if full_response:
+                used_send_tool = False
+                any_tool_used = False
+                response_text = []
+                rate_limited = False
+
+                try:
+                    async for message in query(prompt=content, options=options):
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock):
+                                    response_text.append(block.text)
+                                elif isinstance(block, ToolUseBlock):
+                                    any_tool_used = True
+                                    if "workspace_send_message" in block.name:
+                                        used_send_tool = True
+                                    else:
+                                        # Stream intermediate tool use as status
+                                        tool_label = block.name
+                                        tool_input = str(block.input)[:200]
+                                        try:
+                                            await self.client.send_message(
+                                                workspace_id=self.workspace_id,
+                                                session_id=self.session_id,
+                                                token=self.token,
+                                                content=f"**Using tool:** `{tool_label}`\n```\n{tool_input}\n```",
+                                                sender_type="agent",
+                                                sender_name=self.agent_name,
+                                                message_type="status",
+                                            )
+                                        except Exception:
+                                            pass
+                        elif isinstance(message, ResultMessage):
+                            # Save conversation ID for continue_conversation
+                            if hasattr(message, "session_id") and message.session_id:
+                                self._conversation_id = message.session_id
+                            if message.is_error:
+                                logger.warning(f"Claude error: {message.result}")
+                except MessageParseError as e:
+                    if "rate_limit" in str(e):
+                        rate_limited = True
+                    else:
+                        logger.warning(f"Skipping unknown SDK message: {e}")
+
+                # Only retry rate limits if the agent did NO work at all
+                # (no tools used, no text generated, no MCP message sent)
+                did_work = used_send_tool or any_tool_used or bool(response_text)
+                if rate_limited and not did_work:
+                    if attempt < MAX_RATE_LIMIT_RETRIES:
+                        delay = RATE_LIMIT_BASE_DELAY * (2 ** attempt)
+                        logger.warning(
+                            f"Rate limited (attempt {attempt + 1}/{MAX_RATE_LIMIT_RETRIES}) "
+                            f"— retrying in {delay}s"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
+                # Fallback: if Claude didn't use workspace_send_message,
+                # post the text response or a fallback message
+                if not used_send_tool:
+                    if response_text:
+                        full_response = "\n".join(response_text).strip()
+                        if full_response:
+                            await self.client.send_message(
+                                workspace_id=self.workspace_id,
+                                session_id=self.session_id,
+                                token=self.token,
+                                content=full_response,
+                                sender_type="agent",
+                                sender_name=self.agent_name,
+                            )
+                    elif rate_limited and any_tool_used:
+                        await self.client.send_message(
+                            workspace_id=self.workspace_id,
+                            session_id=self.session_id,
+                            token=self.token,
+                            content="Task partially completed but hit rate limit. Check the results directly.",
+                            sender_type="agent",
+                            sender_name=self.agent_name,
+                        )
+                    elif rate_limited:
+                        await self.client.send_message(
+                            workspace_id=self.workspace_id,
+                            session_id=self.session_id,
+                            token=self.token,
+                            content="Rate limited — please try again in a moment.",
+                            sender_type="agent",
+                            sender_name=self.agent_name,
+                        )
+
+                # Done (success or final failure)
+                break
+
+            except Exception as e:
+                logger.exception(f"Error handling message: {e}")
+                try:
                     await self.client.send_message(
                         workspace_id=self.workspace_id,
                         session_id=self.session_id,
                         token=self.token,
-                        content=full_response,
+                        content=f"Error processing message: {e}",
                         sender_type="agent",
                         sender_name=self.agent_name,
                     )
-
-        except Exception as e:
-            logger.exception(f"Error handling message: {e}")
-            try:
-                await self.client.send_message(
-                    workspace_id=self.workspace_id,
-                    session_id=self.session_id,
-                    token=self.token,
-                    content=f"Error processing message: {e}",
-                    sender_type="agent",
-                    sender_name=self.agent_name,
-                )
-            except Exception:
-                pass
+                except Exception:
+                    pass
+                break
