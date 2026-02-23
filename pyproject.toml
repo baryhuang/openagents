@@ -85,10 +85,8 @@ langchain = [
     "langchain-openai>=0.1.0",    # OpenAI integration for LangChain
 ]
 
-# Claude Code adapter (optional, for `openagents connect claude`)
-claude = [
-    "claude-agent-sdk>=0.1.0",
-]
+# Claude Code adapter — no extra Python deps needed.
+# Requires `claude` CLI installed: npm install -g @anthropic-ai/claude-code
 
 # Development dependencies
 dev = [
