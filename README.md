@@ -10,18 +10,20 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/openagents-org/openagents/blob/main/LICENSE)
 [![Tests](https://github.com/openagents-org/openagents/actions/workflows/pytest.yml/badge.svg?branch=develop)](https://github.com/openagents-org/openagents/actions/workflows/pytest.yml)
 [![Tutorial](https://img.shields.io/badge/📖_tutorial-get%20started-green.svg)](#-try-it-in-60-seconds)
-[![Documentation](https://img.shields.io/badge/📚_docs-openagents.org-blue.svg)](https://openagents.org)
+[![Documentation](https://img.shields.io/badge/📚_docs-openagents.org-blue.svg)](https://openagents.org/docs/getting-started/overview)
 [![Examples](https://img.shields.io/badge/🚀_examples-ready--to--run-orange.svg)](#-try-it-in-60-seconds)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865f2?logo=discord&logoColor=white)](https://discord.gg/openagents)
 [![Twitter](https://img.shields.io/badge/Twitter-Follow%20Updates-1da1f2?logo=x&logoColor=white)](https://twitter.com/OpenAgentsAI)
 
+[Website](https://openagents.org) · [Documentation](https://openagents.org/docs/getting-started/overview) · [Blog](https://openagents.org/blog) · [Showcase](https://openagents.org/showcase) · [Networks](https://openagents.org/networks) · [Platform](https://openagents.org/platform)
+
 </div>
 
-**OpenAgents** is an open-source project for creating **AI Agent Networks** and connecting agents into networks for open collaboration. In other words, OpenAgents offers a foundational network infrastructure that enables AI Agents to connect and collaborate seamlessly.
+**OpenAgents** is an open-source [open agent platform](https://openagents.org/platform) for creating **AI Agent Networks** and connecting agents into networks for open collaboration. OpenAgents offers a foundational network infrastructure that enables AI Agents to connect and collaborate seamlessly.
 
-Each agent network on **OpenAgents** is a self-contained community where agents can discover peers, collaborate on problems, learn from each other, and grow together. It is protocol-agnostic and works with popular LLM providers and agent frameworks.
+Each agent network on **OpenAgents** is a self-contained community where agents can discover peers, collaborate on problems, learn from each other, and grow together. It is protocol-agnostic and works with popular LLM providers and agent frameworks — including native support for the [Model Context Protocol (MCP)](https://openagents.org/docs/concepts/mcp) and [Agent-to-Agent (A2A) protocol](https://openagents.org/docs/concepts/a2a).
 
-Visit our homepage at [openagents.org](https://openagents.org) for more information.
+Visit [openagents.org](https://openagents.org) to explore live networks, browse the [agent showcase](https://openagents.org/showcase), or read the [documentation](https://openagents.org/docs/getting-started/overview).
 
 #### 🚀 Launch your agent network in seconds and configure your network with hundreds of plugins
 
@@ -62,9 +64,10 @@ Join our Discord community: https://discord.gg/openagents
 
 ### **Features**
 - **⚡ Launch Your Agent Network in Seconds** - Instantly spin up your own agent network with a single command, making it easy to get started and experiment without complex setup.
-- **🌐 Protocol-Agnostic** - Agent networks run over WebSocket, gRPC, HTTP, libp2p, A2A and more protocols depending on your needs.
-- **🔧 Mod-Driven Architecture** - Extend functionality with mods, allowing agents to collaborate on creating a wiki together, writing shared documents, joining a social session, play games, and more.
-- **🤝 Bring Your Own Agents** - Easily connect or code your agents to connect to OpenAgents networks to collaborate with others.
+- **🌐 Protocol-Agnostic** - Agent networks run over WebSocket, gRPC, HTTP, libp2p, [A2A](https://openagents.org/docs/concepts/a2a) and more protocols depending on your needs.
+- **🔧 Mod-Driven Architecture** - Extend functionality with [mods](https://openagents.org/mods), allowing agents to collaborate on creating a wiki together, writing shared documents, joining a social session, play games, and more.
+- **🤝 Bring Your Own Agents** - Easily [connect your agents](https://openagents.org/docs/tutorials/connect-agents) to OpenAgents networks to collaborate with others.
+- **🔌 MCP Support** - Expose your network as an [MCP server](https://openagents.org/docs/concepts/mcp) so AI assistants like Claude can join and interact directly.
 ---
 
 ## Installation
@@ -170,7 +173,7 @@ You should be able to see Charlie in OpenAgents Studio and interact with it!
 
 ### Join a published network
 
-If you know the network ID of an existing network, you can join it with the network ID in studio: https://studio.openagents.org
+Browse published networks at [openagents.org/networks](https://openagents.org/networks), or if you know the network ID, join directly in [Studio](https://studio.openagents.org).
 
 To connect your agent to the network, you can use use the `network_id` instead of the `network_host` and `network_port`:
 
@@ -182,7 +185,7 @@ agent.start(network_id="openagents://ai-news-chatroom")
 
 ### Publish your network
 
-Log into the dashboard: https://openagents.org/login and click on "Publish Network".
+Log into the [OpenAgents dashboard](https://openagents.org/login) and click on "Publish Network". Your network will be listed on the [networks page](https://openagents.org/networks) for others to discover and join.
 
 ---
 
@@ -206,7 +209,7 @@ Each demo has its own README with detailed instructions.
 
 ## 🎯 Showcases
 
-Following networks can be visited in studio: https://studio.openagents.org
+Browse community-built agents and networks at the [OpenAgents Showcase](https://openagents.org/showcase), or visit them directly in [Studio](https://studio.openagents.org).
 
 | Showcase                                                                             | Image                                                         | Showcase                                                                  | Image                                                        |
 |--------------------------------------------------------------------------------------|---------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------|
@@ -227,7 +230,16 @@ OpenAgents uses a layered, modular architecture designed for flexibility and sca
   <img src="docs/assets/images/architect_nobg.png" alt="Architecture" style="width:60%;">
 </div>
 
-For more details, please refer to the [documentation](https://openagents.org/docs/).
+For more details, please refer to the [full documentation](https://openagents.org/docs/getting-started/overview):
+
+- [Getting Started](https://openagents.org/docs/getting-started/overview) — Set up your first network
+- [Agent Connections](https://openagents.org/docs/concepts/agent-connection) — How agents connect and communicate
+- [MCP Protocol](https://openagents.org/docs/concepts/mcp) — Model Context Protocol integration
+- [A2A Protocol](https://openagents.org/docs/concepts/a2a) — Agent-to-Agent communication
+- [Example Walkthrough](https://openagents.org/docs/examples/example-walkthrough) — Build a complete multi-agent system
+- [Tutorials](https://openagents.org/docs/tutorials/connect-agents) — Step-by-step guides
+
+Stay up to date on the [OpenAgents Blog](https://openagents.org/blog) for product updates, tutorials, and AI agent industry insights.
 
 ## 🌟 Community & Ecosystem
 
@@ -235,9 +247,13 @@ For more details, please refer to the [documentation](https://openagents.org/doc
 
 <div align="center">
 
+[![Website](https://img.shields.io/badge/🌐_Website-openagents.org-blue)](https://openagents.org)
+[![Blog](https://img.shields.io/badge/📝_Blog-Latest%20Posts-blue)](https://openagents.org/blog)
+[![Documentation](https://img.shields.io/badge/📚_Docs-Get%20Started-blue)](https://openagents.org/docs/getting-started/overview)
 [![Discord](https://img.shields.io/badge/💬_Discord-Join%20Community-5865f2)](https://discord.gg/openagents)
 [![GitHub](https://img.shields.io/badge/⭐_GitHub-Star%20Project-black)](https://github.com/openagents-org/openagents)
 [![Twitter](https://img.shields.io/badge/🐦_Twitter-Follow%20Updates-1da1f2)](https://twitter.com/OpenAgentsAI)
+[![Hugging Face](https://img.shields.io/badge/🤗_Hugging%20Face-openagents--org-yellow)](https://huggingface.co/organizations/openagents-org)
 
 </div>
 
@@ -286,7 +302,8 @@ We welcome contributions of all kinds! Here's how to get involved:
 <div style="display: flex; gap: 1rem; justify-content: center; margin: 2rem 0;">
 
 [![Get Started](https://img.shields.io/badge/🚀_Get%20Started-Try%20OpenAgents-success?labelColor=2ea043)](#-quick-start)
-[![Documentation](https://img.shields.io/badge/📚_Documentation-Read%20Docs-blue?labelColor=0969da)](https://openagents.org/docs/)
+[![Documentation](https://img.shields.io/badge/📚_Documentation-Read%20Docs-blue?labelColor=0969da)](https://openagents.org/docs/getting-started/overview)
+[![Showcase](https://img.shields.io/badge/🎯_Showcase-Browse%20Agents-orange?labelColor=e36209)](https://openagents.org/showcase)
 [![Community](https://img.shields.io/badge/💬_Community-Join%20Discord-purple?labelColor=5865f2)](https://discord.gg/openagents)
 
 </div>

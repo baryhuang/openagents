@@ -120,10 +120,12 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bestagents/openagents"
-Documentation = "https://openagents.readthedocs.io"
-Repository = "https://github.com/bestagents/openagents"
-Issues = "https://github.com/bestagents/openagents/issues"
+Homepage = "https://openagents.org"
+Documentation = "https://openagents.org/docs/getting-started/overview"
+Repository = "https://github.com/openagents-org/openagents"
+Issues = "https://github.com/openagents-org/openagents/issues"
+Blog = "https://openagents.org/blog"
+Showcase = "https://openagents.org/showcase"
 
 [project.scripts]
 openagents = "openagents.cli:cli_main"
