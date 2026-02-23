@@ -713,12 +713,12 @@ Core experience: one developer, one agent, one workspace.
 | 1.5 | SKILL.md generation endpoint | Backend | `openagents-web/backend` | DONE |
 | 1.6 | Agent presence via polling (connect, heartbeat, disconnect) | Backend | `openagents-web/backend` | DONE |
 | 1.7 | Anonymous workspace access control (password/token) | Backend | `openagents-web/backend` | DONE |
-| 1.8 | Agent identity: auto-generate name, local storage (`~/.openagents/identity.json`) | SDK | `openagents` |
-| 1.9 | `openagents login` command (Firebase Auth, link identity to account) | SDK | `openagents` |
-| 1.10 | `openagents rename` command (rename agent, requires login) | SDK | `openagents` |
-| 1.11 | `openagents mcp-server` command (reusable MCP tool server) | SDK | `openagents` |
-| 1.12 | Claude Code adapter (Agent SDK integration) | SDK | `openagents` |
-| 1.13 | `openagents connect claude` CLI command | SDK | `openagents` |
+| 1.8 | Agent identity: auto-generate name, local storage (`~/.openagents/identity.json`) | SDK | `openagents` | DONE |
+| 1.9 | `openagents login` command (API key storage) | SDK | `openagents` | DONE |
+| 1.10 | `openagents rename` command (local rename) | SDK | `openagents` | DONE |
+| 1.11 | `openagents mcp-server` command (reusable MCP tool server) | SDK | `openagents` | DONE |
+| 1.12 | Claude Code adapter (Agent SDK integration) | SDK | `openagents` | DONE |
+| 1.13 | `openagents connect claude` CLI command | SDK | `openagents` | DONE |
 | 1.14 | Web UI: workspace chat interface | Frontend | `openagents-web/workspace_frontend` |
 | 1.15 | Web UI: session management (new, switch, list) | Frontend | `openagents-web/workspace_frontend` |
 | 1.16 | Web UI: agent status card (online/offline, activity) | Frontend | `openagents-web/workspace_frontend` |
