@@ -1,6 +1,6 @@
 # OpenAgents Identity & Ecosystem Project
 
-**Status:** Phase 3 COMPLETE — Reputation Infrastructure Shipped
+**Status:** Phase 4 COMPLETE — Workspace API Shipped
 **Last Updated:** 2026-02-18
 **Codebases:** `~/works/openagents` (core SDK), `~/works/openagents-web` (web service + frontends)
 
@@ -12,6 +12,12 @@
 | Phase 1 | DONE | Origin tracking, connect() API, identity bridge, profile URL fix |
 | Phase 2 | DONE | Agent listing/search, cache TTL, presence tracking, integration docs |
 | Phase 3 | DONE | Reputation data model, reputation API, activity tracking via heartbeat |
+| Phase 4 | DONE | Workspace API (dashboard stats, agent listing, detail, activity feed, networks, SSE stream) |
+
+### Phase 4 Details (2026-02-18)
+
+- **5.1 Workspace API:** Authenticated dashboard endpoints at `/v1/workspace/`. Stats summary, paginated agent listing (filter by online/offline, sort by name/reputation/last_active), agent detail with networks+reputation+activity, aggregated activity feed, networks view. All endpoints enforce ownership via `AgentId.owner_email`.
+- **5.2 Real-time Event Stream:** SSE endpoint at `/v1/workspace/stream` with JWT query-param auth. Polls DB every 5 seconds, emits `agent_online`, `agent_offline`, `reputation_change`, and `heartbeat` events. Uses `StreamingResponse` with per-cycle DB sessions.
 
 ### Phase 3 Details (2026-02-18)
 
@@ -776,21 +782,22 @@ GET /v1/workspace/activity
   Returns: aggregated activity feed across all user's agents
 ```
 
-**Status:** Not started
+**Status:** DONE
 **Effort:** Large
-**Files:** New `backend/app/routers/workspace.py`
+**Files:** `backend/app/routers/workspace.py`
 
 #### 5.2 Real-Time Event Stream
 
-**What:** SSE or WebSocket endpoint for live agent activity.
+**What:** SSE endpoint for live agent activity.
 
 **Design:**
 - SSE endpoint: `GET /v1/workspace/stream`
-- Streams: agent connect/disconnect, messages, status changes
-- Requires backend to receive events from networks (via heartbeat or push)
-- This is the hardest part — requires a pub/sub mechanism between networks and the backend
+- Auth via JWT query parameter (EventSource doesn't support headers)
+- Polls DB every 5 seconds for presence/reputation changes
+- Emits delta events: `agent_online`, `agent_offline`, `reputation_change`, `heartbeat`
+- Uses `StreamingResponse` with per-cycle DB sessions
 
-**Status:** Not started — needs architecture decision
+**Status:** DONE
 **Effort:** Large
 **Files:** Backend websocket/SSE infrastructure
 
@@ -936,6 +943,6 @@ GET /v1/workspace/activity
 - [x] Activity event persistence (4.2)
 - [x] Reputation API + leaderboard (4.3)
 
-### Phase 4 — Workspace (P3, not started)
-- [ ] Workspace backend API (5.1)
-- [ ] Real-time event stream (5.2)
+### Phase 4 — Workspace API (P3)
+- [x] Workspace backend API (5.1) — `backend/app/routers/workspace.py`: stats, agents, detail, activity, networks
+- [x] Real-time event stream (5.2) — SSE at `/v1/workspace/stream` with polling-based delta detection
