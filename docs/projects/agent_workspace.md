@@ -710,7 +710,7 @@ Core experience: one developer, one agent, one workspace.
 | 1.2 | Workspace CRUD API (create, get, delete, settings) | Backend | `openagents-web/backend` | DONE |
 | 1.3 | Session API (create, list, get, update status) | Backend | `openagents-web/backend` | DONE |
 | 1.4 | Message API (send, list/poll, status updates) | Backend | `openagents-web/backend` | DONE |
-| 1.5 | SKILL.md generation endpoint | Backend | `openagents-web/backend` | |
+| 1.5 | SKILL.md generation endpoint | Backend | `openagents-web/backend` | DONE |
 | 1.6 | Agent presence via polling (connect, heartbeat, disconnect) | Backend | `openagents-web/backend` | DONE |
 | 1.7 | Anonymous workspace access control (password/token) | Backend | `openagents-web/backend` | DONE |
 | 1.8 | Agent identity: auto-generate name, local storage (`~/.openagents/identity.json`) | SDK | `openagents` |
