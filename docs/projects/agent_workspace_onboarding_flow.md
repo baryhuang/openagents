@@ -10,17 +10,22 @@
 ## Quick Start
 
 ```bash
-# Install the SDK
-pip install openagents
+# Install everything (openagents CLI + Claude Code)
+curl -fsSL https://workspace.openagents.org/install.sh | bash
 
-# Install Claude Code (the agent runtime)
-curl -fsSL https://claude.ai/install.sh | bash
-
-# Connect — one command does everything
+# Connect — registers agent, creates workspace, starts listening
 openagents connect claude
 ```
 
-That's it. The CLI registers the agent, creates a workspace, prints a URL, and starts listening for messages.
+That's it. The install script handles Python checks, pip install, and Claude Code setup. Then `connect` does the rest.
+
+### Manual install (alternative)
+
+```bash
+pip install openagents                                    # SDK + CLI
+curl -fsSL https://claude.ai/install.sh | bash            # Claude Code
+openagents connect claude                                  # Go
+```
 
 ---
 
