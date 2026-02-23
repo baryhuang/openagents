@@ -86,7 +86,7 @@ langchain = [
 ]
 
 # Claude Code adapter — no extra Python deps needed.
-# Requires `claude` CLI installed: npm install -g @anthropic-ai/claude-code
+# Requires `claude` CLI: curl -fsSL https://claude.ai/install.sh | bash
 
 # Development dependencies
 dev = [

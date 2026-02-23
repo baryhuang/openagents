@@ -14,7 +14,7 @@
 pip install openagents
 
 # Install Claude Code (the agent runtime)
-npm install -g @anthropic-ai/claude-code
+curl -fsSL https://claude.ai/install.sh | bash
 
 # Connect — one command does everything
 openagents connect claude
@@ -179,7 +179,7 @@ Created automatically by `openagents connect claude` or `openagents login`.
 The adapter spawns `claude -p --output-format stream-json` as a subprocess rather than using the `claude-agent-sdk` Python package. Reasons:
 
 1. **Rate limit resilience** — The SDK crashes on `rate_limit_event` messages (`MessageParseError: Unknown message type`). The CLI handles rate limits internally with its own retry logic.
-2. **No Python dependency** — Only needs `claude` CLI installed via npm.
+2. **No Python dependency** — Only needs `claude` CLI installed.
 3. **Simpler code** — Parse JSON lines, skip unknown event types. No retry/backoff machinery needed.
 
 ### Why polling instead of WebSocket?

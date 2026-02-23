@@ -141,7 +141,7 @@ class ClaudeAdapter:
         claude_bin = shutil.which("claude")
         if not claude_bin:
             raise FileNotFoundError(
-                "claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code"
+                "claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash"
             )
 
         cmd = [
