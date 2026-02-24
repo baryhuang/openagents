@@ -42,12 +42,13 @@ class OpenClawAdapter:
         openclaw_agent_id: str = "main",
     ):
         self.workspace_id = workspace_id
-        self.session_id = session_id
+        self.session_id = session_id  # default/initial session
         self.token = token
         self.agent_name = agent_name
         self.endpoint = endpoint
         self.client = WorkspaceClient(endpoint=endpoint)
         self.last_seen_id: Optional[str] = None
+        self._last_seen_ts: Optional[str] = None
         self._running = False
         self._processed_ids: set = set()
 
@@ -94,31 +95,28 @@ class OpenClawAdapter:
             await asyncio.sleep(30)
 
     async def _poll_loop(self):
-        """Poll for new messages and dispatch to OpenClaw."""
+        """Poll for new messages across all sessions and dispatch to OpenClaw."""
         idle_count = 0
         while self._running:
             try:
-                messages = await self.client.poll_messages(
+                messages = await self.client.poll_pending(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
                     token=self.token,
-                    after=self.last_seen_id,
+                    agent_name=self.agent_name,
+                    after=self._last_seen_ts,
                 )
             except Exception as e:
                 logger.warning(f"Poll failed: {e}")
                 await asyncio.sleep(5)
                 continue
 
-            # Filter: only process messages from others, skip status/processed
+            # Filter out already-processed messages
             incoming = []
             for msg in messages:
                 msg_id = msg.get("id") or msg.get("messageId")
-                if msg_id:
-                    self.last_seen_id = msg_id
-                if msg.get("senderName") == self.agent_name:
-                    continue
-                if msg.get("messageType") == "status":
-                    continue
+                ts = msg.get("createdAt")
+                if ts:
+                    self._last_seen_ts = ts
                 if msg_id and msg_id in self._processed_ids:
                     continue
                 incoming.append(msg)
@@ -130,8 +128,6 @@ class OpenClawAdapter:
                     if msg_id:
                         self._processed_ids.add(msg_id)
                     await self._handle_message(msg)
-                # Sync cursor to skip messages posted during execution
-                await self._sync_cursor()
             else:
                 idle_count += 1
 
@@ -139,32 +135,14 @@ class OpenClawAdapter:
             delay = min(2 + idle_count, 15) if not incoming else 2
             await asyncio.sleep(delay)
 
-    async def _sync_cursor(self):
-        """Update cursor to latest message to skip own responses."""
-        try:
-            messages = await self.client.poll_messages(
-                workspace_id=self.workspace_id,
-                session_id=self.session_id,
-                token=self.token,
-                limit=1,
-            )
-            if messages:
-                msg_id = (
-                    messages[-1].get("id") or messages[-1].get("messageId")
-                )
-                if msg_id:
-                    self.last_seen_id = msg_id
-        except Exception:
-            pass
-
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, session_id: str) -> str:
         """Build system prompt with workspace context."""
         return (
             f"You are agent '{self.agent_name}' connected to an "
             f"OpenAgents workspace.\n\n"
             f"## Workspace\n"
             f"- Workspace ID: {self.workspace_id}\n"
-            f"- Session ID: {self.session_id}\n\n"
+            f"- Session ID: {session_id}\n\n"
             f"## Instructions\n"
             f"- You are responding to messages from the workspace chat.\n"
             f"- Your response will be posted to the workspace automatically.\n"
@@ -173,12 +151,12 @@ class OpenClawAdapter:
             f"- Use markdown formatting for code blocks and structure.\n"
         )
 
-    async def _get_recent_history_text(self) -> str:
+    async def _get_recent_history_text(self, session_id: str) -> str:
         """Fetch recent workspace messages and format as context."""
         try:
             messages = await self.client.poll_messages(
                 workspace_id=self.workspace_id,
-                session_id=self.session_id,
+                session_id=session_id,
                 token=self.token,
                 limit=10,
             )
@@ -203,14 +181,17 @@ class OpenClawAdapter:
         if not content:
             return
 
+        # Use the message's session_id so responses go to the correct session
+        msg_session_id = msg.get("sessionId") or self.session_id
+
         sender = msg.get("senderName") or msg.get("senderType", "user")
-        logger.info(f"Processing message from {sender}: {content[:80]}...")
+        logger.info(f"Processing message from {sender} in session {msg_session_id}: {content[:80]}...")
 
         # Post "thinking..." status
         try:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
-                session_id=self.session_id,
+                session_id=msg_session_id,
                 token=self.token,
                 content="thinking...",
                 sender_type="agent",
@@ -222,8 +203,8 @@ class OpenClawAdapter:
 
         try:
             # Build messages for the API call
-            history_text = await self._get_recent_history_text()
-            system_prompt = self._build_system_prompt()
+            history_text = await self._get_recent_history_text(msg_session_id)
+            system_prompt = self._build_system_prompt(msg_session_id)
             if history_text:
                 system_prompt += "\n" + history_text
 
@@ -254,7 +235,7 @@ class OpenClawAdapter:
                 # Post response to workspace
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
+                    session_id=msg_session_id,
                     token=self.token,
                     content=response_text,
                     sender_type="agent",
@@ -263,7 +244,7 @@ class OpenClawAdapter:
             else:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
+                    session_id=msg_session_id,
                     token=self.token,
                     content="No response generated. Please try again.",
                     sender_type="agent",
@@ -280,7 +261,7 @@ class OpenClawAdapter:
             try:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
+                    session_id=msg_session_id,
                     token=self.token,
                     content=error_msg,
                     sender_type="agent",
@@ -293,7 +274,7 @@ class OpenClawAdapter:
             try:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
+                    session_id=msg_session_id,
                     token=self.token,
                     content=f"Error processing message: {e}",
                     sender_type="agent",

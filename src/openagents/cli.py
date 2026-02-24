@@ -4199,6 +4199,84 @@ def connect_codex(
         console.print("\n[yellow]Disconnected.[/yellow]")
 
 
+@app.command(name="invitations")
+def invitations_cmd(
+    agent_type: str = typer.Argument(
+        ..., help="Agent type to check invitations for (claude, codex, openclaw)",
+    ),
+    endpoint: str = typer.Option(
+        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        help="API endpoint URL",
+    ),
+):
+    """List pending workspace invitations for an agent."""
+    import asyncio
+    from openagents.workspace_client import WorkspaceClient, get_identity
+
+    identity = get_identity(agent_type)
+    if not identity:
+        console.print(f"[yellow]No saved identity for '{agent_type}'.[/yellow]")
+        console.print(f"Run 'openagents connect {agent_type}' first to create one.")
+        raise typer.Exit(1)
+
+    async def _run():
+        client = WorkspaceClient(endpoint=endpoint)
+        invitations = await client.check_invitations(identity.agent_name)
+        if not invitations:
+            console.print(f"No pending invitations for [cyan]{identity.agent_name}[/cyan]")
+            return
+        console.print(f"\nPending invitations for [cyan]{identity.agent_name}[/cyan]:\n")
+        for inv in invitations:
+            console.print(
+                f"  Workspace: [bold]{inv.get('workspaceName', 'Unknown')}[/bold]"
+            )
+            console.print(f"  Token:     {inv['inviteToken']}")
+            console.print(f"  Expires:   {inv.get('expiresAt', '?')}")
+            console.print(
+                f"  Accept:    [green]openagents join {inv['inviteToken']}[/green]\n"
+            )
+
+    asyncio.run(_run())
+
+
+@app.command(name="join")
+def join_cmd(
+    invite_token: str = typer.Argument(
+        ..., help="Invitation token (inv_xxxxx)",
+    ),
+    endpoint: str = typer.Option(
+        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        help="API endpoint URL",
+    ),
+):
+    """Accept a workspace invitation and print connection details."""
+    import asyncio
+    from openagents.workspace_client import WorkspaceClient
+
+    async def _run():
+        client = WorkspaceClient(endpoint=endpoint)
+        try:
+            result = await client.accept_invitation(invite_token)
+        except ConnectionError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+        ws_id = result["workspaceId"]
+        ws_name = result["workspaceName"]
+        ws_token = result["workspaceToken"]
+        agent = result["agent"]
+
+        console.print(f"\n[green]Invitation accepted![/green]")
+        console.print(f"  Workspace: [bold]{ws_name}[/bold]")
+        console.print(f"  Agent:     {agent['agentName']} ({agent['role']})")
+        console.print(
+            f"  URL:       [link=https://workspace.openagents.org/{ws_id}?token={ws_token}]"
+            f"https://workspace.openagents.org/{ws_id}?token={ws_token}[/link]"
+        )
+
+    asyncio.run(_run())
+
+
 @app.command(name="login")
 def login_cmd(
     api_key: str = typer.Option(

@@ -37,12 +37,13 @@ class CodexAdapter:
         endpoint: str = DEFAULT_ENDPOINT,
     ):
         self.workspace_id = workspace_id
-        self.session_id = session_id
+        self.session_id = session_id  # default/initial session
         self.token = token
         self.agent_name = agent_name
         self.endpoint = endpoint
         self.client = WorkspaceClient(endpoint=endpoint)
         self.last_seen_id: Optional[str] = None
+        self._last_seen_ts: Optional[str] = None
         self._running = False
         self._processed_ids: set = set()
         self._codex_thread_id: Optional[str] = None
@@ -78,31 +79,28 @@ class CodexAdapter:
             await asyncio.sleep(30)
 
     async def _poll_loop(self):
-        """Poll for new messages and dispatch to Codex."""
+        """Poll for new messages across all sessions and dispatch to Codex."""
         idle_count = 0
         while self._running:
             try:
-                messages = await self.client.poll_messages(
+                messages = await self.client.poll_pending(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
                     token=self.token,
-                    after=self.last_seen_id,
+                    agent_name=self.agent_name,
+                    after=self._last_seen_ts,
                 )
             except Exception as e:
                 logger.warning(f"Poll failed: {e}")
                 await asyncio.sleep(5)
                 continue
 
-            # Filter: only process messages from others, skip status/processed
+            # Filter out already-processed messages
             incoming = []
             for msg in messages:
                 msg_id = msg.get("id") or msg.get("messageId")
-                if msg_id:
-                    self.last_seen_id = msg_id
-                if msg.get("senderName") == self.agent_name:
-                    continue
-                if msg.get("messageType") == "status":
-                    continue
+                ts = msg.get("createdAt")
+                if ts:
+                    self._last_seen_ts = ts
                 if msg_id and msg_id in self._processed_ids:
                     continue
                 incoming.append(msg)
@@ -114,32 +112,12 @@ class CodexAdapter:
                     if msg_id:
                         self._processed_ids.add(msg_id)
                     await self._handle_message(msg)
-                # Sync cursor to skip messages posted during execution
-                await self._sync_cursor()
             else:
                 idle_count += 1
 
             # Adaptive polling: 2s active, up to 15s idle
             delay = min(2 + idle_count, 15) if not incoming else 2
             await asyncio.sleep(delay)
-
-    async def _sync_cursor(self):
-        """Update cursor to latest message to skip own responses."""
-        try:
-            messages = await self.client.poll_messages(
-                workspace_id=self.workspace_id,
-                session_id=self.session_id,
-                token=self.token,
-                limit=1,
-            )
-            if messages:
-                msg_id = (
-                    messages[-1].get("id") or messages[-1].get("messageId")
-                )
-                if msg_id:
-                    self.last_seen_id = msg_id
-        except Exception:
-            pass
 
     def _build_codex_cmd(self, prompt: str) -> list[str]:
         """Build the codex CLI command."""
@@ -170,14 +148,17 @@ class CodexAdapter:
         if not content:
             return
 
+        # Use the message's session_id so responses go to the correct session
+        msg_session_id = msg.get("sessionId") or self.session_id
+
         sender = msg.get("senderName") or msg.get("senderType", "user")
-        logger.info(f"Processing message from {sender}: {content[:80]}...")
+        logger.info(f"Processing message from {sender} in session {msg_session_id}: {content[:80]}...")
 
         # Post "thinking..." status
         try:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
-                session_id=self.session_id,
+                session_id=msg_session_id,
                 token=self.token,
                 content="thinking...",
                 sender_type="agent",
@@ -192,7 +173,7 @@ class CodexAdapter:
         except FileNotFoundError as e:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
-                session_id=self.session_id,
+                session_id=msg_session_id,
                 token=self.token,
                 content=str(e),
                 sender_type="agent",
@@ -248,7 +229,7 @@ class CodexAdapter:
                         try:
                             await self.client.send_message(
                                 workspace_id=self.workspace_id,
-                                session_id=self.session_id,
+                                session_id=msg_session_id,
                                 token=self.token,
                                 content=(
                                     f"**Running:** `{cmd_text}`"
@@ -265,7 +246,7 @@ class CodexAdapter:
                         try:
                             await self.client.send_message(
                                 workspace_id=self.workspace_id,
-                                session_id=self.session_id,
+                                session_id=msg_session_id,
                                 token=self.token,
                                 content=(
                                     f"**Editing:** `{filename}`"
@@ -322,7 +303,7 @@ class CodexAdapter:
                 if full_response:
                     await self.client.send_message(
                         workspace_id=self.workspace_id,
-                        session_id=self.session_id,
+                        session_id=msg_session_id,
                         token=self.token,
                         content=full_response,
                         sender_type="agent",
@@ -331,7 +312,7 @@ class CodexAdapter:
             else:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
+                    session_id=msg_session_id,
                     token=self.token,
                     content="No response generated. Please try again.",
                     sender_type="agent",
@@ -343,7 +324,7 @@ class CodexAdapter:
             try:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=self.session_id,
+                    session_id=msg_session_id,
                     token=self.token,
                     content=f"Error processing message: {e}",
                     sender_type="agent",
