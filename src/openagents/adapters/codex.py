@@ -186,6 +186,7 @@ class CodexAdapter:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=10 * 1024 * 1024,  # 10 MB line buffer
             )
 
             response_texts = []
