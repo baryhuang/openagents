@@ -285,6 +285,33 @@ class WorkspaceClient:
                     return result["items"]
                 return []
 
+    async def poll_pending(
+        self,
+        workspace_id: str,
+        token: str,
+        agent_name: str,
+        after: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[dict]:
+        """Poll for pending messages across all sessions via GET /v1/ws/{id}/pending."""
+        import aiohttp
+        params: Dict[str, Any] = {"agent_name": agent_name, "limit": limit}
+        if after:
+            params["after"] = after
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/ws/{workspace_id}/pending",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                result = data.get("data", data)
+                if "messages" in result:
+                    return result["messages"]
+                return []
+
     async def get_agents(
         self, workspace_id: str, token: str,
     ) -> List[dict]:
@@ -298,3 +325,44 @@ class WorkspaceClient:
             ) as resp:
                 data = await resp.json()
                 return data.get("data", [])
+
+    # ── Invitation methods (Phase 2) ──
+
+    async def check_invitations(self, agent_name: str) -> List[dict]:
+        """Check for pending invitations for this agent."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/ws/invitations/pending",
+                params={"agent_name": agent_name},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                return data.get("data", [])
+
+    async def accept_invitation(self, invite_token: str) -> dict:
+        """Accept a workspace invitation. Returns workspace info."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/ws/invitations/{invite_token}/accept",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"Accept invitation failed: {msg}")
+                return data.get("data", data)
+
+    async def reject_invitation(self, invite_token: str) -> None:
+        """Reject a workspace invitation."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/ws/invitations/{invite_token}/reject",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status not in (200, 201):
+                    data = await resp.json()
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"Reject invitation failed: {msg}")
