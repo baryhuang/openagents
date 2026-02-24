@@ -132,18 +132,19 @@ class WorkspaceClient:
         self.endpoint = endpoint.rstrip("/")
 
     async def register_agent(
-        self, agent_name: str, api_key: str, origin: str = "cli",
+        self, agent_name: str, api_key: Optional[str] = None,
+        origin: str = "cli",
     ) -> dict:
         """Register an agent identity via /v1/agentid/register."""
         import aiohttp
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.endpoint}/v1/agentid/register",
                 json={"agent_name": agent_name, "origin": origin},
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
-                },
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 data = await resp.json()
@@ -277,11 +278,11 @@ class WorkspaceClient:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 data = await resp.json()
-                result = data.get("data", data)
+                result = data.get("data") or data
                 # Handle both cursor mode and pagination mode
-                if "messages" in result:
+                if isinstance(result, dict) and "messages" in result:
                     return result["messages"]
-                if "items" in result:
+                if isinstance(result, dict) and "items" in result:
                     return result["items"]
                 return []
 
@@ -307,8 +308,8 @@ class WorkspaceClient:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 data = await resp.json()
-                result = data.get("data", data)
-                if "messages" in result:
+                result = data.get("data") or data
+                if isinstance(result, dict) and "messages" in result:
                     return result["messages"]
                 return []
 
