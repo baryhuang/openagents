@@ -42,6 +42,7 @@ class LocalAgentIdentity:
 class WorkspaceInfo:
     """Info about a connected workspace."""
     workspace_id: str
+    slug: str
     name: str
     token: str
     url: str
@@ -178,6 +179,7 @@ class WorkspaceClient:
                 result = data.get("data", data)
                 return WorkspaceInfo(
                     workspace_id=result["workspaceId"],
+                    slug=result.get("slug", result["workspaceId"]),
                     name=result["name"],
                     token=result["token"],
                     url=result["url"],

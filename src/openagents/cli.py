@@ -4249,7 +4249,7 @@ def join_cmd(
             console.print(f"[red]{e}[/red]")
             raise typer.Exit(1)
 
-        ws_id = result["workspaceId"]
+        ws_slug = result.get("slug", result["workspaceId"])
         ws_name = result["workspaceName"]
         ws_token = result["workspaceToken"]
         agent = result["agent"]
@@ -4258,8 +4258,8 @@ def join_cmd(
         console.print(f"  Workspace: [bold]{ws_name}[/bold]")
         console.print(f"  Agent:     {agent['agentName']} ({agent['role']})")
         console.print(
-            f"  URL:       [link=https://workspace.openagents.org/{ws_id}?token={ws_token}]"
-            f"https://workspace.openagents.org/{ws_id}?token={ws_token}[/link]"
+            f"  URL:       [link=https://workspace.openagents.org/{ws_slug}?token={ws_token}]"
+            f"https://workspace.openagents.org/{ws_slug}?token={ws_token}[/link]"
         )
 
     asyncio.run(_run())
