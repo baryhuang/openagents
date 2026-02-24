@@ -3826,17 +3826,10 @@ def connect_claude(
         generate_agent_name, LocalAgentIdentity, _load_identities,
     )
 
-    # Resolve API key: flag > env > stored
+    # Resolve API key: flag > env > stored (optional for workspace)
     if not api_key:
         data = _load_identities()
         api_key = data.get("api_key")
-    if not api_key:
-        console.print("[red]Error: API key required.[/red]")
-        console.print(
-            "Provide via --api-key, OA_API_KEY env var, "
-            "or run 'openagents login' first."
-        )
-        raise typer.Exit(1)
 
     # Get or create agent identity
     identity = get_identity("claude")
@@ -3850,10 +3843,13 @@ def connect_claude(
     async def _run():
         client = WorkspaceClient(endpoint=endpoint)
 
-        # Step 1: Register agent
+        # Step 1: Register agent (anonymous if no API key)
         with console.status("Registering agent..."):
             try:
-                result = await client.register_agent(agent_name, api_key)
+                result = await client.register_agent(
+                    agent_name, api_key,
+                    origin="cli",
+                )
                 if result.get("already_exists"):
                     console.print(
                         f"Agent [cyan]{agent_name}[/cyan] already registered"
@@ -3954,17 +3950,10 @@ def connect_openclaw(
         generate_agent_name, LocalAgentIdentity, _load_identities,
     )
 
-    # Resolve API key: flag > env > stored
+    # Resolve API key: flag > env > stored (optional for workspace)
     if not api_key:
         data = _load_identities()
         api_key = data.get("api_key")
-    if not api_key:
-        console.print("[red]Error: API key required.[/red]")
-        console.print(
-            "Provide via --api-key, OA_API_KEY env var, "
-            "or run 'openagents login' first."
-        )
-        raise typer.Exit(1)
 
     # Get or create agent identity
     identity = get_identity("openclaw")
@@ -4004,7 +3993,10 @@ def connect_openclaw(
         # Step 1: Register agent
         with console.status("Registering agent..."):
             try:
-                result = await client.register_agent(agent_name, api_key)
+                result = await client.register_agent(
+                    agent_name, api_key,
+                    origin="cli",
+                )
                 if result.get("already_exists"):
                     console.print(
                         f"Agent [cyan]{agent_name}[/cyan] already registered"
@@ -4092,17 +4084,10 @@ def connect_codex(
         generate_agent_name, LocalAgentIdentity, _load_identities,
     )
 
-    # Resolve API key: flag > env > stored
+    # Resolve API key: flag > env > stored (optional for workspace)
     if not api_key:
         data = _load_identities()
         api_key = data.get("api_key")
-    if not api_key:
-        console.print("[red]Error: API key required.[/red]")
-        console.print(
-            "Provide via --api-key, OA_API_KEY env var, "
-            "or run 'openagents login' first."
-        )
-        raise typer.Exit(1)
 
     # Check codex CLI is installed
     if not shutil.which("codex"):
@@ -4141,7 +4126,10 @@ def connect_codex(
         # Step 1: Register agent
         with console.status("Registering agent..."):
             try:
-                result = await client.register_agent(agent_name, api_key)
+                result = await client.register_agent(
+                    agent_name, api_key,
+                    origin="cli",
+                )
                 if result.get("already_exists"):
                     console.print(
                         f"Agent [cyan]{agent_name}[/cyan] already registered"
