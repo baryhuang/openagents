@@ -226,6 +226,7 @@ class ClaudeAdapter:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=clean_env,
+                limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64KB too small for large tool outputs)
             )
 
             used_send_tool = False
