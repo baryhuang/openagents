@@ -18,6 +18,7 @@ import shutil
 from typing import Optional
 
 from openagents.workspace_client import WorkspaceClient, DEFAULT_ENDPOINT
+from openagents.adapters.utils import generate_session_title, SESSION_DEFAULT_RE
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class ClaudeAdapter:
         self._last_seen_ts: Optional[str] = None  # ISO timestamp for cross-session polling
         self._running = False
         self._processed_ids: set = set()
+        self._titled_sessions: set = set()
         self._claude_session_id: Optional[str] = None
 
     async def run(self):
@@ -186,6 +188,24 @@ class ClaudeAdapter:
 
         sender = msg.get("senderName") or msg.get("senderType", "user")
         logger.info(f"Processing message from {sender} in session {msg_session_id}: {content[:80]}...")
+
+        # Auto-title session on first message if title is still default
+        if msg_session_id not in self._titled_sessions:
+            self._titled_sessions.add(msg_session_id)
+            title = generate_session_title(content)
+            if title:
+                try:
+                    info = await self.client.get_session(
+                        self.workspace_id, msg_session_id, self.token,
+                    )
+                    if SESSION_DEFAULT_RE.match(info.get("title", "")):
+                        await self.client.update_session(
+                            self.workspace_id, msg_session_id, self.token,
+                            title=title,
+                        )
+                        logger.debug(f"Auto-titled session: {title}")
+                except Exception as e:
+                    logger.debug(f"Failed to auto-title session: {e}")
 
         # Post "thinking..." status
         try:

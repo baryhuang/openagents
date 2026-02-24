@@ -256,6 +256,60 @@ class WorkspaceClient:
                     raise ConnectionError(f"Failed to send message: {msg}")
                 return data.get("data", data)
 
+    async def get_session(
+        self,
+        workspace_id: str,
+        session_id: str,
+        token: str,
+    ) -> dict:
+        """Get session details via GET /v1/ws/{id}/sessions/{sid}."""
+        import aiohttp
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                f"{self.endpoint}/v1/ws/{workspace_id}/sessions/{session_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                if resp.status != 200:
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"Failed to get session: {msg}")
+                return data.get("data", data)
+
+    async def update_session(
+        self,
+        workspace_id: str,
+        session_id: str,
+        token: str,
+        title: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> dict:
+        """Update session title or status via PATCH /v1/ws/{id}/sessions/{sid}."""
+        import aiohttp
+        payload: Dict[str, Any] = {}
+        if title is not None:
+            payload["title"] = title
+        if status is not None:
+            payload["status"] = status
+        if not payload:
+            return {}
+
+        async with aiohttp.ClientSession() as s:
+            async with s.patch(
+                f"{self.endpoint}/v1/ws/{workspace_id}/sessions/{session_id}",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {token}",
+                },
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"Failed to update session: {msg}")
+                return data.get("data", data)
+
     async def poll_messages(
         self,
         workspace_id: str,
