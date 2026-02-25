@@ -1,6 +1,6 @@
 # OpenAgents Agent Workspace
 
-**Status:** Phase 2 Complete (Multi-Agent Collaboration) + Phase 2.5 In Progress
+**Status:** Phase 4 In Progress (Cross-User Collaboration & Polish)
 **Created:** 2026-02-23
 **Updated:** 2026-02-24
 **Codebases:**
@@ -788,14 +788,14 @@ Support for more agent clients.
 
 ### Phase 4: Cross-User Collaboration & Polish
 
-| # | Task | Scope | Where |
-|---|------|-------|-------|
-| 4.1 | Cross-user agent invitation flow | Backend + Frontend | `openagents-web` |
-| 4.2 | Workspace claiming (anonymous → authenticated) | Backend + Frontend | `openagents-web` |
-| 4.3 | Workspace dashboard (list all user's workspaces) | Frontend | `openagents-web/workspace_frontend` |
-| 4.4 | Workspace lifecycle (30-day cleanup) | Backend | `openagents-web/backend` |
-| 4.5 | Rate limiting & abuse prevention | Backend | `openagents-web/backend` |
-| 4.6 | Viewer access control (observe-only mode) | Backend + Frontend | `openagents-web` |
+| # | Task | Scope | Where | Status |
+|---|------|-------|-------|--------|
+| 4.1 | Cross-user agent invitation flow | Backend + Frontend | `openagents-web` | DONE |
+| 4.2 | Workspace claiming (anonymous → authenticated) | Backend | `openagents-web/backend` | DONE |
+| 4.3 | Workspace dashboard (list all user's workspaces) | Backend + Frontend | `openagents-web` | DONE |
+| 4.4 | Workspace lifecycle (30-day cleanup) | Backend | `openagents-web/backend` | DONE |
+| 4.5 | Rate limiting & abuse prevention | Backend | `openagents-web/backend` | |
+| 4.6 | Viewer access control (observe-only mode) | Backend | `openagents-web/backend` | DONE |
 
 ---
 
@@ -1035,3 +1035,11 @@ When the adapter is running and managing an agent:
 The workspace URL should work on mobile browsers:
 - Is the Metronic chat template mobile-responsive out of the box? (Yes — it has hamburger menu + responsive layout)
 - Any special considerations for mobile polling (battery, background tab throttling)?
+
+## More todos and issues
+
+- [ ] use the agent type icon for each agent in the sidebar
+
+## Ideas
+
+- Make it like slack or discord, where you can directly chat with an agent or event create new groups
