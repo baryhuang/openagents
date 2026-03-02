@@ -1,6 +1,6 @@
 # OpenAgents Agent Workspace
 
-**Status:** Phase 4 In Progress (Cross-User Collaboration & Polish)
+**Status:** Phase 5 In Progress (UI Redesign)
 **Created:** 2026-02-23
 **Updated:** 2026-02-24
 **Codebases:**
@@ -797,6 +797,25 @@ Support for more agent clients.
 | 4.5 | Rate limiting & abuse prevention | Backend | `openagents-web/backend` | |
 | 4.6 | Viewer access control (observe-only mode) | Backend | `openagents-web/backend` | DONE |
 
+### Phase 5: UI Redesign — Match Mock Interface
+
+Mock interface: `openagents-web/internal_frontend/app/mocks/agent_workspace/`
+Concept doc: `openagents-web/docs/openagents_workspace_hl_concept.md`
+
+| # | Task | Scope | Where | Status |
+|---|------|-------|-------|--------|
+| 5.1 | 3-pane layout (sidebar + thread list + chat view) | Frontend | `workspace_frontend` | DONE |
+| 5.2 | Sidebar redesign (workspace header, slim agents, nav tabs, actions) | Frontend | `workspace_frontend` | DONE |
+| 5.3 | Thread list middle pane (sessions displayed as threads) | Frontend | `workspace_frontend` | DONE |
+| 5.4 | Chat header redesign (participant chips, master badge, add agent) | Frontend | `workspace_frontend` | DONE |
+| 5.5 | Connect Agent view (6 agent client cards with CLI commands) | Frontend | `workspace_frontend` | DONE |
+| 5.6 | Agent profile slide-over panel | Frontend | `workspace_frontend` | DONE |
+| 5.7 | File browser (placeholder UI — list + preview) | Frontend | `workspace_frontend` | DONE |
+| 5.8 | File browser backend (list, upload, preview APIs) | Backend | `openagents-web/backend` | |
+| 5.9 | Per-thread participants & master (DB + API) | Backend | `openagents-web/backend` | |
+| 5.10 | Unread message tracking | Backend + Frontend | `openagents-web` | |
+| 5.11 | Mobile responsive 3-pane (Sheet + view switching) | Frontend | `workspace_frontend` | |
+
 ---
 
 ## 16. Rate Limits
@@ -833,17 +852,40 @@ The template provides a production-ready chat UI with:
 - Share dialog, responsive layout (mobile/desktop)
 - Streaming indicator (animated pulse)
 
-### Adaptations Needed
+### UI Layout: Mail-Style 3-Pane (Phase 5)
 
-| Metronic Feature | Workspace Adaptation |
-|-----------------|---------------------|
-| User/Assistant messages | User/Agent messages (multiple agents, each with name + avatar) |
-| Model selector | Agent selector (which agent to address) or remove (master-first routing) |
-| Persona cards | Remove or replace with workspace quick actions |
-| Chat threads sidebar | Session tabs (workspace sessions, not separate chats) |
-| Single chat | Multi-agent chat with @mentions and delegation visibility |
-| Streaming text | Status events timeline (tool calls, file edits, thinking) |
-| Share dialog | Invitation dialog (invite agent by identity) |
+The workspace UI follows an **email client / Slack** pattern with three panes:
+
+```
+┌──────────────┬──────────────────┬─────────────────────────────────┐
+│              │                  │                                 │
+│   SIDEBAR    │   THREAD LIST    │        THREAD VIEW              │
+│              │                  │                                 │
+│  Workspace   │  All threads     │  Thread header                  │
+│  name/logo   │  sorted by       │    Title, participants,         │
+│              │  recent activity  │    "Add Agent" button           │
+│  ──────────  │                  │                                 │
+│              │  Each shows:     │  Messages                       │
+│  AGENTS      │  - Title         │    Scrollable chat history      │
+│  All agents  │  - Participants  │    Agent messages (color-coded) │
+│  in the      │    (avatars)     │    Human messages                │
+│  workspace   │  - Last message  │    @mentions, delegation        │
+│  pool with   │    preview       │                                 │
+│  online/     │  - Timestamp     │  ──────────────────────────     │
+│  offline     │                  │  Chat input                     │
+│  status      │                  │    Textarea + send               │
+│              │                  │                                 │
+│  ──────────  │                  │                                 │
+│  Navigation  │                  │                                 │
+│  Settings    │                  │                                 │
+│  Invite      │                  │                                 │
+└──────────────┴──────────────────┴─────────────────────────────────┘
+```
+
+Sidebar navigation switches between three view modes:
+- **Threads** — Thread list (middle) + Chat view (right)
+- **Files** — File list (middle) + File preview (right)
+- **Connect Agent** — Full-width agent client connection grid
 
 ### Directory Structure
 
