@@ -25,8 +25,8 @@ export function Wrapper() {
             className="hidden lg:block shrink-0 transition-all duration-300"
             style={{
               width: isSidebarOpen
-                ? 'calc(var(--sidebar-width) + 0.6rem)'
-                : 'calc(var(--sidebar-width-collapsed) + 0.6rem)',
+                ? 'var(--sidebar-width)'
+                : 'var(--sidebar-width-collapsed)',
             }}
           />
 
