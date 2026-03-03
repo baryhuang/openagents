@@ -3895,7 +3895,7 @@ def connect_claude(
         from openagents.adapters.claude import ClaudeAdapter
         adapter = ClaudeAdapter(
             workspace_id=ws.workspace_id,
-            session_id=ws.session_id,
+            channel_name=ws.channel_name,
             token=ws.token,
             agent_name=agent_name,
             endpoint=endpoint,
@@ -4041,7 +4041,7 @@ def connect_openclaw(
         from openagents.adapters.openclaw import OpenClawAdapter
         adapter = OpenClawAdapter(
             workspace_id=ws.workspace_id,
-            session_id=ws.session_id,
+            channel_name=ws.channel_name,
             token=ws.token,
             agent_name=agent_name,
             endpoint=endpoint,
@@ -4174,7 +4174,7 @@ def connect_codex(
         from openagents.adapters.codex import CodexAdapter
         adapter = CodexAdapter(
             workspace_id=ws.workspace_id,
-            session_id=ws.session_id,
+            channel_name=ws.channel_name,
             token=ws.token,
             agent_name=agent_name,
             endpoint=endpoint,
@@ -4320,8 +4320,8 @@ def mcp_server_cmd(
     workspace_id: str = typer.Option(
         ..., "--workspace-id", help="Workspace ID"
     ),
-    session_id: str = typer.Option(
-        ..., "--session-id", help="Session ID"
+    channel_name: str = typer.Option(
+        ..., "--channel-name", help="Channel name"
     ),
     agent_name: str = typer.Option(
         ..., "--agent-name", help="Agent name"
@@ -4346,7 +4346,7 @@ def mcp_server_cmd(
 
     asyncio.run(run_mcp_server(
         workspace_id=workspace_id,
-        session_id=session_id,
+        channel_name=channel_name,
         token=token,
         agent_name=agent_name,
         endpoint=endpoint,

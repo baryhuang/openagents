@@ -29,19 +29,19 @@ class ClaudeAdapter:
     def __init__(
         self,
         workspace_id: str,
-        session_id: str,
+        channel_name: str,
         token: str,
         agent_name: str,
         endpoint: str = DEFAULT_ENDPOINT,
     ):
         self.workspace_id = workspace_id
-        self.session_id = session_id  # default/initial session
+        self.channel_name = channel_name  # default/initial channel
         self.token = token
         self.agent_name = agent_name
         self.endpoint = endpoint
         self.client = WorkspaceClient(endpoint=endpoint)
         self.last_seen_id: Optional[str] = None
-        self._last_seen_ts: Optional[str] = None  # ISO timestamp for cross-session polling
+        self._last_event_id: Optional[str] = None  # event ID cursor for polling
         self._running = False
         self._processed_ids: set = set()
         self._titled_sessions: set = set()
@@ -78,7 +78,7 @@ class ClaudeAdapter:
             await asyncio.sleep(30)
 
     async def _poll_loop(self):
-        """Poll for new messages across all sessions and dispatch to Claude."""
+        """Poll for new messages across all channels and dispatch to Claude."""
         idle_count = 0
         while self._running:
             try:
@@ -86,7 +86,7 @@ class ClaudeAdapter:
                     workspace_id=self.workspace_id,
                     token=self.token,
                     agent_name=self.agent_name,
-                    after=self._last_seen_ts,
+                    after=self._last_event_id,
                 )
             except Exception as e:
                 logger.warning(f"Poll failed: {e}")
@@ -97,10 +97,9 @@ class ClaudeAdapter:
             incoming = []
             for msg in messages:
                 msg_id = msg.get("id") or msg.get("messageId")
-                # Advance timestamp cursor
-                ts = msg.get("createdAt")
-                if ts:
-                    self._last_seen_ts = ts
+                # Advance event ID cursor
+                if msg_id:
+                    self._last_event_id = msg_id
                 if msg_id and msg_id in self._processed_ids:
                     continue
                 incoming.append(msg)
@@ -119,8 +118,8 @@ class ClaudeAdapter:
             delay = min(2 + idle_count, 15) if not incoming else 2
             await asyncio.sleep(delay)
 
-    def _build_claude_cmd(self, prompt: str, session_id: str) -> list[str]:
-        """Build the claude CLI command for a specific session."""
+    def _build_claude_cmd(self, prompt: str, channel_name: str) -> list[str]:
+        """Build the claude CLI command for a specific channel."""
         claude_bin = shutil.which("claude")
         if not claude_bin:
             raise FileNotFoundError(
@@ -156,7 +155,7 @@ class ClaudeAdapter:
         if self._claude_session_id:
             cmd.extend(["--resume", self._claude_session_id])
 
-        # MCP config for workspace tools — uses the message's session_id
+        # MCP config for workspace tools — uses the message's channel
         mcp_config = {
             "mcpServers": {
                 "openagents-workspace": {
@@ -165,7 +164,7 @@ class ClaudeAdapter:
                     "args": [
                         "mcp-server",
                         "--workspace-id", self.workspace_id,
-                        "--session-id", session_id,
+                        "--channel-name", channel_name,
                         "--agent-name", self.agent_name,
                         "--endpoint", self.endpoint,
                     ],
@@ -183,35 +182,35 @@ class ClaudeAdapter:
         if not content:
             return
 
-        # Use the message's session_id so responses go to the correct session
-        msg_session_id = msg.get("sessionId") or self.session_id
+        # Use the message's channel so responses go to the correct channel
+        msg_channel = msg.get("sessionId") or self.channel_name
 
         sender = msg.get("senderName") or msg.get("senderType", "user")
-        logger.info(f"Processing message from {sender} in session {msg_session_id}: {content[:80]}...")
+        logger.info(f"Processing message from {sender} in channel {msg_channel}: {content[:80]}...")
 
-        # Auto-title session on first message if title is still default
-        if msg_session_id not in self._titled_sessions:
-            self._titled_sessions.add(msg_session_id)
+        # Auto-title: get_session/update_session are stubs now — skip if they fail
+        if msg_channel not in self._titled_sessions:
+            self._titled_sessions.add(msg_channel)
             title = generate_session_title(content)
             if title:
                 try:
                     info = await self.client.get_session(
-                        self.workspace_id, msg_session_id, self.token,
+                        self.workspace_id, msg_channel, self.token,
                     )
                     if SESSION_DEFAULT_RE.match(info.get("title", "")):
                         await self.client.update_session(
-                            self.workspace_id, msg_session_id, self.token,
+                            self.workspace_id, msg_channel, self.token,
                             title=title,
                         )
-                        logger.debug(f"Auto-titled session: {title}")
+                        logger.debug(f"Auto-titled channel: {title}")
                 except Exception as e:
-                    logger.debug(f"Failed to auto-title session: {e}")
+                    logger.debug(f"Failed to auto-title channel: {e}")
 
         # Post "thinking..." status
         try:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
-                session_id=msg_session_id,
+                channel_name=msg_channel,
                 token=self.token,
                 content="thinking...",
                 sender_type="agent",
@@ -222,11 +221,11 @@ class ClaudeAdapter:
             pass
 
         try:
-            cmd = self._build_claude_cmd(content, msg_session_id)
+            cmd = self._build_claude_cmd(content, msg_channel)
         except FileNotFoundError as e:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
-                session_id=msg_session_id,
+                channel_name=msg_channel,
                 token=self.token,
                 content=str(e),
                 sender_type="agent",
@@ -286,7 +285,7 @@ class ClaudeAdapter:
                                 try:
                                     await self.client.send_message(
                                         workspace_id=self.workspace_id,
-                                        session_id=msg_session_id,
+                                        channel_name=msg_channel,
                                         token=self.token,
                                         content=f"**Using tool:** `{tool_name}`\n```\n{tool_input}\n```",
                                         sender_type="agent",
@@ -331,7 +330,7 @@ class ClaudeAdapter:
                 if full_response:
                     await self.client.send_message(
                         workspace_id=self.workspace_id,
-                        session_id=msg_session_id,
+                        channel_name=msg_channel,
                         token=self.token,
                         content=full_response,
                         sender_type="agent",
@@ -340,7 +339,7 @@ class ClaudeAdapter:
             elif not used_send_tool and not response_text:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=msg_session_id,
+                    channel_name=msg_channel,
                     token=self.token,
                     content="No response generated. Please try again.",
                     sender_type="agent",
@@ -352,7 +351,7 @@ class ClaudeAdapter:
             try:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=msg_session_id,
+                    channel_name=msg_channel,
                     token=self.token,
                     content=f"Error processing message: {e}",
                     sender_type="agent",

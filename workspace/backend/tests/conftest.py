@@ -1,0 +1,98 @@
+# -*- coding: utf-8 -*-
+"""
+Test fixtures for the workspace backend.
+
+Uses SQLite in-memory database for fast isolated tests.
+Registers custom compilers so PostgreSQL-specific types work with SQLite.
+Uses StaticPool to share a single in-memory database across all connections.
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
+from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+# Register PostgreSQL types for SQLite compilation
+SQLiteTypeCompiler.visit_JSONB = lambda self, type_, **kw: "JSON"
+SQLiteTypeCompiler.visit_UUID = lambda self, type_, **kw: "TEXT"
+
+# Now import the app (which loads models)
+from app.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Test database setup — StaticPool ensures all connections share one DB
+# ---------------------------------------------------------------------------
+
+engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def override_get_db():
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+app.dependency_overrides[get_db] = override_get_db
+
+
+@pytest.fixture(autouse=True)
+def setup_database():
+    """Create all tables before each test, drop after."""
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture
+def client():
+    """FastAPI test client."""
+    return TestClient(app)
+
+
+@pytest.fixture
+def db():
+    """Direct database session for test setup/assertions."""
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def workspace(client):
+    """Create a workspace and return its details (id, slug, token)."""
+    resp = client.post("/v1/workspaces", json={
+        "name": "Test Workspace",
+        "agent_name": "agent-alpha",
+        "creator_email": "test@example.com",
+    })
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    return {
+        "id": data["workspaceId"],
+        "slug": data["slug"],
+        "name": "Test Workspace",
+        "token": data["token"],
+        "channel": data["channel"],
+    }

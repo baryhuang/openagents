@@ -1,0 +1,163 @@
+# -*- coding: utf-8 -*-
+"""
+Workspace ORM models.
+
+Aligned with the ONM: events table as the core log, plus materialized state
+tables for efficient queries.
+
+Uses both Python-side `default=` and PostgreSQL `server_default=` so models
+work in SQLite (tests) and PostgreSQL (production).
+"""
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    PrimaryKeyConstraint,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
+
+from app.database import Base
+
+
+def _uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Core event store
+# ---------------------------------------------------------------------------
+
+class EventRecord(Base):
+    """
+    Persisted ONM event. Every interaction is stored as an event row.
+    Populated by mod/persistence.
+    """
+    __tablename__ = "events"
+
+    id = Column(Text, primary_key=True)                     # ULID or UUID
+    network_id = Column(UUID(as_uuid=False), nullable=False)  # workspace ID
+    type = Column(Text, nullable=False)                      # e.g. "workspace.message.posted"
+    source = Column(Text, nullable=False)                    # e.g. "openagents:claude-agent"
+    target = Column(Text, nullable=False)                    # e.g. "channel/session-abc"
+    payload = Column(JSONB)
+    metadata_ = Column("metadata", JSONB, default={})        # underscore to avoid Python keyword
+    timestamp = Column(BigInteger, nullable=False)           # unix ms
+    visibility = Column(Text, default="channel")
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        Index("idx_events_network_type", "network_id", "type"),
+        Index("idx_events_network_target", "network_id", "target"),
+        Index("idx_events_network_timestamp", "network_id", "timestamp"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Materialized state tables (projections maintained by mods)
+# ---------------------------------------------------------------------------
+
+class Workspace(Base):
+    """A workspace = an ONM network."""
+    __tablename__ = "workspaces"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()"))
+    slug = Column(Text, unique=True)
+    name = Column(Text, nullable=False)
+    creator_email = Column(Text, nullable=True)
+    password_hash = Column(Text, nullable=True)
+    settings = Column(JSONB, default={})
+    status = Column(Text, default="active")
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    last_activity_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")
+    channels = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")
+    invitations = relationship("Invitation", back_populates="workspace", cascade="all, delete-orphan")
+
+
+class WorkspaceMember(Base):
+    """Agent membership in a workspace (network membership)."""
+    __tablename__ = "workspace_members"
+
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    agent_name = Column(Text, nullable=False)
+    role = Column(Text, default="member")           # master | member | observer
+    status = Column(Text, default="offline")         # online | offline
+    last_heartbeat = Column(DateTime(timezone=True), nullable=True)
+    joined_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    workspace = relationship("Workspace", back_populates="members")
+
+    __table_args__ = (
+        PrimaryKeyConstraint("workspace_id", "agent_name"),
+    )
+
+
+class Channel(Base):
+    """A channel = session / thread (named event stream)."""
+    __tablename__ = "channels"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()"))
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    name = Column(Text, nullable=False)              # e.g. "session-{uuid}"
+    title = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=True)
+    master_agent = Column(Text, nullable=True)       # per-channel master
+    status = Column(Text, default="active")
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    workspace = relationship("Workspace", back_populates="channels")
+    participants = relationship("ChannelMember", back_populates="channel", cascade="all, delete-orphan", lazy="selectin")
+
+
+class ChannelMember(Base):
+    """Per-channel participant (per-thread membership)."""
+    __tablename__ = "channel_members"
+
+    channel_id = Column(UUID(as_uuid=False), ForeignKey("channels.id", ondelete="CASCADE"), nullable=False)
+    agent_name = Column(Text, nullable=False)
+
+    channel = relationship("Channel", back_populates="participants")
+
+    __table_args__ = (
+        PrimaryKeyConstraint("channel_id", "agent_name"),
+    )
+
+
+class Invitation(Base):
+    """Workspace invitation."""
+    __tablename__ = "invitations"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()"))
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    target_agent = Column(Text, nullable=False)
+    invite_token = Column(Text, nullable=False, unique=True)
+    status = Column(Text, default="pending")         # pending | accepted | rejected | expired
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    workspace = relationship("Workspace", back_populates="invitations")
+
+
+# Standalone agent table (used when IDENTITY_MODE=standalone)
+class Agent(Base):
+    """Local agent identity (standalone mode only)."""
+    __tablename__ = "agents"
+
+    agent_name = Column(Text, primary_key=True)
+    display_name = Column(Text, nullable=True)
+    agent_type = Column(Text, nullable=True)         # "claude", "codex", "gemini", etc.
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
