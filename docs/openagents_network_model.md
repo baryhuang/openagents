@@ -8,7 +8,48 @@ Version 1.0
 
 ## 1. Introduction
 
-OpenAgents Network defines how agents discover each other, communicate through events, and share resources within and across agent networks. It is the foundational model behind both the [OpenAgents SDK](https://github.com/OpenAgentsInc/openagents) and [OpenAgents Workspace](https://workspace.openagents.org).
+### The Problem
+
+AI agents are multiplying. Every framework ships its own way for agents to talk: function-calling JSON over HTTP, bespoke WebSocket protocols, shared-memory thread pools, MCP tool servers, A2A task exchanges. Each approach works in isolation. None of them compose.
+
+The result is fragmentation at every layer:
+
+- **Identity.** How does agent A prove it is agent A? Every system invents its own auth — API keys here, OAuth there, no verification at all in local development. There is no progressive model that scales from "dev laptop" to "production federation."
+- **Discovery.** How does agent A find agent B? Hard-coded URLs, environment variables, service registries, well-known URIs — each project picks one and the rest don't interoperate.
+- **Communication.** Some systems use request-response. Others use event streams. Others use shared state. An agent built for one pattern cannot participate in another without a translation layer.
+- **Boundaries.** What happens when two agent systems need to interact? Today the answer is "build a custom bridge." There is no shared concept of a network boundary, no standard way to scope events, no model for cross-network routing.
+- **Extensibility.** Every platform hard-codes its features: persistence, rate limiting, access control, analytics. There is no clean separation between "what the network provides" and "what extensions add on top."
+
+This is the same class of problem the internet itself faced before TCP/IP and DNS. Not a lack of implementations — a lack of a shared model.
+
+### What This Document Defines
+
+The OpenAgents Network Model is that shared model. It defines how agents discover each other, communicate through events, and share resources within and across agent networks. It is the foundational model behind both the [OpenAgents SDK](https://github.com/OpenAgentsInc/openagents) and [OpenAgents Workspace](https://workspace.openagents.org).
+
+The model does not prescribe a specific runtime, language, or framework. It defines the abstractions — networks, addresses, events, mods, resources — and the rules for how they interact. Any implementation that follows these rules can interoperate with any other.
+
+### Design Philosophy
+
+**Events, not requests.**
+The model is event-centric. Every interaction — a chat message, a tool invocation, an agent joining the network, a status update — is an event with a type, source, target, and payload. There are no separate concepts for "messages," "commands," "notifications," or "RPC calls." They are all events with different types.
+
+Why events? Because events compose. A request-response exchange is two events linked by `metadata.in_reply_to`. A broadcast is an event with `target: agent:broadcast`. A tool invocation is an event targeting `resource/tool/{name}`. One primitive handles every communication pattern — point-to-point, fan-out, pub-sub, request-response — without special-casing any of them.
+
+**Networks as bounded contexts.**
+Events don't leak. An event emitted inside network A is never delivered to agents in network B unless an agent explicitly bridges them. This is a deliberate architectural choice. Networks are the unit of trust, the unit of administration, and the unit of deployment. Cross-network communication is sender-initiated and explicit, not automatic.
+
+This mirrors how the real world works. A Slack workspace, a Discord server, a Kubernetes namespace — each is a bounded context with its own rules. Agents that need to participate in multiple contexts join multiple networks. The model supports this natively through cross-network addressing (`{network}::{entity}`).
+
+**Progressive verification.**
+Not every agent needs a DID. A local development agent needs no verification at all. A production agent in a private network needs key-proof authentication. A federated agent crossing network boundaries needs a portable JWT or a full W3C DID. The model defines four levels (0–3) so that each network can set its own minimum and each agent can present the level it has.
+
+**Mods as the extensibility mechanism.**
+Instead of baking features into the core, the model defines a minimal event pipeline and lets mods — ordered interceptors — add behavior. Authentication is a guard mod. Persistence is an observe mod. Session management is a transform mod. A minimal development network loads zero mods. A production workspace loads a full pipeline. The features are the same; the composition is different.
+
+This means the core model stays small and stable. New capabilities are added by writing new mods, not by changing the model specification.
+
+**Transport-agnostic by design.**
+Agents communicate through events. How those events travel on the wire — HTTP, WebSocket, gRPC, SSE, stdio, A2A, MCP — is a transport detail. Two agents in the same network, one using HTTP polling and the other using a WebSocket, can communicate seamlessly. The network translates between transports. The events are identical; only the serialization differs.
 
 ### Goals
 
