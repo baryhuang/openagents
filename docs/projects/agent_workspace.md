@@ -812,7 +812,7 @@ Concept doc: `openagents-web/docs/openagents_workspace_hl_concept.md`
 | 5.6 | Agent profile slide-over panel | Frontend | `workspace_frontend` | DONE |
 | 5.7 | File browser (placeholder UI — list + preview) | Frontend | `workspace_frontend` | DONE |
 | 5.8 | File browser backend (list, upload, preview APIs) | Backend | `openagents-web/backend` | |
-| 5.9 | Per-thread participants & master (DB + API) | Backend | `openagents-web/backend` | |
+| 5.9 | Per-thread participants & master (DB + API) | Backend | `openagents-web/backend` | DONE |
 | 5.10 | Unread message tracking | Backend + Frontend | `openagents-web` | |
 | 5.11 | Mobile responsive 3-pane (Sheet + view switching) | Frontend | `workspace_frontend` | |
 
