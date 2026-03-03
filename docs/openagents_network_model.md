@@ -1,8 +1,8 @@
-# OpenAgents Network
+# OpenAgents Network Model
 
 **A Network Model for the Internet of Agents**
 
-Version 0.1 — Draft
+Version 1.0
 
 ---
 
