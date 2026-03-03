@@ -174,6 +174,32 @@ class NetworkConfig(BaseModel):
         description="Whether the network has been initialized. When False, initialization APIs are available.",
     )
 
+    # Remote identity configuration
+    identity_enabled: bool = Field(
+        default=False,
+        description="Enable remote agent identity registration via the global registry",
+    )
+    identity_endpoint: str = Field(
+        default="https://endpoint.openagents.org",
+        description="API endpoint for agent identity registration",
+    )
+    identity_api_key: Optional[str] = Field(
+        default=None,
+        description="Account API key (oa-xxxxx) for auto-registering agents in the global registry",
+    )
+    identity_auto_register: bool = Field(
+        default=True,
+        description="Automatically register unknown agents in the global registry during network registration",
+    )
+    identity_origin: str = Field(
+        default="network",
+        description="Origin tag for agents registered via this network (e.g., 'network', 'openclaw')",
+    )
+    identity_cache_ttl: int = Field(
+        default=3600,
+        description="Seconds to trust cached identity without re-verifying (default 1 hour)",
+    )
+
     # Version tracking
     created_by_version: Optional[str] = Field(
         default=None,

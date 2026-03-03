@@ -1,0 +1,183 @@
+export interface Workspace {
+  workspaceId: string;
+  slug: string;
+  name: string;
+  creatorEmail: string | null;
+  settings: Record<string, unknown>;
+  status: string;
+  createdAt: string | null;
+  lastActivityAt: string | null;
+  agents: WorkspaceAgent[];
+}
+
+export interface WorkspaceAgent {
+  agentName: string;
+  role: string;
+  status: string;
+  lastHeartbeatAt: string | null;
+  joinedAt: string | null;
+}
+
+export interface WorkspaceSession {
+  sessionId: string;
+  workspaceId: string;
+  createdBy: string | null;
+  title: string;
+  status: string;
+  participants: string[];
+  master: string | null;
+  createdAt: string | null;
+}
+
+export interface WorkspaceMessage {
+  messageId: string;
+  sessionId: string;
+  senderType: string;
+  senderName: string;
+  content: string;
+  mentions: string[];
+  targetAgents: string[] | null;
+  messageType: string;
+  metadata: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface WorkspaceInvitation {
+  invitationId: string;
+  workspaceId: string;
+  targetAgentName: string;
+  inviteToken: string;
+  workspaceName?: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// ONM Event types (event-native API)
+// ---------------------------------------------------------------------------
+
+export interface ONMEvent {
+  id: string;
+  type: string;
+  source: string;
+  target: string;
+  payload: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  timestamp: number;
+  visibility: string;
+}
+
+export interface EventPollResponse {
+  events: ONMEvent[];
+  has_more: boolean;
+}
+
+export interface NetworkAgent {
+  address: string;
+  role: string;
+  status: string;
+}
+
+export interface NetworkChannel {
+  address: string;
+  title: string | null;
+  master: string | null;
+  participants: string[];
+}
+
+export interface NetworkDiscovery {
+  agents: NetworkAgent[];
+  channels: NetworkChannel[];
+  mods: string[];
+  resources: string[];
+}
+
+export interface NetworkProfile {
+  id: string;
+  slug: string;
+  name: string;
+  access: { policy: string; min_verification: number };
+  status: string;
+  capabilities: string[];
+  agents_online: number;
+}
+
+// ---------------------------------------------------------------------------
+// API response wrappers
+// ---------------------------------------------------------------------------
+
+export interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+export interface PaginationMeta {
+  page: number;
+  page_size: number;
+  total: number | null;
+  total_pages: number | null;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  pagination: PaginationMeta;
+}
+
+export interface MessagePollResponse {
+  messages: WorkspaceMessage[];
+  hasMore: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Converters — map ONM types to component-friendly types
+// ---------------------------------------------------------------------------
+
+/** Convert an ONM event to a WorkspaceMessage for the chat UI. */
+export function eventToMessage(event: ONMEvent): WorkspaceMessage {
+  const isHuman = event.source.startsWith('human:');
+  const senderName = event.source.replace(/^(openagents:|human:)/, '');
+  const payload = (event.payload || {}) as Record<string, unknown>;
+
+  return {
+    messageId: event.id,
+    sessionId: event.target.replace(/^channel\//, ''),
+    senderType: isHuman ? 'human' : 'agent',
+    senderName,
+    content: (payload.content as string) || '',
+    mentions: (payload.mentions as string[]) || [],
+    targetAgents: (event.metadata?.target_agents as string[]) || null,
+    messageType: (payload.message_type as string) || 'chat',
+    metadata: event.metadata || {},
+    createdAt: new Date(event.timestamp * 1000).toISOString(),
+  };
+}
+
+/** Convert a NetworkAgent from discover to a WorkspaceAgent. */
+export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgent {
+  return {
+    agentName: agent.address.replace(/^openagents:/, ''),
+    role: agent.role,
+    status: agent.status,
+    lastHeartbeatAt: null,
+    joinedAt: null,
+  };
+}
+
+/** Convert a NetworkChannel from discover to a WorkspaceSession for the thread UI. */
+export function networkChannelToSession(ch: NetworkChannel, workspaceId: string): WorkspaceSession {
+  const name = ch.address.replace(/^channel\//, '');
+  return {
+    sessionId: name,
+    workspaceId,
+    createdBy: null,
+    title: ch.title || name,
+    status: 'active',
+    participants: ch.participants,
+    master: ch.master,
+    createdAt: null,
+  };
+}

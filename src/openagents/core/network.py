@@ -499,7 +499,8 @@ class AgentNetwork:
                 message=f"Agent {agent_id} was recently kicked. Please wait {remaining:.0f} seconds before re-registering.",
             )
 
-        # Create agent info
+        # Create agent info (store connect_time for uptime tracking)
+        metadata["_connect_time"] = time.time()
         agent_info = AgentConnection(
             agent_id=agent_id,
             metadata=metadata,
@@ -532,6 +533,31 @@ class AgentNetwork:
             requested_group=requested_group
         )
         if success:
+            # Remote identity registration (if enabled)
+            if (
+                getattr(self.config, 'identity_enabled', False)
+                and getattr(self.config, 'identity_api_key', None)
+                and getattr(self.config, 'identity_auto_register', True)
+            ):
+                try:
+                    from openagents.connect import connect as identity_connect
+                    identity_result = await identity_connect(
+                        name=agent_id,
+                        api_key=self.config.identity_api_key,
+                        origin=getattr(self.config, 'identity_origin', 'network'),
+                        endpoint=getattr(self.config, 'identity_endpoint', 'https://endpoint.openagents.org'),
+                        cache_ttl=getattr(self.config, 'identity_cache_ttl', 3600),
+                    )
+                    metadata['identity'] = {
+                        'profile_url': identity_result.profile_url,
+                        'did': identity_result.did,
+                        'cert_serial': identity_result.cert_serial,
+                    }
+                    logger.info(f"Remote identity registered for {agent_id}: {identity_result.profile_url}")
+                except Exception as e:
+                    # Graceful degradation: never block local registration
+                    logger.warning(f"Remote identity registration failed for {agent_id}: {e}")
+
             # Generate and store authentication secret
             secret = self.secret_manager.generate_secret(agent_id)
 
@@ -611,6 +637,19 @@ class AgentNetwork:
             Dict[str, AgentInfo]: Dictionary of agent ID to agent info
         """
         return self.topology.get_agent_registry()
+
+    def get_agent_uptimes(self) -> Dict[str, float]:
+        """Get session uptime in hours for each connected agent.
+
+        Returns:
+            Dict[str, float]: Dictionary of agent ID to uptime hours
+        """
+        now = time.time()
+        result = {}
+        for agent_id, conn in self.get_agent_registry().items():
+            connect_time = conn.metadata.get("_connect_time", conn.last_seen)
+            result[agent_id] = (now - connect_time) / 3600.0
+        return result
 
     def get_agent(self, agent_id: str) -> Optional[AgentConnection]:
         """Get information about a specific agent.

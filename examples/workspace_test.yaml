@@ -146,7 +146,7 @@ network:
     config:
       workspace_type: community_knowledge_base
   initialized: true
-  created_by_version: 0.8.5.post2
+  created_by_version: 0.8.5.post5
 network_profile:
   discoverable: true
   name: Work Test Workspace

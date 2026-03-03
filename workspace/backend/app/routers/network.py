@@ -1,0 +1,276 @@
+# -*- coding: utf-8 -*-
+"""
+ONM Network endpoints — agent lifecycle and discovery.
+
+These endpoints are convenience wrappers that translate REST calls into
+ONM events and push them through the mod pipeline.
+
+POST /v1/join         → network.agent.join event
+POST /v1/leave        → network.agent.leave event
+POST /v1/heartbeat    → network.ping event
+GET  /v1/discover     Discover agents, channels, resources
+GET  /v1/profile      Network profile metadata
+"""
+
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.config import config
+from app.database import get_db
+from app.models import Channel, Workspace, WorkspaceMember
+from app.pipeline_factory import pipeline
+from app.response import ResponseCode, json_response, success_response
+from openagents.core.onm_events import Event
+from openagents.core.onm_mods import EventRejected, PipelineContext
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/v1", tags=["Network"])
+
+AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+class JoinRequest(BaseModel):
+    agent_name: str
+    token: str                         # workspace token
+    network: Optional[str] = None      # workspace ID or slug
+
+class LeaveRequest(BaseModel):
+    agent_name: str
+    network: str
+
+class HeartbeatRequest(BaseModel):
+    agent_name: str
+    network: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_workspace(db: Session, network: str) -> Optional[Workspace]:
+    """Resolve workspace by ID or slug."""
+    return db.execute(
+        select(Workspace).where(
+            (Workspace.id == network) | (Workspace.slug == network)
+        )
+    ).scalar_one_or_none()
+
+
+async def _emit_event(event: Event, workspace, db: Session, token: str = None):
+    """Push an event through the mod pipeline. Returns None on rejection."""
+    context = PipelineContext(
+        network_id=str(workspace.id),
+        agent_address=event.source,
+        db=db,
+        workspace=workspace,
+        token=token,
+    )
+    try:
+        result = await pipeline.process(event, context)
+    except EventRejected:
+        return None
+    db.commit()
+    return result
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/join
+# ---------------------------------------------------------------------------
+
+@router.post("/join")
+async def join_network(
+    body: JoinRequest,
+    db: Session = Depends(get_db),
+):
+    """Agent requests to join a network (workspace)."""
+    workspace = _resolve_workspace(db, body.network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    event = Event(
+        type="network.agent.join",
+        source=f"openagents:{body.agent_name}",
+        target="core",
+        payload={
+            "agent_name": body.agent_name,
+        },
+    )
+
+    result = await _emit_event(event, workspace, db, token=body.token)
+    if result is None:
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid network token")
+
+    return success_response({
+        "network_id": str(workspace.id),
+        "agent_name": body.agent_name,
+        "role": result.metadata.get("role", "member"),
+        "status": "online",
+    })
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/leave
+# ---------------------------------------------------------------------------
+
+@router.post("/leave")
+async def leave_network(
+    body: LeaveRequest,
+    db: Session = Depends(get_db),
+):
+    """Agent announces departure from a network."""
+    workspace = _resolve_workspace(db, body.network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    event = Event(
+        type="network.agent.leave",
+        source=f"openagents:{body.agent_name}",
+        target="core",
+        payload={
+            "agent_name": body.agent_name,
+        },
+    )
+
+    # Pass workspace token since leave doesn't carry one — already authenticated by knowing the network
+    result = await _emit_event(event, workspace, db, token=workspace.password_hash)
+    if result is None:
+        return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
+
+    return success_response({"agent_name": body.agent_name, "status": "offline"})
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/heartbeat
+# ---------------------------------------------------------------------------
+
+@router.post("/heartbeat")
+async def heartbeat(
+    body: HeartbeatRequest,
+    db: Session = Depends(get_db),
+):
+    """Agent presence heartbeat."""
+    workspace = _resolve_workspace(db, body.network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    event = Event(
+        type="network.ping",
+        source=f"openagents:{body.agent_name}",
+        target="core",
+        payload={
+            "agent_name": body.agent_name,
+        },
+    )
+
+    result = await _emit_event(event, workspace, db, token=workspace.password_hash)
+    if result is None:
+        return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
+
+    return success_response({"agent_name": body.agent_name, "status": "online"})
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/discover — discovery doesn't go through the pipeline
+# ---------------------------------------------------------------------------
+
+@router.get("/discover")
+async def discover(
+    network: str = Query(..., description="Network (workspace) ID"),
+    db: Session = Depends(get_db),
+):
+    """Discover agents, channels, and resources in a network."""
+    workspace = _resolve_workspace(db, network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    now = datetime.now(timezone.utc)
+
+    members = db.execute(
+        select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
+    ).scalars().all()
+
+    agents = []
+    for m in members:
+        status = m.status
+        if m.last_heartbeat:
+            heartbeat = m.last_heartbeat
+            if heartbeat.tzinfo is None:
+                heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+            if (now - heartbeat) > AGENT_TIMEOUT:
+                status = "offline"
+        agents.append({
+            "address": f"openagents:{m.agent_name}",
+            "role": m.role,
+            "status": status,
+        })
+
+    channels_rows = db.execute(
+        select(Channel).where(Channel.workspace_id == workspace.id)
+    ).scalars().all()
+
+    channels = [
+        {
+            "address": f"channel/{c.name}",
+            "title": c.title,
+            "master": c.master_agent,
+            "participants": [p.agent_name for p in (c.participants or [])],
+        }
+        for c in channels_rows
+    ]
+
+    return success_response({
+        "agents": agents,
+        "channels": channels,
+        "mods": ["mod/auth", "mod/workspace", "mod/persistence"],
+        "resources": [],
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/profile
+# ---------------------------------------------------------------------------
+
+@router.get("/profile")
+async def network_profile(
+    network: str = Query(..., description="Network (workspace) ID"),
+    db: Session = Depends(get_db),
+):
+    """Return the network profile (metadata, transports, capabilities)."""
+    workspace = _resolve_workspace(db, network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    online_count = len(db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.status == "online",
+        )
+    ).scalars().all())
+
+    return success_response({
+        "id": str(workspace.id),
+        "slug": workspace.slug,
+        "name": workspace.name,
+        "access": {
+            "policy": "token",
+            "min_verification": 0,
+        },
+        "status": workspace.status,
+        "capabilities": [
+            "workspace.message",
+            "network.channel",
+            "network.agent",
+        ],
+        "agents_online": online_count,
+    })

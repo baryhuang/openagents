@@ -85,6 +85,9 @@ langchain = [
     "langchain-openai>=0.1.0",    # OpenAI integration for LangChain
 ]
 
+# Claude Code adapter — no extra Python deps needed.
+# Requires `claude` CLI: curl -fsSL https://claude.ai/install.sh | bash
+
 # Development dependencies
 dev = [
     # Testing framework
@@ -116,7 +119,7 @@ docs = [
 
 # All optional dependencies
 all = [
-    "openagents[p2p,webrtc,langchain,dev,docs]",
+    "openagents[p2p,webrtc,langchain,claude,dev,docs]",
 ]
 
 [project.urls]
