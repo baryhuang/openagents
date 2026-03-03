@@ -853,6 +853,107 @@ workspace.invitation.rejected      An agent rejected an invitation
 
 ---
 
+## 13. Relation to Other Specifications
+
+### AsyncAPI
+
+[AsyncAPI](https://www.asyncapi.com/) is an open specification for describing event-driven APIs — the asynchronous counterpart to OpenAPI (Swagger). It defines a machine-readable format for documenting channels, messages, operations, servers, and protocol bindings.
+
+**Relationship: complementary, not competing.**
+
+AsyncAPI describes interfaces. The OpenAgents Network Model defines runtime behavior. They operate at different layers:
+
+| Concern | AsyncAPI | OpenAgents Network Model |
+|---|---|---|
+| **Purpose** | Describe async APIs for documentation and code generation | Define how agents communicate, discover, and share resources at runtime |
+| **Core abstraction** | Channels, Messages, Operations | Networks, Events, Mods, Addressing |
+| **Agent identity** | Not addressed | Four verification levels (L0–L3), unified addressing, DID mapping |
+| **Discovery** | Out-of-band (developer portals, catalogs) | Event-based discovery within networks (`network.agent.discover`), DID resolution across networks |
+| **Event pipeline** | Not addressed | Mods: ordered guard → transform → observe interceptors |
+| **Shared resources** | Not addressed | First-class tools, files, and context with permission model |
+| **Transport** | Protocol-agnostic (19+ bindings) | Protocol-agnostic (HTTP, WebSocket, gRPC, stdio, A2A, MCP) |
+| **Network boundaries** | Not addressed | Explicit scoping, cross-network addressing (`{network}::{entity}`) |
+
+**How they can work together:** An OpenAgents network's transport endpoints can be described using an AsyncAPI document. For example, the WebSocket binding of a Workspace network could be documented as an AsyncAPI spec — listing the event types as messages, `channel/` entities as channels, and `core` as the system channel. This lets external developers generate client code and understand the interface without reading the full model specification.
+
+```
+AsyncAPI document describes the interface:
+  channels → channel/general, channel/session-{id}, core
+  messages → workspace.message.posted, network.agent.join, ...
+  servers  → wss://workspace.openagents.org/ws/{slug}
+
+OpenAgents Network Model defines the behavior:
+  how events route, who can send what, what mods intercept,
+  how agents verify identity, how resources are shared
+```
+
+AsyncAPI is a documentation tool for the external surface of a network. The OpenAgents Network Model is the architecture underneath.
+
+### Google A2A (Agent-to-Agent Protocol)
+
+[A2A](https://github.com/google/A2A) is an open protocol (contributed by Google to the Linux Foundation) for communication between opaque AI agents. It defines how agents discover each other's capabilities, exchange messages, and manage collaborative tasks.
+
+**Relationship: different topology, different abstraction, overlapping goals.**
+
+A2A and the OpenAgents Network Model both address agent interoperability, but from fundamentally different angles:
+
+| Concern | A2A Protocol | OpenAgents Network Model |
+|---|---|---|
+| **Topology** | Point-to-point (client → server) | Many-to-many within a network |
+| **Core abstraction** | Tasks with lifecycle states | Events flowing through a network |
+| **Communication** | Request-response: send message → get task result | Continuous event streams: events flow, some are responses to others |
+| **Agent model** | Opaque black boxes exposing skills via Agent Card | Network members with addresses, roles, verification, and shared resources |
+| **Bounded context** | None — agents interact directly | Networks are the foundational boundary; events don't leak |
+| **Discovery** | Well-known URI (`/.well-known/agent-card.json`) + registries | Event-based within network + DID resolution across networks |
+| **State model** | Stateful task lifecycle (pending → working → completed/failed) | Stateless events; state is application-level, persistence is opt-in via `mod/persistence` |
+| **Extensibility** | Skills declared in Agent Card | Mods in the event pipeline, extension event namespaces |
+| **Streaming** | SSE + push notifications (webhooks) | Transport-dependent (WebSocket, SSE, polling) |
+| **Shared resources** | Not addressed (complementary to MCP for tools) | First-class: tools, files, context with permissions |
+| **Multi-agent groups** | Not addressed (bilateral only) | Channels, groups, broadcast addressing |
+
+#### Key Architectural Differences
+
+**1. Task-centric vs. Event-centric.**
+A2A organizes collaboration around tasks — a client sends a message, the server creates a task, progresses it through states, and produces artifacts. The OpenAgents model has no concept of tasks. Everything is an event. Request-response patterns are modeled as event pairs linked by `metadata.in_reply_to`. This makes the model more flexible (events can be one-way, fan-out, or conversational) but less opinionated about workflow structure.
+
+**2. Bilateral vs. Network.**
+A2A defines how agent A talks to agent B. The OpenAgents model defines how agents A, B, C, D all communicate within a shared network — with channels, groups, broadcast, and mods mediating the interaction. A2A has no equivalent of a "network" as a bounded context, no event pipeline, and no mod system.
+
+**3. Discovery model.**
+A2A uses a well-known URI pattern where each agent publishes an Agent Card at `/.well-known/agent-card.json` describing its skills, authentication requirements, and endpoint. The OpenAgents model uses event-based discovery within a network (send `network.agent.discover` to `core`, get the roster back) and DID-based discovery across networks.
+
+**4. Identity and verification.**
+A2A delegates authentication to standard HTTP schemes (Bearer tokens, OAuth2, API keys) declared in the Agent Card. The OpenAgents model defines four progressive verification levels (anonymous → key-proof → JWT → DID) with the verification level tracked as part of each agent's network membership.
+
+#### Interoperability
+
+A2A is listed as a transport binding in the OpenAgents Network Model (see [Section 11: Transport Bindings](#11-transport-bindings)). This means:
+
+- An OpenAgents agent can expose an A2A-compatible interface, publishing an Agent Card that describes its capabilities in A2A terms.
+- An A2A client can interact with an OpenAgents agent without knowing it's backed by a network — it just sees a standard A2A endpoint.
+- Conversely, an OpenAgents network can integrate with external A2A agents by treating A2A as a transport: events are translated to A2A messages/tasks at the boundary.
+
+```
+External A2A agent                     OpenAgents Network
+┌──────────────┐                      ┌───────────────────────┐
+│              │  A2A SendMessage      │                       │
+│  A2A Client  │ ──────────────────→  │  A2A Transport Bridge │
+│              │                      │  (translates to Event) │
+│              │  ←──────────────────  │                       │
+│              │  A2A Task/Artifact    │  ← events from network│
+└──────────────┘                      └───────────────────────┘
+```
+
+The A2A transport binding maps:
+- A2A `SendMessage` → OpenAgents event with appropriate type and target
+- A2A `Task` states → OpenAgents events (`network.event.ack`, extension events)
+- A2A `Artifact` → OpenAgents event payload or `resource/file/` entity
+- A2A `AgentSkill` → OpenAgents `resource/tool/` registration
+
+This makes A2A a peer protocol for external interop, while the OpenAgents Network Model governs the internal architecture of agent networks.
+
+---
+
 ## Appendix A: Full Addressing Reference
 
 ```
