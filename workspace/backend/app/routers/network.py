@@ -13,6 +13,7 @@ GET  /v1/profile      Network profile metadata
 """
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -58,12 +59,24 @@ class HeartbeatRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+
+
+def _workspace_filter(identifier: str):
+    """Build a SQLAlchemy filter for Workspace by ID (UUID) or slug.
+
+    Non-UUID strings are only matched against slug to avoid PostgreSQL
+    cast errors on the UUID id column.
+    """
+    if _UUID_RE.match(identifier):
+        return (Workspace.id == identifier) | (Workspace.slug == identifier)
+    return Workspace.slug == identifier
+
+
 def _resolve_workspace(db: Session, network: str) -> Optional[Workspace]:
     """Resolve workspace by ID or slug."""
     return db.execute(
-        select(Workspace).where(
-            (Workspace.id == network) | (Workspace.slug == network)
-        )
+        select(Workspace).where(_workspace_filter(network))
     ).scalar_one_or_none()
 
 

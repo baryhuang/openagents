@@ -18,6 +18,7 @@ from app.database import get_db
 from app.models import EventRecord, Workspace
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
+from app.routers.network import _workspace_filter
 from openagents.core.onm_events import Event
 from openagents.core.onm_mods import EventRejected, PipelineContext
 
@@ -61,9 +62,7 @@ async def send_event(
 
     # Resolve workspace
     workspace = db.execute(
-        select(Workspace).where(
-            (Workspace.id == body.network) | (Workspace.slug == body.network)
-        )
+        select(Workspace).where(_workspace_filter(body.network))
     ).scalar_one_or_none()
 
     if not workspace:
@@ -129,9 +128,7 @@ async def poll_events(
     """
     # Resolve workspace
     workspace = db.execute(
-        select(Workspace).where(
-            (Workspace.id == network) | (Workspace.slug == network)
-        )
+        select(Workspace).where(_workspace_filter(network))
     ).scalar_one_or_none()
 
     if not workspace:
