@@ -32,6 +32,7 @@ from app.models import (
     WorkspaceMember,
 )
 from app.response import ResponseCode, json_response, success_response
+from app.routers.network import _workspace_filter
 
 logger = logging.getLogger(__name__)
 
@@ -218,9 +219,7 @@ async def get_workspace(
 ):
     """Get workspace details by ID or slug."""
     workspace = db.execute(
-        select(Workspace).where(
-            (Workspace.id == workspace_id) | (Workspace.slug == workspace_id)
-        )
+        select(Workspace).where(_workspace_filter(workspace_id))
     ).scalar_one_or_none()
 
     if not workspace:
@@ -246,9 +245,7 @@ async def update_workspace(
 ):
     """Update workspace name, settings, or status."""
     workspace = db.execute(
-        select(Workspace).where(
-            (Workspace.id == workspace_id) | (Workspace.slug == workspace_id)
-        )
+        select(Workspace).where(_workspace_filter(workspace_id))
     ).scalar_one_or_none()
 
     if not workspace:
@@ -283,9 +280,7 @@ async def delete_workspace(
 ):
     """Soft-delete a workspace (set status to 'deleted')."""
     workspace = db.execute(
-        select(Workspace).where(
-            (Workspace.id == workspace_id) | (Workspace.slug == workspace_id)
-        )
+        select(Workspace).where(_workspace_filter(workspace_id))
     ).scalar_one_or_none()
 
     if not workspace:
