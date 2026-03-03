@@ -20,7 +20,7 @@ from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ENDPOINT = "https://endpoint.openagents.org"
+DEFAULT_ENDPOINT = "https://workspace-endpoint.openagents.org"
 IDENTITY_DIR = Path.home() / ".openagents"
 IDENTITY_FILE = IDENTITY_DIR / "identity.json"
 

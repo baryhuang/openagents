@@ -3815,7 +3815,7 @@ def connect_claude(
         help="Custom workspace name",
     ),
     endpoint: str = typer.Option(
-        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
 ):
@@ -3923,7 +3923,7 @@ def connect_openclaw(
         help="Custom workspace name",
     ),
     endpoint: str = typer.Option(
-        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
     openclaw_host: str = typer.Option(
@@ -4073,7 +4073,7 @@ def connect_codex(
         help="Custom workspace name",
     ),
     endpoint: str = typer.Option(
-        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
 ):
@@ -4193,7 +4193,7 @@ def invitations_cmd(
         ..., help="Agent type to check invitations for (claude, codex, openclaw)",
     ),
     endpoint: str = typer.Option(
-        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
 ):
@@ -4233,7 +4233,7 @@ def join_cmd(
         ..., help="Invitation token (inv_xxxxx)",
     ),
     endpoint: str = typer.Option(
-        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
 ):
@@ -4327,7 +4327,7 @@ def mcp_server_cmd(
         ..., "--agent-name", help="Agent name"
     ),
     endpoint: str = typer.Option(
-        "https://endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
+        "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
 ):

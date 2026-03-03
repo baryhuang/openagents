@@ -27,7 +27,7 @@ services:
   frontend:
     build: ./frontend
     environment:
-      NEXT_PUBLIC_API_URL: ${API_URL:-https://workspace.openagents.org}
+      NEXT_PUBLIC_API_URL: ${API_URL:-https://workspace-endpoint.openagents.org}
     depends_on:
       - backend
 
