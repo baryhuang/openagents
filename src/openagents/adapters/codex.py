@@ -32,19 +32,19 @@ class CodexAdapter:
     def __init__(
         self,
         workspace_id: str,
-        session_id: str,
+        channel_name: str,
         token: str,
         agent_name: str,
         endpoint: str = DEFAULT_ENDPOINT,
     ):
         self.workspace_id = workspace_id
-        self.session_id = session_id  # default/initial session
+        self.channel_name = channel_name  # default/initial channel
         self.token = token
         self.agent_name = agent_name
         self.endpoint = endpoint
         self.client = WorkspaceClient(endpoint=endpoint)
         self.last_seen_id: Optional[str] = None
-        self._last_seen_ts: Optional[str] = None
+        self._last_event_id: Optional[str] = None
         self._running = False
         self._processed_ids: set = set()
         self._titled_sessions: set = set()
@@ -81,7 +81,7 @@ class CodexAdapter:
             await asyncio.sleep(30)
 
     async def _poll_loop(self):
-        """Poll for new messages across all sessions and dispatch to Codex."""
+        """Poll for new messages across all channels and dispatch to Codex."""
         idle_count = 0
         while self._running:
             try:
@@ -89,7 +89,7 @@ class CodexAdapter:
                     workspace_id=self.workspace_id,
                     token=self.token,
                     agent_name=self.agent_name,
-                    after=self._last_seen_ts,
+                    after=self._last_event_id,
                 )
             except Exception as e:
                 logger.warning(f"Poll failed: {e}")
@@ -100,9 +100,8 @@ class CodexAdapter:
             incoming = []
             for msg in messages:
                 msg_id = msg.get("id") or msg.get("messageId")
-                ts = msg.get("createdAt")
-                if ts:
-                    self._last_seen_ts = ts
+                if msg_id:
+                    self._last_event_id = msg_id
                 if msg_id and msg_id in self._processed_ids:
                     continue
                 incoming.append(msg)
@@ -150,35 +149,35 @@ class CodexAdapter:
         if not content:
             return
 
-        # Use the message's session_id so responses go to the correct session
-        msg_session_id = msg.get("sessionId") or self.session_id
+        # Use the message's channel so responses go to the correct channel
+        msg_channel = msg.get("sessionId") or self.channel_name
 
         sender = msg.get("senderName") or msg.get("senderType", "user")
-        logger.info(f"Processing message from {sender} in session {msg_session_id}: {content[:80]}...")
+        logger.info(f"Processing message from {sender} in channel {msg_channel}: {content[:80]}...")
 
-        # Auto-title session on first message if title is still default
-        if msg_session_id not in self._titled_sessions:
-            self._titled_sessions.add(msg_session_id)
+        # Auto-title: get_session/update_session are stubs now — skip if they fail
+        if msg_channel not in self._titled_sessions:
+            self._titled_sessions.add(msg_channel)
             title = generate_session_title(content)
             if title:
                 try:
                     info = await self.client.get_session(
-                        self.workspace_id, msg_session_id, self.token,
+                        self.workspace_id, msg_channel, self.token,
                     )
                     if SESSION_DEFAULT_RE.match(info.get("title", "")):
                         await self.client.update_session(
-                            self.workspace_id, msg_session_id, self.token,
+                            self.workspace_id, msg_channel, self.token,
                             title=title,
                         )
-                        logger.debug(f"Auto-titled session: {title}")
+                        logger.debug(f"Auto-titled channel: {title}")
                 except Exception as e:
-                    logger.debug(f"Failed to auto-title session: {e}")
+                    logger.debug(f"Failed to auto-title channel: {e}")
 
         # Post "thinking..." status
         try:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
-                session_id=msg_session_id,
+                channel_name=msg_channel,
                 token=self.token,
                 content="thinking...",
                 sender_type="agent",
@@ -193,7 +192,7 @@ class CodexAdapter:
         except FileNotFoundError as e:
             await self.client.send_message(
                 workspace_id=self.workspace_id,
-                session_id=msg_session_id,
+                channel_name=msg_channel,
                 token=self.token,
                 content=str(e),
                 sender_type="agent",
@@ -250,7 +249,7 @@ class CodexAdapter:
                         try:
                             await self.client.send_message(
                                 workspace_id=self.workspace_id,
-                                session_id=msg_session_id,
+                                channel_name=msg_channel,
                                 token=self.token,
                                 content=(
                                     f"**Running:** `{cmd_text}`"
@@ -267,7 +266,7 @@ class CodexAdapter:
                         try:
                             await self.client.send_message(
                                 workspace_id=self.workspace_id,
-                                session_id=msg_session_id,
+                                channel_name=msg_channel,
                                 token=self.token,
                                 content=(
                                     f"**Editing:** `{filename}`"
@@ -324,7 +323,7 @@ class CodexAdapter:
                 if full_response:
                     await self.client.send_message(
                         workspace_id=self.workspace_id,
-                        session_id=msg_session_id,
+                        channel_name=msg_channel,
                         token=self.token,
                         content=full_response,
                         sender_type="agent",
@@ -333,7 +332,7 @@ class CodexAdapter:
             else:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=msg_session_id,
+                    channel_name=msg_channel,
                     token=self.token,
                     content="No response generated. Please try again.",
                     sender_type="agent",
@@ -345,7 +344,7 @@ class CodexAdapter:
             try:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    session_id=msg_session_id,
+                    channel_name=msg_channel,
                     token=self.token,
                     content=f"Error processing message: {e}",
                     sender_type="agent",

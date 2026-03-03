@@ -46,7 +46,7 @@ class WorkspaceInfo:
     name: str
     token: str
     url: str
-    session_id: str
+    channel_name: str
 
 
 # ---------------------------------------------------------------------------
@@ -127,10 +127,17 @@ def generate_agent_name(agent_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 class WorkspaceClient:
-    """HTTP client for workspace API operations."""
+    """HTTP client for workspace API operations (event-native)."""
 
     def __init__(self, endpoint: str = DEFAULT_ENDPOINT):
         self.endpoint = endpoint.rstrip("/")
+
+    def _ws_headers(self, token: str) -> Dict[str, str]:
+        """Standard headers for workspace-scoped requests."""
+        return {
+            "Content-Type": "application/json",
+            "X-Workspace-Token": token,
+        }
 
     async def register_agent(
         self, agent_name: str, api_key: Optional[str] = None,
@@ -150,7 +157,6 @@ class WorkspaceClient:
             ) as resp:
                 data = await resp.json()
                 if resp.status == 409:
-                    # Already registered — that's fine for reconnect
                     return {"already_exists": True, "data": data.get("data", data)}
                 if resp.status not in (200, 201):
                     msg = data.get("message", f"HTTP {resp.status}")
@@ -160,14 +166,14 @@ class WorkspaceClient:
     async def create_workspace(
         self, agent_name: str, name: Optional[str] = None,
     ) -> WorkspaceInfo:
-        """Create a workspace via POST /v1/ws."""
+        """Create a workspace via POST /v1/workspaces."""
         import aiohttp
         payload: Dict[str, Any] = {"agent_name": agent_name}
         if name:
             payload["name"] = name
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{self.endpoint}/v1/ws",
+                f"{self.endpoint}/v1/workspaces",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=30),
@@ -177,24 +183,28 @@ class WorkspaceClient:
                     msg = data.get("message", f"HTTP {resp.status}")
                     raise ConnectionError(f"Workspace creation failed: {msg}")
                 result = data.get("data", data)
+                ws_id = result["workspaceId"]
+                slug = result.get("slug", ws_id)
+                channel = result.get("channel", {})
                 return WorkspaceInfo(
-                    workspace_id=result["workspaceId"],
-                    slug=result.get("slug", result["workspaceId"]),
+                    workspace_id=ws_id,
+                    slug=slug,
                     name=result["name"],
                     token=result["token"],
-                    url=result["url"],
-                    session_id=result["session"]["sessionId"],
+                    url=f"{self.endpoint}/{slug}?token={result['token']}",
+                    channel_name=channel.get("name", ""),
                 )
 
     async def heartbeat(
         self, workspace_id: str, agent_name: str, token: str,
     ) -> dict:
-        """Send heartbeat via POST /v1/ws/{id}/agents/{name}/heartbeat."""
+        """Send heartbeat via POST /v1/heartbeat."""
         import aiohttp
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{self.endpoint}/v1/ws/{workspace_id}/agents/{agent_name}/heartbeat",
-                headers={"Authorization": f"Bearer {token}"},
+                f"{self.endpoint}/v1/heartbeat",
+                json={"agent_name": agent_name, "network": workspace_id},
+                headers=self._ws_headers(token),
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 data = await resp.json()
@@ -203,13 +213,14 @@ class WorkspaceClient:
     async def disconnect(
         self, workspace_id: str, agent_name: str, token: str,
     ) -> None:
-        """Disconnect agent via POST /v1/ws/{id}/agents/{name}/disconnect."""
+        """Disconnect agent via POST /v1/leave."""
         import aiohttp
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{self.endpoint}/v1/ws/{workspace_id}/agents/{agent_name}/disconnect",
-                    headers={"Authorization": f"Bearer {token}"},
+                    f"{self.endpoint}/v1/leave",
+                    json={"agent_name": agent_name, "network": workspace_id},
+                    headers=self._ws_headers(token),
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
                     pass
@@ -219,7 +230,7 @@ class WorkspaceClient:
     async def send_message(
         self,
         workspace_id: str,
-        session_id: str,
+        channel_name: str,
         token: str,
         content: str,
         sender_type: str = "agent",
@@ -228,35 +239,49 @@ class WorkspaceClient:
         message_type: str = "chat",
         metadata: Optional[dict] = None,
     ) -> dict:
-        """Send message via POST /v1/ws/{id}/sessions/{sid}/messages."""
+        """Send message via POST /v1/events (workspace.message.posted event)."""
         import aiohttp
-        payload: Dict[str, Any] = {
-            "sender_type": sender_type,
+        source_prefix = "openagents" if sender_type == "agent" else "human"
+        source = f"{source_prefix}:{sender_name}" if sender_name else f"{source_prefix}:unknown"
+
+        event_payload: Dict[str, Any] = {
             "content": content,
             "message_type": message_type,
         }
-        if sender_name:
-            payload["sender_name"] = sender_name
         if mentions:
-            payload["mentions"] = mentions
-        if metadata:
-            payload["metadata"] = metadata
+            event_payload["mentions"] = mentions
+
+        event_body: Dict[str, Any] = {
+            "type": "workspace.message.posted",
+            "source": source,
+            "target": f"channel/{channel_name}",
+            "payload": event_payload,
+            "metadata": metadata or {},
+            "network": workspace_id,
+        }
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{self.endpoint}/v1/ws/{workspace_id}/sessions/{session_id}/messages",
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}",
-                },
+                f"{self.endpoint}/v1/events",
+                json=event_body,
+                headers=self._ws_headers(token),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 data = await resp.json()
                 if resp.status not in (200, 201):
                     msg = data.get("message", f"HTTP {resp.status}")
                     raise ConnectionError(f"Failed to send message: {msg}")
-                return data.get("data", data)
+                result = data.get("data", data)
+                # Convert event response to message-compatible dict
+                return {
+                    "messageId": result.get("id", ""),
+                    "sessionId": channel_name,
+                    "senderType": sender_type,
+                    "senderName": sender_name or "unknown",
+                    "content": content,
+                    "messageType": message_type,
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                }
 
     async def get_session(
         self,
@@ -264,19 +289,8 @@ class WorkspaceClient:
         session_id: str,
         token: str,
     ) -> dict:
-        """Get session details via GET /v1/ws/{id}/sessions/{sid}."""
-        import aiohttp
-        async with aiohttp.ClientSession() as s:
-            async with s.get(
-                f"{self.endpoint}/v1/ws/{workspace_id}/sessions/{session_id}",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                data = await resp.json()
-                if resp.status != 200:
-                    msg = data.get("message", f"HTTP {resp.status}")
-                    raise ConnectionError(f"Failed to get session: {msg}")
-                return data.get("data", data)
+        """Get channel info (stub — use discover for channel data)."""
+        return {"sessionId": session_id, "title": session_id, "status": "active"}
 
     async def update_session(
         self,
@@ -286,61 +300,39 @@ class WorkspaceClient:
         title: Optional[str] = None,
         status: Optional[str] = None,
     ) -> dict:
-        """Update session title or status via PATCH /v1/ws/{id}/sessions/{sid}."""
-        import aiohttp
-        payload: Dict[str, Any] = {}
-        if title is not None:
-            payload["title"] = title
-        if status is not None:
-            payload["status"] = status
-        if not payload:
-            return {}
-
-        async with aiohttp.ClientSession() as s:
-            async with s.patch(
-                f"{self.endpoint}/v1/ws/{workspace_id}/sessions/{session_id}",
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}",
-                },
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                data = await resp.json()
-                if resp.status not in (200, 201):
-                    msg = data.get("message", f"HTTP {resp.status}")
-                    raise ConnectionError(f"Failed to update session: {msg}")
-                return data.get("data", data)
+        """Update channel (stub — not yet event-native)."""
+        return {}
 
     async def poll_messages(
         self,
         workspace_id: str,
-        session_id: str,
+        channel_name: str,
         token: str,
         after: Optional[str] = None,
         limit: int = 50,
     ) -> List[dict]:
-        """Poll for new messages via GET /v1/ws/{id}/sessions/{sid}/messages."""
+        """Poll messages in a channel via GET /v1/events."""
         import aiohttp
-        params: Dict[str, Any] = {"page_size": limit}
+        params: Dict[str, Any] = {
+            "network": workspace_id,
+            "channel": channel_name,
+            "type": "workspace.message",
+            "limit": limit,
+        }
         if after:
             params["after"] = after
 
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{self.endpoint}/v1/ws/{workspace_id}/sessions/{session_id}/messages",
+                f"{self.endpoint}/v1/events",
                 params=params,
-                headers={"Authorization": f"Bearer {token}"},
+                headers=self._ws_headers(token),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 data = await resp.json()
                 result = data.get("data") or data
-                # Handle both cursor mode and pagination mode
-                if isinstance(result, dict) and "messages" in result:
-                    return result["messages"]
-                if isinstance(result, dict) and "items" in result:
-                    return result["items"]
-                return []
+                events = result.get("events", []) if isinstance(result, dict) else []
+                return [self._event_to_message(e) for e in events]
 
     async def poll_pending(
         self,
@@ -350,76 +342,98 @@ class WorkspaceClient:
         after: Optional[str] = None,
         limit: int = 50,
     ) -> List[dict]:
-        """Poll for pending messages across all sessions via GET /v1/ws/{id}/pending."""
+        """Poll for pending messages targeted at this agent via GET /v1/events."""
         import aiohttp
-        params: Dict[str, Any] = {"agent_name": agent_name, "limit": limit}
+        params: Dict[str, Any] = {
+            "network": workspace_id,
+            "type": "workspace.message",
+            "limit": limit,
+        }
         if after:
             params["after"] = after
 
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{self.endpoint}/v1/ws/{workspace_id}/pending",
+                f"{self.endpoint}/v1/events",
                 params=params,
-                headers={"Authorization": f"Bearer {token}"},
+                headers=self._ws_headers(token),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 data = await resp.json()
                 result = data.get("data") or data
-                if isinstance(result, dict) and "messages" in result:
-                    return result["messages"]
-                return []
+                events = result.get("events", []) if isinstance(result, dict) else []
+
+                # Filter for events targeted at this agent
+                messages = []
+                for e in events:
+                    meta = e.get("metadata") or {}
+                    target_agents = meta.get("target_agents") or []
+                    source = e.get("source", "")
+                    # Include if: targeted at this agent, or broadcast (no targets)
+                    if not target_agents or agent_name in target_agents:
+                        # Exclude own messages
+                        if source != f"openagents:{agent_name}":
+                            messages.append(self._event_to_message(e))
+                return messages
 
     async def get_agents(
         self, workspace_id: str, token: str,
     ) -> List[dict]:
-        """Get workspace agents via GET /v1/ws/{id}/agents."""
+        """Get workspace agents via GET /v1/discover."""
         import aiohttp
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{self.endpoint}/v1/ws/{workspace_id}/agents",
-                headers={"Authorization": f"Bearer {token}"},
+                f"{self.endpoint}/v1/discover",
+                params={"network": workspace_id},
+                headers=self._ws_headers(token),
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 data = await resp.json()
-                return data.get("data", [])
+                result = data.get("data", data)
+                agents_raw = result.get("agents", []) if isinstance(result, dict) else []
+                return [
+                    {
+                        "agentName": a["address"].replace("openagents:", ""),
+                        "role": a.get("role", "member"),
+                        "status": a.get("status", "offline"),
+                    }
+                    for a in agents_raw
+                ]
 
-    # ── Invitation methods (Phase 2) ──
+    # ── Invitation methods (stubs — not yet event-native) ──
 
     async def check_invitations(self, agent_name: str) -> List[dict]:
-        """Check for pending invitations for this agent."""
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.endpoint}/v1/ws/invitations/pending",
-                params={"agent_name": agent_name},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                data = await resp.json()
-                return data.get("data", [])
+        """Check for pending invitations (stub)."""
+        return []
 
     async def accept_invitation(self, invite_token: str) -> dict:
-        """Accept a workspace invitation. Returns workspace info."""
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.endpoint}/v1/ws/invitations/{invite_token}/accept",
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                data = await resp.json()
-                if resp.status not in (200, 201):
-                    msg = data.get("message", f"HTTP {resp.status}")
-                    raise ConnectionError(f"Accept invitation failed: {msg}")
-                return data.get("data", data)
+        """Accept a workspace invitation (stub)."""
+        return {}
 
     async def reject_invitation(self, invite_token: str) -> None:
-        """Reject a workspace invitation."""
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.endpoint}/v1/ws/invitations/{invite_token}/reject",
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status not in (200, 201):
-                    data = await resp.json()
-                    msg = data.get("message", f"HTTP {resp.status}")
-                    raise ConnectionError(f"Reject invitation failed: {msg}")
+        """Reject a workspace invitation (stub)."""
+        pass
+
+    # ── Internal helpers ──
+
+    @staticmethod
+    def _event_to_message(event: dict) -> dict:
+        """Convert an ONM event dict to a message-compatible dict."""
+        source = event.get("source", "")
+        is_human = source.startswith("human:")
+        sender_name = source.replace("openagents:", "").replace("human:", "")
+        payload = event.get("payload") or {}
+        target = event.get("target", "")
+        ts = event.get("timestamp")
+
+        return {
+            "messageId": event.get("id", ""),
+            "sessionId": target.replace("channel/", "") if target.startswith("channel/") else target,
+            "senderType": "human" if is_human else "agent",
+            "senderName": sender_name,
+            "content": payload.get("content", ""),
+            "mentions": payload.get("mentions", []),
+            "messageType": payload.get("message_type", "chat"),
+            "metadata": event.get("metadata") or {},
+            "createdAt": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else None,
+        }

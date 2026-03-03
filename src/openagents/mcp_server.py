@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def create_mcp_server(
     workspace_id: str,
-    session_id: str,
+    channel_name: str,
     token: str,
     agent_name: str,
     endpoint: str = DEFAULT_ENDPOINT,
@@ -65,7 +65,7 @@ def create_mcp_server(
             ),
             types.Tool(
                 name="workspace_get_history",
-                description="Read recent messages in the current workspace session.",
+                description="Read recent messages in the current workspace channel.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -110,7 +110,7 @@ def create_mcp_server(
                 msg_type = "delegation" if mentions else "chat"
                 result = await client.send_message(
                     workspace_id=workspace_id,
-                    session_id=session_id,
+                    channel_name=channel_name,
                     token=token,
                     content=content,
                     sender_type="agent",
@@ -127,7 +127,7 @@ def create_mcp_server(
                 limit = arguments.get("limit", 20)
                 messages = await client.poll_messages(
                     workspace_id=workspace_id,
-                    session_id=session_id,
+                    channel_name=channel_name,
                     token=token,
                     limit=limit,
                 )
@@ -155,7 +155,7 @@ def create_mcp_server(
                 status_text = arguments.get("status", "")
                 await client.send_message(
                     workspace_id=workspace_id,
-                    session_id=session_id,
+                    channel_name=channel_name,
                     token=token,
                     content=status_text,
                     sender_type="agent",
@@ -175,7 +175,7 @@ def create_mcp_server(
 
 async def run_mcp_server(
     workspace_id: str,
-    session_id: str,
+    channel_name: str,
     token: str,
     agent_name: str,
     endpoint: str = DEFAULT_ENDPOINT,
@@ -183,7 +183,7 @@ async def run_mcp_server(
     """Run the MCP server on stdio."""
     server = create_mcp_server(
         workspace_id=workspace_id,
-        session_id=session_id,
+        channel_name=channel_name,
         token=token,
         agent_name=agent_name,
         endpoint=endpoint,
