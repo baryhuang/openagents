@@ -3870,8 +3870,17 @@ def connect_claude(
                     api_key=new_api_key,
                 ))
             except Exception as e:
-                console.print(f"[red]Registration failed: {e}[/red]")
-                raise typer.Exit(1)
+                # Registration is optional — workspace backend may not have
+                # the /v1/agentid/register endpoint (self-hosted mode).
+                logging.debug(f"Registration skipped: {e}")
+                console.print(
+                    f"[dim]Registration skipped (not required for workspace)[/dim]"
+                )
+                save_identity(LocalAgentIdentity(
+                    agent_name=agent_name,
+                    agent_type="claude",
+                    api_key=identity.api_key if identity else None,
+                ))
 
         # Step 2: Create workspace
         with console.status("Creating workspace..."):
@@ -4016,8 +4025,15 @@ def connect_openclaw(
                     api_key=new_api_key,
                 ))
             except Exception as e:
-                console.print(f"[red]Registration failed: {e}[/red]")
-                raise typer.Exit(1)
+                logging.debug(f"Registration skipped: {e}")
+                console.print(
+                    f"[dim]Registration skipped (not required for workspace)[/dim]"
+                )
+                save_identity(LocalAgentIdentity(
+                    agent_name=agent_name,
+                    agent_type="openclaw",
+                    api_key=identity.api_key if identity else None,
+                ))
 
         # Step 2: Create workspace
         with console.status("Creating workspace..."):
@@ -4149,8 +4165,15 @@ def connect_codex(
                     api_key=new_api_key,
                 ))
             except Exception as e:
-                console.print(f"[red]Registration failed: {e}[/red]")
-                raise typer.Exit(1)
+                logging.debug(f"Registration skipped: {e}")
+                console.print(
+                    f"[dim]Registration skipped (not required for workspace)[/dim]"
+                )
+                save_identity(LocalAgentIdentity(
+                    agent_name=agent_name,
+                    agent_type="codex",
+                    api_key=identity.api_key if identity else None,
+                ))
 
         # Step 2: Create workspace
         with console.status("Creating workspace..."):

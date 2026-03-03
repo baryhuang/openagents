@@ -435,5 +435,5 @@ class WorkspaceClient:
             "mentions": payload.get("mentions", []),
             "messageType": payload.get("message_type", "chat"),
             "metadata": event.get("metadata") or {},
-            "createdAt": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else None,
+            "createdAt": datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat() if ts else None,
         }
