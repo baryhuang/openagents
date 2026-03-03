@@ -6,6 +6,3 @@ sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
 alembic>=1.13.0
 python-dotenv>=1.0.0
-
-# The workspace backend imports the SDK for ONM primitives
-openagents>=0.8.5
