@@ -17,7 +17,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,6 +78,28 @@ def _resolve_workspace(db: Session, network: str) -> Optional[Workspace]:
     return db.execute(
         select(Workspace).where(_workspace_filter(network))
     ).scalar_one_or_none()
+
+
+def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
+    """Extract bearer token from Authorization header."""
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
+
+
+def _verify_workspace_access(workspace, token: Optional[str], authorization: Optional[str]) -> bool:
+    """Check if the caller has access to a workspace via token or bearer auth."""
+    if not workspace.password_hash:
+        return True
+    if token and token == workspace.password_hash:
+        return True
+    bearer = _extract_bearer(authorization)
+    if bearer:
+        from app.firebase_auth import verify_firebase_token
+        email = verify_firebase_token(bearer)
+        if email and workspace.creator_email and email == workspace.creator_email:
+            return True
+    return False
 
 
 async def _emit_event(event: Event, workspace, db: Session, token: str = None):

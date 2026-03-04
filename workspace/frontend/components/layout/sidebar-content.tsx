@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Plus, MessageSquare, FileText, PlusSquare, UserPlus,
   Settings, HelpCircle, Copy, Check, Clock, CheckCircle, XCircle,
+  LogIn, LogOut, Shield,
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,6 +26,7 @@ import { workspaceApi } from '@/lib/api';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
 import type { WorkspaceInvitation } from '@/lib/types';
+import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 
 // ── Navigation button helper ──
 
@@ -65,11 +67,29 @@ function NavButton({
 export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
   const { agents, sessions, createSession, workspace, refreshWorkspace } = useWorkspace();
+  const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [claiming, setClaiming] = useState(false);
 
   const onlineCount = agents.filter((a) => a.status === 'online').length;
   const agentNames = agents.map((a) => a.agentName);
+
+  const isUnclaimed = workspace && !workspace.creatorEmail;
+  const isOwnedByUser = workspace && user && workspace.creatorEmail === user.email;
+
+  const handleClaim = async () => {
+    setClaiming(true);
+    try {
+      await workspaceApi.claimWorkspace();
+      await refreshWorkspace();
+      toast.success('Workspace claimed successfully');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to claim workspace');
+    } finally {
+      setClaiming(false);
+    }
+  };
 
   // ── Collapsed sidebar ──
   if (!isSidebarOpen) {
@@ -115,7 +135,29 @@ export function SidebarContent() {
           })}
         </div>
 
-        <div className="px-2.5 py-3">
+        <div className="px-2.5 py-3 space-y-1">
+          {isOpenAgentsDomain && !user && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={signIn} className="w-full flex items-center justify-center py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <LogIn className="size-4 text-muted-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Sign in</TooltipContent>
+            </Tooltip>
+          )}
+          {isOpenAgentsDomain && user && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={sidebarToggle} className="w-full flex items-center justify-center py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <div className="size-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-bold">
+                    {user.email[0].toUpperCase()}
+                  </div>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{user.email}</TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <button onClick={sidebarToggle} className="w-full flex items-center justify-center py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
@@ -198,6 +240,38 @@ export function SidebarContent() {
 
           {/* Bottom section */}
           <div className="px-2.5 py-3 space-y-0.5 mt-auto">
+            {/* OpenAgents login/user section */}
+            {isOpenAgentsDomain && !user && (
+              <NavButton icon={<LogIn className="size-[15px]" />} label="Sign in" onClick={signIn} />
+            )}
+            {isOpenAgentsDomain && user && (
+              <div className="px-2 py-2 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="size-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-bold shrink-0">
+                    {user.email[0].toUpperCase()}
+                  </div>
+                  <span className="text-[12px] text-muted-foreground truncate flex-1">{user.email}</span>
+                  <button onClick={signOut} className="text-muted-foreground hover:text-foreground transition-colors" title="Sign out">
+                    <LogOut className="size-3.5" />
+                  </button>
+                </div>
+                {isUnclaimed && (
+                  <button
+                    onClick={handleClaim}
+                    disabled={claiming}
+                    className="w-full flex items-center justify-center gap-1.5 h-7 rounded-md bg-emerald-600 text-white text-[12px] font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  >
+                    <Shield className="size-3.5" />
+                    {claiming ? 'Claiming...' : 'Claim Workspace'}
+                  </button>
+                )}
+                {isOwnedByUser && (
+                  <p className="text-[11px] text-emerald-600 flex items-center gap-1 px-0.5">
+                    <Shield className="size-3" /> You own this workspace
+                  </p>
+                )}
+              </div>
+            )}
             <NavButton icon={<HelpCircle className="size-[15px]" />} label="Support" />
             <NavButton icon={<Settings className="size-[15px]" />} label="Collapse" onClick={sidebarToggle} />
           </div>

@@ -20,8 +20,11 @@ class Config:
     # Auth mode: "workspace_token" (self-hosted) or "firebase" (hosted)
     AUTH_MODE: str = os.environ.get("AUTH_MODE", "workspace_token")
 
-    # Firebase (only used when AUTH_MODE=firebase)
-    FIREBASE_PROJECT_ID: str = os.environ.get("FIREBASE_PROJECT_ID", "")
+    # Firebase (used for user login on workspace.openagents.org)
+    FIREBASE_PROJECT_ID: str = os.environ.get("FIREBASE_PROJECT_ID", "openagentsweb")
+
+    # Optional: Firebase service account credentials as JSON string
+    FIREBASE_CREDENTIALS_JSON: str = os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
 
     # Identity mode: "standalone" (own agent table) or "shared" (external agent_ids)
     IDENTITY_MODE: str = os.environ.get("IDENTITY_MODE", "standalone")

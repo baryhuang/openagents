@@ -19,8 +19,11 @@ interface WorkspaceContextValue {
   error: string | null;
   lastMessageBySession: Record<string, LastMessageInfo>;
   activeSessionIds: Set<string>;
+  agentModes: Record<string, string>;
   updateLastMessage: (sessionId: string, senderName: string, content: string) => void;
   setSessionActive: (sessionId: string, active: boolean) => void;
+  updateAgentMode: (agentName: string, mode: string) => void;
+  toggleAgentMode: (agentName: string) => void;
   setCurrentSessionId: (id: string | null) => void;
   createSession: (title?: string) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
@@ -39,10 +42,12 @@ export function useWorkspace() {
 export function WorkspaceProvider({
   workspaceId,
   token,
+  bearerToken,
   children,
 }: {
   workspaceId: string;
   token: string;
+  bearerToken?: string;
   children: React.ReactNode;
 }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -53,6 +58,7 @@ export function WorkspaceProvider({
   const [error, setError] = useState<string | null>(null);
   const [lastMessageBySession, setLastMessageBySession] = useState<Record<string, LastMessageInfo>>({});
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
+  const [agentModes, setAgentModes] = useState<Record<string, string>>({});
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
     setLastMessageBySession((prev) => ({
@@ -70,10 +76,30 @@ export function WorkspaceProvider({
     });
   }, []);
 
+  const updateAgentMode = useCallback((agentName: string, mode: string) => {
+    setAgentModes((prev) => {
+      if (prev[agentName] === mode) return prev;
+      return { ...prev, [agentName]: mode };
+    });
+  }, []);
+
+  const toggleAgentMode = useCallback(async (agentName: string) => {
+    const current = agentModes[agentName] || 'execute';
+    const next = current === 'execute' ? 'plan' : 'execute';
+    // Optimistic update
+    setAgentModes((prev) => ({ ...prev, [agentName]: next }));
+    try {
+      await workspaceApi.sendAgentControl(agentName, 'set_mode', { mode: next });
+    } catch {
+      // Revert on failure
+      setAgentModes((prev) => ({ ...prev, [agentName]: current }));
+    }
+  }, [agentModes]);
+
   // Configure API client on mount
   useEffect(() => {
-    workspaceApi.configure(workspaceId, token);
-  }, [workspaceId, token]);
+    workspaceApi.configure(workspaceId, token, bearerToken || undefined);
+  }, [workspaceId, token, bearerToken]);
 
   const refreshWorkspace = useCallback(async () => {
     try {
@@ -185,8 +211,11 @@ export function WorkspaceProvider({
         error,
         lastMessageBySession,
         activeSessionIds,
+        agentModes,
         updateLastMessage,
         setSessionActive,
+        updateAgentMode,
+        toggleAgentMode,
         setCurrentSessionId,
         createSession,
         renameSession,
