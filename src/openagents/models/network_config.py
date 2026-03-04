@@ -213,37 +213,40 @@ class NetworkConfig(BaseModel):
             raise ValueError("Network name must be a non-empty string")
         return v
 
-    @field_validator("agent_groups")
-    @classmethod
-    def validate_agent_groups(cls, v):
-        """Validate agent groups configuration."""
-        if not v:
-            return v
+    @model_validator(mode="after")
+    def validate_auth_config(self):
+        """Validate authentication config based on requires_password.
 
-        # Check that each group has password_hash defined
-        for group_name, group_config in v.items():
-            if not group_config.password_hash:
-                raise ValueError(
-                    f"Group '{group_name}' must have 'password_hash' defined"
-                )
+        - requires_password=True: every group must define password_hash
+        - requires_password=False: password_hash is optional (passwordless allowed)
 
-        return v
+        Note: default_agent_group can be outside agent_groups (e.g., 'guest' group
+        for passwordless access). But if default_agent_group IS in agent_groups,
+        it must not have a password_hash when requires_password=False (to prevent
+        misconfiguration where users think a group is protected but it's not).
+        """
+        groups = self.agent_groups or {}
 
-    @model_validator(mode='after')
-    def validate_default_group_password_requirement(self):
-        """Validate that default_agent_group doesn't require password when requires_password is False."""
-        # If requires_password is False, agents without passwords should be able to join
-        # So the default_agent_group must not require a password
-        if not self.requires_password and self.agent_groups:
-            default_group = self.default_agent_group
-            if default_group in self.agent_groups:
-                group_config = self.agent_groups[default_group]
-                if group_config.password_hash:
+        if self.requires_password:
+            # All groups must have password_hash
+            for name, cfg in groups.items():
+                if not cfg.password_hash:
                     raise ValueError(
-                        f"Invalid configuration: 'requires_password' is False but "
-                        f"default_agent_group '{default_group}' requires a password. "
-                        f"Either set 'requires_password: true' or choose a default group "
-                        f"that doesn't require a password."
+                        f"Group '{name}' must have 'password_hash' when requires_password=True"
+                    )
+        else:
+            # requires_password=False: default_agent_group must not have password_hash
+            # (to prevent misconfiguration where password appears to protect a group but doesn't)
+            default_group = self.default_agent_group
+            if default_group and default_group in groups:
+                if groups[default_group].password_hash:
+                    raise ValueError(
+                        f"Misconfiguration: requires_password=False but default_agent_group "
+                        f"'{default_group}' has password_hash. This would allow passwordless "
+                        f"agents to join a seemingly protected group. Either:\n"
+                        f"  1. Set requires_password=True to enforce authentication, or\n"
+                        f"  2. Use a different default_agent_group without password_hash, or\n"
+                        f"  3. Remove password_hash from '{default_group}' group"
                     )
         return self
 
