@@ -16,20 +16,34 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.o
 
 class WorkspaceApi {
   private token: string = '';
+  private bearerToken: string = '';
   private workspaceId: string = '';
 
-  configure(workspaceId: string, token: string) {
+  configure(workspaceId: string, token: string, bearerToken?: string) {
     this.workspaceId = workspaceId;
     this.token = token;
+    if (bearerToken !== undefined) this.bearerToken = bearerToken;
+  }
+
+  setBearerToken(bearerToken: string) {
+    this.bearerToken = bearerToken;
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const authHeaders: Record<string, string> = {};
+    if (this.token) {
+      authHeaders['X-Workspace-Token'] = this.token;
+    }
+    if (this.bearerToken) {
+      authHeaders['Authorization'] = `Bearer ${this.bearerToken}`;
+    }
+
     const url = `${API_URL}${path}`;
     const res = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        'X-Workspace-Token': this.token,
+        ...authHeaders,
         ...options.headers,
       },
     });
@@ -55,6 +69,12 @@ class WorkspaceApi {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
+    });
+  }
+
+  async claimWorkspace(): Promise<Workspace> {
+    return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}/claim`, {
+      method: 'POST',
     });
   }
 
@@ -147,6 +167,25 @@ class WorkspaceApi {
       messages: result.events.map(eventToMessage),
       hasMore: result.has_more,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent control — mode changes etc.
+  // ---------------------------------------------------------------------------
+
+  /** Send a control event to an agent (e.g. mode change). */
+  async sendAgentControl(
+    agentName: string,
+    action: string,
+    params: Record<string, unknown> = {},
+  ): Promise<ONMEvent> {
+    return this.sendEvent({
+      type: 'workspace.agent.control',
+      source: 'human:user',
+      target: `openagents:${agentName}`,
+      payload: { action, ...params },
+      visibility: 'direct',
+    });
   }
 
   // ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -39,6 +39,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/workspaces", tags=["Workspaces"])
 
 AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
+
+
+def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
+    """Extract bearer token from Authorization header."""
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
+
+
+def _verify_workspace_access(workspace, token: Optional[str], authorization: Optional[str]) -> bool:
+    """Check if the caller has access to a workspace via token or bearer auth."""
+    if not workspace.password_hash:
+        return True
+    if token and token == workspace.password_hash:
+        return True
+    bearer = _extract_bearer(authorization)
+    if bearer:
+        from app.firebase_auth import verify_firebase_token
+        email = verify_firebase_token(bearer)
+        if email and workspace.creator_email and email == workspace.creator_email:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +280,53 @@ async def update_workspace(
     if body.status is not None:
         workspace.status = body.status
 
+    db.commit()
+    db.refresh(workspace)
+
+    members = db.execute(
+        select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    return success_response(_format_workspace(workspace, members, now))
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/workspaces/{workspace_id}/claim — Claim workspace ownership
+# ---------------------------------------------------------------------------
+
+@router.post("/{workspace_id}/claim")
+async def claim_workspace(
+    workspace_id: str,
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Claim ownership of a workspace.
+
+    Requires a valid Firebase bearer token. Sets creator_email on the workspace
+    so the user can access it without a workspace token.
+    """
+    bearer = _extract_bearer(authorization)
+    if not bearer:
+        return json_response(ResponseCode.UNAUTHORIZED, "Bearer token required")
+
+    from app.firebase_auth import verify_firebase_token
+    email = verify_firebase_token(bearer)
+    if not email:
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid or expired token")
+
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    if workspace.creator_email and workspace.creator_email != email:
+        return json_response(ResponseCode.FORBIDDEN, "Workspace already claimed by another user")
+
+    workspace.creator_email = email
     db.commit()
     db.refresh(workspace)
 

@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/lib/auth-context';
+import { OpenAgentsAuthProvider } from '@/lib/openagents-auth-context';
 import '@/styles/globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -22,7 +23,9 @@ export default function RootLayout({
       <body className={`${inter.className} bg-zinc-100 dark:bg-zinc-900`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <AuthProvider>
-            {children}
+            <OpenAgentsAuthProvider>
+              {children}
+            </OpenAgentsAuthProvider>
           </AuthProvider>
           <Toaster />
         </ThemeProvider>

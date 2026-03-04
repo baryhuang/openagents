@@ -45,11 +45,19 @@ class SendEventRequest(BaseModel):
 # POST /v1/events — send an event through the pipeline
 # ---------------------------------------------------------------------------
 
+def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
+    """Extract bearer token from Authorization header."""
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
+
+
 @router.post("/events")
 async def send_event(
     body: SendEventRequest,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
 ):
     """
     Send an event into the network pipeline.
@@ -86,6 +94,7 @@ async def send_event(
         db=db,
         workspace=workspace,
         token=x_workspace_token,
+        bearer_token=_extract_bearer(authorization),
     )
 
     # Run through pipeline
