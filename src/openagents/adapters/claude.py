@@ -46,6 +46,8 @@ class ClaudeAdapter:
         self._processed_ids: set = set()
         self._titled_sessions: set = set()
         self._claude_session_id: Optional[str] = None
+        self._mode: str = "execute"  # "execute" or "plan"
+        self._last_control_id: Optional[str] = None
 
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
@@ -77,10 +79,50 @@ class ClaudeAdapter:
                 logger.debug(f"Heartbeat failed: {e}")
             await asyncio.sleep(30)
 
+    async def _poll_control(self):
+        """Check for control events (e.g. mode changes) targeted at this agent."""
+        try:
+            events = await self.client.poll_control(
+                workspace_id=self.workspace_id,
+                token=self.token,
+                agent_name=self.agent_name,
+                after=self._last_control_id,
+            )
+            for ev in events:
+                ev_id = ev.get("id")
+                if ev_id:
+                    self._last_control_id = ev_id
+                payload = ev.get("payload") or {}
+                if payload.get("action") == "set_mode":
+                    new_mode = payload.get("mode", "execute")
+                    if new_mode in ("execute", "plan") and new_mode != self._mode:
+                        old_mode = self._mode
+                        self._mode = new_mode
+                        logger.info(f"Mode changed: {old_mode} -> {new_mode}")
+                        label = "Execute" if new_mode == "execute" else "Plan"
+                        try:
+                            await self.client.send_message(
+                                workspace_id=self.workspace_id,
+                                channel_name=self.channel_name,
+                                token=self.token,
+                                content=f"Switched to **{label}** mode",
+                                sender_type="agent",
+                                sender_name=self.agent_name,
+                                message_type="status",
+                                metadata={"agent_mode": new_mode},
+                            )
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.debug(f"Control poll failed: {e}")
+
     async def _poll_loop(self):
         """Poll for new messages across all channels and dispatch to Claude."""
         idle_count = 0
         while self._running:
+            # Check for control events (mode changes) before processing messages
+            await self._poll_control()
+
             try:
                 messages = await self.client.poll_pending(
                     workspace_id=self.workspace_id,
@@ -126,30 +168,46 @@ class ClaudeAdapter:
                 "claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash"
             )
 
+        system_prompt = (
+            f"\nYou are agent '{self.agent_name}' connected to an "
+            f"OpenAgents workspace.\n"
+            f"You MUST use the workspace_send_message MCP tool to "
+            f"communicate your responses.\n"
+            f"Text you generate is NOT visible to anyone unless you "
+            f"call workspace_send_message.\n"
+            f"Use workspace_get_history to read previous messages.\n"
+            f"Use workspace_get_agents to see other agents.\n"
+        )
+
         cmd = [
             claude_bin,
             "-p", prompt,
             "--output-format", "stream-json",
             "--verbose",
-            "--permission-mode", "acceptEdits",
-            "--append-system-prompt",
-            (
-                f"\nYou are agent '{self.agent_name}' connected to an "
-                f"OpenAgents workspace.\n"
-                f"You MUST use the workspace_send_message MCP tool to "
-                f"communicate your responses.\n"
-                f"Text you generate is NOT visible to anyone unless you "
-                f"call workspace_send_message.\n"
-                f"Use workspace_get_history to read previous messages.\n"
-                f"Use workspace_get_agents to see other agents.\n"
-            ),
-            "--allowedTools",
+        ]
+
+        # Mode-dependent permission and tool flags
+        mcp_tools = [
             "mcp__openagents-workspace__workspace_send_message",
             "mcp__openagents-workspace__workspace_get_history",
             "mcp__openagents-workspace__workspace_get_agents",
             "mcp__openagents-workspace__workspace_status",
-            "Read", "Write", "Edit", "Bash", "Glob", "Grep",
         ]
+
+        if self._mode == "plan":
+            cmd.extend(["--permission-mode", "plan"])
+            allowed = mcp_tools + ["Read", "Glob", "Grep"]
+            system_prompt += (
+                "\nYou are in PLAN mode. Only read, analyze, and propose "
+                "changes. Do not make edits. Share your plan via "
+                "workspace_send_message.\n"
+            )
+        else:
+            cmd.append("--dangerously-skip-permissions")
+            allowed = mcp_tools + ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+
+        cmd.extend(["--append-system-prompt", system_prompt])
+        cmd.extend(["--allowedTools"] + allowed)
 
         # Resume existing conversation for context continuity
         if self._claude_session_id:
@@ -216,6 +274,7 @@ class ClaudeAdapter:
                 sender_type="agent",
                 sender_name=self.agent_name,
                 message_type="status",
+                metadata={"agent_mode": self._mode},
             )
         except Exception:
             pass
@@ -291,6 +350,7 @@ class ClaudeAdapter:
                                         sender_type="agent",
                                         sender_name=self.agent_name,
                                         message_type="status",
+                                        metadata={"agent_mode": self._mode},
                                     )
                                 except Exception:
                                     pass

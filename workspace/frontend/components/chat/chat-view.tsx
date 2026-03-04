@@ -8,12 +8,13 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { ListTree, UserPlus, MessageSquare } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, Zap, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import type { WorkspaceMessage } from '@/lib/types';
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive } = useWorkspace();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode } = useWorkspace();
   const { messages, loading, forceRefresh } = useMessagePolling({
     sessionId: currentSessionId,
   });
@@ -42,6 +43,17 @@ export function ChatView() {
     const isAgentWorking = lastMsg.senderType === 'agent' && lastMsg.messageType === 'status';
     setSessionActive(currentSessionId, isAgentWorking);
   }, [currentSessionId, messages, setSessionActive]);
+
+  // Extract agent mode from status message metadata
+  useEffect(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg: WorkspaceMessage = messages[i];
+      if (msg.senderType === 'agent' && msg.metadata?.agent_mode) {
+        updateAgentMode(msg.senderName, msg.metadata.agent_mode as string);
+        break;
+      }
+    }
+  }, [messages, updateAgentMode]);
 
   const handleSend = useCallback(
     async (content: string, mentions: string[] = []) => {
@@ -109,6 +121,41 @@ export function ChatView() {
               );
             })}
           </div>
+
+          {/* Agent mode toggle */}
+          {agents.length > 0 && (() => {
+            const agent = agents[0];
+            const mode = agentModes[agent.agentName] || 'execute';
+            const isExecute = mode === 'execute';
+            return (
+              <div className="flex items-center rounded-lg border border-zinc-200 dark:border-zinc-700 p-0.5 shrink-0">
+                <button
+                  onClick={() => !isExecute && toggleAgentMode(agent.agentName)}
+                  className={cn(
+                    'flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors',
+                    isExecute
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Zap className="size-3" />
+                  Execute
+                </button>
+                <button
+                  onClick={() => isExecute && toggleAgentMode(agent.agentName)}
+                  className={cn(
+                    'flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors',
+                    !isExecute
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Eye className="size-3" />
+                  Plan
+                </button>
+              </div>
+            );
+          })()}
 
           {/* All steps toggle */}
           {hasStatusMessages && (
