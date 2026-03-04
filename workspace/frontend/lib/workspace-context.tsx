@@ -18,7 +18,9 @@ interface WorkspaceContextValue {
   loading: boolean;
   error: string | null;
   lastMessageBySession: Record<string, LastMessageInfo>;
+  activeSessionIds: Set<string>;
   updateLastMessage: (sessionId: string, senderName: string, content: string) => void;
+  setSessionActive: (sessionId: string, active: boolean) => void;
   setCurrentSessionId: (id: string | null) => void;
   createSession: (title?: string) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
@@ -50,12 +52,22 @@ export function WorkspaceProvider({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastMessageBySession, setLastMessageBySession] = useState<Record<string, LastMessageInfo>>({});
+  const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
     setLastMessageBySession((prev) => ({
       ...prev,
       [sessionId]: { senderName, content: content.slice(0, 100) },
     }));
+  }, []);
+
+  const setSessionActive = useCallback((sessionId: string, active: boolean) => {
+    setActiveSessionIds((prev) => {
+      const next = new Set(prev);
+      if (active) next.add(sessionId);
+      else next.delete(sessionId);
+      return next;
+    });
   }, []);
 
   // Configure API client on mount
@@ -172,7 +184,9 @@ export function WorkspaceProvider({
         loading,
         error,
         lastMessageBySession,
+        activeSessionIds,
         updateLastMessage,
+        setSessionActive,
         setCurrentSessionId,
         createSession,
         renameSession,
