@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage } = useWorkspace();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive } = useWorkspace();
   const { messages, loading, forceRefresh } = useMessagePolling({
     sessionId: currentSessionId,
   });
@@ -31,6 +31,17 @@ export function ChatView() {
       updateLastMessage(currentSessionId, lastChat.senderName, lastChat.content);
     }
   }, [currentSessionId, messages, updateLastMessage]);
+
+  // Track whether the agent is actively working in this session
+  useEffect(() => {
+    if (!currentSessionId || messages.length === 0) {
+      if (currentSessionId) setSessionActive(currentSessionId, false);
+      return;
+    }
+    const lastMsg = messages[messages.length - 1];
+    const isAgentWorking = lastMsg.senderType === 'agent' && lastMsg.messageType === 'status';
+    setSessionActive(currentSessionId, isAgentWorking);
+  }, [currentSessionId, messages, setSessionActive]);
 
   const handleSend = useCallback(
     async (content: string, mentions: string[] = []) => {

@@ -39,7 +39,7 @@ function AvatarStack({ agents, max = 3 }: { agents: WorkspaceAgent[]; max?: numb
 }
 
 export function ThreadList() {
-  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession } = useWorkspace();
+  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds } = useWorkspace();
   const { sidebarToggle } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -83,6 +83,7 @@ export function ThreadList() {
           {filteredSessions.map((session) => {
             const isSelected = session.sessionId === currentSessionId;
             const lastMsg = lastMessageBySession[session.sessionId];
+            const isActive = activeSessionIds.has(session.sessionId);
 
             return (
               <button
@@ -100,10 +101,16 @@ export function ThreadList() {
 
                 {/* Content */}
                 <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center">
+                  <div className="flex items-center gap-1.5">
                     <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
                       {session.title || 'Untitled'}
                     </span>
+                    {isActive && (
+                      <span className="relative flex size-2 shrink-0">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+                        <span className="relative inline-flex size-2 rounded-full bg-blue-500" />
+                      </span>
+                    )}
                     <span className="text-xs text-muted-foreground shrink-0">
                       {session.createdAt ? timeAgo(session.createdAt) : ''}
                     </span>
