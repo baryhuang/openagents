@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { workspaceApi } from './api';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { Workspace, WorkspaceAgent, WorkspaceSession } from './types';
+import type { Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -14,6 +14,8 @@ interface WorkspaceContextValue {
   workspace: Workspace | null;
   agents: WorkspaceAgent[];
   sessions: WorkspaceSession[];
+  files: WorkspaceFile[];
+  selectedFileId: string | null;
   currentSessionId: string | null;
   loading: boolean;
   error: string | null;
@@ -25,10 +27,14 @@ interface WorkspaceContextValue {
   updateAgentMode: (agentName: string, mode: string) => void;
   toggleAgentMode: (agentName: string) => void;
   setCurrentSessionId: (id: string | null) => void;
+  setSelectedFileId: (id: string | null) => void;
   createSession: (title?: string) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   refreshAgents: () => Promise<void>;
+  refreshFiles: () => Promise<void>;
+  uploadFile: (file: File) => Promise<WorkspaceFile>;
+  deleteFile: (fileId: string) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -59,6 +65,8 @@ export function WorkspaceProvider({
   const [lastMessageBySession, setLastMessageBySession] = useState<Record<string, LastMessageInfo>>({});
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
   const [agentModes, setAgentModes] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
     setLastMessageBySession((prev) => ({
@@ -137,6 +145,27 @@ export function WorkspaceProvider({
   // Alias for backward compat
   const refreshAgents = refreshDiscovery;
 
+  const refreshFiles = useCallback(async () => {
+    try {
+      const result = await workspaceApi.listFiles();
+      setFiles(result.files);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const uploadFile = useCallback(async (file: File) => {
+    const result = await workspaceApi.uploadFile(file);
+    await refreshFiles();
+    return result;
+  }, [refreshFiles]);
+
+  const deleteFile = useCallback(async (fileId: string) => {
+    await workspaceApi.deleteFile(fileId);
+    setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    if (selectedFileId === fileId) setSelectedFileId(null);
+  }, [selectedFileId]);
+
   // Initial load: workspace metadata + discover for channels
   useEffect(() => {
     let cancelled = false;
@@ -146,6 +175,7 @@ export function WorkspaceProvider({
         const [ws, discovery] = await Promise.all([
           workspaceApi.getWorkspace(),
           workspaceApi.discover(),
+          workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {}),
         ]);
         if (cancelled) return;
 
@@ -206,6 +236,8 @@ export function WorkspaceProvider({
         workspace,
         agents,
         sessions,
+        files,
+        selectedFileId,
         currentSessionId,
         loading,
         error,
@@ -217,10 +249,14 @@ export function WorkspaceProvider({
         updateAgentMode,
         toggleAgentMode,
         setCurrentSessionId,
+        setSelectedFileId,
         createSession,
         renameSession,
         refreshWorkspace,
         refreshAgents,
+        refreshFiles,
+        uploadFile,
+        deleteFile,
       }}
     >
       {children}

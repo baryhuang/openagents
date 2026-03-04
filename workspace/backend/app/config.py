@@ -35,6 +35,13 @@ class Config:
     # CORS origins (comma-separated)
     CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
 
+    # File storage
+    FILE_STORAGE_BACKEND: str = os.environ.get("FILE_STORAGE_BACKEND", "local")  # "local" or "s3"
+    FILE_STORAGE_PATH: str = os.environ.get("FILE_STORAGE_PATH", "/tmp/openagents_files")
+    S3_BUCKET: str = os.environ.get("S3_BUCKET", "")
+    S3_REGION: str = os.environ.get("S3_REGION", "us-east-1")
+    MAX_FILE_SIZE: int = int(os.environ.get("MAX_FILE_SIZE", str(50 * 1024 * 1024)))  # 50MB
+
     # Server
     HOST: str = os.environ.get("HOST", "0.0.0.0")
     PORT: int = int(os.environ.get("PORT", "8000"))

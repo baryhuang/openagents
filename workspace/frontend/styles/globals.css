@@ -166,3 +166,25 @@ html {
 [data-slot=card-title] {
   @apply font-medium;
 }
+
+/* ── Syntax Highlighting (highlight.js) ── */
+@import 'highlight.js/styles/github.css';
+
+.dark .hljs {
+  background: transparent;
+  color: var(--color-zinc-300);
+}
+.dark .hljs-keyword { color: #ff7b72; }
+.dark .hljs-string { color: #a5d6ff; }
+.dark .hljs-comment { color: #8b949e; }
+.dark .hljs-number { color: #79c0ff; }
+.dark .hljs-title { color: #d2a8ff; }
+.dark .hljs-built_in { color: #ffa657; }
+.dark .hljs-attr { color: #79c0ff; }
+.dark .hljs-literal { color: #79c0ff; }
+.dark .hljs-type { color: #ffa657; }
+
+.markdown-content .hljs {
+  background: transparent;
+  padding: 0;
+}

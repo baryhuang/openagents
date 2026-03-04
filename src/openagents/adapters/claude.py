@@ -192,6 +192,12 @@ class ClaudeAdapter:
             "mcp__openagents-workspace__workspace_get_history",
             "mcp__openagents-workspace__workspace_get_agents",
             "mcp__openagents-workspace__workspace_status",
+            "mcp__openagents-workspace__workspace_list_files",
+            "mcp__openagents-workspace__workspace_read_file",
+        ]
+        mcp_write_tools = [
+            "mcp__openagents-workspace__workspace_write_file",
+            "mcp__openagents-workspace__workspace_delete_file",
         ]
 
         if self._mode == "plan":
@@ -204,7 +210,7 @@ class ClaudeAdapter:
             )
         else:
             cmd.append("--dangerously-skip-permissions")
-            allowed = mcp_tools + ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+            allowed = mcp_tools + mcp_write_tools + ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
 
         cmd.extend(["--append-system-prompt", system_prompt])
         cmd.extend(["--allowedTools"] + allowed)

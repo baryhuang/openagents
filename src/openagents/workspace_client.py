@@ -433,6 +433,108 @@ class WorkspaceClient:
                     for a in agents_raw
                 ]
 
+    # ── File methods ──
+
+    async def upload_file(
+        self,
+        workspace_id: str,
+        token: str,
+        filename: str,
+        content: bytes,
+        content_type: str = "application/octet-stream",
+        source: str = "human:user",
+        channel_name: Optional[str] = None,
+    ) -> dict:
+        """Upload a file via POST /v1/files/base64."""
+        import aiohttp
+        import base64
+        body: Dict[str, Any] = {
+            "filename": filename,
+            "content_base64": base64.b64encode(content).decode("ascii"),
+            "content_type": content_type,
+            "network": workspace_id,
+            "source": source,
+        }
+        if channel_name:
+            body["channel_name"] = channel_name
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/files/base64",
+                json=body,
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"File upload failed: {msg}")
+                return data.get("data", data)
+
+    async def list_files(
+        self,
+        workspace_id: str,
+        token: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """List files via GET /v1/files."""
+        import aiohttp
+        params: Dict[str, Any] = {
+            "network": workspace_id,
+            "limit": limit,
+            "offset": offset,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/files",
+                params=params,
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                return data.get("data", data)
+
+    async def read_file(
+        self,
+        workspace_id: str,
+        token: str,
+        file_id: str,
+    ) -> bytes:
+        """Download a file via GET /v1/files/{file_id}."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/files/{file_id}",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    data = await resp.json()
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"File download failed: {msg}")
+                return await resp.read()
+
+    async def delete_file(
+        self,
+        workspace_id: str,
+        token: str,
+        file_id: str,
+    ) -> dict:
+        """Delete a file via DELETE /v1/files/{file_id}."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"{self.endpoint}/v1/files/{file_id}",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"File deletion failed: {msg}")
+                return data.get("data", data)
+
     # ── Invitation methods (stubs — not yet event-native) ──
 
     async def check_invitations(self, agent_name: str) -> List[dict]:

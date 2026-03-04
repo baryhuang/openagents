@@ -7,6 +7,7 @@ import type {
   ONMEvent,
   Workspace,
   WorkspaceAgent,
+  WorkspaceFile,
   WorkspaceInvitation,
   WorkspaceSession,
 } from './types';
@@ -186,6 +187,56 @@ class WorkspaceApi {
       payload: { action, ...params },
       visibility: 'direct',
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Files
+  // ---------------------------------------------------------------------------
+
+  /** Upload a file to workspace shared storage. */
+  async uploadFile(file: File, channelName?: string): Promise<WorkspaceFile> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('network', this.workspaceId);
+    if (channelName) formData.append('channel_name', channelName);
+
+    const authHeaders: Record<string, string> = {};
+    if (this.token) authHeaders['X-Workspace-Token'] = this.token;
+    if (this.bearerToken) authHeaders['Authorization'] = `Bearer ${this.bearerToken}`;
+
+    const url = `${API_URL}/v1/files`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: authHeaders,
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Upload failed: ${body}`);
+    }
+
+    const json: ApiResponse<WorkspaceFile> = await res.json();
+    return json.data;
+  }
+
+  /** List files in the workspace. */
+  async listFiles(): Promise<{ files: WorkspaceFile[]; total: number }> {
+    return this.request<{ files: WorkspaceFile[]; total: number }>(
+      `/v1/files?network=${this.workspaceId}`
+    );
+  }
+
+  /** Get the download URL for a file. */
+  getFileUrl(fileId: string): string {
+    const params = new URLSearchParams();
+    if (this.token) params.set('token', this.token);
+    return `${API_URL}/v1/files/${fileId}`;
+  }
+
+  /** Delete a file. */
+  async deleteFile(fileId: string): Promise<void> {
+    await this.request<unknown>(`/v1/files/${fileId}`, { method: 'DELETE' });
   }
 
   // ---------------------------------------------------------------------------
