@@ -66,7 +66,7 @@ function NavButton({
 
 export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
-  const { agents, sessions, createSession, workspace, refreshWorkspace } = useWorkspace();
+  const { agents, sessions, files, createSession, workspace, refreshWorkspace } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -224,7 +224,7 @@ export function SidebarContent() {
             </p>
             <div className="space-y-0.5">
               <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.length} onClick={() => setViewMode('threads')} />
-              <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={0} onClick={() => setViewMode('files')} />
+              <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
             </div>
 
             {/* Actions */}

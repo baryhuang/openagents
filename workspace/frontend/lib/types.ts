@@ -53,6 +53,17 @@ export interface WorkspaceInvitation {
   expiresAt: string;
 }
 
+export interface WorkspaceFile {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  uploadedBy: string;
+  channelName: string | null;
+  status: string;
+  createdAt: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // ONM Event types (event-native API)
 // ---------------------------------------------------------------------------

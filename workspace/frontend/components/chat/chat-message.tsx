@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { useState } from 'react';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
-import { JSX } from 'react';
+import { MarkdownContent } from './markdown-content';
 
 interface ChatMessageProps {
   message: WorkspaceMessage;
@@ -48,117 +48,6 @@ export function ChatMessage({ message, agents = [] }: ChatMessageProps) {
     );
   }
 
-  // Parse content into structured elements
-  const renderContent = () => {
-    const lines = message.content.split('\n');
-    const elements: JSX.Element[] = [];
-    let currentList: { type: 'ul' | 'ol'; items: string[] } | null = null;
-
-    const flushList = () => {
-      if (currentList) {
-        if (currentList.type === 'ul') {
-          elements.push(
-            <ul key={`ul-${elements.length}`} className="my-2 space-y-1">
-              {currentList.items.map((item, i) => (
-                <li key={i} className="flex items-start gap-2 pl-1">
-                  <span className="mt-2 size-1 rounded-full bg-current shrink-0 opacity-50" />
-                  <span className="flex-1">{parseInline(item)}</span>
-                </li>
-              ))}
-            </ul>
-          );
-        } else {
-          elements.push(
-            <ol key={`ol-${elements.length}`} className="my-2 space-y-1">
-              {currentList.items.map((item, i) => (
-                <li key={i} className="flex items-start gap-2 pl-1">
-                  <span className="font-medium text-muted-foreground text-sm shrink-0">{i + 1}.</span>
-                  <span className="flex-1">{parseInline(item)}</span>
-                </li>
-              ))}
-            </ol>
-          );
-        }
-        currentList = null;
-      }
-    };
-
-    const parseInline = (text: string) => {
-      const parts = text.split(/(\*\*.*?\*\*|`[^`]+`|@[\w-]+)/g);
-      return parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith('`') && part.endsWith('`')) {
-          return <code key={i} className="text-[13px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">{part.slice(1, -1)}</code>;
-        }
-        if (part.startsWith('@') && agentNames.includes(part.slice(1))) {
-          const mentionColor = getAgentColor(part.slice(1), agentNames);
-          return (
-            <span key={i} className={cn('font-medium rounded px-0.5', mentionColor.text)}>
-              {part}
-            </span>
-          );
-        }
-        return part;
-      });
-    };
-
-    lines.forEach((line, index) => {
-      const trimmed = line.trim();
-
-      if (!trimmed) {
-        flushList();
-        if (elements.length > 0) {
-          elements.push(<div key={`space-${index}`} className="h-2" />);
-        }
-        return;
-      }
-
-      if (trimmed.match(/^[•\-*\.]\s/)) {
-        const content = trimmed.replace(/^[•\-*\.]\s*/, '');
-        if (!currentList || currentList.type !== 'ul') {
-          flushList();
-          currentList = { type: 'ul', items: [] };
-        }
-        currentList.items.push(content);
-        return;
-      }
-
-      const numberMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
-      if (numberMatch) {
-        const content = numberMatch[2];
-        if (!currentList || currentList.type !== 'ol') {
-          flushList();
-          currentList = { type: 'ol', items: [] };
-        }
-        currentList.items.push(content);
-        return;
-      }
-
-      if ((trimmed.startsWith('**') && trimmed.endsWith('**')) || trimmed.startsWith('###')) {
-        flushList();
-        const headerText = trimmed.replace(/^###\s*/, '').replace(/^\*\*|\*\*$/g, '');
-        elements.push(
-          <h3 key={index} className="font-semibold text-[15px] mt-4 mb-1.5 first:mt-0">
-            {headerText}
-          </h3>
-        );
-        return;
-      }
-
-      flushList();
-      elements.push(
-        <p key={index} className="leading-relaxed">
-          {parseInline(line)}
-        </p>
-      );
-    });
-
-    flushList();
-    return elements;
-  };
-
   // ── Human message — Slack style ──
   if (isHuman) {
     return (
@@ -174,7 +63,9 @@ export function ChatMessage({ message, agents = [] }: ChatMessageProps) {
                 <span className="text-xs text-muted-foreground">{timestamp}</span>
               )}
             </div>
-            <div className="text-sm leading-relaxed mt-0.5">{renderContent()}</div>
+            <div className="text-sm leading-relaxed mt-0.5">
+              <MarkdownContent content={message.content} agentNames={agentNames} />
+            </div>
           </div>
         </div>
       </div>
@@ -211,7 +102,7 @@ export function ChatMessage({ message, agents = [] }: ChatMessageProps) {
             )}
           </div>
           <div className="text-sm leading-relaxed mt-0.5">
-            {renderContent()}
+            <MarkdownContent content={message.content} agentNames={agentNames} />
 
             {/* Copy button */}
             <div className="flex items-center gap-1 mt-1">

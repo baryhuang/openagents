@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     PrimaryKeyConstraint,
     Text,
     text,
@@ -150,6 +151,30 @@ class Invitation(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     workspace = relationship("Workspace", back_populates="invitations")
+
+
+# ---------------------------------------------------------------------------
+# Shared file storage
+# ---------------------------------------------------------------------------
+
+class FileRecord(Base):
+    """Metadata for a file stored in the workspace."""
+    __tablename__ = "files"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    filename = Column(Text, nullable=False)
+    content_type = Column(Text, nullable=False, default="application/octet-stream")
+    size = Column(Integer, nullable=False)
+    storage_key = Column(Text, nullable=False)
+    uploaded_by = Column(Text, nullable=False)        # "human:user" or "openagents:agent-name"
+    channel_name = Column(Text, nullable=True)         # optional channel context
+    status = Column(Text, nullable=False, default="active")  # active | deleted
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        Index("idx_files_workspace_status", "workspace_id", "status"),
+    )
 
 
 # Standalone agent table (used when IDENTITY_MODE=standalone)

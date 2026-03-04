@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import config
-from app.routers import events, network, workspaces
+from app.routers import events, files, network, workspaces
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(events.router)
+app.include_router(files.router)
 app.include_router(network.router)
 app.include_router(workspaces.router)
 
