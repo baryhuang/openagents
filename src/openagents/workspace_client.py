@@ -376,6 +376,39 @@ class WorkspaceClient:
                             messages.append(self._event_to_message(e))
                 return messages
 
+    async def poll_control(
+        self,
+        workspace_id: str,
+        token: str,
+        agent_name: str,
+        after: Optional[str] = None,
+    ) -> List[dict]:
+        """Poll for control events targeted at this agent."""
+        import aiohttp
+        params: Dict[str, Any] = {
+            "network": workspace_id,
+            "type": "workspace.agent.control",
+            "limit": 10,
+        }
+        if after:
+            params["after"] = after
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/events",
+                params=params,
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                result = data.get("data") or data
+                events = result.get("events", []) if isinstance(result, dict) else []
+                # Only return events targeted at this agent
+                return [
+                    e for e in events
+                    if e.get("target") == f"openagents:{agent_name}"
+                ]
+
     async def get_agents(
         self, workspace_id: str, token: str,
     ) -> List[dict]:

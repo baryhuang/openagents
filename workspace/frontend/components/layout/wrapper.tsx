@@ -19,7 +19,7 @@ export function Wrapper() {
 
       <div className="flex flex-col flex-1 min-w-0 w-full pt-[var(--header-height-mobile)] lg:pt-0">
         {isMobile && <MobileHeader />}
-        <div className="flex grow lg:mx-2.5 mx-5 py-2.5 gap-2.5">
+        <div className="flex grow min-h-0 overflow-hidden lg:mx-2.5 mx-5 py-2.5 gap-2.5">
           {/* Invisible spacer for fixed sidebar */}
           <div
             className="hidden lg:block shrink-0 transition-all duration-300"
