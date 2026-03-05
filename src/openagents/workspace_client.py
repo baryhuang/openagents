@@ -329,6 +329,7 @@ class WorkspaceClient:
                 return {
                     "sessionId": result.get("name", session_id),
                     "title": result.get("title", session_id),
+                    "titleManuallySet": result.get("titleManuallySet", False),
                     "status": result.get("status", "active"),
                 }
 
@@ -339,6 +340,7 @@ class WorkspaceClient:
         token: str,
         title: Optional[str] = None,
         status: Optional[str] = None,
+        auto_title: bool = False,
     ) -> dict:
         """Update channel via PATCH /v1/workspaces/{id}/channels/{name}."""
         import aiohttp
@@ -347,6 +349,8 @@ class WorkspaceClient:
             payload["title"] = title
         if status is not None:
             payload["status"] = status
+        if auto_title:
+            payload["auto_title"] = True
         async with aiohttp.ClientSession() as session:
             async with session.patch(
                 f"{self.endpoint}/v1/workspaces/{workspace_id}/channels/{session_id}",

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -115,6 +116,7 @@ class Channel(Base):
     workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     name = Column(Text, nullable=False)              # e.g. "session-{uuid}"
     title = Column(Text, nullable=True)
+    title_manually_set = Column(Boolean, default=False, server_default=text("FALSE"))
     created_by = Column(Text, nullable=True)
     master_agent = Column(Text, nullable=True)       # per-channel master
     status = Column(Text, default="active")
