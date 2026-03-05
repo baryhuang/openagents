@@ -312,6 +312,11 @@ class ClaudeAdapter:
                 f"{_pfx}workspace_browser_close",
             ]
 
+        # Tunnel tools
+        if "tunnel" not in self.disabled_modules:
+            mcp_tools.append(f"{_pfx}tunnel_list")
+            mcp_write_tools += [f"{_pfx}tunnel_expose", f"{_pfx}tunnel_close"]
+
         if self._mode == "plan":
             cmd.extend(["--permission-mode", "plan"])
             allowed = mcp_tools + ["Read", "Glob", "Grep"]
