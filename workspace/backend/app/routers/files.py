@@ -273,6 +273,43 @@ async def list_files(
 
 
 # ---------------------------------------------------------------------------
+# GET /v1/files/{file_id}/info — file metadata (no download)
+# ---------------------------------------------------------------------------
+
+@router.get("/files/{file_id}/info")
+async def file_info(
+    file_id: str,
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Get file metadata without downloading content."""
+    record = db.execute(
+        select(FileRecord).where(FileRecord.id == file_id)
+    ).scalar_one_or_none()
+
+    if not record or record.status != "active":
+        return json_response(ResponseCode.NOT_FOUND, "File not found")
+
+    workspace = _resolve_workspace(db, str(record.workspace_id))
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+
+    return success_response({
+        "id": record.id,
+        "filename": record.filename,
+        "content_type": record.content_type,
+        "size": record.size,
+        "uploaded_by": record.uploaded_by,
+        "channel_name": record.channel_name,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+    })
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/files/{file_id} — download
 # ---------------------------------------------------------------------------
 

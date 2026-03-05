@@ -265,6 +265,7 @@ class WorkspaceClient:
         sender_name: Optional[str] = None,
         message_type: str = "chat",
         metadata: Optional[dict] = None,
+        attachments: Optional[list] = None,
     ) -> dict:
         """Send message via POST /v1/events (workspace.message.posted event)."""
         import aiohttp
@@ -275,6 +276,8 @@ class WorkspaceClient:
             "content": content,
             "message_type": message_type,
         }
+        if attachments:
+            event_payload["attachments"] = attachments
 
         event_body: Dict[str, Any] = {
             "type": "workspace.message.posted",
@@ -562,6 +565,24 @@ class WorkspaceClient:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 data = await resp.json()
+                return data.get("data", data)
+
+    async def get_file_info(
+        self,
+        token: str,
+        file_id: str,
+    ) -> dict:
+        """Get file metadata via GET /v1/files/{file_id}/info."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/files/{file_id}/info",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                if resp.status != 200:
+                    return {"id": file_id, "filename": file_id, "content_type": "application/octet-stream"}
                 return data.get("data", data)
 
     async def read_file(
