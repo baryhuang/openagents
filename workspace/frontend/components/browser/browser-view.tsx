@@ -1,0 +1,150 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { Globe, X, RefreshCw, Users } from 'lucide-react';
+import { useWorkspace } from '@/lib/workspace-context';
+import { workspaceApi } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+
+export function BrowserView() {
+  const { browserTabs, selectedBrowserTabId, setSelectedBrowserTabId, closeBrowserTab } = useWorkspace();
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const prevBlobRef = useRef<string | null>(null);
+
+  const tab = browserTabs.find((t) => t.id === selectedBrowserTabId);
+
+  // Poll screenshot every 2 seconds
+  useEffect(() => {
+    if (!selectedBrowserTabId || !tab) {
+      setScreenshotUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchScreenshot = async () => {
+      try {
+        const url = workspaceApi.getBrowserScreenshotUrl(selectedBrowserTabId);
+        const headers: Record<string, string> = {};
+        // Access token from API instance
+        const token = (workspaceApi as unknown as { token: string }).token;
+        if (token) headers['X-Workspace-Token'] = token;
+        const bearerToken = (workspaceApi as unknown as { bearerToken: string }).bearerToken;
+        if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
+
+        const res = await fetch(url, { headers });
+        if (!res.ok || cancelled) return;
+
+        const blob = await res.blob();
+        if (cancelled) return;
+
+        // Revoke previous blob URL
+        if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
+
+        const blobUrl = URL.createObjectURL(blob);
+        prevBlobRef.current = blobUrl;
+        setScreenshotUrl(blobUrl);
+        setLoading(false);
+      } catch {
+        // Non-critical — screenshot will retry
+      }
+    };
+
+    setLoading(true);
+    fetchScreenshot();
+    const interval = setInterval(fetchScreenshot, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      if (prevBlobRef.current) {
+        URL.revokeObjectURL(prevBlobRef.current);
+        prevBlobRef.current = null;
+      }
+    };
+  }, [selectedBrowserTabId, tab]);
+
+  const handleClose = async () => {
+    if (!selectedBrowserTabId) return;
+    try {
+      await closeBrowserTab(selectedBrowserTabId);
+      toast.success('Tab closed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to close tab');
+    }
+  };
+
+  // No tab selected
+  if (!tab) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        <div className="text-center space-y-2">
+          <Globe className="size-12 mx-auto opacity-20" />
+          <p className="text-sm font-medium">Select a browser tab</p>
+          <p className="text-xs">Choose a tab from the list or open a new one</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-input shrink-0">
+        <Globe className="size-4 text-blue-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{tab.title || 'Untitled'}</p>
+          <p className="text-xs text-muted-foreground truncate">{tab.url}</p>
+        </div>
+
+        {/* Shared with badges */}
+        {tab.sharedWith.length > 0 && (
+          <div className="flex items-center gap-1 shrink-0">
+            <Users className="size-3.5 text-muted-foreground" />
+            {tab.sharedWith.map((agent) => (
+              <span
+                key={agent}
+                className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+              >
+                {agent}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <span className="text-[10px] text-muted-foreground shrink-0">
+          by {(tab.createdBy || 'unknown').replace(/^(openagents:|human:)/, '')}
+        </span>
+
+        <button
+          onClick={handleClose}
+          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
+          title="Close tab"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      {/* Screenshot area */}
+      <div className="flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-900 flex items-start justify-center p-4">
+        {loading && !screenshotUrl ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            <RefreshCw className="size-6 animate-spin" />
+          </div>
+        ) : screenshotUrl ? (
+          <img
+            src={screenshotUrl}
+            alt={`Screenshot of ${tab.url}`}
+            className="max-w-full border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-sm"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            <p className="text-sm">No screenshot available</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

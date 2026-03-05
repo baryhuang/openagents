@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { workspaceApi } from './api';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
+import type { BrowserTab, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -36,6 +36,12 @@ interface WorkspaceContextValue {
   refreshFiles: () => Promise<void>;
   uploadFile: (file: File) => Promise<WorkspaceFile>;
   deleteFile: (fileId: string) => Promise<void>;
+  browserTabs: BrowserTab[];
+  selectedBrowserTabId: string | null;
+  setSelectedBrowserTabId: (id: string | null) => void;
+  refreshBrowserTabs: () => Promise<void>;
+  openBrowserTab: (url?: string) => Promise<BrowserTab>;
+  closeBrowserTab: (tabId: string) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -68,6 +74,8 @@ export function WorkspaceProvider({
   const [agentModes, setAgentModes] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
+  const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
     setLastMessageBySession((prev) => {
@@ -181,6 +189,27 @@ export function WorkspaceProvider({
     if (selectedFileId === fileId) setSelectedFileId(null);
   }, [selectedFileId]);
 
+  const refreshBrowserTabs = useCallback(async () => {
+    try {
+      const result = await workspaceApi.listBrowserTabs();
+      setBrowserTabs(result.tabs);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const openBrowserTab = useCallback(async (url = 'about:blank') => {
+    const tab = await workspaceApi.openBrowserTab(url);
+    await refreshBrowserTabs();
+    return tab;
+  }, [refreshBrowserTabs]);
+
+  const closeBrowserTab = useCallback(async (tabId: string) => {
+    await workspaceApi.closeBrowserTab(tabId);
+    setBrowserTabs((prev) => prev.filter((t) => t.id !== tabId));
+    if (selectedBrowserTabId === tabId) setSelectedBrowserTabId(null);
+  }, [selectedBrowserTabId]);
+
   // Initial load: workspace metadata + discover for channels
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +220,7 @@ export function WorkspaceProvider({
           workspaceApi.getWorkspace(),
           workspaceApi.discover(),
           workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {}),
+          workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {}),
         ]);
         if (cancelled) return;
 
@@ -309,6 +339,12 @@ export function WorkspaceProvider({
         refreshFiles,
         uploadFile,
         deleteFile,
+        browserTabs,
+        selectedBrowserTabId,
+        setSelectedBrowserTabId,
+        refreshBrowserTabs,
+        openBrowserTab,
+        closeBrowserTab,
       }}
     >
       {children}

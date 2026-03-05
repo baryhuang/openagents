@@ -65,6 +65,17 @@ export interface WorkspaceFile {
   createdAt: string | null;
 }
 
+export interface BrowserTab {
+  id: string;
+  url: string;
+  title: string | null;
+  status: string;
+  createdBy: string;
+  sharedWith: string[];
+  createdAt: string | null;
+  lastActiveAt: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // ONM Event types (event-native API)
 // ---------------------------------------------------------------------------

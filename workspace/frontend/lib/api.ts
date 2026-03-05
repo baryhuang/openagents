@@ -1,5 +1,6 @@
 import type {
   ApiResponse,
+  BrowserTab,
   EventPollResponse,
   MessagePollResponse,
   NetworkDiscovery,
@@ -245,6 +246,58 @@ class WorkspaceApi {
   /** Delete a file. */
   async deleteFile(fileId: string): Promise<void> {
     await this.request<unknown>(`/v1/files/${fileId}`, { method: 'DELETE' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Browser
+  // ---------------------------------------------------------------------------
+
+  /** List active browser tabs. */
+  async listBrowserTabs(): Promise<{ tabs: BrowserTab[]; total: number }> {
+    const result = await this.request<{ tabs: unknown[]; total: number }>(
+      `/v1/browser/tabs?network=${this.workspaceId}`
+    );
+    return {
+      tabs: result.tabs.map((t: Record<string, unknown>) => ({
+        id: t.id as string,
+        url: t.url as string,
+        title: (t.title as string) || null,
+        status: t.status as string,
+        createdBy: t.created_by as string,
+        sharedWith: (t.shared_with as string[]) || [],
+        createdAt: (t.created_at as string) || null,
+        lastActiveAt: (t.last_active_at as string) || null,
+      })),
+      total: result.total,
+    };
+  }
+
+  /** Open a new browser tab. */
+  async openBrowserTab(url = 'about:blank'): Promise<BrowserTab> {
+    const result = await this.request<Record<string, unknown>>('/v1/browser/tabs', {
+      method: 'POST',
+      body: JSON.stringify({ url, network: this.workspaceId, source: 'human:user' }),
+    });
+    return {
+      id: result.id as string,
+      url: result.url as string,
+      title: (result.title as string) || null,
+      status: result.status as string,
+      createdBy: result.created_by as string,
+      sharedWith: (result.shared_with as string[]) || [],
+      createdAt: (result.created_at as string) || null,
+      lastActiveAt: (result.last_active_at as string) || null,
+    };
+  }
+
+  /** Close a browser tab. */
+  async closeBrowserTab(tabId: string): Promise<void> {
+    await this.request<unknown>(`/v1/browser/tabs/${tabId}`, { method: 'DELETE' });
+  }
+
+  /** Get screenshot URL for a browser tab. */
+  getBrowserScreenshotUrl(tabId: string): string {
+    return `${API_URL}/v1/browser/tabs/${tabId}/screenshot`;
   }
 
   // ---------------------------------------------------------------------------

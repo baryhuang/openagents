@@ -7,6 +7,8 @@ import { ChatView } from '@/components/chat/chat-view';
 import { ThreadList } from '@/components/threads/thread-list';
 import { FileList } from '@/components/files/file-list';
 import { FilePreview } from '@/components/files/file-preview';
+import { BrowserTabList } from '@/components/browser/browser-tab-list';
+import { BrowserView } from '@/components/browser/browser-view';
 import { ConnectAgentView } from '@/components/connect/connect-agent-view';
 import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 
@@ -35,6 +37,7 @@ export function Wrapper() {
             <div className="shrink-0 w-[300px] xl:w-[400px] bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
               {viewMode === 'threads' && <ThreadList />}
               {viewMode === 'files' && <FileList />}
+              {viewMode === 'browser' && <BrowserTabList />}
             </div>
           )}
 
@@ -46,6 +49,7 @@ export function Wrapper() {
               </main>
             )}
             {viewMode === 'files' && <FilePreview />}
+            {viewMode === 'browser' && <BrowserView />}
             {viewMode === 'connect' && <ConnectAgentView />}
 
             {/* Agent profile slide-over */}
