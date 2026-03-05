@@ -2,12 +2,68 @@
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, User } from 'lucide-react';
+import { Copy, Check, User, FileIcon, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import { MarkdownContent } from './markdown-content';
+
+interface Attachment {
+  fileId: string;
+  filename: string;
+  contentType: string;
+  url: string;
+}
+
+function Attachments({ items }: { items: Attachment[] }) {
+  if (!items || items.length === 0) return null;
+
+  const images = items.filter((a) => a.contentType.startsWith('image/'));
+  const files = items.filter((a) => !a.contentType.startsWith('image/'));
+
+  return (
+    <div className="mt-2 space-y-2">
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {images.map((img) => (
+            <a
+              key={img.fileId}
+              href={img.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block rounded-lg overflow-hidden border hover:shadow-md transition-shadow max-w-sm"
+            >
+              <img
+                src={img.url}
+                alt={img.filename}
+                className="max-h-64 w-auto object-contain"
+                loading="lazy"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {files.map((file) => (
+            <a
+              key={file.fileId}
+              href={file.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted hover:bg-muted/80 transition-colors text-sm"
+            >
+              <FileIcon className="size-4 text-muted-foreground shrink-0" />
+              <span className="truncate max-w-[200px]">{file.filename}</span>
+              <Download className="size-3 text-muted-foreground shrink-0" />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ChatMessageProps {
   message: WorkspaceMessage;
@@ -22,6 +78,7 @@ export function ChatMessage({ message, agents = [] }: ChatMessageProps) {
   const agentNames = agents.map((a) => a.agentName);
   const agentColor = !isHuman ? getAgentColor(message.senderName, agentNames) : null;
   const agent = agents.find((a) => a.agentName === message.senderName);
+  const attachments = (message.metadata?.attachments as Attachment[]) || [];
 
   const timestamp = message.createdAt
     ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -71,6 +128,7 @@ export function ChatMessage({ message, agents = [] }: ChatMessageProps) {
             </div>
             <div className="text-sm leading-relaxed mt-0.5">
               <MarkdownContent content={message.content} agentNames={agentNames} />
+              <Attachments items={attachments} />
             </div>
           </div>
         </div>
@@ -109,6 +167,7 @@ export function ChatMessage({ message, agents = [] }: ChatMessageProps) {
           </div>
           <div className="text-sm leading-relaxed mt-0.5">
             <MarkdownContent content={message.content} agentNames={agentNames} />
+            <Attachments items={attachments} />
 
             {/* Copy button */}
             <div className="flex items-center gap-1 mt-1">
