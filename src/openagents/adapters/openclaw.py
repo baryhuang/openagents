@@ -66,6 +66,10 @@ class OpenClawAdapter:
         # Conversation history for multi-turn context
         self._conversation_history: list[dict] = []
 
+        # Mode support (plan / execute)
+        self._mode: str = "execute"
+        self._last_control_id: Optional[str] = None
+
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
         self._running = True
@@ -96,10 +100,51 @@ class OpenClawAdapter:
                 logger.debug(f"Heartbeat failed: {e}")
             await asyncio.sleep(30)
 
+    async def _poll_control(self):
+        """Check for control events (mode changes) targeted at this agent."""
+        try:
+            events = await self.client.poll_control(
+                workspace_id=self.workspace_id,
+                token=self.token,
+                agent_name=self.agent_name,
+                after=self._last_control_id,
+            )
+            for ev in events:
+                ev_id = ev.get("id")
+                if ev_id:
+                    self._last_control_id = ev_id
+                payload = ev.get("payload") or {}
+                action = payload.get("action", "")
+                if action == "set_mode":
+                    new_mode = payload.get("mode", "execute")
+                    if new_mode in ("execute", "plan") and new_mode != self._mode:
+                        old_mode = self._mode
+                        self._mode = new_mode
+                        logger.info(f"Mode changed: {old_mode} -> {new_mode}")
+                        label = "Execute" if new_mode == "execute" else "Plan"
+                        try:
+                            await self.client.send_message(
+                                workspace_id=self.workspace_id,
+                                channel_name=self.channel_name,
+                                token=self.token,
+                                content=f"Switched to **{label}** mode",
+                                sender_type="agent",
+                                sender_name=self.agent_name,
+                                message_type="status",
+                                metadata={"agent_mode": new_mode},
+                            )
+                        except Exception:
+                            pass
+                elif action == "stop":
+                    logger.info("Stop command received")
+        except Exception as e:
+            logger.debug(f"Control poll failed: {e}")
+
     async def _poll_loop(self):
         """Poll for new messages across all channels and dispatch to OpenClaw."""
         idle_count = 0
         while self._running:
+            await self._poll_control()
             try:
                 messages = await self.client.poll_pending(
                     workspace_id=self.workspace_id,
@@ -138,19 +183,35 @@ class OpenClawAdapter:
 
     def _build_system_prompt(self, channel_name: str) -> str:
         """Build system prompt with workspace context."""
-        return (
+        base = (
             f"You are agent '{self.agent_name}' connected to an "
             f"OpenAgents workspace.\n\n"
             f"## Workspace\n"
             f"- Workspace ID: {self.workspace_id}\n"
-            f"- Channel: {channel_name}\n\n"
-            f"## Instructions\n"
-            f"- You are responding to messages from the workspace chat.\n"
-            f"- Your response will be posted to the workspace automatically.\n"
-            f"- Be helpful, concise, and direct.\n"
-            f"- You can write code, explain concepts, and help with tasks.\n"
-            f"- Use markdown formatting for code blocks and structure.\n"
+            f"- Channel: {channel_name}\n"
+            f"- Mode: {self._mode}\n\n"
         )
+        if self._mode == "plan":
+            base += (
+                "## Instructions (PLAN mode)\n"
+                "- You are in PLAN mode. Only read, analyze, and propose.\n"
+                "- Do NOT write code, make changes, or execute actions.\n"
+                "- Instead, outline your plan step by step.\n"
+                "- Describe what changes you would make and why.\n"
+                "- Ask clarifying questions if needed.\n"
+                "- When the user is satisfied, they can switch you to Execute mode.\n"
+                "- Use markdown formatting for structure.\n"
+            )
+        else:
+            base += (
+                "## Instructions (EXECUTE mode)\n"
+                "- You are responding to messages from the workspace chat.\n"
+                "- Your response will be posted to the workspace automatically.\n"
+                "- Be helpful, concise, and direct.\n"
+                "- You can write code, explain concepts, and help with tasks.\n"
+                "- Use markdown formatting for code blocks and structure.\n"
+            )
+        return base
 
     async def _get_recent_history_text(self, channel_name: str) -> str:
         """Fetch recent workspace messages and format as context."""
@@ -216,6 +277,7 @@ class OpenClawAdapter:
                 sender_type="agent",
                 sender_name=self.agent_name,
                 message_type="status",
+                metadata={"agent_mode": self._mode},
             )
         except Exception:
             pass
