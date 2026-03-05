@@ -46,10 +46,10 @@ export function ChatView() {
     const chatMessages = messages.filter((m) => m.messageType !== 'status');
     const lastChat = chatMessages[chatMessages.length - 1];
     if (lastChat) {
-      updateLastMessage(currentSessionId, lastChat.senderName, lastChat.content);
+      updateLastMessage(currentSessionId, lastChat.senderName, lastChat.content, lastChat.createdAt);
     } else {
       // Clear stale preview when thread has no messages
-      updateLastMessage(currentSessionId, '', '');
+      updateLastMessage(currentSessionId, '', '', null);
     }
   }, [currentSessionId, messages, updateLastMessage]);
 

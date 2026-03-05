@@ -27,6 +27,7 @@ export interface WorkspaceSession {
   participants: string[];
   master: string | null;
   createdAt: string | null;
+  lastEventAt: number | null; // unix ms timestamp of last message
 }
 
 export interface WorkspaceMessage {
@@ -95,6 +96,8 @@ export interface NetworkChannel {
   title: string | null;
   master: string | null;
   participants: string[];
+  created_at: number | null;
+  last_event_at: number | null;
 }
 
 export interface NetworkDiscovery {
@@ -163,7 +166,7 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
     targetAgents: (event.metadata?.target_agents as string[]) || null,
     messageType: (payload.message_type as string) || 'chat',
     metadata: event.metadata || {},
-    createdAt: new Date(event.timestamp * 1000).toISOString(),
+    createdAt: new Date(event.timestamp).toISOString(),
   };
 }
 
@@ -189,6 +192,7 @@ export function networkChannelToSession(ch: NetworkChannel, workspaceId: string)
     status: 'active',
     participants: ch.participants,
     master: ch.master,
-    createdAt: null,
+    createdAt: ch.created_at ? new Date(ch.created_at).toISOString() : null,
+    lastEventAt: ch.last_event_at,
   };
 }
