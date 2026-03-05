@@ -3814,6 +3814,18 @@ def connect_claude(
         None, "--workspace-name",
         help="Custom workspace name",
     ),
+    join: Optional[str] = typer.Option(
+        None, "--join",
+        help="Join existing workspace (ID or slug)",
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token",
+        help="Workspace token (required with --join)",
+    ),
+    channel: Optional[str] = typer.Option(
+        None, "--channel",
+        help="Channel name to listen on (default: first channel)",
+    ),
     endpoint: str = typer.Option(
         "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
@@ -3882,17 +3894,94 @@ def connect_claude(
                     api_key=identity.api_key if identity else None,
                 ))
 
-        # Step 2: Create workspace
-        with console.status("Creating workspace..."):
-            try:
-                ws = await client.create_workspace(agent_name, workspace_name)
-                console.print(f"[green]Workspace created:[/green] {ws.name}")
-                console.print(
-                    f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
-                )
-            except Exception as e:
-                console.print(f"[red]Workspace creation failed: {e}[/red]")
+        # Step 2: Create or join workspace
+        if join:
+            # Join an existing workspace
+            ws_token = token
+            if not ws_token:
+                console.print("[red]--token is required when using --join[/red]")
                 raise typer.Exit(1)
+
+            with console.status("Joining workspace..."):
+                try:
+                    join_result = await client.join_network(
+                        agent_name=agent_name,
+                        network=join,
+                        token=ws_token,
+                    )
+                    ws_id = join_result.get("network_id", join)
+                    console.print(
+                        f"[green]Joined workspace:[/green] {ws_id}"
+                    )
+                except Exception as e:
+                    console.print(f"[red]Failed to join workspace: {e}[/red]")
+                    raise typer.Exit(1)
+
+            # Discover channels to find one to listen on
+            channel_name = channel
+            if not channel_name:
+                try:
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(
+                            f"{endpoint}/v1/discover",
+                            params={"network": ws_id},
+                            headers={"X-Workspace-Token": ws_token},
+                        ) as resp:
+                            disc = await resp.json()
+                            channels = (disc.get("data") or disc).get("channels", [])
+                            if channels:
+                                channel_name = channels[0]["address"].replace("channel/", "")
+                            else:
+                                channel_name = "general"
+                except Exception:
+                    channel_name = "general"
+                console.print(f"Listening on channel: [cyan]{channel_name}[/cyan]")
+
+            # Join the channel as a participant
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{endpoint}/v1/events",
+                        json={
+                            "type": "network.channel.join",
+                            "source": f"openagents:{agent_name}",
+                            "target": "core",
+                            "payload": {
+                                "channel": channel_name,
+                                "agent_name": agent_name,
+                            },
+                            "network": ws_id,
+                        },
+                        headers={
+                            "X-Workspace-Token": ws_token,
+                            "Content-Type": "application/json",
+                        },
+                    ) as resp:
+                        pass  # Best-effort channel join
+            except Exception:
+                pass
+
+            ws_workspace_id = ws_id
+            ws_channel = channel_name
+            ws_tok = ws_token
+        else:
+            # Create a new workspace
+            with console.status("Creating workspace..."):
+                try:
+                    ws = await client.create_workspace(agent_name, workspace_name)
+                    console.print(f"[green]Workspace created:[/green] {ws.name}")
+                    console.print(
+                        f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
+                    )
+                except Exception as e:
+                    console.print(f"[red]Workspace creation failed: {e}[/red]")
+                    raise typer.Exit(1)
+
+            ws_workspace_id = ws.workspace_id
+            ws_channel = ws.channel_name
+            ws_tok = ws.token
 
         # Step 3: Start adapter
         console.print(
@@ -3903,9 +3992,9 @@ def connect_claude(
 
         from openagents.adapters.claude import ClaudeAdapter
         adapter = ClaudeAdapter(
-            workspace_id=ws.workspace_id,
-            channel_name=ws.channel_name,
-            token=ws.token,
+            workspace_id=ws_workspace_id,
+            channel_name=ws_channel,
+            token=ws_tok,
             agent_name=agent_name,
             endpoint=endpoint,
         )
