@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import {
   Plus, MessageSquare, FileText, PlusSquare, UserPlus,
   Settings, HelpCircle, Copy, Check, Clock, CheckCircle, XCircle,
-  LogIn, LogOut, Shield,
+  LogIn, LogOut, Shield, Moon, Sun,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -68,9 +69,12 @@ export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
   const { agents, sessions, files, createSession, workspace, refreshWorkspace } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
+  const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [claiming, setClaiming] = useState(false);
+
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
   const onlineCount = agents.filter((a) => a.status === 'online').length;
   const agentNames = agents.map((a) => a.agentName);
@@ -158,6 +162,14 @@ export function SidebarContent() {
               <TooltipContent side="right">{user.email}</TooltipContent>
             </Tooltip>
           )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button onClick={toggleTheme} className="w-full flex items-center justify-center py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                {theme === 'dark' ? <Sun className="size-4 text-muted-foreground" /> : <Moon className="size-4 text-muted-foreground" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <button onClick={sidebarToggle} className="w-full flex items-center justify-center py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
@@ -272,6 +284,7 @@ export function SidebarContent() {
                 )}
               </div>
             )}
+            <NavButton icon={theme === 'dark' ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={theme === 'dark' ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
             <NavButton icon={<HelpCircle className="size-[15px]" />} label="Support" />
             <NavButton icon={<Settings className="size-[15px]" />} label="Collapse" onClick={sidebarToggle} />
           </div>
