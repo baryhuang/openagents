@@ -11,7 +11,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-export type ViewMode = 'threads' | 'files' | 'connect';
+export type ViewMode = 'threads' | 'files' | 'browser' | 'connect';
 
 interface LayoutState {
   isMobile: boolean;

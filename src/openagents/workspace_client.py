@@ -598,6 +598,126 @@ class WorkspaceClient:
                     raise ConnectionError(f"File deletion failed: {msg}")
                 return data.get("data", data)
 
+    # ── Browser methods ──
+
+    async def browser_open_tab(
+        self, workspace_id: str, token: str,
+        url: str = "about:blank", source: str = "human:user",
+    ) -> dict:
+        """Open a new browser tab via POST /v1/browser/tabs."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/browser/tabs",
+                json={"url": url, "network": workspace_id, "source": source},
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    raise ConnectionError(f"Open tab failed: {data.get('message', resp.status)}")
+                return data.get("data", data)
+
+    async def browser_list_tabs(self, workspace_id: str, token: str) -> dict:
+        """List browser tabs via GET /v1/browser/tabs."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/browser/tabs",
+                params={"network": workspace_id},
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                return data.get("data", data)
+
+    async def browser_navigate(self, workspace_id: str, token: str, tab_id: str, url: str) -> dict:
+        """Navigate a browser tab via POST /v1/browser/tabs/{id}/navigate."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}/navigate",
+                json={"url": url},
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    raise ConnectionError(f"Navigate failed: {data.get('message', resp.status)}")
+                return data.get("data", data)
+
+    async def browser_click(self, workspace_id: str, token: str, tab_id: str, selector: str) -> dict:
+        """Click an element via POST /v1/browser/tabs/{id}/click."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}/click",
+                json={"selector": selector},
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    raise ConnectionError(f"Click failed: {data.get('message', resp.status)}")
+                return data.get("data", data)
+
+    async def browser_type(self, workspace_id: str, token: str, tab_id: str, selector: str, text: str) -> dict:
+        """Type text via POST /v1/browser/tabs/{id}/type."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}/type",
+                json={"selector": selector, "text": text},
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    raise ConnectionError(f"Type failed: {data.get('message', resp.status)}")
+                return data.get("data", data)
+
+    async def browser_screenshot(self, workspace_id: str, token: str, tab_id: str) -> bytes:
+        """Get screenshot via GET /v1/browser/tabs/{id}/screenshot."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}/screenshot",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    data = await resp.json()
+                    raise ConnectionError(f"Screenshot failed: {data.get('message', resp.status)}")
+                return await resp.read()
+
+    async def browser_snapshot(self, workspace_id: str, token: str, tab_id: str) -> str:
+        """Get accessibility snapshot via GET /v1/browser/tabs/{id}/snapshot."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}/snapshot",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status != 200:
+                    data = await resp.json()
+                    raise ConnectionError(f"Snapshot failed: {data.get('message', resp.status)}")
+                return await resp.text()
+
+    async def browser_close_tab(self, workspace_id: str, token: str, tab_id: str) -> dict:
+        """Close a browser tab via DELETE /v1/browser/tabs/{id}."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    raise ConnectionError(f"Close tab failed: {data.get('message', resp.status)}")
+                return data.get("data", data)
+
     # ── Invitation methods (stubs — not yet event-native) ──
 
     async def check_invitations(self, agent_name: str) -> List[dict]:

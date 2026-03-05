@@ -288,10 +288,18 @@ class ClaudeAdapter:
             "mcp__openagents-workspace__workspace_status",
             "mcp__openagents-workspace__workspace_list_files",
             "mcp__openagents-workspace__workspace_read_file",
+            "mcp__openagents-workspace__workspace_browser_list_tabs",
+            "mcp__openagents-workspace__workspace_browser_snapshot",
+            "mcp__openagents-workspace__workspace_browser_screenshot",
         ]
         mcp_write_tools = [
             "mcp__openagents-workspace__workspace_write_file",
             "mcp__openagents-workspace__workspace_delete_file",
+            "mcp__openagents-workspace__workspace_browser_open",
+            "mcp__openagents-workspace__workspace_browser_navigate",
+            "mcp__openagents-workspace__workspace_browser_click",
+            "mcp__openagents-workspace__workspace_browser_type",
+            "mcp__openagents-workspace__workspace_browser_close",
         ]
 
         if self._mode == "plan":

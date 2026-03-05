@@ -177,6 +177,29 @@ class FileRecord(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Shared browser
+# ---------------------------------------------------------------------------
+
+class BrowserTab(Base):
+    """A shared browser tab in the workspace."""
+    __tablename__ = "browser_tabs"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    url = Column(Text, nullable=False, default="about:blank")
+    title = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="active")       # active | closed
+    created_by = Column(Text, nullable=False)                      # "human:user" or "openagents:agent-name"
+    shared_with = Column(JSONB, default=[])                        # list of agent names with access
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    last_active_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        Index("idx_browser_tabs_workspace_status", "workspace_id", "status"),
+    )
+
+
 # Standalone agent table (used when IDENTITY_MODE=standalone)
 class Agent(Base):
     """Local agent identity (standalone mode only)."""

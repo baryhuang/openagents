@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Plus, MessageSquare, FileText, PlusSquare, UserPlus,
+  Plus, MessageSquare, FileText, Globe, PlusSquare, UserPlus,
   Settings, Copy, Check, Clock, CheckCircle, XCircle,
   LogIn, LogOut, Shield, Moon, Sun,
 } from 'lucide-react';
@@ -68,7 +68,7 @@ function NavButton({
 
 export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
-  const { agents, sessions, files, createSession, workspace, refreshWorkspace } = useWorkspace();
+  const { agents, sessions, files, browserTabs, createSession, workspace, refreshWorkspace } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -248,6 +248,7 @@ export function SidebarContent() {
             <div className="space-y-0.5">
               <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.length} onClick={() => setViewMode('threads')} />
               <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
+              <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
             </div>
 
             {/* Actions */}

@@ -172,6 +172,98 @@ def create_mcp_server(
                     "required": ["file_id"],
                 },
             ),
+            # ── Browser tools ──
+            types.Tool(
+                name="workspace_browser_open",
+                description="Open a new shared browser tab. Returns the tab ID for use in other browser tools.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "URL to open (default: about:blank)",
+                        },
+                    },
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_navigate",
+                description="Navigate a shared browser tab to a URL.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID"},
+                        "url": {"type": "string", "description": "URL to navigate to"},
+                    },
+                    "required": ["tab_id", "url"],
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_click",
+                description="Click an element in a shared browser tab by CSS selector.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID"},
+                        "selector": {"type": "string", "description": "CSS selector of element to click"},
+                    },
+                    "required": ["tab_id", "selector"],
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_type",
+                description="Type text into an element in a shared browser tab.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID"},
+                        "selector": {"type": "string", "description": "CSS selector of element to type into"},
+                        "text": {"type": "string", "description": "Text to type"},
+                    },
+                    "required": ["tab_id", "selector", "text"],
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_screenshot",
+                description="Take a screenshot of a shared browser tab. Returns the image.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID"},
+                    },
+                    "required": ["tab_id"],
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_snapshot",
+                description="Get the accessibility tree of a shared browser tab (text representation of page structure).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID"},
+                    },
+                    "required": ["tab_id"],
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_list_tabs",
+                description="List all open shared browser tabs in this workspace.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_close",
+                description="Close a shared browser tab.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID to close"},
+                    },
+                    "required": ["tab_id"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -309,6 +401,98 @@ def create_mcp_server(
                     file_id=file_id,
                 )
                 return [types.TextContent(type="text", text=f"File deleted: {file_id}")]
+
+            # ── Browser tool handlers ──
+
+            elif name == "workspace_browser_open":
+                url = arguments.get("url", "about:blank")
+                result = await client.browser_open_tab(
+                    workspace_id=workspace_id,
+                    token=token,
+                    url=url,
+                    source=f"openagents:{agent_name}",
+                )
+                return [types.TextContent(
+                    type="text",
+                    text=f"Browser tab opened: {result.get('id', 'unknown')} → {result.get('url', url)}",
+                )]
+
+            elif name == "workspace_browser_navigate":
+                tab_id = arguments.get("tab_id", "")
+                url = arguments.get("url", "")
+                result = await client.browser_navigate(
+                    workspace_id=workspace_id, token=token, tab_id=tab_id, url=url,
+                )
+                return [types.TextContent(
+                    type="text",
+                    text=f"Navigated to: {result.get('url', url)} (title: {result.get('title', '')})",
+                )]
+
+            elif name == "workspace_browser_click":
+                tab_id = arguments.get("tab_id", "")
+                selector = arguments.get("selector", "")
+                result = await client.browser_click(
+                    workspace_id=workspace_id, token=token, tab_id=tab_id, selector=selector,
+                )
+                return [types.TextContent(
+                    type="text",
+                    text=f"Clicked: {selector} (url now: {result.get('url', '')})",
+                )]
+
+            elif name == "workspace_browser_type":
+                tab_id = arguments.get("tab_id", "")
+                selector = arguments.get("selector", "")
+                text = arguments.get("text", "")
+                await client.browser_type(
+                    workspace_id=workspace_id, token=token,
+                    tab_id=tab_id, selector=selector, text=text,
+                )
+                return [types.TextContent(
+                    type="text",
+                    text=f"Typed into {selector}: {text[:50]}",
+                )]
+
+            elif name == "workspace_browser_screenshot":
+                tab_id = arguments.get("tab_id", "")
+                import base64 as b64
+                data = await client.browser_screenshot(
+                    workspace_id=workspace_id, token=token, tab_id=tab_id,
+                )
+                encoded = b64.b64encode(data).decode("ascii")
+                return [types.ImageContent(
+                    type="image",
+                    data=encoded,
+                    mimeType="image/png",
+                )]
+
+            elif name == "workspace_browser_snapshot":
+                tab_id = arguments.get("tab_id", "")
+                tree = await client.browser_snapshot(
+                    workspace_id=workspace_id, token=token, tab_id=tab_id,
+                )
+                return [types.TextContent(type="text", text=tree)]
+
+            elif name == "workspace_browser_list_tabs":
+                result = await client.browser_list_tabs(
+                    workspace_id=workspace_id, token=token,
+                )
+                tabs = result.get("tabs", []) if isinstance(result, dict) else []
+                if not tabs:
+                    return [types.TextContent(type="text", text="No browser tabs open.")]
+                lines = []
+                for t in tabs:
+                    lines.append(
+                        f"- {t['id']}: {t.get('url', 'about:blank')} "
+                        f"(by {t.get('created_by', '?')}, title: {t.get('title', '')})"
+                    )
+                return [types.TextContent(type="text", text="\n".join(lines))]
+
+            elif name == "workspace_browser_close":
+                tab_id = arguments.get("tab_id", "")
+                await client.browser_close_tab(
+                    workspace_id=workspace_id, token=token, tab_id=tab_id,
+                )
+                return [types.TextContent(type="text", text=f"Browser tab closed: {tab_id}")]
 
             else:
                 return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
