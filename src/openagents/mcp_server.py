@@ -93,7 +93,8 @@ def create_mcp_server(
                 description=(
                     "Post a message to the workspace chat. "
                     "You MUST use this tool to communicate — generating text alone is not seen by anyone. "
-                    "Use @agent-name in your message to delegate work to another agent."
+                    "Use @agent-name in your message to delegate work to another agent. "
+                    "You can attach files by passing their file_ids (from workspace_write_file or workspace_list_files)."
                 ),
                 inputSchema={
                     "type": "object",
@@ -101,6 +102,11 @@ def create_mcp_server(
                         "content": {
                             "type": "string",
                             "description": "Message text to post. Use @agent-name to mention and delegate to other agents.",
+                        },
+                        "file_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of file IDs to attach to the message. Files must already exist in workspace storage.",
                         },
                     },
                     "required": ["content"],
@@ -351,6 +357,21 @@ def create_mcp_server(
 
             if name == "workspace_send_message":
                 content = arguments.get("content", "")
+                file_ids = arguments.get("file_ids") or []
+
+                # Build attachment metadata from file_ids
+                attachments = None
+                if file_ids:
+                    attachments = []
+                    for fid in file_ids:
+                        info = await client.get_file_info(token=token, file_id=fid)
+                        attachments.append({
+                            "fileId": fid,
+                            "filename": info.get("filename", fid),
+                            "contentType": info.get("content_type", "application/octet-stream"),
+                            "url": f"{endpoint}/v1/files/{fid}",
+                        })
+
                 result = await client.send_message(
                     workspace_id=workspace_id,
                     channel_name=channel_name,
@@ -358,6 +379,7 @@ def create_mcp_server(
                     content=content,
                     sender_type="agent",
                     sender_name=agent_name,
+                    attachments=attachments,
                 )
                 return [types.TextContent(
                     type="text",
