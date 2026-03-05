@@ -54,7 +54,9 @@ export function NewThreadDialog({ open, onOpenChange, agents, onCreateThread }: 
     // Ensure master is selected
     setSelected((prev) => {
       if (prev.has(name)) return prev;
-      return new Set([...prev, name]);
+      const next = new Set(prev);
+      next.add(name);
+      return next;
     });
   };
 

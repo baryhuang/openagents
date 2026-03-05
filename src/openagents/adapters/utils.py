@@ -1,7 +1,7 @@
 """Shared utilities for adapter implementations."""
 import re
 
-SESSION_DEFAULT_RE = re.compile(r"^Session \d+$")
+SESSION_DEFAULT_RE = re.compile(r"^(Session \d+|session-[0-9a-f]+|channel-[0-9a-f]+)$")
 
 
 def generate_session_title(message: str, max_words: int = 6) -> str:

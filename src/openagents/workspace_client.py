@@ -309,8 +309,23 @@ class WorkspaceClient:
         session_id: str,
         token: str,
     ) -> dict:
-        """Get channel info (stub — use discover for channel data)."""
-        return {"sessionId": session_id, "title": session_id, "status": "active"}
+        """Get channel info via GET /v1/workspaces/{id}/channels/{name}."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/workspaces/{workspace_id}/channels/{session_id}",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                if resp.status != 200:
+                    return {"sessionId": session_id, "title": session_id, "status": "active"}
+                result = data.get("data", data)
+                return {
+                    "sessionId": result.get("name", session_id),
+                    "title": result.get("title", session_id),
+                    "status": result.get("status", "active"),
+                }
 
     async def update_session(
         self,
@@ -320,8 +335,22 @@ class WorkspaceClient:
         title: Optional[str] = None,
         status: Optional[str] = None,
     ) -> dict:
-        """Update channel (stub — not yet event-native)."""
-        return {}
+        """Update channel via PATCH /v1/workspaces/{id}/channels/{name}."""
+        import aiohttp
+        payload: Dict[str, Any] = {}
+        if title is not None:
+            payload["title"] = title
+        if status is not None:
+            payload["status"] = status
+        async with aiohttp.ClientSession() as session:
+            async with session.patch(
+                f"{self.endpoint}/v1/workspaces/{workspace_id}/channels/{session_id}",
+                json=payload,
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                return data.get("data", data)
 
     async def poll_messages(
         self,

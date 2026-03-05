@@ -48,6 +48,7 @@ class ClaudeAdapter:
         self._claude_session_id: Optional[str] = None
         self._mode: str = "execute"  # "execute" or "plan"
         self._last_control_id: Optional[str] = None
+        self._current_process: Optional[asyncio.subprocess.Process] = None
 
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
@@ -93,7 +94,8 @@ class ClaudeAdapter:
                 if ev_id:
                     self._last_control_id = ev_id
                 payload = ev.get("payload") or {}
-                if payload.get("action") == "set_mode":
+                action = payload.get("action")
+                if action == "set_mode":
                     new_mode = payload.get("mode", "execute")
                     if new_mode in ("execute", "plan") and new_mode != self._mode:
                         old_mode = self._mode
@@ -113,8 +115,46 @@ class ClaudeAdapter:
                             )
                         except Exception:
                             pass
+                elif action == "stop":
+                    await self._stop_current_process()
         except Exception as e:
             logger.debug(f"Control poll failed: {e}")
+
+    async def _stop_current_process(self):
+        """Kill the currently running Claude subprocess, if any."""
+        proc = self._current_process
+        if proc and proc.returncode is None:
+            logger.info("Stopping current Claude process...")
+            try:
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+            except ProcessLookupError:
+                pass
+            self._current_process = None
+            # Send stopped status to all known channels
+            try:
+                await self.client.send_message(
+                    workspace_id=self.workspace_id,
+                    channel_name=self.channel_name,
+                    token=self.token,
+                    content="Execution stopped by user",
+                    sender_type="agent",
+                    sender_name=self.agent_name,
+                    message_type="status",
+                    metadata={"agent_mode": self._mode},
+                )
+            except Exception:
+                pass
+
+    async def _control_poller(self):
+        """Background loop that polls control events while a subprocess runs."""
+        while self._current_process and self._current_process.returncode is None:
+            await self._poll_control()
+            await asyncio.sleep(2)
 
     async def _poll_loop(self):
         """Poll for new messages across all channels and dispatch to Claude."""
@@ -323,6 +363,10 @@ class ClaudeAdapter:
                 env=clean_env,
                 limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64KB too small for large tool outputs)
             )
+            self._current_process = process
+
+            # Start background control poller so stop commands work during execution
+            control_task = asyncio.create_task(self._control_poller())
 
             used_send_tool = False
             response_text = []
@@ -393,6 +437,8 @@ class ClaudeAdapter:
                     logger.debug(f"Skipping event type: {event_type}")
 
             await process.wait()
+            self._current_process = None
+            control_task.cancel()
 
             if process.returncode != 0:
                 stderr = await process.stderr.read()

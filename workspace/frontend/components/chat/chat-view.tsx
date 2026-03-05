@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { ChatMessages } from './chat-messages';
 import { ChatInput } from './chat-input';
 import { EmptyState } from './empty-state';
@@ -8,20 +8,37 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import type { WorkspaceMessage } from '@/lib/types';
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode } = useWorkspace();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, renameSession } = useWorkspace();
   const { messages, loading, forceRefresh } = useMessagePolling({
     sessionId: currentSessionId,
   });
   const [showAllSteps, setShowAllSteps] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   const agentNames = agents.map((a) => a.agentName);
+
+  const startEditingTitle = () => {
+    setTitleDraft(currentSession?.title || '');
+    setEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.select(), 0);
+  };
+
+  const commitTitle = () => {
+    setEditingTitle(false);
+    const trimmed = titleDraft.trim();
+    if (trimmed && currentSessionId && trimmed !== currentSession?.title) {
+      renameSession(currentSessionId, trimmed);
+    }
+  };
 
   // Update last message cache for thread list preview
   useEffect(() => {
@@ -90,7 +107,28 @@ export function ChatView() {
       {/* Thread header */}
       <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <h2 className="text-sm font-semibold truncate">{currentSession?.title || 'Thread'}</h2>
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitTitle();
+                if (e.key === 'Escape') setEditingTitle(false);
+              }}
+              className="text-sm font-semibold bg-transparent border-b border-primary outline-none min-w-0 max-w-[300px]"
+              autoFocus
+            />
+          ) : (
+            <h2
+              className="text-sm font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+              onClick={startEditingTitle}
+              title="Click to rename"
+            >
+              {currentSession?.title || 'Thread'}
+            </h2>
+          )}
           {agents.length > 1 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-medium shrink-0">
               group
@@ -159,6 +197,17 @@ export function ChatView() {
               </div>
             );
           })()}
+
+          {/* Stop button — visible when agents are working */}
+          {currentSessionId && activeSessionIds.has(currentSessionId) && (
+            <button
+              onClick={stopAllAgents}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors shrink-0"
+            >
+              <Square className="size-3 fill-current" />
+              Stop
+            </button>
+          )}
 
           {/* All steps toggle */}
           {hasStatusMessages && (

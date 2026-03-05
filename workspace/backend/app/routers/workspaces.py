@@ -72,6 +72,10 @@ class WorkspaceCreateRequest(BaseModel):
     agent_name: str                    # The creating agent (becomes master)
     creator_email: Optional[str] = None
 
+class ChannelUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    status: Optional[str] = None
+
 class WorkspaceUpdateRequest(BaseModel):
     name: Optional[str] = None
     settings: Optional[dict] = None
@@ -336,6 +340,80 @@ async def claim_workspace(
 
     now = datetime.now(timezone.utc)
     return success_response(_format_workspace(workspace, members, now))
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/workspaces/{workspace_id}/channels/{channel_name}
+# ---------------------------------------------------------------------------
+
+@router.get("/{workspace_id}/channels/{channel_name}")
+async def get_channel(
+    workspace_id: str,
+    channel_name: str,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Get channel details."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _check_auth(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    channel = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == workspace.id,
+            Channel.name == channel_name,
+        )
+    ).scalar_one_or_none()
+    if not channel:
+        return json_response(ResponseCode.NOT_FOUND, "Channel not found")
+
+    return success_response(_format_channel(channel))
+
+
+# ---------------------------------------------------------------------------
+# PATCH /v1/workspaces/{workspace_id}/channels/{channel_name}
+# ---------------------------------------------------------------------------
+
+@router.patch("/{workspace_id}/channels/{channel_name}")
+async def update_channel(
+    workspace_id: str,
+    channel_name: str,
+    body: ChannelUpdateRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Update channel title or status."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _check_auth(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    channel = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == workspace.id,
+            Channel.name == channel_name,
+        )
+    ).scalar_one_or_none()
+    if not channel:
+        return json_response(ResponseCode.NOT_FOUND, "Channel not found")
+
+    if body.title is not None:
+        channel.title = body.title
+    if body.status is not None:
+        channel.status = body.status
+
+    db.commit()
+    db.refresh(channel)
+    return success_response(_format_channel(channel))
 
 
 # ---------------------------------------------------------------------------
