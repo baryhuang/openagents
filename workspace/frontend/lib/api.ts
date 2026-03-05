@@ -110,6 +110,7 @@ class WorkspaceApi {
     title?: string;
     master?: string;
     participants?: string[];
+    resumeFrom?: string;
   } = {}): Promise<WorkspaceSession> {
     const event = await this.sendEvent({
       type: 'network.channel.create',
@@ -119,6 +120,7 @@ class WorkspaceApi {
         ...(opts.title && { title: opts.title }),
         ...(opts.master && { master: opts.master }),
         ...(opts.participants && { participants: opts.participants }),
+        ...(opts.resumeFrom && { resume_from: opts.resumeFrom }),
       },
     });
 

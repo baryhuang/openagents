@@ -29,7 +29,7 @@ interface WorkspaceContextValue {
   stopAllAgents: () => Promise<void>;
   setCurrentSessionId: (id: string | null) => void;
   setSelectedFileId: (id: string | null) => void;
-  createSession: (opts?: { title?: string; master?: string; participants?: string[] }) => Promise<WorkspaceSession>;
+  createSession: (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   refreshAgents: () => Promise<void>;
@@ -286,7 +286,7 @@ export function WorkspaceProvider({
     return () => clearInterval(interval);
   }, [refreshDiscovery]);
 
-  const createSession = useCallback(async (opts?: { title?: string; master?: string; participants?: string[] }) => {
+  const createSession = useCallback(async (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => {
     const masterAgent = opts?.master || agents.find((a) => a.role === 'master')?.agentName;
     const participants = opts?.participants || agents.map((a) => a.agentName);
 
@@ -294,6 +294,7 @@ export function WorkspaceProvider({
       title: opts?.title,
       master: masterAgent,
       participants,
+      resumeFrom: opts?.resumeFrom,
     });
     setSessions((prev) => [session, ...prev]);
     setCurrentSessionId(session.sessionId);

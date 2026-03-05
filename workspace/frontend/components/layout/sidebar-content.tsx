@@ -298,7 +298,6 @@ export function SidebarContent() {
             </div>
           )}
           <NavButton icon={theme === 'dark' ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={theme === 'dark' ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
-          <NavButton icon={<Settings className="size-[15px]" />} label="Collapse" onClick={sidebarToggle} />
         </div>
       </div>
 
@@ -313,8 +312,9 @@ export function SidebarContent() {
         open={newThreadOpen}
         onOpenChange={setNewThreadOpen}
         agents={agents}
-        onCreateThread={({ master, participants }) => {
-          createSession({ master, participants });
+        sessions={sessions}
+        onCreateThread={({ master, participants, resumeFrom }) => {
+          createSession({ master, participants, resumeFrom });
           setViewMode('threads');
         }}
       />

@@ -47,7 +47,7 @@ class ClaudeAdapter:
         self._running = False
         self._processed_ids: set = set()
         self._titled_sessions: set = set()
-        self._claude_session_id: Optional[str] = None
+        self._channel_sessions: dict[str, str] = {}  # channel_name → Claude CLI session_id
         self._mode: str = "execute"  # "execute" or "plan"
         self._last_control_id: Optional[str] = None
         self._current_process: Optional[asyncio.subprocess.Process] = None
@@ -333,8 +333,9 @@ class ClaudeAdapter:
         cmd.extend(["--allowedTools"] + allowed)
 
         # Resume existing conversation for context continuity
-        if self._claude_session_id:
-            cmd.extend(["--resume", self._claude_session_id])
+        session_id = self._channel_sessions.get(channel_name)
+        if session_id:
+            cmd.extend(["--resume", session_id])
 
         # MCP config for workspace tools — uses the message's channel
         mcp_args = [
@@ -375,23 +376,32 @@ class ClaudeAdapter:
         sender = msg.get("senderName") or msg.get("senderType", "user")
         logger.info(f"Processing message from {sender} in channel {msg_channel}: {content[:80]}...")
 
-        # Auto-title: skip if user has manually renamed the thread
+        # Auto-title + resume-from: on first encounter of a channel, fetch its info
         if msg_channel not in self._titled_sessions:
             self._titled_sessions.add(msg_channel)
-            title = generate_session_title(content)
-            if title:
-                try:
-                    info = await self.client.get_session(
-                        self.workspace_id, msg_channel, self.token,
-                    )
+            try:
+                info = await self.client.get_session(
+                    self.workspace_id, msg_channel, self.token,
+                )
+                # Resume from a previous channel's Claude session if specified
+                resume_from = info.get("resumeFrom")
+                if resume_from and msg_channel not in self._channel_sessions:
+                    source_session = self._channel_sessions.get(resume_from)
+                    if source_session:
+                        self._channel_sessions[msg_channel] = source_session
+                        logger.info(f"Resuming channel {msg_channel} from {resume_from} (session {source_session})")
+
+                # Auto-title
+                title = generate_session_title(content)
+                if title:
                     if not info.get("titleManuallySet") and SESSION_DEFAULT_RE.match(info.get("title", "")):
                         await self.client.update_session(
                             self.workspace_id, msg_channel, self.token,
                             title=title, auto_title=True,
                         )
                         logger.debug(f"Auto-titled channel: {title}")
-                except Exception as e:
-                    logger.debug(f"Failed to auto-title channel: {e}")
+            except Exception as e:
+                logger.debug(f"Failed to fetch/auto-title channel: {e}")
 
         # Post "thinking..." status
         try:
@@ -489,10 +499,10 @@ class ClaudeAdapter:
                                     pass
 
                 elif event_type == "result":
-                    # Save session_id for conversation continuity
+                    # Save session_id per channel for conversation continuity
                     session_id = event.get("session_id")
                     if session_id:
-                        self._claude_session_id = session_id
+                        self._channel_sessions[msg_channel] = session_id
                     if event.get("is_error"):
                         logger.warning(f"Claude error: {event.get('result', '')[:200]}")
 

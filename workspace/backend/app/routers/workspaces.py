@@ -128,6 +128,7 @@ def _format_channel(ch: Channel) -> dict:
         "titleManuallySet": bool(ch.title_manually_set),
         "createdBy": ch.created_by,
         "masterAgent": ch.master_agent,
+        "resumeFrom": ch.resume_from,
         "status": ch.status,
         "participants": [p.agent_name for p in (ch.participants or [])],
         "createdAt": ch.created_at.isoformat() if ch.created_at else None,

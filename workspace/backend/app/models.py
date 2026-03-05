@@ -119,6 +119,7 @@ class Channel(Base):
     title_manually_set = Column(Boolean, default=False, server_default=text("FALSE"))
     created_by = Column(Text, nullable=True)
     master_agent = Column(Text, nullable=True)       # per-channel master
+    resume_from = Column(Text, nullable=True)         # channel name to resume context from
     status = Column(Text, default="active")
     created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
 
