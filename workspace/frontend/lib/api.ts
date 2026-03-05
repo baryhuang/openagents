@@ -258,7 +258,7 @@ class WorkspaceApi {
       `/v1/browser/tabs?network=${this.workspaceId}`
     );
     return {
-      tabs: result.tabs.map((t: Record<string, unknown>) => ({
+      tabs: (result.tabs as Record<string, unknown>[]).map((t) => ({
         id: t.id as string,
         url: t.url as string,
         title: (t.title as string) || null,
