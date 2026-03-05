@@ -19,7 +19,7 @@ from typing import Optional
 import aiohttp
 
 from openagents.workspace_client import WorkspaceClient, DEFAULT_ENDPOINT
-from openagents.adapters.utils import generate_session_title, SESSION_DEFAULT_RE
+from openagents.adapters.utils import generate_session_title, format_attachments_for_prompt, SESSION_DEFAULT_RE
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +240,13 @@ class OpenClawAdapter:
     async def _handle_message(self, msg: dict):
         """Process a single incoming message via OpenClaw API."""
         content = msg.get("content", "").strip()
+        attachments = msg.get("attachments", [])
+
+        # Append attachment info so the agent knows about uploaded files
+        att_text = format_attachments_for_prompt(attachments)
+        if att_text:
+            content = (content + att_text) if content else att_text.strip()
+
         if not content:
             return
 

@@ -1,5 +1,6 @@
 """Shared utilities for adapter implementations."""
 import re
+from typing import Optional
 
 SESSION_DEFAULT_RE = re.compile(r"^(Session \d+|session-[0-9a-f]+|channel-[0-9a-f]+)$")
 
@@ -50,3 +51,31 @@ def generate_session_title(message: str, max_words: int = 6) -> str:
         text = text[:47] + "..."
 
     return text
+
+
+def format_attachments_for_prompt(attachments: list[dict]) -> Optional[str]:
+    """Format attachment metadata into text to append to an agent prompt.
+
+    Returns None if no attachments. Otherwise returns a text block describing
+    each attachment with its file_id and content type so the agent can use
+    workspace_read_file to access them.
+    """
+    if not attachments:
+        return None
+
+    lines = ["\n[Attached files]"]
+    for att in attachments:
+        filename = att.get("filename", "unknown")
+        file_id = att.get("fileId", "")
+        content_type = att.get("contentType", "")
+        if content_type.startswith("image/"):
+            lines.append(
+                f"- Image: {filename} (file_id: {file_id}) — "
+                f"use workspace_read_file to view this image"
+            )
+        else:
+            lines.append(
+                f"- File: {filename} (file_id: {file_id}, type: {content_type}) — "
+                f"use workspace_read_file to read this file"
+            )
+    return "\n".join(lines)

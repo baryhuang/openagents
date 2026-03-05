@@ -750,7 +750,7 @@ class WorkspaceClient:
         target = event.get("target", "")
         ts = event.get("timestamp")
 
-        return {
+        msg = {
             "messageId": event.get("id", ""),
             "sessionId": target.replace("channel/", "") if target.startswith("channel/") else target,
             "senderType": "human" if is_human else "agent",
@@ -761,3 +761,6 @@ class WorkspaceClient:
             "metadata": event.get("metadata") or {},
             "createdAt": datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat() if ts else None,
         }
+        if payload.get("attachments"):
+            msg["attachments"] = payload["attachments"]
+        return msg
