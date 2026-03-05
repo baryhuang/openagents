@@ -28,7 +28,7 @@ interface WorkspaceContextValue {
   toggleAgentMode: (agentName: string) => void;
   setCurrentSessionId: (id: string | null) => void;
   setSelectedFileId: (id: string | null) => void;
-  createSession: (title?: string) => Promise<WorkspaceSession>;
+  createSession: (opts?: { title?: string; master?: string; participants?: string[] }) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   refreshAgents: () => Promise<void>;
@@ -208,15 +208,14 @@ export function WorkspaceProvider({
     return () => clearInterval(interval);
   }, [refreshDiscovery]);
 
-  const createSession = useCallback(async (title?: string) => {
-    // Find workspace master agent for the new channel
-    const masterAgent = agents.find((a) => a.role === 'master');
-    const allAgentNames = agents.map((a) => a.agentName);
+  const createSession = useCallback(async (opts?: { title?: string; master?: string; participants?: string[] }) => {
+    const masterAgent = opts?.master || agents.find((a) => a.role === 'master')?.agentName;
+    const participants = opts?.participants || agents.map((a) => a.agentName);
 
     const session = await workspaceApi.createChannel({
-      title,
-      master: masterAgent?.agentName,
-      participants: allAgentNames,
+      title: opts?.title,
+      master: masterAgent,
+      participants,
     });
     setSessions((prev) => [session, ...prev]);
     setCurrentSessionId(session.sessionId);

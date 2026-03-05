@@ -113,7 +113,14 @@ class TestSendEvent:
 
 
     def test_agent_message_with_mentions_sets_target_agents(self, client, workspace):
-        """Agent messages with mentions set target_agents metadata."""
+        """Agent messages with @mentions in content set target_agents metadata."""
+        # Add agent-beta as a workspace member so @mention resolves
+        client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+
         channel_name = workspace["channel"]["name"]
         resp = client.post("/v1/events", json={
             "type": "workspace.message.posted",
@@ -121,8 +128,7 @@ class TestSendEvent:
             "target": f"channel/{channel_name}",
             "payload": {
                 "content": "@agent-beta please review the code",
-                "mentions": ["agent-beta"],
-                "message_type": "delegation",
+                "message_type": "chat",
             },
             "network": workspace["id"],
         }, headers={"X-Workspace-Token": workspace["token"]})

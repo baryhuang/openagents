@@ -15,14 +15,15 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getFileIcon(contentType: string, filename: string) {
-  if (contentType.startsWith('image/')) return <Image className="size-4 text-purple-500" />;
-  if (contentType.startsWith('text/') || filename.match(/\.(md|txt|csv)$/i))
+function getFileIcon(contentType: string | undefined, filename: string) {
+  const ct = contentType || '';
+  if (ct.startsWith('image/')) return <Image className="size-4 text-purple-500" />;
+  if (ct.startsWith('text/') || filename.match(/\.(md|txt|csv)$/i))
     return <FileText className="size-4 text-blue-500" />;
   if (
     filename.match(/\.(js|ts|tsx|jsx|py|rs|go|java|rb|c|cpp|h|sh|yaml|yml|json|toml)$/i) ||
-    contentType.includes('javascript') ||
-    contentType.includes('json')
+    ct.includes('javascript') ||
+    ct.includes('json')
   )
     return <FileCode className="size-4 text-emerald-500" />;
   return <FileIcon className="size-4 text-zinc-400" />;
@@ -133,7 +134,7 @@ export function FileList() {
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium truncate">{file.filename}</p>
                 <p className="text-[11px] text-muted-foreground">
-                  {formatSize(file.size)} · {file.uploadedBy.replace(/^(openagents:|human:)/, '')}
+                  {formatSize(file.size)} · {(file.uploadedBy || 'unknown').replace(/^(openagents:|human:)/, '')}
                   {file.createdAt && ` · ${timeAgo(file.createdAt)}`}
                 </p>
               </div>

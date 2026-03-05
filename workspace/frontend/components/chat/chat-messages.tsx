@@ -59,19 +59,20 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
 
   const prevLengthRef = useRef(0);
 
-  // Filter: when toggle is off, only show status messages after the last chat message
+  // Filter: skip empty status messages; when toggle is off, only show status messages after the last chat message
   const filteredMessages = useMemo(() => {
-    if (showAllSteps) return messages;
+    const nonEmpty = messages.filter((msg) => msg.messageType !== 'status' || msg.content.trim());
+    if (showAllSteps) return nonEmpty;
 
     let lastChatIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].messageType !== 'status') {
+    for (let i = nonEmpty.length - 1; i >= 0; i--) {
+      if (nonEmpty[i].messageType !== 'status') {
         lastChatIndex = i;
         break;
       }
     }
 
-    return messages.filter((msg, index) => {
+    return nonEmpty.filter((msg, index) => {
       if (msg.messageType !== 'status') return true;
       return index > lastChatIndex;
     });
