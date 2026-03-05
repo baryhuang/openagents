@@ -249,7 +249,7 @@ class OpenClawAdapter:
         sender = msg.get("senderName") or msg.get("senderType", "user")
         logger.info(f"Processing message from {sender} in channel {msg_channel}: {content[:80]}...")
 
-        # Auto-title: get_session/update_session are stubs now — skip if they fail
+        # Auto-title: skip if user has manually renamed the thread
         if msg_channel not in self._titled_sessions:
             self._titled_sessions.add(msg_channel)
             title = generate_session_title(content)
@@ -258,10 +258,10 @@ class OpenClawAdapter:
                     info = await self.client.get_session(
                         self.workspace_id, msg_channel, self.token,
                     )
-                    if SESSION_DEFAULT_RE.match(info.get("title", "")):
+                    if not info.get("titleManuallySet") and SESSION_DEFAULT_RE.match(info.get("title", "")):
                         await self.client.update_session(
                             self.workspace_id, msg_channel, self.token,
-                            title=title,
+                            title=title, auto_title=True,
                         )
                         logger.debug(f"Auto-titled channel: {title}")
                 except Exception as e:

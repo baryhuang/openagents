@@ -75,6 +75,7 @@ class WorkspaceCreateRequest(BaseModel):
 class ChannelUpdateRequest(BaseModel):
     title: Optional[str] = None
     status: Optional[str] = None
+    auto_title: bool = False  # When True, title update is from auto-titling (don't mark as manually set)
 
 class WorkspaceUpdateRequest(BaseModel):
     name: Optional[str] = None
@@ -124,6 +125,7 @@ def _format_channel(ch: Channel) -> dict:
         "workspaceId": str(ch.workspace_id),
         "name": ch.name,
         "title": ch.title,
+        "titleManuallySet": bool(ch.title_manually_set),
         "createdBy": ch.created_by,
         "masterAgent": ch.master_agent,
         "status": ch.status,
@@ -408,6 +410,8 @@ async def update_channel(
 
     if body.title is not None:
         channel.title = body.title
+        if not body.auto_title:
+            channel.title_manually_set = True
     if body.status is not None:
         channel.status = body.status
 
