@@ -132,6 +132,11 @@ class WorkspaceClient:
     def __init__(self, endpoint: str = DEFAULT_ENDPOINT):
         self.endpoint = endpoint.rstrip("/")
 
+    def _frontend_url(self) -> str:
+        """Derive the frontend URL from the API endpoint."""
+        # workspace-endpoint.openagents.org → workspace.openagents.org
+        return self.endpoint.replace("workspace-endpoint", "workspace").replace("/v1", "")
+
     def _ws_headers(self, token: str) -> Dict[str, str]:
         """Standard headers for workspace-scoped requests."""
         return {
@@ -192,7 +197,7 @@ class WorkspaceClient:
                     slug=slug,
                     name=result["name"],
                     token=result["token"],
-                    url=f"{self.endpoint}/{slug}?token={result['token']}",
+                    url=f"{self._frontend_url()}/{slug}?token={result['token']}",
                     channel_name=channel.get("name", ""),
                 )
 
