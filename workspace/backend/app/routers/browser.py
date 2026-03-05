@@ -73,7 +73,7 @@ class ShareRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _tab_to_dict(tab: BrowserTab) -> dict:
-    return {
+    d = {
         "id": tab.id,
         "url": tab.url,
         "title": tab.title,
@@ -83,6 +83,11 @@ def _tab_to_dict(tab: BrowserTab) -> dict:
         "created_at": tab.created_at.isoformat() if tab.created_at else None,
         "last_active_at": tab.last_active_at.isoformat() if tab.last_active_at else None,
     }
+    if tab.live_url:
+        d["live_url"] = tab.live_url
+    if tab.session_id:
+        d["session_id"] = tab.session_id
+    return d
 
 
 def _get_tab(db: Session, tab_id: str) -> Optional[BrowserTab]:
@@ -130,6 +135,8 @@ async def open_tab(
         title=result.get("title"),
         created_by=body.source or "human:user",
         shared_with=[],
+        session_id=manager.get_session_id(tab_id),
+        live_url=manager.get_live_url(tab_id),
     )
     db.add(record)
 

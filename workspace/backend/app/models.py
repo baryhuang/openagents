@@ -192,6 +192,8 @@ class BrowserTab(Base):
     status = Column(Text, nullable=False, default="active")       # active | closed
     created_by = Column(Text, nullable=False)                      # "human:user" or "openagents:agent-name"
     shared_with = Column(JSONB, default=[])                        # list of agent names with access
+    session_id = Column(Text, nullable=True)                       # Browserbase session ID
+    live_url = Column(Text, nullable=True)                         # Browserbase live view URL
     created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
     last_active_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
 

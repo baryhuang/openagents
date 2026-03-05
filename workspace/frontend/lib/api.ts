@@ -265,6 +265,8 @@ class WorkspaceApi {
         status: t.status as string,
         createdBy: t.created_by as string,
         sharedWith: (t.shared_with as string[]) || [],
+        liveUrl: (t.live_url as string) || null,
+        sessionId: (t.session_id as string) || null,
         createdAt: (t.created_at as string) || null,
         lastActiveAt: (t.last_active_at as string) || null,
       })),
@@ -285,6 +287,8 @@ class WorkspaceApi {
       status: result.status as string,
       createdBy: result.created_by as string,
       sharedWith: (result.shared_with as string[]) || [],
+      liveUrl: (result.live_url as string) || null,
+      sessionId: (result.session_id as string) || null,
       createdAt: (result.created_at as string) || null,
       lastActiveAt: (result.last_active_at as string) || null,
     };
