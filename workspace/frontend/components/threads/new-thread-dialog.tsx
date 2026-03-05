@@ -9,29 +9,32 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Crown } from 'lucide-react';
-import type { WorkspaceAgent } from '@/lib/types';
+import { Crown, History } from 'lucide-react';
+import type { WorkspaceAgent, WorkspaceSession } from '@/lib/types';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 
 interface NewThreadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agents: WorkspaceAgent[];
-  onCreateThread: (opts: { master: string; participants: string[] }) => void;
+  sessions?: WorkspaceSession[];
+  onCreateThread: (opts: { master: string; participants: string[]; resumeFrom?: string }) => void;
 }
 
-export function NewThreadDialog({ open, onOpenChange, agents, onCreateThread }: NewThreadDialogProps) {
+export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreateThread }: NewThreadDialogProps) {
   const agentNames = agents.map((a) => a.agentName);
   const defaultMaster = agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || '';
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [master, setMaster] = useState('');
+  const [resumeFrom, setResumeFrom] = useState<string>('');
 
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
       setSelected(new Set(agentNames));
       setMaster(defaultMaster);
+      setResumeFrom('');
     }
   }, [open]);
 
@@ -62,9 +65,19 @@ export function NewThreadDialog({ open, onOpenChange, agents, onCreateThread }: 
 
   const handleCreate = () => {
     const participants = agentNames.filter((n) => selected.has(n));
-    onCreateThread({ master, participants });
+    onCreateThread({ master, participants, resumeFrom: resumeFrom || undefined });
     onOpenChange(false);
   };
+
+  // Filter sessions that have messages (lastEventAt != null) for resume picker
+  const resumableSessions = (sessions || []).filter(
+    (s) => s.status === 'active' && s.lastEventAt != null
+  );
+
+  // Check if any selected agent is a Claude Code agent (heuristic: agent type or name contains 'claude')
+  const hasClaudeAgent = agents.some(
+    (a) => selected.has(a.agentName) && /claude/i.test(a.agentName)
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,12 +144,34 @@ export function NewThreadDialog({ open, onOpenChange, agents, onCreateThread }: 
           })}
         </div>
 
+        {/* Resume from past session — show when there are resumable sessions */}
+        {hasClaudeAgent && resumableSessions.length > 0 && (
+          <div className="mt-3">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1.5">
+              <History className="size-3" />
+              Resume from past session
+            </label>
+            <select
+              value={resumeFrom}
+              onChange={(e) => setResumeFrom(e.target.value)}
+              className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">New conversation (no context)</option>
+              {resumableSessions.map((s) => (
+                <option key={s.sessionId} value={s.sessionId}>
+                  {s.title || s.sessionId}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button size="sm" onClick={handleCreate} disabled={selected.size === 0}>
-            Create Thread
+            {resumeFrom ? 'Resume Thread' : 'Create Thread'}
           </Button>
         </div>
       </DialogContent>

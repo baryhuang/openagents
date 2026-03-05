@@ -330,6 +330,7 @@ class WorkspaceClient:
                     "sessionId": result.get("name", session_id),
                     "title": result.get("title", session_id),
                     "titleManuallySet": result.get("titleManuallySet", False),
+                    "resumeFrom": result.get("resumeFrom"),
                     "status": result.get("status", "active"),
                 }
 
