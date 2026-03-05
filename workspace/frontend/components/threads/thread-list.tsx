@@ -100,14 +100,10 @@ export function ThreadList() {
     }
   }
 
-  // Sort sessions by most recent activity: in-session update > backend last_event_at > createdAt
+  // Sort sessions by backend last_event_at (stable, no client-side jumping)
   const sortedSessions = [...sessions].sort((a, b) => {
-    const aTime = lastMessageBySession[a.sessionId]?.timestamp
-      || a.lastEventAt
-      || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-    const bTime = lastMessageBySession[b.sessionId]?.timestamp
-      || b.lastEventAt
-      || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+    const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+    const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
     return bTime - aTime;
   });
 
@@ -160,8 +156,8 @@ export function ThreadList() {
             const isActive = activeSessionIds.has(session.sessionId);
             const contentHit = hitsByChannel.get(session.sessionId);
 
-            // Show last activity time: in-session > backend last_event_at > createdAt
-            const activityMs = lastMsg?.timestamp || session.lastEventAt;
+            // Show last activity time from backend
+            const activityMs = session.lastEventAt;
             const displayTime = activityMs
               ? timeAgo(new Date(activityMs).toISOString())
               : session.createdAt ? timeAgo(session.createdAt) : '';

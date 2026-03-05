@@ -131,7 +131,7 @@ class WorkspaceApi {
       status: 'active',
       participants: opts.participants || [],
       master: opts.master || null,
-      createdAt: new Date(event.timestamp * 1000).toISOString(),
+      createdAt: new Date(event.timestamp).toISOString(),
       lastEventAt: null,
     };
   }

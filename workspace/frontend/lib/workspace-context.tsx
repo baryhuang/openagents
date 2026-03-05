@@ -8,7 +8,6 @@ import type { Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from 
 interface LastMessageInfo {
   content: string;
   senderName: string;
-  timestamp: number; // Date.now() when last updated
 }
 
 interface WorkspaceContextValue {
@@ -23,7 +22,7 @@ interface WorkspaceContextValue {
   lastMessageBySession: Record<string, LastMessageInfo>;
   activeSessionIds: Set<string>;
   agentModes: Record<string, string>;
-  updateLastMessage: (sessionId: string, senderName: string, content: string, messageTime?: string | null) => void;
+  updateLastMessage: (sessionId: string, senderName: string, content: string) => void;
   setSessionActive: (sessionId: string, active: boolean) => void;
   updateAgentMode: (agentName: string, mode: string) => void;
   toggleAgentMode: (agentName: string) => void;
@@ -70,21 +69,17 @@ export function WorkspaceProvider({
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
-  const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string, messageTime?: string | null) => {
+  const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
     setLastMessageBySession((prev) => {
-      // Don't create entries for empty content (no messages in thread)
       if (!content && !prev[sessionId]) return prev;
       const existing = prev[sessionId];
       const truncated = content.slice(0, 100);
-      // Skip if content hasn't changed
       if (existing && existing.content === truncated && existing.senderName === senderName) {
         return prev;
       }
-      // Use actual message timestamp when available, fall back to Date.now() for live messages
-      const ts = messageTime ? new Date(messageTime).getTime() : Date.now();
       return {
         ...prev,
-        [sessionId]: { senderName, content: truncated, timestamp: ts },
+        [sessionId]: { senderName, content: truncated },
       };
     });
   }, []);
@@ -239,7 +234,7 @@ export function WorkspaceProvider({
           const batch: Record<string, LastMessageInfo> = {};
           for (const p of previews) {
             if (p && p.content) {
-              batch[p.sessionId] = { senderName: p.senderName, content: p.content.slice(0, 100), timestamp: Date.now() };
+              batch[p.sessionId] = { senderName: p.senderName, content: p.content.slice(0, 100) };
             }
           }
           setLastMessageBySession((prev) => ({ ...prev, ...batch }));
