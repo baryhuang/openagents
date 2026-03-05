@@ -202,6 +202,30 @@ class BrowserTab(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Browser usage tracking
+# ---------------------------------------------------------------------------
+
+class BrowserUsage(Base):
+    """Tracks browser session duration for billing/monitoring."""
+    __tablename__ = "browser_usage"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    tab_id = Column(Text, nullable=False)
+    session_id = Column(Text, nullable=True)             # Browserbase session ID
+    user_email = Column(Text, nullable=False)             # who opened the tab
+    started_at = Column(DateTime(timezone=True), nullable=False, default=_now, server_default=text("NOW()"))
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    duration_seconds = Column(Integer, nullable=True)     # computed on close
+
+    __table_args__ = (
+        Index("idx_browser_usage_workspace", "workspace_id"),
+        Index("idx_browser_usage_user", "user_email"),
+        Index("idx_browser_usage_started", "started_at"),
+    )
+
+
 # Standalone agent table (used when IDENTITY_MODE=standalone)
 class Agent(Base):
     """Local agent identity (standalone mode only)."""
