@@ -15,7 +15,7 @@ from sqlalchemy import cast, select, Text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import EventRecord, Workspace
+from app.models import Channel, ChannelMember, EventRecord, Workspace
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _workspace_filter
@@ -127,6 +127,7 @@ async def poll_events(
     channel: Optional[str] = Query(None, description="Filter by channel name"),
     type: Optional[str] = Query(None, description="Filter by event type prefix"),
     search: Optional[str] = Query(None, description="Search message content (case-insensitive)"),
+    member: Optional[str] = Query(None, description="Filter to channels where this agent is a member"),
     limit: int = Query(50, ge=1, le=200, description="Max events to return"),
     db: Session = Depends(get_db),
 ):
@@ -145,6 +146,23 @@ async def poll_events(
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
 
     query = select(EventRecord).where(EventRecord.network_id == workspace.id)
+
+    # Filter events to only channels where the agent is a member
+    if member:
+        member_channel_names = db.execute(
+            select(Channel.name).where(
+                Channel.workspace_id == workspace.id,
+                Channel.id.in_(
+                    select(ChannelMember.channel_id).where(ChannelMember.agent_name == member)
+                ),
+            )
+        ).scalars().all()
+        channel_targets = [f"channel/{name}" for name in member_channel_names]
+        if channel_targets:
+            query = query.where(EventRecord.target.in_(channel_targets))
+        else:
+            # Agent is not a member of any channel — return empty
+            return success_response({"events": [], "has_more": False})
 
     if after:
         cursor_event = db.execute(
