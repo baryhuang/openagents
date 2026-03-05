@@ -243,18 +243,27 @@ async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[
 
 async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional[Event]:
     """
-    workspace.message.posted → route human messages to channel master.
+    workspace.message.posted → route messages to the right agents.
 
-    If the source is a human (human:*) and the target is a channel,
-    look up the channel's master agent and set target_agents metadata
-    so the delivery layer knows who should process it.
+    Routing rules:
+    - Human messages → channel master (or all participants if no master)
+    - Agent messages with mentions → mentioned agents only
+    - Agent messages without mentions → no targeting (visible in UI only)
     """
     from app.models import Channel
 
     db = ctx.extra["db"]
     workspace = ctx.extra["workspace"]
+    payload = event.payload or {}
 
-    # Only route human→agent messages
+    # Agent messages with mentions → route to mentioned agents
+    if event.source.startswith("openagents:"):
+        mentions = payload.get("mentions", [])
+        if mentions:
+            event.metadata["target_agents"] = mentions
+        return event
+
+    # Human messages → route to channel master
     if not event.source.startswith("human:"):
         return event
 

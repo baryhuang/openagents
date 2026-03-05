@@ -177,6 +177,13 @@ class ClaudeAdapter:
             f"call workspace_send_message.\n"
             f"Use workspace_get_history to read previous messages.\n"
             f"Use workspace_get_agents to see other agents.\n"
+            f"\n## Multi-Agent Delegation\n"
+            f"To delegate work to another agent, use the 'mentions' "
+            f"parameter in workspace_send_message with the agent's name. "
+            f"For example: workspace_send_message(content='@agent-b Please "
+            f"review the tests', mentions=['agent-b']). "
+            f"Only mentioned agents will receive the message. "
+            f"Use workspace_get_agents to discover available agents.\n"
         )
 
         cmd = [

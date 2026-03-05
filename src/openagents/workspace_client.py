@@ -369,11 +369,20 @@ class WorkspaceClient:
                     meta = e.get("metadata") or {}
                     target_agents = meta.get("target_agents") or []
                     source = e.get("source", "")
-                    # Include if: targeted at this agent, or broadcast (no targets)
-                    if not target_agents or agent_name in target_agents:
-                        # Exclude own messages
-                        if source != f"openagents:{agent_name}":
+
+                    # Exclude own messages
+                    if source == f"openagents:{agent_name}":
+                        continue
+
+                    if source.startswith("human:"):
+                        # Human messages: pick up if targeted at this agent or broadcast
+                        if not target_agents or agent_name in target_agents:
                             messages.append(self._event_to_message(e))
+                    elif source.startswith("openagents:"):
+                        # Agent messages: only pick up if explicitly mentioned
+                        if agent_name in target_agents:
+                            messages.append(self._event_to_message(e))
+
                 return messages
 
     async def poll_control(

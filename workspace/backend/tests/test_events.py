@@ -112,6 +112,42 @@ class TestSendEvent:
         assert "agent-alpha" in data["metadata"]["target_agents"]
 
 
+    def test_agent_message_with_mentions_sets_target_agents(self, client, workspace):
+        """Agent messages with mentions set target_agents metadata."""
+        channel_name = workspace["channel"]["name"]
+        resp = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "openagents:agent-alpha",
+            "target": f"channel/{channel_name}",
+            "payload": {
+                "content": "@agent-beta please review the code",
+                "mentions": ["agent-beta"],
+                "message_type": "delegation",
+            },
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["metadata"]["target_agents"] == ["agent-beta"]
+
+    def test_agent_message_without_mentions_no_target_agents(self, client, workspace):
+        """Agent messages without mentions have no target_agents (not broadcast)."""
+        channel_name = workspace["channel"]["name"]
+        resp = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "openagents:agent-alpha",
+            "target": f"channel/{channel_name}",
+            "payload": {"content": "Just a status update"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        # No target_agents should be set for untargeted agent messages
+        assert "target_agents" not in data["metadata"]
+
+
 class TestPollEvents:
     """GET /v1/events — poll events from a network."""
 
