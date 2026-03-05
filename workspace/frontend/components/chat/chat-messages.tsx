@@ -72,9 +72,22 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
       }
     }
 
-    return nonEmpty.filter((msg, index) => {
+    // Only keep the very last status message (most recent step)
+    const trailing = nonEmpty.filter((msg, index) => {
       if (msg.messageType !== 'status') return true;
       return index > lastChatIndex;
+    });
+    // Find the last status message and keep only that one
+    let lastStatusIndex = -1;
+    for (let i = trailing.length - 1; i >= 0; i--) {
+      if (trailing[i].messageType === 'status') {
+        lastStatusIndex = i;
+        break;
+      }
+    }
+    return trailing.filter((msg, index) => {
+      if (msg.messageType !== 'status') return true;
+      return index === lastStatusIndex;
     });
   }, [messages, showAllSteps]);
 
