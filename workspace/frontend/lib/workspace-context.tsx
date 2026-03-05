@@ -76,6 +76,7 @@ export function WorkspaceProvider({
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
+  const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
     setLastMessageBySession((prev) => {
@@ -152,12 +153,24 @@ export function WorkspaceProvider({
         const updated = discovery.channels.map((ch) =>
           networkChannelToSession(ch, workspaceId)
         );
-        // Preserve order: keep existing session order, append new ones
         const existingIds = new Set(prev.map((s) => s.sessionId));
         const newChannels = updated.filter((s) => !existingIds.has(s.sessionId));
-        // Update titles for existing sessions
+        // Merge: update metadata but preserve user-renamed titles
         const updatedMap = new Map(updated.map((s) => [s.sessionId, s]));
-        const merged = prev.map((s) => updatedMap.get(s.sessionId) || s);
+        const merged = prev.map((s) => {
+          const remote = updatedMap.get(s.sessionId);
+          if (!remote) return s;
+          // Keep local title if user manually renamed in this browser session
+          const keepLocalTitle = manuallyRenamedSessions.has(s.sessionId);
+          return {
+            ...s,
+            title: keepLocalTitle ? s.title : remote.title,
+            participants: remote.participants,
+            master: remote.master,
+            lastEventAt: remote.lastEventAt,
+            createdAt: remote.createdAt || s.createdAt,
+          };
+        });
         return [...merged, ...newChannels];
       });
     } catch {
@@ -305,6 +318,7 @@ export function WorkspaceProvider({
     setSessions((prev) =>
       prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
     );
+    setManuallyRenamedSessions((prev) => new Set(prev).add(sessionId));
     try {
       await workspaceApi.updateChannel(sessionId, { title });
     } catch {

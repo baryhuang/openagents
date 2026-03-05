@@ -225,3 +225,7 @@ docs/marketing
 docs/projects
 .mcp.json
 /*.png
+*.db
+.next/
+.playwright-mcp/
+tsconfig.tsbuildinfo
