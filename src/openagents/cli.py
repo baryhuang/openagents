@@ -3830,6 +3830,12 @@ def connect_claude(
         "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
+    disable_files: bool = typer.Option(
+        False, "--disable-files", help="Disable shared file tools for this agent",
+    ),
+    disable_browser: bool = typer.Option(
+        False, "--disable-browser", help="Disable shared browser tools for this agent",
+    ),
 ):
     """Connect Claude Code to an OpenAgents workspace."""
     import asyncio
@@ -3991,12 +3997,18 @@ def connect_claude(
         console.print("[dim]Press Ctrl+C to disconnect[/dim]\n")
 
         from openagents.adapters.claude import ClaudeAdapter
+        disabled_modules: set = set()
+        if disable_files:
+            disabled_modules.add("files")
+        if disable_browser:
+            disabled_modules.add("browser")
         adapter = ClaudeAdapter(
             workspace_id=ws_workspace_id,
             channel_name=ws_channel,
             token=ws_tok,
             agent_name=agent_name,
             endpoint=endpoint,
+            disabled_modules=disabled_modules or None,
         )
         await adapter.run()
 
@@ -4442,6 +4454,12 @@ def mcp_server_cmd(
         "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
     ),
+    disable_files: bool = typer.Option(
+        False, "--disable-files", help="Disable shared file tools",
+    ),
+    disable_browser: bool = typer.Option(
+        False, "--disable-browser", help="Disable shared browser tools",
+    ),
 ):
     """Run the OpenAgents workspace MCP server (stdio transport)."""
     import asyncio
@@ -4456,12 +4474,19 @@ def mcp_server_cmd(
         )
         raise typer.Exit(1)
 
+    disabled_modules: set = set()
+    if disable_files:
+        disabled_modules.add("files")
+    if disable_browser:
+        disabled_modules.add("browser")
+
     asyncio.run(run_mcp_server(
         workspace_id=workspace_id,
         channel_name=channel_name,
         token=token,
         agent_name=agent_name,
         endpoint=endpoint,
+        disabled_modules=disabled_modules or None,
     ))
 
 
