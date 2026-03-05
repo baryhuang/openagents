@@ -178,7 +178,10 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
     mentions: (payload.mentions as string[]) || [],
     targetAgents: (event.metadata?.target_agents as string[]) || null,
     messageType: (payload.message_type as string) || 'chat',
-    metadata: event.metadata || {},
+    metadata: {
+      ...(event.metadata || {}),
+      ...(payload.attachments ? { attachments: payload.attachments } : {}),
+    },
     createdAt: new Date(event.timestamp).toISOString(),
   };
 }

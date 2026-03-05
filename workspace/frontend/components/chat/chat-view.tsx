@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { ChatMessages } from './chat-messages';
-import { ChatInput } from './chat-input';
+import { ChatInput, type PendingFile } from './chat-input';
 import { EmptyState } from './empty-state';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
@@ -76,10 +76,30 @@ export function ChatView() {
   }, [messages, updateAgentMode]);
 
   const handleSend = useCallback(
-    async (content: string, mentions: string[] = []) => {
+    async (content: string, mentions: string[] = [], files: PendingFile[] = []) => {
       if (!currentSessionId) return;
       try {
-        await workspaceApi.sendMessage(currentSessionId, content, 'user', mentions.length > 0 ? mentions : undefined);
+        // Upload files first, then send message with attachment metadata
+        let attachments: { fileId: string; filename: string; contentType: string; url: string }[] | undefined;
+        if (files.length > 0) {
+          const uploaded = await Promise.all(
+            files.map((pf) => workspaceApi.uploadFile(pf.file, currentSessionId))
+          );
+          attachments = uploaded.map((f) => ({
+            fileId: f.id,
+            filename: f.filename,
+            contentType: f.contentType,
+            url: workspaceApi.getFileUrl(f.id),
+          }));
+        }
+
+        await workspaceApi.sendMessage(
+          currentSessionId,
+          content || (attachments ? attachments.map((a) => a.filename).join(', ') : ''),
+          'user',
+          mentions.length > 0 ? mentions : undefined,
+          attachments,
+        );
         forceRefresh();
       } catch {
         // Error is visible via missing message

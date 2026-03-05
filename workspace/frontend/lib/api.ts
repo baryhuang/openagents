@@ -149,6 +149,7 @@ class WorkspaceApi {
     content: string,
     senderName = 'user',
     mentions?: string[],
+    attachments?: { fileId: string; filename: string; contentType: string; url: string }[],
   ): Promise<ONMEvent> {
     return this.sendEvent({
       type: 'workspace.message.posted',
@@ -158,6 +159,7 @@ class WorkspaceApi {
         content,
         sender_type: 'human',
         ...(mentions && mentions.length > 0 ? { mentions } : {}),
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       },
       visibility: 'channel',
     });

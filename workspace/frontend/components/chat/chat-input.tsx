@@ -3,15 +3,24 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { SendHorizontal } from 'lucide-react';
+import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon } from 'lucide-react';
 import type { WorkspaceAgent } from '@/lib/types';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 
+export interface PendingFile {
+  file: File;
+  preview?: string; // data URL for images
+}
+
 interface ChatInputProps {
-  onSend: (content: string, mentions: string[]) => void;
+  onSend: (content: string, mentions: string[], files: PendingFile[]) => void;
   disabled?: boolean;
   className?: string;
   agents?: WorkspaceAgent[];
+}
+
+function isImageFile(file: File): boolean {
+  return file.type.startsWith('image/');
 }
 
 export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInputProps) {
@@ -19,7 +28,11 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
   const [mentionIndex, setMentionIndex] = React.useState(0);
+  const [pendingFiles, setPendingFiles] = React.useState<PendingFile[]>([]);
+  const [isDragging, setIsDragging] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const dragCountRef = React.useRef(0);
 
   const agentNames = agents.map((a) => a.agentName);
 
@@ -35,12 +48,39 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
     a.agentName.toLowerCase().includes(mentionFilter.toLowerCase())
   );
 
+  const addFiles = React.useCallback((files: FileList | File[]) => {
+    const newFiles: PendingFile[] = [];
+    for (const file of Array.from(files)) {
+      if (isImageFile(file)) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setPendingFiles((prev) => prev.map((pf) =>
+            pf.file === file ? { ...pf, preview: e.target?.result as string } : pf
+          ));
+        };
+        reader.readAsDataURL(file);
+      }
+      newFiles.push({ file });
+    }
+    setPendingFiles((prev) => [...prev, ...newFiles]);
+  }, []);
+
+  const removeFile = (index: number) => {
+    setPendingFiles((prev) => {
+      const removed = prev[index];
+      if (removed.preview) URL.revokeObjectURL(removed.preview);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
   const handleSend = () => {
     const trimmed = message.trim();
-    if (!trimmed || disabled) return;
+    if (!trimmed && pendingFiles.length === 0) return;
+    if (disabled) return;
     const mentions = extractMentions(trimmed);
-    onSend(trimmed, mentions);
+    onSend(trimmed, mentions, pendingFiles);
     setMessage('');
+    setPendingFiles([]);
     setShowMentions(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -122,8 +162,76 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
     }
   };
 
+  // Handle paste — detect images from clipboard
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const imageFiles: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      addFiles(imageFiles);
+    }
+  };
+
+  // Drag-and-drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCountRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCountRef.current--;
+    if (dragCountRef.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCountRef.current = 0;
+    setIsDragging(false);
+
+    if (e.dataTransfer.files.length > 0) {
+      addFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      addFiles(e.target.files);
+      e.target.value = ''; // reset so same file can be selected again
+    }
+  };
+
+  const hasContent = message.trim() || pendingFiles.length > 0;
+
   return (
-    <div className={cn('relative', className)}>
+    <div
+      className={cn('relative', className)}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* @mention autocomplete dropdown */}
       {showMentions && filteredAgents.length > 0 && (
         <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden">
@@ -163,28 +271,108 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
         </div>
       )}
 
-      <div className="relative flex flex-col gap-2 bg-background transition-all rounded-2xl border shadow-lg p-4">
+      <div className={cn(
+        'relative flex flex-col gap-2 bg-background transition-all rounded-2xl border shadow-lg p-4',
+        isDragging && 'border-primary border-dashed bg-primary/5'
+      )}>
+        {/* Drag overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-2xl z-10 pointer-events-none">
+            <span className="text-sm font-medium text-primary">Drop files here</span>
+          </div>
+        )}
+
+        {/* Pending file previews */}
+        {pendingFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {pendingFiles.map((pf, i) => (
+              <div
+                key={i}
+                className="relative group rounded-lg border bg-muted overflow-hidden"
+              >
+                {pf.preview ? (
+                  <img
+                    src={pf.preview}
+                    alt={pf.file.name}
+                    className="h-20 w-auto max-w-[160px] object-cover"
+                  />
+                ) : (
+                  <div className="h-20 w-24 flex flex-col items-center justify-center gap-1 px-2">
+                    <FileIcon className="size-5 text-muted-foreground" />
+                    <span className="text-[10px] text-muted-foreground truncate w-full text-center">
+                      {pf.file.name}
+                    </span>
+                  </div>
+                )}
+                <button
+                  onClick={() => removeFile(i)}
+                  className="absolute top-0.5 right-0.5 size-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           value={message}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={agents.length > 1 ? 'Message... (use @ to mention an agent)' : 'Message...'}
           rows={1}
           disabled={disabled}
           className="flex-1 border-0 bg-transparent shadow-none focus:outline-none placeholder:text-muted-foreground h-auto px-0 text-sm py-2 resize-none"
         />
 
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.hpp,.sh,.yaml,.yml,.toml"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Attach file"
+            >
+              <Paperclip className="size-4" />
+            </button>
+            <button
+              onClick={() => {
+                // Open file input in image-only mode
+                if (fileInputRef.current) {
+                  fileInputRef.current.accept = 'image/*';
+                  fileInputRef.current.click();
+                  // Reset to full accept list
+                  setTimeout(() => {
+                    if (fileInputRef.current) {
+                      fileInputRef.current.accept = "image/*,.pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.hpp,.sh,.yaml,.yml,.toml";
+                    }
+                  }, 100);
+                }
+              }}
+              className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Attach image"
+            >
+              <ImageIcon className="size-4" />
+            </button>
+          </div>
           <Button
-            variant={message.trim() ? 'primary' : 'secondary'}
+            variant={hasContent ? 'primary' : 'secondary'}
             size="icon"
             className={cn(
               'size-9 rounded-xl transition-all',
-              message.trim() ? 'opacity-100' : 'opacity-50'
+              hasContent ? 'opacity-100' : 'opacity-50'
             )}
             onClick={handleSend}
-            disabled={!message.trim() || disabled}
+            disabled={!hasContent || disabled}
           >
             <SendHorizontal className="size-4" />
           </Button>
