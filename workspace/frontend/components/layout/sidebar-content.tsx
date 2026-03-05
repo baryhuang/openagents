@@ -197,8 +197,8 @@ export function SidebarContent() {
   // ── Expanded sidebar ──
   return (
     <>
-      <ScrollArea className="shrink-0 w-full flex-1 h-[calc(100vh-5rem)]">
-        <div className="flex flex-col min-h-full">
+      <div className="flex flex-col h-full">
+        <ScrollArea className="flex-1 min-h-0">
           {/* New Thread button */}
           <div className="px-3.5 pb-3">
             <button
@@ -211,7 +211,7 @@ export function SidebarContent() {
           </div>
 
           {/* Agents */}
-          <div className="flex-1 px-2.5">
+          <div className="px-2.5">
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5">
               Agents ({onlineCount}/{agents.length})
             </p>
@@ -261,46 +261,46 @@ export function SidebarContent() {
               <NavButton icon={<Settings className="size-[15px]" />} label="Settings" onClick={() => setSettingsOpen(true)} />
             </div>
           </div>
+        </ScrollArea>
 
-          {/* Bottom section */}
-          <div className="px-2.5 py-3 space-y-0.5 mt-auto">
-            {/* OpenAgents login/user section */}
-            {isOpenAgentsDomain && !user && (
-              <NavButton icon={<LogIn className="size-[15px]" />} label="Sign in" onClick={signIn} />
-            )}
-            {isOpenAgentsDomain && user && (
-              <div className="px-2 py-2 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="size-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-bold shrink-0">
-                    {user.email[0].toUpperCase()}
-                  </div>
-                  <span className="text-[12px] text-muted-foreground truncate flex-1">{user.email}</span>
-                  <button onClick={signOut} className="text-muted-foreground hover:text-foreground transition-colors" title="Sign out">
-                    <LogOut className="size-3.5" />
-                  </button>
+        {/* Bottom section — pinned to bottom */}
+        <div className="shrink-0 border-t border-border px-2.5 py-3 space-y-0.5">
+          {/* OpenAgents login/user section */}
+          {isOpenAgentsDomain && !user && (
+            <NavButton icon={<LogIn className="size-[15px]" />} label="Sign in" onClick={signIn} />
+          )}
+          {isOpenAgentsDomain && user && (
+            <div className="px-2 py-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="size-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-bold shrink-0">
+                  {user.email[0].toUpperCase()}
                 </div>
-                {isUnclaimed && (
-                  <button
-                    onClick={handleClaim}
-                    disabled={claiming}
-                    className="w-full flex items-center justify-center gap-1.5 h-7 rounded-md bg-emerald-600 text-white text-[12px] font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                  >
-                    <Shield className="size-3.5" />
-                    {claiming ? 'Claiming...' : 'Claim Workspace'}
-                  </button>
-                )}
-                {isOwnedByUser && (
-                  <p className="text-[11px] text-emerald-600 flex items-center gap-1 px-0.5">
-                    <Shield className="size-3" /> You own this workspace
-                  </p>
-                )}
+                <span className="text-[12px] text-muted-foreground truncate flex-1">{user.email}</span>
+                <button onClick={signOut} className="text-muted-foreground hover:text-foreground transition-colors" title="Sign out">
+                  <LogOut className="size-3.5" />
+                </button>
               </div>
-            )}
-            <NavButton icon={theme === 'dark' ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={theme === 'dark' ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
-            <NavButton icon={<Settings className="size-[15px]" />} label="Collapse" onClick={sidebarToggle} />
-          </div>
+              {isUnclaimed && (
+                <button
+                  onClick={handleClaim}
+                  disabled={claiming}
+                  className="w-full flex items-center justify-center gap-1.5 h-7 rounded-md bg-emerald-600 text-white text-[12px] font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                >
+                  <Shield className="size-3.5" />
+                  {claiming ? 'Claiming...' : 'Claim Workspace'}
+                </button>
+              )}
+              {isOwnedByUser && (
+                <p className="text-[11px] text-emerald-600 flex items-center gap-1 px-0.5">
+                  <Shield className="size-3" /> You own this workspace
+                </p>
+              )}
+            </div>
+          )}
+          <NavButton icon={theme === 'dark' ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={theme === 'dark' ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
+          <NavButton icon={<Settings className="size-[15px]" />} label="Collapse" onClick={sidebarToggle} />
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Settings Dialog */}
       <SettingsDialogPortal open={settingsOpen} onOpenChange={setSettingsOpen} workspace={workspace} refreshWorkspace={refreshWorkspace} />
