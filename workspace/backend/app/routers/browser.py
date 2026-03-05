@@ -145,7 +145,7 @@ async def open_tab(
         workspace_id=str(workspace.id),
         tab_id=tab_id,
         session_id=manager.get_session_id(tab_id),
-        user_email=body.source or "human:user",
+        opened_by=body.source or "human:user",
     )
     db.add(usage)
 
@@ -508,16 +508,16 @@ async def get_usage(
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-    # Per-user aggregation
+    # Per-source aggregation (who opened the tab)
     rows = db.execute(
         select(
-            BrowserUsage.user_email,
+            BrowserUsage.opened_by,
             func.count(BrowserUsage.id).label("sessions"),
             func.coalesce(func.sum(BrowserUsage.duration_seconds), 0).label("total_seconds"),
         )
         .where(BrowserUsage.workspace_id == str(workspace.id))
         .where(BrowserUsage.started_at >= cutoff)
-        .group_by(BrowserUsage.user_email)
+        .group_by(BrowserUsage.opened_by)
         .order_by(func.sum(BrowserUsage.duration_seconds).desc())
     ).all()
 
@@ -528,13 +528,13 @@ async def get_usage(
         .where(BrowserUsage.ended_at.is_(None))
     ).scalar() or 0
 
-    users = []
+    breakdown = []
     total_seconds = 0
     for row in rows:
         secs = int(row.total_seconds)
         total_seconds += secs
-        users.append({
-            "user": row.user_email,
+        breakdown.append({
+            "opened_by": row.opened_by,
             "sessions": row.sessions,
             "total_seconds": secs,
             "total_minutes": round(secs / 60, 1),
@@ -556,5 +556,5 @@ async def get_usage(
         "free_hours_remaining": round(max(0, free_hours - total_hours), 2),
         "billable_hours": billable_hours,
         "estimated_cost_usd": estimated_cost,
-        "users": users,
+        "breakdown": breakdown,
     })
