@@ -99,13 +99,23 @@ class BrowserManager:
             return await page.screenshot(type="png", full_page=False)
 
     async def snapshot(self, tab_id: str) -> str:
-        """Get the accessibility tree as formatted text."""
+        """Get page content as a readable text snapshot."""
         page = self._get_page(tab_id)
         async with self._get_lock(tab_id):
-            tree = await page.accessibility.snapshot()
-            if not tree:
+            # Use aria snapshot if available (Playwright 1.49+), fall back to inner text
+            try:
+                tree = await page.locator("body").aria_snapshot()
+                return tree or "(empty page)"
+            except (AttributeError, Exception):
+                pass
+            # Fallback: extract visible text
+            try:
+                text = await page.inner_text("body", timeout=5000)
+                title = await page.title()
+                url = page.url
+                return f"URL: {url}\nTitle: {title}\n\n{text[:5000]}"
+            except Exception:
                 return "(empty page)"
-            return _format_a11y_tree(tree)
 
     async def close_tab(self, tab_id: str) -> None:
         """Close a browser tab."""
