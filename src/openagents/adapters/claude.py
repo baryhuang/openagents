@@ -49,6 +49,7 @@ class ClaudeAdapter:
         self._mode: str = "execute"  # "execute" or "plan"
         self._last_control_id: Optional[str] = None
         self._current_process: Optional[asyncio.subprocess.Process] = None
+        self._message_queue: list[dict] = []  # messages arriving while busy
 
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
@@ -151,10 +152,47 @@ class ClaudeAdapter:
                 pass
 
     async def _control_poller(self):
-        """Background loop that polls control events while a subprocess runs."""
+        """Background loop that polls control events and queues new messages while a subprocess runs."""
         while self._current_process and self._current_process.returncode is None:
             await self._poll_control()
+            await self._poll_queue()
             await asyncio.sleep(2)
+
+    async def _poll_queue(self):
+        """Check for new messages that arrived while busy and queue them."""
+        try:
+            messages = await self.client.poll_pending(
+                workspace_id=self.workspace_id,
+                token=self.token,
+                agent_name=self.agent_name,
+                after=self._last_event_id,
+            )
+        except Exception:
+            return
+
+        for msg in messages:
+            msg_id = msg.get("id") or msg.get("messageId")
+            if msg_id:
+                self._last_event_id = msg_id
+            if msg_id and msg_id in self._processed_ids:
+                continue
+            self._processed_ids.add(msg_id)
+            self._message_queue.append(msg)
+            # Notify the user their message is queued
+            channel = msg.get("sessionId") or self.channel_name
+            try:
+                await self.client.send_message(
+                    workspace_id=self.workspace_id,
+                    channel_name=channel,
+                    token=self.token,
+                    content="message queued — will process after current task",
+                    sender_type="agent",
+                    sender_name=self.agent_name,
+                    message_type="status",
+                    metadata={"agent_mode": self._mode},
+                )
+            except Exception:
+                pass
 
     async def _poll_loop(self):
         """Poll for new messages across all channels and dispatch to Claude."""
@@ -193,6 +231,11 @@ class ClaudeAdapter:
                     if msg_id:
                         self._processed_ids.add(msg_id)
                     await self._handle_message(msg)
+
+                # Process any messages that were queued during execution
+                while self._message_queue:
+                    queued = self._message_queue.pop(0)
+                    await self._handle_message(queued)
             else:
                 idle_count += 1
 

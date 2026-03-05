@@ -39,9 +39,15 @@ export function ChatMessage({ message, agents = [] }: ChatMessageProps) {
 
   // Status messages — subtle inline
   if (isSystem) {
+    const isQueued = message.content.includes('queued');
     return (
       <div className="flex justify-center py-1">
-        <span className="text-xs text-muted-foreground italic">
+        <span className={cn(
+          'text-xs italic',
+          isQueued
+            ? 'text-blue-500 dark:text-blue-400'
+            : 'text-muted-foreground'
+        )}>
           {message.senderName}: {message.content}
         </span>
       </div>
