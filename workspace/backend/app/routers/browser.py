@@ -100,6 +100,21 @@ def _touch(tab: BrowserTab):
     tab.last_active_at = datetime.now(timezone.utc)
 
 
+async def _ensure_connected(tab: BrowserTab) -> None:
+    """Reconnect to the Browserbase session if the page is not in memory.
+
+    On serverless (Vercel), each invocation may be a cold start with an
+    empty BrowserManager._pages dict.  If the tab has a session_id we can
+    reconnect via CDP.
+    """
+    manager = BrowserManager.get()
+    if tab.id in manager._pages:
+        return
+    if not tab.session_id:
+        return  # no remote session to reconnect to
+    await manager.reconnect(tab.id, tab.session_id)
+
+
 # ---------------------------------------------------------------------------
 # POST /v1/browser/tabs — open new tab
 # ---------------------------------------------------------------------------
@@ -237,6 +252,7 @@ async def navigate_tab(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    await _ensure_connected(tab)
     manager = BrowserManager.get()
     try:
         result = await manager.navigate(tab_id, body.url)
@@ -283,6 +299,7 @@ async def click_tab(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    await _ensure_connected(tab)
     manager = BrowserManager.get()
     try:
         result = await manager.click(tab_id, body.selector)
@@ -322,6 +339,7 @@ async def type_in_tab(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    await _ensure_connected(tab)
     manager = BrowserManager.get()
     try:
         await manager.type_text(tab_id, body.selector, body.text)
@@ -358,6 +376,7 @@ async def get_screenshot(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    await _ensure_connected(tab)
     manager = BrowserManager.get()
     try:
         data = await manager.screenshot(tab_id)
@@ -395,6 +414,7 @@ async def get_snapshot(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    await _ensure_connected(tab)
     manager = BrowserManager.get()
     try:
         tree = await manager.snapshot(tab_id)
@@ -474,7 +494,7 @@ async def close_tab(
             usage.duration_seconds = int((now - usage.started_at).total_seconds())
 
     manager = BrowserManager.get()
-    await manager.close_tab(tab_id)
+    await manager.close_tab(tab_id, session_id_hint=tab.session_id)
 
     event = Event(
         type="workspace.browser.tab.closed",
