@@ -16,18 +16,18 @@ DELETE /v1/browser/tabs/{tab_id}           Close tab
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.browser import BrowserManager
 from app.database import get_db
-from app.models import BrowserTab, Workspace
+from app.models import BrowserTab, BrowserUsage, Workspace
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import (
     _emit_event,
@@ -139,6 +139,15 @@ async def open_tab(
         live_url=manager.get_live_url(tab_id),
     )
     db.add(record)
+
+    # Track usage
+    usage = BrowserUsage(
+        workspace_id=str(workspace.id),
+        tab_id=tab_id,
+        session_id=manager.get_session_id(tab_id),
+        user_email=body.source or "human:user",
+    )
+    db.add(usage)
 
     event = Event(
         type="workspace.browser.tab.opened",
@@ -452,6 +461,18 @@ async def close_tab(
 
     tab.status = "closed"
 
+    # Finalize usage record
+    usage = db.execute(
+        select(BrowserUsage)
+        .where(BrowserUsage.tab_id == tab_id)
+        .where(BrowserUsage.ended_at.is_(None))
+    ).scalar_one_or_none()
+    if usage:
+        now = datetime.now(timezone.utc)
+        usage.ended_at = now
+        if usage.started_at:
+            usage.duration_seconds = int((now - usage.started_at).total_seconds())
+
     manager = BrowserManager.get()
     await manager.close_tab(tab_id)
 
@@ -464,3 +485,76 @@ async def close_tab(
     await _emit_event(event, workspace, db, token=x_workspace_token or workspace.password_hash)
 
     return success_response({"id": tab_id, "status": "closed"})
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/browser/usage — usage summary
+# ---------------------------------------------------------------------------
+
+@router.get("/usage")
+async def get_usage(
+    network: str = Query(..., description="Network (workspace) ID or slug"),
+    days: int = Query(30, description="Number of days to look back"),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Browser usage summary: total minutes per user, with cost estimate."""
+    workspace = _resolve_workspace(db, network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Per-user aggregation
+    rows = db.execute(
+        select(
+            BrowserUsage.user_email,
+            func.count(BrowserUsage.id).label("sessions"),
+            func.coalesce(func.sum(BrowserUsage.duration_seconds), 0).label("total_seconds"),
+        )
+        .where(BrowserUsage.workspace_id == str(workspace.id))
+        .where(BrowserUsage.started_at >= cutoff)
+        .group_by(BrowserUsage.user_email)
+        .order_by(func.sum(BrowserUsage.duration_seconds).desc())
+    ).all()
+
+    # Also count currently active (no ended_at)
+    active_count = db.execute(
+        select(func.count(BrowserUsage.id))
+        .where(BrowserUsage.workspace_id == str(workspace.id))
+        .where(BrowserUsage.ended_at.is_(None))
+    ).scalar() or 0
+
+    users = []
+    total_seconds = 0
+    for row in rows:
+        secs = int(row.total_seconds)
+        total_seconds += secs
+        users.append({
+            "user": row.user_email,
+            "sessions": row.sessions,
+            "total_seconds": secs,
+            "total_minutes": round(secs / 60, 1),
+            "total_hours": round(secs / 3600, 2),
+        })
+
+    total_hours = round(total_seconds / 3600, 2)
+    # Developer plan: 100 free hours, then $0.12/hour
+    free_hours = 100.0
+    billable_hours = max(0, total_hours - free_hours)
+    estimated_cost = round(billable_hours * 0.12, 2)
+
+    return success_response({
+        "period_days": days,
+        "active_sessions": active_count,
+        "total_seconds": total_seconds,
+        "total_minutes": round(total_seconds / 60, 1),
+        "total_hours": total_hours,
+        "free_hours_remaining": round(max(0, free_hours - total_hours), 2),
+        "billable_hours": billable_hours,
+        "estimated_cost_usd": estimated_cost,
+        "users": users,
+    })
