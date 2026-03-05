@@ -33,12 +33,14 @@ class ClaudeAdapter:
         token: str,
         agent_name: str,
         endpoint: str = DEFAULT_ENDPOINT,
+        disabled_modules: set | None = None,
     ):
         self.workspace_id = workspace_id
         self.channel_name = channel_name  # default/initial channel
         self.token = token
         self.agent_name = agent_name
         self.endpoint = endpoint
+        self.disabled_modules = disabled_modules or set()
         self.client = WorkspaceClient(endpoint=endpoint)
         self.last_seen_id: Optional[str] = None
         self._last_event_id: Optional[str] = None  # event ID cursor for polling
@@ -281,26 +283,34 @@ class ClaudeAdapter:
         ]
 
         # Mode-dependent permission and tool flags
+        _pfx = "mcp__openagents-workspace__"
         mcp_tools = [
-            "mcp__openagents-workspace__workspace_send_message",
-            "mcp__openagents-workspace__workspace_get_history",
-            "mcp__openagents-workspace__workspace_get_agents",
-            "mcp__openagents-workspace__workspace_status",
-            "mcp__openagents-workspace__workspace_list_files",
-            "mcp__openagents-workspace__workspace_read_file",
-            "mcp__openagents-workspace__workspace_browser_list_tabs",
-            "mcp__openagents-workspace__workspace_browser_snapshot",
-            "mcp__openagents-workspace__workspace_browser_screenshot",
+            f"{_pfx}workspace_send_message",
+            f"{_pfx}workspace_get_history",
+            f"{_pfx}workspace_get_agents",
+            f"{_pfx}workspace_status",
         ]
-        mcp_write_tools = [
-            "mcp__openagents-workspace__workspace_write_file",
-            "mcp__openagents-workspace__workspace_delete_file",
-            "mcp__openagents-workspace__workspace_browser_open",
-            "mcp__openagents-workspace__workspace_browser_navigate",
-            "mcp__openagents-workspace__workspace_browser_click",
-            "mcp__openagents-workspace__workspace_browser_type",
-            "mcp__openagents-workspace__workspace_browser_close",
-        ]
+        mcp_write_tools = []
+
+        # Conditionally include file tools
+        if "files" not in self.disabled_modules:
+            mcp_tools += [f"{_pfx}workspace_list_files", f"{_pfx}workspace_read_file"]
+            mcp_write_tools += [f"{_pfx}workspace_write_file", f"{_pfx}workspace_delete_file"]
+
+        # Conditionally include browser tools
+        if "browser" not in self.disabled_modules:
+            mcp_tools += [
+                f"{_pfx}workspace_browser_list_tabs",
+                f"{_pfx}workspace_browser_snapshot",
+                f"{_pfx}workspace_browser_screenshot",
+            ]
+            mcp_write_tools += [
+                f"{_pfx}workspace_browser_open",
+                f"{_pfx}workspace_browser_navigate",
+                f"{_pfx}workspace_browser_click",
+                f"{_pfx}workspace_browser_type",
+                f"{_pfx}workspace_browser_close",
+            ]
 
         if self._mode == "plan":
             cmd.extend(["--permission-mode", "plan"])
@@ -322,18 +332,24 @@ class ClaudeAdapter:
             cmd.extend(["--resume", self._claude_session_id])
 
         # MCP config for workspace tools — uses the message's channel
+        mcp_args = [
+            "mcp-server",
+            "--workspace-id", self.workspace_id,
+            "--channel-name", channel_name,
+            "--agent-name", self.agent_name,
+            "--endpoint", self.endpoint,
+        ]
+        if "files" in self.disabled_modules:
+            mcp_args.append("--disable-files")
+        if "browser" in self.disabled_modules:
+            mcp_args.append("--disable-browser")
+
         mcp_config = {
             "mcpServers": {
                 "openagents-workspace": {
                     "type": "stdio",
                     "command": "openagents",
-                    "args": [
-                        "mcp-server",
-                        "--workspace-id", self.workspace_id,
-                        "--channel-name", channel_name,
-                        "--agent-name", self.agent_name,
-                        "--endpoint", self.endpoint,
-                    ],
+                    "args": mcp_args,
                     "env": {"OA_WORKSPACE_TOKEN": self.token},
                 },
             },

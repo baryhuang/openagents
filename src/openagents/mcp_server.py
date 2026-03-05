@@ -51,15 +51,37 @@ def create_mcp_server(
     token: str,
     agent_name: str,
     endpoint: str = DEFAULT_ENDPOINT,
+    disabled_modules: Optional[set] = None,
 ) -> Server:
-    """Create an MCP server with workspace tools."""
+    """Create an MCP server with workspace tools.
 
+    Args:
+        disabled_modules: Set of module names to disable. Supported:
+            "files" — disables workspace_write_file, workspace_read_file,
+                      workspace_list_files, workspace_delete_file
+            "browser" — disables all workspace_browser_* tools
+    """
+
+    _disabled = disabled_modules or set()
     server = Server("openagents-workspace")
     client = WorkspaceClient(endpoint=endpoint)
 
+    # Tool name prefixes for each module
+    _FILE_TOOLS = {"workspace_write_file", "workspace_read_file", "workspace_list_files", "workspace_delete_file"}
+    _BROWSER_TOOLS = {"workspace_browser_open", "workspace_browser_navigate", "workspace_browser_click",
+                      "workspace_browser_type", "workspace_browser_screenshot", "workspace_browser_snapshot",
+                      "workspace_browser_list_tabs", "workspace_browser_close"}
+
+    def _is_tool_enabled(tool_name: str) -> bool:
+        if "files" in _disabled and tool_name in _FILE_TOOLS:
+            return False
+        if "browser" in _disabled and tool_name in _BROWSER_TOOLS:
+            return False
+        return True
+
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
-        return [
+        all_tools = [
             types.Tool(
                 name="workspace_send_message",
                 description=(
@@ -265,10 +287,20 @@ def create_mcp_server(
                 },
             ),
         ]
+        return [t for t in all_tools if _is_tool_enabled(t.name)]
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         try:
+            # Guard: reject calls to disabled modules
+            if not _is_tool_enabled(name):
+                module = "files" if name in _FILE_TOOLS else "browser" if name in _BROWSER_TOOLS else "unknown"
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: The {module} module is disabled for this agent. "
+                         f"This agent was connected with --disable-{module}.",
+                )]
+
             if name == "workspace_send_message":
                 content = arguments.get("content", "")
                 result = await client.send_message(
@@ -498,6 +530,19 @@ def create_mcp_server(
                 return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
 
         except Exception as e:
+            error_msg = str(e)
+            # Provide clear guidance when browser backend is unavailable
+            if name.startswith("workspace_browser_") and (
+                "500" in error_msg or "Failed to open" in error_msg
+                or "Internal Server Error" in error_msg
+            ):
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: Shared browser is not available. "
+                         f"The workspace server needs BROWSERBASE_API_KEY and "
+                         f"BROWSERBASE_PROJECT_ID configured to enable cloud browser sessions. "
+                         f"Contact the workspace admin to set up Browserbase integration.",
+                )]
             return [types.TextContent(type="text", text=f"Error: {e}")]
 
     return server
@@ -509,6 +554,7 @@ async def run_mcp_server(
     token: str,
     agent_name: str,
     endpoint: str = DEFAULT_ENDPOINT,
+    disabled_modules: Optional[set] = None,
 ) -> None:
     """Run the MCP server on stdio."""
     server = create_mcp_server(
@@ -517,6 +563,7 @@ async def run_mcp_server(
         token=token,
         agent_name=agent_name,
         endpoint=endpoint,
+        disabled_modules=disabled_modules,
     )
     options = server.create_initialization_options()
     async with stdio_server() as (read_stream, write_stream):
