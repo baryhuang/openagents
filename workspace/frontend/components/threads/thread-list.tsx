@@ -185,9 +185,13 @@ export function ThreadList() {
                   isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
                 )}
               >
-                {/* Avatar stack */}
+                {/* Avatar stack — show only channel participants */}
                 <div className="shrink-0 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 rounded-full size-[30px] bg-white dark:bg-zinc-900">
-                  <AvatarStack agents={agents} />
+                  <AvatarStack agents={
+                    session.participants.length > 0
+                      ? agents.filter((a) => session.participants.includes(a.agentName))
+                      : agents
+                  } />
                 </div>
 
                 {/* Content */}
