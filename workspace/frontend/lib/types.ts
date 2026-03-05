@@ -72,6 +72,8 @@ export interface BrowserTab {
   status: string;
   createdBy: string;
   sharedWith: string[];
+  liveUrl: string | null;
+  sessionId: string | null;
   createdAt: string | null;
   lastActiveAt: string | null;
 }

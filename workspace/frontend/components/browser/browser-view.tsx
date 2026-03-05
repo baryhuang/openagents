@@ -15,9 +15,9 @@ export function BrowserView() {
 
   const tab = browserTabs.find((t) => t.id === selectedBrowserTabId);
 
-  // Poll screenshot every 2 seconds
+  // Poll screenshot every 2 seconds (only when no live URL)
   useEffect(() => {
-    if (!selectedBrowserTabId || !tab) {
+    if (!selectedBrowserTabId || !tab || tab.liveUrl) {
       setScreenshotUrl(null);
       return;
     }
@@ -28,7 +28,6 @@ export function BrowserView() {
       try {
         const url = workspaceApi.getBrowserScreenshotUrl(selectedBrowserTabId);
         const headers: Record<string, string> = {};
-        // Access token from API instance
         const token = (workspaceApi as unknown as { token: string }).token;
         if (token) headers['X-Workspace-Token'] = token;
         const bearerToken = (workspaceApi as unknown as { bearerToken: string }).bearerToken;
@@ -40,7 +39,6 @@ export function BrowserView() {
         const blob = await res.blob();
         if (cancelled) return;
 
-        // Revoke previous blob URL
         if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
 
         const blobUrl = URL.createObjectURL(blob);
@@ -127,18 +125,28 @@ export function BrowserView() {
         </button>
       </div>
 
-      {/* Screenshot area */}
-      <div className="flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-900 flex items-start justify-center p-4">
-        {loading && !screenshotUrl ? (
+      {/* Browser view area */}
+      <div className="flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-900 flex items-start justify-center">
+        {tab.liveUrl ? (
+          /* Browserbase live view — interactive iframe */
+          <iframe
+            src={tab.liveUrl}
+            className="w-full h-full border-0"
+            allow="clipboard-read; clipboard-write"
+            title={`Live browser: ${tab.url}`}
+          />
+        ) : loading && !screenshotUrl ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             <RefreshCw className="size-6 animate-spin" />
           </div>
         ) : screenshotUrl ? (
-          <img
-            src={screenshotUrl}
-            alt={`Screenshot of ${tab.url}`}
-            className="max-w-full border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-sm"
-          />
+          <div className="p-4 w-full flex justify-center">
+            <img
+              src={screenshotUrl}
+              alt={`Screenshot of ${tab.url}`}
+              className="max-w-full border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-sm"
+            />
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             <p className="text-sm">No screenshot available</p>
