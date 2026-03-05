@@ -4032,6 +4032,14 @@ def connect_openclaw(
         None, "--workspace-name",
         help="Custom workspace name",
     ),
+    join: Optional[str] = typer.Option(
+        None, "--join",
+        help="Join existing workspace (ID or slug)",
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token",
+        help="Workspace token (required with --join)",
+    ),
     endpoint: str = typer.Option(
         "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
@@ -4136,17 +4144,79 @@ def connect_openclaw(
                     api_key=identity.api_key if identity else None,
                 ))
 
-        # Step 2: Create workspace
-        with console.status("Creating workspace..."):
-            try:
-                ws = await client.create_workspace(agent_name, workspace_name)
-                console.print(f"[green]Workspace created:[/green] {ws.name}")
-                console.print(
-                    f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
-                )
-            except Exception as e:
-                console.print(f"[red]Workspace creation failed: {e}[/red]")
+        # Step 2: Create or join workspace
+        if join:
+            if not token:
+                console.print("[red]--token is required when using --join[/red]")
                 raise typer.Exit(1)
+
+            with console.status("Joining workspace..."):
+                try:
+                    join_result = await client.join_network(
+                        agent_name=agent_name,
+                        network=join,
+                        token=token,
+                    )
+                    ws_id = join_result.get("network_id", join)
+                    console.print(f"[green]Joined workspace:[/green] {ws_id}")
+                except Exception as e:
+                    console.print(f"[red]Join failed: {e}[/red]")
+                    raise typer.Exit(1)
+
+            # Discover channels
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"{endpoint}/v1/discover",
+                        params={"network": ws_id},
+                        headers={"X-Workspace-Token": token},
+                    ) as resp:
+                        disc = await resp.json()
+                        channels = (disc.get("data") or disc).get("channels", [])
+                        if channels:
+                            ws_channel = channels[0]["address"].replace("channel/", "")
+                        else:
+                            ws_channel = "general"
+            except Exception:
+                ws_channel = "general"
+
+            # Join the channel
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{endpoint}/v1/events",
+                        json={
+                            "type": "network.channel.join",
+                            "source": f"openagents:{agent_name}",
+                            "target": "core",
+                            "payload": {"channel": ws_channel, "agent_name": agent_name},
+                            "network": ws_id,
+                        },
+                        headers={"X-Workspace-Token": token, "Content-Type": "application/json"},
+                    ) as resp:
+                        pass
+            except Exception:
+                pass
+
+            ws_workspace_id = ws_id
+            ws_tok = token
+        else:
+            with console.status("Creating workspace..."):
+                try:
+                    ws = await client.create_workspace(agent_name, workspace_name)
+                    console.print(f"[green]Workspace created:[/green] {ws.name}")
+                    console.print(
+                        f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
+                    )
+                except Exception as e:
+                    console.print(f"[red]Workspace creation failed: {e}[/red]")
+                    raise typer.Exit(1)
+
+            ws_workspace_id = ws.workspace_id
+            ws_channel = ws.channel_name
+            ws_tok = ws.token
 
         # Step 3: Start adapter
         console.print(
@@ -4157,9 +4227,9 @@ def connect_openclaw(
 
         from openagents.adapters.openclaw import OpenClawAdapter
         adapter = OpenClawAdapter(
-            workspace_id=ws.workspace_id,
-            channel_name=ws.channel_name,
-            token=ws.token,
+            workspace_id=ws_workspace_id,
+            channel_name=ws_channel,
+            token=ws_tok,
             agent_name=agent_name,
             endpoint=endpoint,
             openclaw_host=openclaw_host,

@@ -325,8 +325,11 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     # Auto-name channel from first human message if title is default/empty
     _auto_title_channel(channel, content, db)
 
-    # Route to channel master if set
-    if channel.master_agent:
+    # If user explicitly @mentions agents, route to them
+    if mentions:
+        event.metadata["target_agents"] = mentions
+    elif channel.master_agent:
+        # Default: route to channel master
         event.metadata["target_agents"] = [channel.master_agent]
     else:
         # Fall back to all channel participants
