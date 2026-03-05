@@ -23,7 +23,7 @@ interface WorkspaceContextValue {
   lastMessageBySession: Record<string, LastMessageInfo>;
   activeSessionIds: Set<string>;
   agentModes: Record<string, string>;
-  updateLastMessage: (sessionId: string, senderName: string, content: string) => void;
+  updateLastMessage: (sessionId: string, senderName: string, content: string, messageTime?: string | null) => void;
   setSessionActive: (sessionId: string, active: boolean) => void;
   updateAgentMode: (agentName: string, mode: string) => void;
   toggleAgentMode: (agentName: string) => void;
@@ -70,11 +70,23 @@ export function WorkspaceProvider({
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
-  const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
-    setLastMessageBySession((prev) => ({
-      ...prev,
-      [sessionId]: { senderName, content: content.slice(0, 100), timestamp: Date.now() },
-    }));
+  const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string, messageTime?: string | null) => {
+    setLastMessageBySession((prev) => {
+      // Don't create entries for empty content (no messages in thread)
+      if (!content && !prev[sessionId]) return prev;
+      const existing = prev[sessionId];
+      const truncated = content.slice(0, 100);
+      // Skip if content hasn't changed
+      if (existing && existing.content === truncated && existing.senderName === senderName) {
+        return prev;
+      }
+      // Use actual message timestamp when available, fall back to Date.now() for live messages
+      const ts = messageTime ? new Date(messageTime).getTime() : Date.now();
+      return {
+        ...prev,
+        [sessionId]: { senderName, content: truncated, timestamp: ts },
+      };
+    });
   }, []);
 
   const setSessionActive = useCallback((sessionId: string, active: boolean) => {
