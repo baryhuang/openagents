@@ -129,38 +129,54 @@ export function ChatView() {
               {currentSession?.title || 'Thread'}
             </h2>
           )}
-          {agents.length > 1 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-medium shrink-0">
-              group
-            </span>
-          )}
+          {(() => {
+            const participants = currentSession?.participants || [];
+            const sessionAgents = participants.length > 0
+              ? agents.filter((a) => participants.includes(a.agentName))
+              : agents;
+            return (
+              <>
+                {sessionAgents.length > 1 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-medium shrink-0">
+                    group
+                  </span>
+                )}
+              </>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-1.5">
-          {/* Participant chips */}
+          {/* Participant chips — show only channel participants */}
           <div className="flex items-center gap-1 overflow-x-auto">
-            {agents.map((agent) => {
-              const color = getAgentColor(agent.agentName, agentNames);
-              const isMaster = agent.role === 'master';
-              return (
-                <div
-                  key={agent.agentName}
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted border shrink-0"
-                >
-                  <div className={cn(
-                    'size-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold',
-                    color.initials
-                  )}>
-                    {getAgentInitials(agent.agentName)}
+            {(() => {
+              const participants = currentSession?.participants || [];
+              const sessionAgents = participants.length > 0
+                ? agents.filter((a) => participants.includes(a.agentName))
+                : agents;
+              return sessionAgents.map((agent) => {
+                const color = getAgentColor(agent.agentName, agentNames);
+                const isMaster = currentSession?.master === agent.agentName || agent.role === 'master';
+                return (
+                  <div
+                    key={agent.agentName}
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted border shrink-0"
+                  >
+                    <div className={cn(
+                      'size-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold',
+                      color.initials
+                    )}>
+                      {getAgentInitials(agent.agentName)}
+                    </div>
+                    <span className="text-[11px] font-medium">{agent.agentName.split('-')[0]}</span>
+                    {isMaster && (
+                      <span className="text-[8px] px-1 py-0 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">
+                        M
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[11px] font-medium">{agent.agentName.split('-')[0]}</span>
-                  {isMaster && (
-                    <span className="text-[8px] px-1 py-0 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">
-                      M
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
 
           {/* Agent mode toggle */}
