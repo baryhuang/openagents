@@ -168,9 +168,10 @@ class WorkspaceClient:
     ) -> WorkspaceInfo:
         """Create a workspace via POST /v1/workspaces."""
         import aiohttp
-        payload: Dict[str, Any] = {"agent_name": agent_name}
-        if name:
-            payload["name"] = name
+        payload: Dict[str, Any] = {
+            "agent_name": agent_name,
+            "name": name or f"{agent_name}'s workspace",
+        }
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.endpoint}/v1/workspaces",
@@ -194,6 +195,28 @@ class WorkspaceClient:
                     url=f"{self.endpoint}/{slug}?token={result['token']}",
                     channel_name=channel.get("name", ""),
                 )
+
+    async def join_network(
+        self, agent_name: str, network: str, token: str,
+    ) -> dict:
+        """Join an existing workspace via POST /v1/join."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/join",
+                json={
+                    "agent_name": agent_name,
+                    "token": token,
+                    "network": network,
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"Failed to join network: {msg}")
+                return data.get("data", data)
 
     async def heartbeat(
         self, workspace_id: str, agent_name: str, token: str,

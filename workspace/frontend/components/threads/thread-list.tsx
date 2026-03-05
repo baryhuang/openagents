@@ -116,7 +116,7 @@ export function ThreadList() {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
-                    {lastMsg
+                    {lastMsg && lastMsg.content
                       ? `${lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName}: ${lastMsg.content}`
                       : 'No messages yet'}
                   </p>
