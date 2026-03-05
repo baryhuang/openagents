@@ -258,7 +258,6 @@ class WorkspaceClient:
         content: str,
         sender_type: str = "agent",
         sender_name: Optional[str] = None,
-        mentions: Optional[List[str]] = None,
         message_type: str = "chat",
         metadata: Optional[dict] = None,
     ) -> dict:
@@ -271,8 +270,6 @@ class WorkspaceClient:
             "content": content,
             "message_type": message_type,
         }
-        if mentions:
-            event_payload["mentions"] = mentions
 
         event_body: Dict[str, Any] = {
             "type": "workspace.message.posted",

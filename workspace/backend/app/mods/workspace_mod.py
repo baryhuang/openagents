@@ -13,6 +13,7 @@ Expects context.extra to contain:
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -241,24 +242,63 @@ async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[
     return event
 
 
+def _extract_mentions(content: str, known_agents: List[str]) -> List[str]:
+    """Parse @agent-name mentions from message text, validated against known agents."""
+    if not content or not known_agents:
+        return []
+    # Match @word patterns (agent names are alphanumeric + hyphens)
+    raw_mentions = re.findall(r"@([\w-]+)", content)
+    # Only return mentions that match actual workspace members
+    known_set = set(known_agents)
+    return [m for m in raw_mentions if m in known_set]
+
+
+_DEFAULT_TITLES = {"New Thread", "Session 1", None, ""}
+
+
+def _auto_title_channel(channel, content: str, db) -> None:
+    """Set channel title from message content if still using a default title."""
+    if channel.title not in _DEFAULT_TITLES:
+        return
+    if not content or not content.strip():
+        return
+    # Use first line, truncated to 60 chars
+    first_line = content.strip().split("\n")[0]
+    title = first_line[:60].rstrip()
+    if len(first_line) > 60:
+        title += "..."
+    channel.title = title
+    db.flush()
+
+
 async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional[Event]:
     """
     workspace.message.posted → route messages to the right agents.
 
     Routing rules:
     - Human messages → channel master (or all participants if no master)
-    - Agent messages with mentions → mentioned agents only
+    - Any message with @mentions → mentioned agents only
     - Agent messages without mentions → no targeting (visible in UI only)
     """
-    from app.models import Channel
+    from app.models import Channel, WorkspaceMember
 
     db = ctx.extra["db"]
     workspace = ctx.extra["workspace"]
     payload = event.payload or {}
+    content = payload.get("content", "")
 
-    # Agent messages with mentions → route to mentioned agents
+    # Parse @mentions from message content
+    known_agents = [
+        m.agent_name for m in db.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace.id,
+            )
+        ).scalars().all()
+    ]
+    mentions = _extract_mentions(content, known_agents)
+
+    # Agent messages: route to mentioned agents only
     if event.source.startswith("openagents:"):
-        mentions = payload.get("mentions", [])
         if mentions:
             event.metadata["target_agents"] = mentions
         return event
@@ -281,6 +321,9 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
 
     if not channel:
         return event
+
+    # Auto-name channel from first human message if title is default/empty
+    _auto_title_channel(channel, content, db)
 
     # Route to channel master if set
     if channel.master_agent:

@@ -65,19 +65,14 @@ def create_mcp_server(
                 description=(
                     "Post a message to the workspace chat. "
                     "You MUST use this tool to communicate — generating text alone is not seen by anyone. "
-                    "Mention other agents by name to delegate work to them."
+                    "Use @agent-name in your message to delegate work to another agent."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "content": {
                             "type": "string",
-                            "description": "Message text to post",
-                        },
-                        "mentions": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Agent names to delegate to (optional)",
+                            "description": "Message text to post. Use @agent-name to mention and delegate to other agents.",
                         },
                     },
                     "required": ["content"],
@@ -184,8 +179,6 @@ def create_mcp_server(
         try:
             if name == "workspace_send_message":
                 content = arguments.get("content", "")
-                mentions = arguments.get("mentions", [])
-                msg_type = "delegation" if mentions else "chat"
                 result = await client.send_message(
                     workspace_id=workspace_id,
                     channel_name=channel_name,
@@ -193,8 +186,6 @@ def create_mcp_server(
                     content=content,
                     sender_type="agent",
                     sender_name=agent_name,
-                    mentions=mentions,
-                    message_type=msg_type,
                 )
                 return [types.TextContent(
                     type="text",

@@ -15,6 +15,7 @@ import {
   Users,
   ChevronRight,
 } from 'lucide-react';
+import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 
 // ── Content Parsing ──
@@ -207,16 +208,46 @@ interface IntermediateStepsProps {
   agents?: WorkspaceAgent[];
 }
 
-export function IntermediateSteps({ steps }: IntermediateStepsProps) {
+export function IntermediateSteps({ steps, agents }: IntermediateStepsProps) {
+  const agentNames = agents?.map((a) => a.agentName) ?? [];
   if (steps.length === 0) return null;
+
+  // Group consecutive steps by sender
+  const hasMultipleAgents = (agents?.length ?? 0) > 1;
+  const senderGroups: { sender: string; steps: WorkspaceMessage[] }[] = [];
+  for (const step of steps) {
+    const last = senderGroups[senderGroups.length - 1];
+    if (last && last.sender === step.senderName) {
+      last.steps.push(step);
+    } else {
+      senderGroups.push({ sender: step.senderName, steps: [step] });
+    }
+  }
 
   return (
     <div className="flex items-start gap-3 py-1">
       {/* Spacer matching avatar width for alignment with chat messages */}
       <div className="size-8 shrink-0" />
       <div className="border-l-2 border-zinc-200 dark:border-zinc-700 pl-3 py-0.5 min-w-0 flex-1">
-        {steps.map((step) => (
-          <StepItem key={step.messageId} message={step} />
+        {senderGroups.map((group, gi) => (
+          <div key={`${group.sender}-${gi}`}>
+            {hasMultipleAgents && (
+              <div className="flex items-center gap-1.5 mb-0.5 mt-1 first:mt-0">
+                <div className={cn(
+                  'size-3.5 rounded-full flex items-center justify-center text-white text-[6px] font-bold',
+                  getAgentColor(group.sender, agentNames).initials
+                )}>
+                  {getAgentInitials(group.sender)}
+                </div>
+                <span className="text-[10px] font-medium text-muted-foreground/70">
+                  {group.sender}
+                </span>
+              </div>
+            )}
+            {group.steps.map((step) => (
+              <StepItem key={step.messageId} message={step} />
+            ))}
+          </div>
         ))}
       </div>
     </div>

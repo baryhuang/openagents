@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, MessageSquare, FileText, PlusSquare, UserPlus,
-  Settings, HelpCircle, Copy, Check, Clock, CheckCircle, XCircle,
+  Settings, Copy, Check, Clock, CheckCircle, XCircle,
   LogIn, LogOut, Shield, Moon, Sun,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -28,6 +28,7 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
 import type { WorkspaceInvitation } from '@/lib/types';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
+import { NewThreadDialog } from '@/components/threads/new-thread-dialog';
 
 // ── Navigation button helper ──
 
@@ -73,8 +74,18 @@ export function SidebarContent() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [newThreadOpen, setNewThreadOpen] = useState(false);
 
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  const handleNewThread = () => {
+    if (agents.length >= 2) {
+      setNewThreadOpen(true);
+    } else {
+      createSession();
+      setViewMode('threads');
+    }
+  };
 
   const onlineCount = agents.filter((a) => a.status === 'online').length;
   const agentNames = agents.map((a) => a.agentName);
@@ -103,7 +114,7 @@ export function SidebarContent() {
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={() => { createSession(); setViewMode('threads'); }}
+                onClick={handleNewThread}
                 className="size-9 rounded-lg bg-primary flex items-center justify-center text-primary-foreground hover:bg-primary/90 transition-colors"
               >
                 <Plus className="size-4" />
@@ -191,7 +202,7 @@ export function SidebarContent() {
           {/* New Thread button */}
           <div className="px-3.5 pb-3">
             <button
-              onClick={() => { createSession(); setViewMode('threads'); }}
+              onClick={handleNewThread}
               className="w-full h-9 flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-[13px] font-medium hover:bg-primary/90 transition-colors"
             >
               <Plus className="size-4" />
@@ -285,7 +296,6 @@ export function SidebarContent() {
               </div>
             )}
             <NavButton icon={theme === 'dark' ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={theme === 'dark' ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
-            <NavButton icon={<HelpCircle className="size-[15px]" />} label="Support" />
             <NavButton icon={<Settings className="size-[15px]" />} label="Collapse" onClick={sidebarToggle} />
           </div>
         </div>
@@ -296,6 +306,17 @@ export function SidebarContent() {
 
       {/* Invitation Dialog */}
       <InvitationDialogPortal open={inviteOpen} onOpenChange={setInviteOpen} />
+
+      {/* New Thread Dialog (agent picker) */}
+      <NewThreadDialog
+        open={newThreadOpen}
+        onOpenChange={setNewThreadOpen}
+        agents={agents}
+        onCreateThread={({ master, participants }) => {
+          createSession({ master, participants });
+          setViewMode('threads');
+        }}
+      />
     </>
   );
 }
