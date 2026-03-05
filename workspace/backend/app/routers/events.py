@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import cast, select, Text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -126,6 +126,7 @@ async def poll_events(
     target: Optional[str] = Query(None, description="Filter by target address"),
     channel: Optional[str] = Query(None, description="Filter by channel name"),
     type: Optional[str] = Query(None, description="Filter by event type prefix"),
+    search: Optional[str] = Query(None, description="Search message content (case-insensitive)"),
     limit: int = Query(50, ge=1, le=200, description="Max events to return"),
     db: Session = Depends(get_db),
 ):
@@ -160,6 +161,12 @@ async def poll_events(
 
     if type:
         query = query.where(EventRecord.type.startswith(type))
+
+    if search:
+        # Search within payload JSON for content field (works with both JSONB and JSON)
+        query = query.where(
+            cast(EventRecord.payload, Text).ilike(f"%{search}%")
+        )
 
     query = query.order_by(EventRecord.timestamp.asc()).limit(limit + 1)
     rows = db.execute(query).scalars().all()

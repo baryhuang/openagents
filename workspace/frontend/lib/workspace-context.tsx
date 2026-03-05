@@ -8,6 +8,7 @@ import type { Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from 
 interface LastMessageInfo {
   content: string;
   senderName: string;
+  timestamp: number; // Date.now() when last updated
 }
 
 interface WorkspaceContextValue {
@@ -26,6 +27,7 @@ interface WorkspaceContextValue {
   setSessionActive: (sessionId: string, active: boolean) => void;
   updateAgentMode: (agentName: string, mode: string) => void;
   toggleAgentMode: (agentName: string) => void;
+  stopAllAgents: () => Promise<void>;
   setCurrentSessionId: (id: string | null) => void;
   setSelectedFileId: (id: string | null) => void;
   createSession: (opts?: { title?: string; master?: string; participants?: string[] }) => Promise<WorkspaceSession>;
@@ -71,7 +73,7 @@ export function WorkspaceProvider({
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
     setLastMessageBySession((prev) => ({
       ...prev,
-      [sessionId]: { senderName, content: content.slice(0, 100) },
+      [sessionId]: { senderName, content: content.slice(0, 100), timestamp: Date.now() },
     }));
   }, []);
 
@@ -103,6 +105,12 @@ export function WorkspaceProvider({
       setAgentModes((prev) => ({ ...prev, [agentName]: current }));
     }
   }, [agentModes]);
+
+  const stopAllAgents = useCallback(async () => {
+    await Promise.allSettled(
+      agents.map((a) => workspaceApi.sendAgentControl(a.agentName, 'stop'))
+    );
+  }, [agents]);
 
   // Configure API client on mount
   useEffect(() => {
@@ -191,6 +199,39 @@ export function WorkspaceProvider({
         if (channelSessions.length > 0 && !currentSessionId) {
           setCurrentSessionId(channelSessions[0].sessionId);
         }
+
+        // Fetch last message preview for each channel
+        const previews = await Promise.all(
+          channelSessions.map(async (s) => {
+            try {
+              const result = await workspaceApi.pollEvents({
+                channel: s.sessionId,
+                type: 'workspace.message',
+                limit: 10,
+              });
+              // Find last non-status message
+              const chatEvents = result.events.filter(
+                (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
+              );
+              const last = chatEvents[chatEvents.length - 1];
+              if (last) {
+                const sender = last.source.replace(/^(openagents:|human:)/, '');
+                const content = (last.payload as Record<string, string>)?.content || '';
+                return { sessionId: s.sessionId, senderName: sender, content };
+              }
+            } catch { /* ignore */ }
+            return null;
+          })
+        );
+        if (!cancelled) {
+          const batch: Record<string, LastMessageInfo> = {};
+          for (const p of previews) {
+            if (p && p.content) {
+              batch[p.sessionId] = { senderName: p.senderName, content: p.content.slice(0, 100), timestamp: Date.now() };
+            }
+          }
+          setLastMessageBySession((prev) => ({ ...prev, ...batch }));
+        }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to load workspace');
@@ -223,10 +264,14 @@ export function WorkspaceProvider({
   }, [agents]);
 
   const renameSession = useCallback(async (sessionId: string, title: string) => {
-    // Channel rename would require a new event type — for now, update locally
     setSessions((prev) =>
       prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
     );
+    try {
+      await workspaceApi.updateChannel(sessionId, { title });
+    } catch {
+      // Best-effort — local update already applied
+    }
   }, []);
 
   return (
@@ -247,6 +292,7 @@ export function WorkspaceProvider({
         setSessionActive,
         updateAgentMode,
         toggleAgentMode,
+        stopAllAgents,
         setCurrentSessionId,
         setSelectedFileId,
         createSession,

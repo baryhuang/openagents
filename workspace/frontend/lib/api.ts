@@ -79,6 +79,13 @@ class WorkspaceApi {
     });
   }
 
+  async updateChannel(channelName: string, updates: { title?: string; status?: string }): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/channels/${channelName}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Network discovery
   // ---------------------------------------------------------------------------
@@ -299,6 +306,7 @@ class WorkspaceApi {
     target?: string;
     channel?: string;
     type?: string;
+    search?: string;
     limit?: number;
   } = {}): Promise<EventPollResponse> {
     const params = new URLSearchParams({ network: this.workspaceId });
@@ -306,8 +314,23 @@ class WorkspaceApi {
     if (opts.target) params.set('target', opts.target);
     if (opts.channel) params.set('channel', opts.channel);
     if (opts.type) params.set('type', opts.type);
+    if (opts.search) params.set('search', opts.search);
     if (opts.limit) params.set('limit', String(opts.limit));
     return this.request<EventPollResponse>(`/v1/events?${params}`);
+  }
+
+  /** Search messages across all channels. Returns events grouped by channel. */
+  async searchMessages(query: string): Promise<{ channelName: string; snippet: string; messageId: string }[]> {
+    const result = await this.pollEvents({
+      type: 'workspace.message',
+      search: query,
+      limit: 50,
+    });
+    return result.events.map((e) => ({
+      channelName: e.target.replace(/^channel\//, ''),
+      snippet: (e.payload as Record<string, string>)?.content || '',
+      messageId: e.id,
+    }));
   }
 }
 
