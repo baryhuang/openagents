@@ -177,11 +177,13 @@ class BrowserManager:
             except Exception:
                 return "(empty page)"
 
-    async def close_tab(self, tab_id: str) -> None:
-        """Close a browser tab."""
+    async def close_tab(self, tab_id: str, session_id_hint: str = None) -> None:
+        """Close a browser tab.  session_id_hint is used when the in-memory
+        state is missing (serverless cold start) to still release the
+        Browserbase session."""
         page = self._pages.pop(tab_id, None)
         self._locks.pop(tab_id, None)
-        session_id = self._sessions.pop(tab_id, None)
+        session_id = self._sessions.pop(tab_id, None) or session_id_hint
         self._live_urls.pop(tab_id, None)
         cdp_browser = self._browsers_cdp.pop(tab_id, None)
 
@@ -221,6 +223,57 @@ class BrowserManager:
             except Exception:
                 pass
             self._playwright = None
+
+    # ------------------------------------------------------------------
+    # Reconnection (serverless / cold-start recovery)
+    # ------------------------------------------------------------------
+
+    async def reconnect(self, tab_id: str, session_id: str) -> None:
+        """Reconnect to an existing Browserbase session via CDP.
+
+        On serverless platforms (Vercel), each request may hit a fresh
+        instance where _pages is empty.  This method re-establishes
+        the CDP connection using the stored session_id so that
+        screenshot/snapshot/navigate continue to work.
+        """
+        if tab_id in self._pages:
+            return  # already connected
+
+        if not self.is_cloud:
+            raise KeyError(f"Cannot reconnect to local tab: {tab_id}")
+
+        async with self._global_lock:
+            # Double-check after acquiring lock
+            if tab_id in self._pages:
+                return
+
+            await self._ensure_playwright()
+
+            bb = self._bb_client()
+
+            # Get a fresh connect URL for the existing session
+            debug = bb.sessions.debug(session_id)
+            connect_url = debug.ws_url
+            if not connect_url:
+                raise KeyError(f"Cannot reconnect — session {session_id} has no connect URL")
+
+            browser = await self._playwright.chromium.connect_over_cdp(connect_url)
+            self._browsers_cdp[tab_id] = browser
+            self._sessions[tab_id] = session_id
+
+            # Get the live URL
+            if debug.debugger_fullscreen_url:
+                self._live_urls[tab_id] = debug.debugger_fullscreen_url
+
+            # Get the existing page
+            contexts = browser.contexts
+            if contexts and contexts[0].pages:
+                page = contexts[0].pages[0]
+            else:
+                ctx = contexts[0] if contexts else await browser.new_context()
+                page = await ctx.new_page()
+
+            self._pages[tab_id] = page
 
     # ------------------------------------------------------------------
     # Accessors
