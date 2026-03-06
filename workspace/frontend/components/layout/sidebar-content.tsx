@@ -71,12 +71,16 @@ export function SidebarContent() {
   const { agents, sessions, files, browserTabs, createSession, workspace, refreshWorkspace } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [newThreadOpen, setNewThreadOpen] = useState(false);
 
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+  useEffect(() => { setMounted(true); }, []);
+
+  const isDark = mounted && theme === 'dark';
+  const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
   const handleNewThread = () => {
     if (agents.length >= 2) {
@@ -176,10 +180,10 @@ export function SidebarContent() {
           <Tooltip>
             <TooltipTrigger asChild>
               <button onClick={toggleTheme} className="w-full flex items-center justify-center py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                {theme === 'dark' ? <Sun className="size-4 text-muted-foreground" /> : <Moon className="size-4 text-muted-foreground" />}
+                {isDark ? <Sun className="size-4 text-muted-foreground" /> : <Moon className="size-4 text-muted-foreground" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</TooltipContent>
+            <TooltipContent side="right">{isDark ? 'Light mode' : 'Dark mode'}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -297,7 +301,7 @@ export function SidebarContent() {
               )}
             </div>
           )}
-          <NavButton icon={theme === 'dark' ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={theme === 'dark' ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
+          <NavButton icon={isDark ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={isDark ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
         </div>
       </div>
 
