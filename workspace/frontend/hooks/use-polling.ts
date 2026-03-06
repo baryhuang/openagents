@@ -50,23 +50,24 @@ export function useMessagePolling({ sessionId, enabled = true }: UsePollingOptio
         setLoading(true);
       }
 
-      const result = await workspaceApi.pollMessages(
-        sessionId,
-        isInitial ? undefined : (lastSeenIdRef.current ?? undefined),
-      );
+      // Keep fetching while there are more events (handles bursts of status messages)
+      let hasMore = true;
+      while (hasMore) {
+        const result = await workspaceApi.pollMessages(
+          sessionId,
+          isInitial && !lastSeenIdRef.current ? undefined : (lastSeenIdRef.current ?? undefined),
+        );
 
-      // Discard response if session changed while request was in flight
-      if (sessionId !== currentSessionRef.current) return;
+        // Discard response if session changed while request was in flight
+        if (sessionId !== currentSessionRef.current) return;
 
-      const newMessages = result.messages;
+        const newMessages = result.messages;
+        hasMore = result.hasMore && newMessages.length > 0;
 
-      if (newMessages.length > 0) {
-        const lastMsg = newMessages[newMessages.length - 1];
-        lastSeenIdRef.current = lastMsg.messageId;
+        if (newMessages.length > 0) {
+          const lastMsg = newMessages[newMessages.length - 1];
+          lastSeenIdRef.current = lastMsg.messageId;
 
-        if (isInitial) {
-          setMessages(newMessages);
-        } else {
           setMessages((prev) => {
             const existingIds = new Set(prev.map((m) => m.messageId));
             const unique = newMessages.filter((m) => !existingIds.has(m.messageId));

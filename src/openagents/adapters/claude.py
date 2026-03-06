@@ -52,10 +52,18 @@ class ClaudeAdapter:
         self._last_control_id: Optional[str] = None
         self._current_process: Optional[asyncio.subprocess.Process] = None
         self._message_queue: list[dict] = []  # messages arriving while busy
+        # Per-channel task tracking for parallel execution
+        self._channel_tasks: dict[str, asyncio.Task] = {}  # channel → running task
+        self._channel_queues: dict[str, list[dict]] = {}  # channel → queued messages
+        self._channel_processes: dict[str, asyncio.subprocess.Process] = {}  # channel → subprocess
 
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
         self._running = True
+
+        # Skip existing events so we only process messages arriving after connect
+        await self._skip_existing_events()
+
         heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         try:
             await self._poll_loop()
@@ -71,6 +79,28 @@ class ClaudeAdapter:
             await self.client.disconnect(
                 self.workspace_id, self.agent_name, self.token
             )
+
+    async def _skip_existing_events(self):
+        """Advance the event cursor past all existing events on startup.
+
+        This prevents re-processing messages from before the agent connected.
+        """
+        try:
+            while True:
+                _, raw_cursor = await self.client.poll_pending(
+                    workspace_id=self.workspace_id,
+                    token=self.token,
+                    agent_name=self.agent_name,
+                    after=self._last_event_id,
+                    limit=200,
+                )
+                if not raw_cursor or raw_cursor == self._last_event_id:
+                    break
+                self._last_event_id = raw_cursor
+            if self._last_event_id:
+                logger.debug(f"Skipped existing events, cursor at {self._last_event_id}")
+        except Exception as e:
+            logger.debug(f"Failed to skip existing events: {e}")
 
     async def _heartbeat_loop(self):
         """Send heartbeat every 30 seconds."""
@@ -123,11 +153,9 @@ class ClaudeAdapter:
         except Exception as e:
             logger.debug(f"Control poll failed: {e}")
 
-    async def _stop_current_process(self):
-        """Kill the currently running Claude subprocess, if any."""
-        proc = self._current_process
+    async def _stop_process(self, proc: asyncio.subprocess.Process):
+        """Kill a single Claude subprocess."""
         if proc and proc.returncode is None:
-            logger.info("Stopping current Claude process...")
             try:
                 proc.terminate()
                 try:
@@ -137,12 +165,22 @@ class ClaudeAdapter:
                     await proc.wait()
             except ProcessLookupError:
                 pass
-            self._current_process = None
-            # Send stopped status to all known channels
+
+    async def _stop_current_process(self):
+        """Kill all running Claude subprocesses (stop button)."""
+        procs = list(self._channel_processes.items())
+        if not procs:
+            return
+        logger.info(f"Stopping {len(procs)} running process(es)...")
+        for channel, proc in procs:
+            await self._stop_process(proc)
+            self._channel_processes.pop(channel, None)
+            # Clear queued messages for this channel
+            self._channel_queues.pop(channel, None)
             try:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
-                    channel_name=self.channel_name,
+                    channel_name=channel,
                     token=self.token,
                     content="Execution stopped by user",
                     sender_type="agent",
@@ -153,35 +191,18 @@ class ClaudeAdapter:
             except Exception:
                 pass
 
-    async def _control_poller(self):
-        """Background loop that polls control events and queues new messages while a subprocess runs."""
-        while self._current_process and self._current_process.returncode is None:
-            await self._poll_control()
-            await self._poll_queue()
-            await asyncio.sleep(2)
+    def _is_channel_busy(self, channel: str) -> bool:
+        """Check if a channel has a running task."""
+        task = self._channel_tasks.get(channel)
+        return task is not None and not task.done()
 
-    async def _poll_queue(self):
-        """Check for new messages that arrived while busy and queue them."""
-        try:
-            messages = await self.client.poll_pending(
-                workspace_id=self.workspace_id,
-                token=self.token,
-                agent_name=self.agent_name,
-                after=self._last_event_id,
-            )
-        except Exception:
-            return
+    async def _dispatch_message(self, msg: dict):
+        """Route a message to its channel — run in parallel or queue if channel is busy."""
+        channel = msg.get("sessionId") or self.channel_name
 
-        for msg in messages:
-            msg_id = msg.get("id") or msg.get("messageId")
-            if msg_id:
-                self._last_event_id = msg_id
-            if msg_id and msg_id in self._processed_ids:
-                continue
-            self._processed_ids.add(msg_id)
-            self._message_queue.append(msg)
-            # Notify the user their message is queued
-            channel = msg.get("sessionId") or self.channel_name
+        if self._is_channel_busy(channel):
+            # Queue for this specific channel
+            self._channel_queues.setdefault(channel, []).append(msg)
             try:
                 await self.client.send_message(
                     workspace_id=self.workspace_id,
@@ -195,55 +216,88 @@ class ClaudeAdapter:
                 )
             except Exception:
                 pass
+            return
+
+        # Start a new task for this channel
+        task = asyncio.create_task(self._channel_worker(channel, msg))
+        self._channel_tasks[channel] = task
+
+    async def _channel_worker(self, channel: str, msg: dict):
+        """Process a message and then drain the channel's queue."""
+        try:
+            await self._handle_message(msg)
+        except Exception as e:
+            logger.exception(f"Error in channel worker for {channel}: {e}")
+
+        # Drain any messages queued for this channel while it was busy
+        while True:
+            queue = self._channel_queues.get(channel, [])
+            if not queue:
+                break
+            next_msg = queue.pop(0)
+            try:
+                await self._handle_message(next_msg)
+            except Exception as e:
+                logger.exception(f"Error processing queued message in {channel}: {e}")
 
     async def _poll_loop(self):
         """Poll for new messages across all channels and dispatch to Claude."""
         idle_count = 0
-        while self._running:
-            # Check for control events (mode changes) before processing messages
-            await self._poll_control()
 
-            try:
-                messages = await self.client.poll_pending(
-                    workspace_id=self.workspace_id,
-                    token=self.token,
-                    agent_name=self.agent_name,
-                    after=self._last_event_id,
-                )
-            except Exception as e:
-                logger.warning(f"Poll failed: {e}")
-                await asyncio.sleep(5)
-                continue
+        # Start a persistent control poller
+        control_task = asyncio.create_task(self._control_poller_loop())
 
-            # Filter out already-processed messages
-            incoming = []
-            for msg in messages:
-                msg_id = msg.get("id") or msg.get("messageId")
-                # Advance event ID cursor
-                if msg_id:
-                    self._last_event_id = msg_id
-                if msg_id and msg_id in self._processed_ids:
+        try:
+            while self._running:
+                try:
+                    messages, raw_cursor = await self.client.poll_pending(
+                        workspace_id=self.workspace_id,
+                        token=self.token,
+                        agent_name=self.agent_name,
+                        after=self._last_event_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Poll failed: {e}")
+                    await asyncio.sleep(5)
                     continue
-                incoming.append(msg)
 
-            if incoming:
-                idle_count = 0
-                for msg in incoming:
+                # Advance cursor
+                if raw_cursor:
+                    self._last_event_id = raw_cursor
+
+                # Filter out already-processed messages
+                incoming = []
+                for msg in messages:
                     msg_id = msg.get("id") or msg.get("messageId")
-                    if msg_id:
-                        self._processed_ids.add(msg_id)
-                    await self._handle_message(msg)
+                    if msg_id and msg_id in self._processed_ids:
+                        continue
+                    incoming.append(msg)
 
-                # Process any messages that were queued during execution
-                while self._message_queue:
-                    queued = self._message_queue.pop(0)
-                    await self._handle_message(queued)
-            else:
-                idle_count += 1
+                if incoming:
+                    idle_count = 0
+                    for msg in incoming:
+                        msg_id = msg.get("id") or msg.get("messageId")
+                        if msg_id:
+                            self._processed_ids.add(msg_id)
+                        await self._dispatch_message(msg)
+                else:
+                    idle_count += 1
 
-            # Adaptive polling: 2s active, up to 15s idle
-            delay = min(2 + idle_count, 15) if not incoming else 2
-            await asyncio.sleep(delay)
+                # Adaptive polling: 2s active, up to 15s idle
+                delay = min(2 + idle_count, 15) if not incoming else 2
+                await asyncio.sleep(delay)
+        finally:
+            control_task.cancel()
+            # Wait for all channel tasks to complete
+            tasks = [t for t in self._channel_tasks.values() if t and not t.done()]
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _control_poller_loop(self):
+        """Persistent background loop for control events."""
+        while self._running:
+            await self._poll_control()
+            await asyncio.sleep(2)
 
     def _build_claude_cmd(self, prompt: str, channel_name: str) -> list[str]:
         """Build the claude CLI command for a specific channel."""
@@ -453,9 +507,7 @@ class ClaudeAdapter:
                 limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64KB too small for large tool outputs)
             )
             self._current_process = process
-
-            # Start background control poller so stop commands work during execution
-            control_task = asyncio.create_task(self._control_poller())
+            self._channel_processes[msg_channel] = process
 
             used_send_tool = False
             response_text = []
@@ -527,7 +579,7 @@ class ClaudeAdapter:
 
             await process.wait()
             self._current_process = None
-            control_task.cancel()
+            self._channel_processes.pop(msg_channel, None)
 
             if process.returncode != 0:
                 stderr = await process.stderr.read()

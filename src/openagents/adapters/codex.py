@@ -53,6 +53,7 @@ class CodexAdapter:
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
         self._running = True
+        await self._skip_existing_events()
         heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         try:
             await self._poll_loop()
@@ -68,6 +69,23 @@ class CodexAdapter:
             await self.client.disconnect(
                 self.workspace_id, self.agent_name, self.token
             )
+
+    async def _skip_existing_events(self):
+        """Advance the event cursor past all existing events on startup."""
+        try:
+            while True:
+                _, raw_cursor = await self.client.poll_pending(
+                    workspace_id=self.workspace_id,
+                    token=self.token,
+                    agent_name=self.agent_name,
+                    after=self._last_event_id,
+                    limit=200,
+                )
+                if not raw_cursor or raw_cursor == self._last_event_id:
+                    break
+                self._last_event_id = raw_cursor
+        except Exception as e:
+            logger.debug(f"Failed to skip existing events: {e}")
 
     async def _heartbeat_loop(self):
         """Send heartbeat every 30 seconds."""
@@ -85,7 +103,7 @@ class CodexAdapter:
         idle_count = 0
         while self._running:
             try:
-                messages = await self.client.poll_pending(
+                messages, raw_cursor = await self.client.poll_pending(
                     workspace_id=self.workspace_id,
                     token=self.token,
                     agent_name=self.agent_name,
@@ -96,12 +114,14 @@ class CodexAdapter:
                 await asyncio.sleep(5)
                 continue
 
+            # Advance cursor based on ALL raw events so we don't get stuck
+            if raw_cursor:
+                self._last_event_id = raw_cursor
+
             # Filter out already-processed messages
             incoming = []
             for msg in messages:
                 msg_id = msg.get("id") or msg.get("messageId")
-                if msg_id:
-                    self._last_event_id = msg_id
                 if msg_id and msg_id in self._processed_ids:
                     continue
                 incoming.append(msg)

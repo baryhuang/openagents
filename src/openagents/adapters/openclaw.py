@@ -70,9 +70,14 @@ class OpenClawAdapter:
         self._mode: str = "execute"
         self._last_control_id: Optional[str] = None
 
+        # Per-channel task tracking for parallel execution
+        self._channel_tasks: dict[str, asyncio.Task] = {}
+        self._channel_queues: dict[str, list[dict]] = {}
+
     async def run(self):
         """Start the adapter: heartbeat + poll loop."""
         self._running = True
+        await self._skip_existing_events()
         heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         try:
             await self._poll_loop()
@@ -88,6 +93,23 @@ class OpenClawAdapter:
             await self.client.disconnect(
                 self.workspace_id, self.agent_name, self.token
             )
+
+    async def _skip_existing_events(self):
+        """Advance the event cursor past all existing events on startup."""
+        try:
+            while True:
+                _, raw_cursor = await self.client.poll_pending(
+                    workspace_id=self.workspace_id,
+                    token=self.token,
+                    agent_name=self.agent_name,
+                    after=self._last_event_id,
+                    limit=200,
+                )
+                if not raw_cursor or raw_cursor == self._last_event_id:
+                    break
+                self._last_event_id = raw_cursor
+        except Exception as e:
+            logger.debug(f"Failed to skip existing events: {e}")
 
     async def _heartbeat_loop(self):
         """Send heartbeat every 30 seconds."""
@@ -140,13 +162,58 @@ class OpenClawAdapter:
         except Exception as e:
             logger.debug(f"Control poll failed: {e}")
 
+    def _is_channel_busy(self, channel: str) -> bool:
+        task = self._channel_tasks.get(channel)
+        return task is not None and not task.done()
+
+    async def _dispatch_message(self, msg: dict):
+        """Route a message to its channel — run in parallel or queue if busy."""
+        channel = msg.get("sessionId") or self.channel_name
+
+        if self._is_channel_busy(channel):
+            self._channel_queues.setdefault(channel, []).append(msg)
+            try:
+                await self.client.send_message(
+                    workspace_id=self.workspace_id,
+                    channel_name=channel,
+                    token=self.token,
+                    content="message queued — will process after current task",
+                    sender_type="agent",
+                    sender_name=self.agent_name,
+                    message_type="status",
+                    metadata={"agent_mode": self._mode},
+                )
+            except Exception:
+                pass
+            return
+
+        task = asyncio.create_task(self._channel_worker(channel, msg))
+        self._channel_tasks[channel] = task
+
+    async def _channel_worker(self, channel: str, msg: dict):
+        """Process a message and then drain the channel's queue."""
+        try:
+            await self._handle_message(msg)
+        except Exception as e:
+            logger.exception(f"Error in channel worker for {channel}: {e}")
+
+        while True:
+            queue = self._channel_queues.get(channel, [])
+            if not queue:
+                break
+            next_msg = queue.pop(0)
+            try:
+                await self._handle_message(next_msg)
+            except Exception as e:
+                logger.exception(f"Error processing queued message in {channel}: {e}")
+
     async def _poll_loop(self):
         """Poll for new messages across all channels and dispatch to OpenClaw."""
         idle_count = 0
         while self._running:
             await self._poll_control()
             try:
-                messages = await self.client.poll_pending(
+                messages, raw_cursor = await self.client.poll_pending(
                     workspace_id=self.workspace_id,
                     token=self.token,
                     agent_name=self.agent_name,
@@ -157,12 +224,14 @@ class OpenClawAdapter:
                 await asyncio.sleep(5)
                 continue
 
+            # Advance cursor based on ALL raw events so we don't get stuck
+            if raw_cursor:
+                self._last_event_id = raw_cursor
+
             # Filter out already-processed messages
             incoming = []
             for msg in messages:
                 msg_id = msg.get("id") or msg.get("messageId")
-                if msg_id:
-                    self._last_event_id = msg_id
                 if msg_id and msg_id in self._processed_ids:
                     continue
                 incoming.append(msg)
@@ -173,7 +242,7 @@ class OpenClawAdapter:
                     msg_id = msg.get("id") or msg.get("messageId")
                     if msg_id:
                         self._processed_ids.add(msg_id)
-                    await self._handle_message(msg)
+                    await self._dispatch_message(msg)
             else:
                 idle_count += 1
 

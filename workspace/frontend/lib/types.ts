@@ -24,6 +24,7 @@ export interface WorkspaceSession {
   createdBy: string | null;
   title: string;
   status: string;
+  starred: boolean;
   participants: string[];
   master: string | null;
   createdAt: string | null;
@@ -111,6 +112,8 @@ export interface NetworkChannel {
   participants: string[];
   created_at: number | null;
   last_event_at: number | null;
+  status: string;
+  starred: boolean;
 }
 
 export interface NetworkDiscovery {
@@ -205,7 +208,8 @@ export function networkChannelToSession(ch: NetworkChannel, workspaceId: string)
     workspaceId,
     createdBy: null,
     title: ch.title || name,
-    status: 'active',
+    status: ch.status || 'active',
+    starred: ch.starred || false,
     participants: ch.participants,
     master: ch.master,
     createdAt: ch.created_at ? new Date(ch.created_at).toISOString() : null,

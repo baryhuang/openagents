@@ -120,7 +120,8 @@ class Channel(Base):
     created_by = Column(Text, nullable=True)
     master_agent = Column(Text, nullable=True)       # per-channel master
     resume_from = Column(Text, nullable=True)         # channel name to resume context from
-    status = Column(Text, default="active")
+    status = Column(Text, default="active")           # active | archived | deleted
+    starred = Column(Boolean, default=False, server_default=text("FALSE"))
     created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
 
     workspace = relationship("Workspace", back_populates="channels")

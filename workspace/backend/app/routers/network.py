@@ -52,6 +52,10 @@ class LeaveRequest(BaseModel):
     agent_name: str
     network: str
 
+class RemoveRequest(BaseModel):
+    agent_name: str
+    network: str
+
 class HeartbeatRequest(BaseModel):
     agent_name: str
     network: str
@@ -188,6 +192,44 @@ async def leave_network(
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/remove — Remove agent from network
+# ---------------------------------------------------------------------------
+
+@router.post("/remove")
+async def remove_agent(
+    body: RemoveRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Remove an agent from a network (workspace). Reassigns master if needed."""
+    workspace = _resolve_workspace(db, body.network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    event = Event(
+        type="network.agent.remove",
+        source="human:user",
+        target="core",
+        payload={
+            "agent_name": body.agent_name,
+        },
+    )
+
+    result = await _emit_event(event, workspace, db, token=workspace.password_hash)
+    if result is None:
+        return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
+
+    resp = {"agent_name": body.agent_name, "status": "removed"}
+    if result.metadata.get("new_master"):
+        resp["new_master"] = result.metadata["new_master"]
+    return success_response(resp)
+
+
+# ---------------------------------------------------------------------------
 # POST /v1/heartbeat
 # ---------------------------------------------------------------------------
 
@@ -253,7 +295,10 @@ async def discover(
         })
 
     channels_rows = db.execute(
-        select(Channel).where(Channel.workspace_id == workspace.id)
+        select(Channel).where(
+            Channel.workspace_id == workspace.id,
+            Channel.status != "deleted",
+        )
     ).scalars().all()
 
     # Get last event timestamp per channel
@@ -280,6 +325,8 @@ async def discover(
             "participants": [p.agent_name for p in (c.participants or [])],
             "created_at": created_at_ts,
             "last_event_at": last_ts,
+            "status": c.status or "active",
+            "starred": bool(c.starred) if c.starred is not None else False,
         })
 
     return success_response({

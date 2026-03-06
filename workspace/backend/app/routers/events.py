@@ -128,6 +128,7 @@ async def poll_events(
     type: Optional[str] = Query(None, description="Filter by event type prefix"),
     search: Optional[str] = Query(None, description="Search message content (case-insensitive)"),
     member: Optional[str] = Query(None, description="Filter to channels where this agent is a member"),
+    sort: Optional[str] = Query(None, description="Sort order: 'asc' (default) or 'desc'"),
     limit: int = Query(50, ge=1, le=200, description="Max events to return"),
     db: Session = Depends(get_db),
 ):
@@ -186,7 +187,10 @@ async def poll_events(
             cast(EventRecord.payload, Text).ilike(f"%{search}%")
         )
 
-    query = query.order_by(EventRecord.timestamp.asc()).limit(limit + 1)
+    if sort == "desc":
+        query = query.order_by(EventRecord.timestamp.desc()).limit(limit + 1)
+    else:
+        query = query.order_by(EventRecord.timestamp.asc()).limit(limit + 1)
     rows = db.execute(query).scalars().all()
 
     has_more = len(rows) > limit

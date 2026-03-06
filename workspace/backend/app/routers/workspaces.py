@@ -75,6 +75,7 @@ class WorkspaceCreateRequest(BaseModel):
 class ChannelUpdateRequest(BaseModel):
     title: Optional[str] = None
     status: Optional[str] = None
+    starred: Optional[bool] = None
     auto_title: bool = False  # When True, title update is from auto-titling (don't mark as manually set)
 
 class WorkspaceUpdateRequest(BaseModel):
@@ -130,6 +131,7 @@ def _format_channel(ch: Channel) -> dict:
         "masterAgent": ch.master_agent,
         "resumeFrom": ch.resume_from,
         "status": ch.status,
+        "starred": bool(ch.starred),
         "participants": [p.agent_name for p in (ch.participants or [])],
         "createdAt": ch.created_at.isoformat() if ch.created_at else None,
     }
@@ -363,7 +365,7 @@ async def get_channel(
     ).scalar_one_or_none()
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
-    if not _check_auth(workspace, x_workspace_token, authorization):
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
 
     channel = db.execute(
@@ -397,7 +399,7 @@ async def update_channel(
     ).scalar_one_or_none()
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
-    if not _check_auth(workspace, x_workspace_token, authorization):
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
 
     channel = db.execute(
@@ -415,6 +417,8 @@ async def update_channel(
             channel.title_manually_set = True
     if body.status is not None:
         channel.status = body.status
+    if body.starred is not None:
+        channel.starred = body.starred
 
     db.commit()
     db.refresh(channel)

@@ -19,8 +19,8 @@ interface Attachment {
 function Attachments({ items }: { items: Attachment[] }) {
   if (!items || items.length === 0) return null;
 
-  const images = items.filter((a) => a.contentType.startsWith('image/'));
-  const files = items.filter((a) => !a.contentType.startsWith('image/'));
+  const images = items.filter((a) => a.contentType?.startsWith('image/'));
+  const files = items.filter((a) => !a.contentType?.startsWith('image/'));
 
   return (
     <div className="mt-2 space-y-2">

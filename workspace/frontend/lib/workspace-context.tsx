@@ -8,6 +8,7 @@ import type { BrowserTab, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSes
 interface LastMessageInfo {
   content: string;
   senderName: string;
+  isStatus?: boolean;
 }
 
 interface WorkspaceContextValue {
@@ -22,7 +23,7 @@ interface WorkspaceContextValue {
   lastMessageBySession: Record<string, LastMessageInfo>;
   activeSessionIds: Set<string>;
   agentModes: Record<string, string>;
-  updateLastMessage: (sessionId: string, senderName: string, content: string) => void;
+  updateLastMessage: (sessionId: string, senderName: string, content: string, isStatus?: boolean) => void;
   setSessionActive: (sessionId: string, active: boolean) => void;
   updateAgentMode: (agentName: string, mode: string) => void;
   toggleAgentMode: (agentName: string) => void;
@@ -31,6 +32,8 @@ interface WorkspaceContextValue {
   setSelectedFileId: (id: string | null) => void;
   createSession: (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
+  updateSession: (sessionId: string, updates: { starred?: boolean; status?: string }) => Promise<void>;
+  renameWorkspace: (name: string) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   refreshAgents: () => Promise<void>;
   refreshFiles: () => Promise<void>;
@@ -78,17 +81,17 @@ export function WorkspaceProvider({
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
-  const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string) => {
+  const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string, isStatus?: boolean) => {
     setLastMessageBySession((prev) => {
       if (!content && !prev[sessionId]) return prev;
       const existing = prev[sessionId];
       const truncated = content.slice(0, 100);
-      if (existing && existing.content === truncated && existing.senderName === senderName) {
+      if (existing && existing.content === truncated && existing.senderName === senderName && existing.isStatus === isStatus) {
         return prev;
       }
       return {
         ...prev,
-        [sessionId]: { senderName, content: truncated },
+        [sessionId]: { senderName, content: truncated, isStatus },
       };
     });
   }, []);
@@ -144,35 +147,95 @@ export function WorkspaceProvider({
     }
   }, []);
 
+  // Track last known event timestamps per channel for change detection
+  const lastKnownEventAtRef = React.useRef<Record<string, number | null>>({});
+  const currentSessionIdRef = React.useRef<string | null>(currentSessionId);
+  currentSessionIdRef.current = currentSessionId;
+
   /** Refresh agents and channels from the discover endpoint. */
   const refreshDiscovery = useCallback(async () => {
     try {
       const discovery = await workspaceApi.discover();
       setAgents(discovery.agents.map(networkAgentToWorkspaceAgent));
+
+      const updated = discovery.channels.map((ch) =>
+        networkChannelToSession(ch, workspaceId)
+      );
+
       setSessions((prev) => {
-        const updated = discovery.channels.map((ch) =>
-          networkChannelToSession(ch, workspaceId)
-        );
         const existingIds = new Set(prev.map((s) => s.sessionId));
         const newChannels = updated.filter((s) => !existingIds.has(s.sessionId));
         // Merge: update metadata but preserve user-renamed titles
         const updatedMap = new Map(updated.map((s) => [s.sessionId, s]));
-        const merged = prev.map((s) => {
-          const remote = updatedMap.get(s.sessionId);
-          if (!remote) return s;
-          // Keep local title if user manually renamed in this browser session
-          const keepLocalTitle = manuallyRenamedSessions.has(s.sessionId);
-          return {
-            ...s,
-            title: keepLocalTitle ? s.title : remote.title,
-            participants: remote.participants,
-            master: remote.master,
-            lastEventAt: remote.lastEventAt,
-            createdAt: remote.createdAt || s.createdAt,
-          };
-        });
+        const merged = prev
+          .filter((s) => {
+            // Drop sessions not in remote discovery (deleted/removed on backend)
+            if (!updatedMap.has(s.sessionId)) return false;
+            return true;
+          })
+          .map((s) => {
+            const remote = updatedMap.get(s.sessionId)!;
+            // Keep local title if user manually renamed in this browser session
+            const keepLocalTitle = manuallyRenamedSessions.has(s.sessionId);
+            return {
+              ...s,
+              title: keepLocalTitle ? s.title : remote.title,
+              participants: remote.participants,
+              master: remote.master,
+              lastEventAt: remote.lastEventAt,
+              createdAt: remote.createdAt || s.createdAt,
+              status: remote.status,
+              starred: remote.starred,
+            };
+          });
         return [...merged, ...newChannels];
       });
+
+      // Detect channels with new activity and fetch their latest message preview
+      const staleChannels = updated.filter((ch) => {
+        const prev = lastKnownEventAtRef.current[ch.sessionId];
+        return ch.lastEventAt && ch.lastEventAt !== prev;
+      });
+
+      // Update known timestamps
+      for (const ch of updated) {
+        lastKnownEventAtRef.current[ch.sessionId] = ch.lastEventAt;
+      }
+
+      // Fetch preview for changed channels (skip current session — ChatView handles it)
+      const toFetch = staleChannels.filter((ch) => ch.sessionId !== currentSessionIdRef.current);
+      if (toFetch.length > 0) {
+        const previews = await Promise.all(
+          toFetch.map(async (ch) => {
+            try {
+              const result = await workspaceApi.pollEvents({
+                channel: ch.sessionId,
+                type: 'workspace.message',
+                sort: 'desc',
+                limit: 1,
+              });
+              const latest = result.events[0];
+              if (latest) {
+                const payload = latest.payload as Record<string, string>;
+                const sender = latest.source.replace(/^(openagents:|human:)/, '');
+                const content = payload?.content || '';
+                const isStatus = payload?.message_type === 'status';
+                return { sessionId: ch.sessionId, senderName: sender, content, isStatus };
+              }
+            } catch { /* ignore */ }
+            return null;
+          })
+        );
+        const batch: Record<string, LastMessageInfo> = {};
+        for (const p of previews) {
+          if (p && p.content) {
+            batch[p.sessionId] = { senderName: p.senderName, content: p.content.slice(0, 100), isStatus: p.isStatus };
+          }
+        }
+        if (Object.keys(batch).length > 0) {
+          setLastMessageBySession((prev) => ({ ...prev, ...batch }));
+        }
+      }
     } catch {
       // Non-critical — keep existing state
     }
@@ -245,29 +308,43 @@ export function WorkspaceProvider({
         );
         setSessions(channelSessions);
 
+        // Initialize last-known event timestamps so first discovery poll doesn't re-fetch all
+        for (const ch of channelSessions) {
+          lastKnownEventAtRef.current[ch.sessionId] = ch.lastEventAt;
+        }
+
         // Auto-select first session
         if (channelSessions.length > 0 && !currentSessionId) {
           setCurrentSessionId(channelSessions[0].sessionId);
         }
 
-        // Fetch last message preview for each channel
+        // Fetch last message preview for each channel (newest first)
         const previews = await Promise.all(
           channelSessions.map(async (s) => {
             try {
               const result = await workspaceApi.pollEvents({
                 channel: s.sessionId,
                 type: 'workspace.message',
-                limit: 10,
+                sort: 'desc',
+                limit: 5,
               });
-              // Find last non-status message
-              const chatEvents = result.events.filter(
-                (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
-              );
-              const last = chatEvents[chatEvents.length - 1];
-              if (last) {
-                const sender = last.source.replace(/^(openagents:|human:)/, '');
-                const content = (last.payload as Record<string, string>)?.content || '';
-                return { sessionId: s.sessionId, senderName: sender, content };
+              if (result.events.length === 0) return null;
+              // Show the very latest event (including status if agent is working)
+              const latest = result.events[0];
+              const latestPayload = latest.payload as Record<string, string>;
+              const latestIsStatus = latestPayload?.message_type === 'status';
+              // If latest is a status, show it (agent in progress); otherwise show the last chat
+              const pick = latestIsStatus
+                ? latest
+                : result.events.find(
+                    (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
+                  ) || latest;
+              const payload = pick.payload as Record<string, string>;
+              if (pick) {
+                const sender = pick.source.replace(/^(openagents:|human:)/, '');
+                const content = payload?.content || '';
+                const isStatus = payload?.message_type === 'status';
+                return { sessionId: s.sessionId, senderName: sender, content, isStatus };
               }
             } catch { /* ignore */ }
             return null;
@@ -277,7 +354,7 @@ export function WorkspaceProvider({
           const batch: Record<string, LastMessageInfo> = {};
           for (const p of previews) {
             if (p && p.content) {
-              batch[p.sessionId] = { senderName: p.senderName, content: p.content.slice(0, 100) };
+              batch[p.sessionId] = { senderName: p.senderName, content: p.content.slice(0, 100), isStatus: p.isStatus };
             }
           }
           setLastMessageBySession((prev) => ({ ...prev, ...batch }));
@@ -293,10 +370,21 @@ export function WorkspaceProvider({
     return () => { cancelled = true; };
   }, [workspaceId, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Discovery polling (every 15s — refreshes both agents and channels)
+  // Discovery polling — adaptive: 5s when agents are active, 15s when idle
+  const hasActiveAgentsRef = React.useRef(false);
+  hasActiveAgentsRef.current = Object.values(lastMessageBySession).some((m) => m.isStatus);
+
   useEffect(() => {
-    const interval = setInterval(refreshDiscovery, 15_000);
-    return () => clearInterval(interval);
+    let timeout: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const delay = hasActiveAgentsRef.current ? 5_000 : 15_000;
+      timeout = setTimeout(async () => {
+        await refreshDiscovery();
+        schedule();
+      }, delay);
+    };
+    schedule();
+    return () => clearTimeout(timeout);
   }, [refreshDiscovery]);
 
   const createSession = useCallback(async (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => {
@@ -314,6 +402,15 @@ export function WorkspaceProvider({
     return session;
   }, [agents]);
 
+  const renameWorkspace = useCallback(async (name: string) => {
+    setWorkspace((prev) => (prev ? { ...prev, name } : prev));
+    try {
+      await workspaceApi.updateWorkspace({ name });
+    } catch {
+      // Best-effort — local update already applied
+    }
+  }, []);
+
   const renameSession = useCallback(async (sessionId: string, title: string) => {
     setSessions((prev) =>
       prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
@@ -325,6 +422,36 @@ export function WorkspaceProvider({
       // Best-effort — local update already applied
     }
   }, []);
+
+  const updateSession = useCallback(async (sessionId: string, updates: { starred?: boolean; status?: string }) => {
+    // Capture previous state for rollback
+    const previousSession = sessions.find((s) => s.sessionId === sessionId);
+    // Optimistic update
+    setSessions((prev) =>
+      prev.map((s) => (s.sessionId === sessionId ? { ...s, ...updates } : s))
+    );
+    // If deleting the current session, switch away
+    const previousSessionId = currentSessionId;
+    if (updates.status === 'deleted' || updates.status === 'archived') {
+      if (currentSessionId === sessionId) {
+        const remaining = sessions.filter((s) => s.sessionId !== sessionId && s.status === 'active');
+        setCurrentSessionId(remaining.length > 0 ? remaining[0].sessionId : null);
+      }
+    }
+    try {
+      await workspaceApi.updateChannel(sessionId, updates);
+    } catch {
+      // Revert optimistic update on failure
+      if (previousSession) {
+        setSessions((prev) =>
+          prev.map((s) => (s.sessionId === sessionId ? previousSession : s))
+        );
+        if (previousSessionId !== currentSessionId) {
+          setCurrentSessionId(previousSessionId);
+        }
+      }
+    }
+  }, [currentSessionId, sessions]);
 
   return (
     <WorkspaceContext.Provider
@@ -349,6 +476,8 @@ export function WorkspaceProvider({
         setSelectedFileId,
         createSession,
         renameSession,
+        updateSession,
+        renameWorkspace,
         refreshWorkspace,
         refreshAgents,
         refreshFiles,
