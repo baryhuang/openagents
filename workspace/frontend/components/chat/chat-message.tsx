@@ -4,10 +4,11 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Copy, Check, User, FileIcon, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import { MarkdownContent } from './markdown-content';
+import { workspaceApi } from '@/lib/api';
 
 interface Attachment {
   fileId: string;
@@ -19,8 +20,14 @@ interface Attachment {
 function Attachments({ items }: { items: Attachment[] }) {
   if (!items || items.length === 0) return null;
 
-  const images = items.filter((a) => a.contentType?.startsWith('image/'));
-  const files = items.filter((a) => !a.contentType?.startsWith('image/'));
+  // Regenerate URLs from fileId to ensure they include current auth token
+  const fixedItems = useMemo(() =>
+    items.map((a) => ({ ...a, url: workspaceApi.getFileUrl(a.fileId) })),
+    [items]
+  );
+
+  const images = fixedItems.filter((a) => a.contentType?.startsWith('image/'));
+  const files = fixedItems.filter((a) => !a.contentType?.startsWith('image/'));
 
   return (
     <div className="mt-2 space-y-2">
