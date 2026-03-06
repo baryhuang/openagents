@@ -43,12 +43,11 @@ export function ChatView() {
   // Update last message cache for thread list preview
   useEffect(() => {
     if (!currentSessionId) return;
-    const chatMessages = messages.filter((m) => m.messageType !== 'status');
-    const lastChat = chatMessages[chatMessages.length - 1];
-    if (lastChat) {
-      updateLastMessage(currentSessionId, lastChat.senderName, lastChat.content);
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg) {
+      const isStatus = lastMsg.messageType === 'status';
+      updateLastMessage(currentSessionId, lastMsg.senderName, lastMsg.content, isStatus);
     } else {
-      // Clear stale preview when thread has no messages
       updateLastMessage(currentSessionId, '', '');
     }
   }, [currentSessionId, messages, updateLastMessage]);

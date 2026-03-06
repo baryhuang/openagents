@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MoreHorizontal, Crown, UserMinus, Shield } from 'lucide-react';
+import { MoreHorizontal, Crown, UserMinus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { timeAgo, getAgentColor, getAgentInitials } from '@/lib/helpers';
 import { SectionHeader } from '@/components/sessions/section-header';
@@ -116,12 +116,6 @@ export function AgentStatusCard({ agents }: AgentStatusCardProps) {
                       <DropdownMenuItem onClick={() => handlePromote(agent.agentName)}>
                         <Crown className="size-4 text-amber-500" />
                         Set as Master
-                      </DropdownMenuItem>
-                    )}
-                    {isMaster && (
-                      <DropdownMenuItem disabled>
-                        <Shield className="size-4" />
-                        Master agent
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />

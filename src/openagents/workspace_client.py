@@ -403,8 +403,14 @@ class WorkspaceClient:
         agent_name: str,
         after: Optional[str] = None,
         limit: int = 50,
-    ) -> List[dict]:
-        """Poll for pending messages targeted at this agent via GET /v1/events."""
+    ) -> tuple[List[dict], Optional[str]]:
+        """Poll for pending messages targeted at this agent via GET /v1/events.
+
+        Returns (messages, last_event_id) where last_event_id is the ID of the
+        last raw event from the server (before client-side filtering).  Callers
+        must use this cursor for the next poll so the window advances past
+        irrelevant events (e.g. other agents' status messages).
+        """
         import aiohttp
         params: Dict[str, Any] = {
             "network": workspace_id,
@@ -426,6 +432,12 @@ class WorkspaceClient:
                 result = data.get("data") or data
                 events = result.get("events", []) if isinstance(result, dict) else []
 
+                # Track the last raw event ID so the cursor advances past
+                # all events, not just the ones that pass the filter.
+                raw_last_id: Optional[str] = None
+                if events:
+                    raw_last_id = events[-1].get("id")
+
                 # Filter for events targeted at this agent
                 messages = []
                 for e in events:
@@ -446,7 +458,7 @@ class WorkspaceClient:
                         if agent_name in target_agents:
                             messages.append(self._event_to_message(e))
 
-                return messages
+                return messages, raw_last_id
 
     async def poll_control(
         self,

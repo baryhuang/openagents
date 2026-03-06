@@ -1,13 +1,20 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { PanelLeft, RefreshCw, Search } from 'lucide-react';
+import { PanelLeft, RefreshCw, Search, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { getAgentColor, getAgentInitials, timeAgo } from '@/lib/helpers';
 import { workspaceApi } from '@/lib/api';
 import type { WorkspaceAgent } from '@/lib/types';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 function AvatarStack({ agents, max = 3 }: { agents: WorkspaceAgent[]; max?: number }) {
   const shown = agents.slice(0, max);
@@ -59,7 +66,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 }
 
 export function ThreadList() {
-  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds } = useWorkspace();
+  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, updateSession } = useWorkspace();
   const { sidebarToggle } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
@@ -100,19 +107,29 @@ export function ThreadList() {
     }
   }
 
+  const [showArchived, setShowArchived] = useState(false);
+
   // Sort sessions by backend last_event_at (stable, no client-side jumping)
-  const sortedSessions = [...sessions].sort((a, b) => {
-    const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-    const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-    return bTime - aTime;
-  });
+  const sortedSessions = [...sessions]
+    .filter((s) => s.status !== 'deleted')
+    .sort((a, b) => {
+      // Starred items first
+      if (a.starred && !b.starred) return -1;
+      if (!a.starred && b.starred) return 1;
+      const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      return bTime - aTime;
+    });
+
+  const activeSessions = sortedSessions.filter((s) => s.status === 'active');
+  const archivedSessions = sortedSessions.filter((s) => s.status === 'archived');
 
   const filteredSessions = isSearching
     ? sortedSessions.filter((s) =>
         s.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         hitsByChannel.has(s.sessionId)
       )
-    : sortedSessions;
+    : activeSessions;
 
   return (
     <div className="flex flex-col h-full">
@@ -164,6 +181,7 @@ export function ThreadList() {
 
             // Determine the preview line
             let preview: React.ReactNode;
+            let previewIsStatus = false;
             if (isSearching && contentHit) {
               // Show matching snippet with highlight
               const snippet = contentHit.snippet.length > 80
@@ -171,18 +189,50 @@ export function ThreadList() {
                 : contentHit.snippet;
               preview = highlightMatch(snippet, searchQuery);
             } else if (lastMsg && lastMsg.content) {
-              preview = `${lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName}: ${lastMsg.content}`;
+              const sender = lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName;
+              if (lastMsg.isStatus) {
+                previewIsStatus = true;
+                // Parse "Using tool: <tool_name>" pattern from status messages
+                const toolMatch = lastMsg.content.match(/Using tool:?\**\s*`?([^`\n]+)`?/i);
+                if (toolMatch) {
+                  // Clean MCP prefix: mcp__openagents-workspace__foo → foo, mcp__playwright__bar → bar
+                  const rawTool = toolMatch[1].trim();
+                  const cleanTool = rawTool.replace(/^mcp__[^_]+__/, '');
+                  preview = (
+                    <span className="flex items-center gap-1">
+                      {sender}: <Wrench className="size-3 shrink-0" /> {cleanTool}
+                    </span>
+                  );
+                } else if (lastMsg.content.includes('thinking')) {
+                  preview = (
+                    <span className="flex items-center gap-1">
+                      {sender}: <Loader2 className="size-3 shrink-0 animate-spin" /> thinking...
+                    </span>
+                  );
+                } else {
+                  // Other status messages — strip markdown
+                  const cleaned = lastMsg.content
+                    .replace(/\*\*/g, '')
+                    .replace(/`/g, '')
+                    .replace(/```[\s\S]*/g, '')
+                    .trim();
+                  preview = `${sender}: ${cleaned}`;
+                }
+              } else {
+                preview = `${sender}: ${lastMsg.content}`;
+              }
             } else {
               preview = 'No messages yet';
             }
 
             return (
-              <button
+              <div
                 key={session.sessionId}
                 onClick={() => setCurrentSessionId(session.sessionId)}
                 className={cn(
-                  'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group',
-                  isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group cursor-pointer',
+                  isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+                  'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50'
                 )}
               >
                 {/* Avatar stack — show only channel participants */}
@@ -197,26 +247,78 @@ export function ThreadList() {
                 {/* Content */}
                 <div className="flex-1 min-w-0 space-y-0.5">
                   <div className="flex items-center gap-1.5">
+                    {session.starred && (
+                      <Star className="size-3 shrink-0 fill-amber-400 text-amber-400" />
+                    )}
                     <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
                       {isSearching
                         ? highlightMatch(session.title || 'Untitled', searchQuery)
                         : (session.title || 'Untitled')}
                     </span>
-                    {isActive && (
+                    {isActive ? (
                       <span className="relative flex size-2 shrink-0">
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
                         <span className="relative inline-flex size-2 rounded-full bg-blue-500" />
                       </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {displayTime}
+                      </span>
                     )}
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {displayTime}
-                    </span>
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">
+                  <p className={cn(
+                    'text-xs text-muted-foreground truncate',
+                    previewIsStatus && 'italic animate-pulse'
+                  )}>
                     {preview}
                   </p>
                 </div>
-              </button>
+
+                {/* Hover actions */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreVertical className="size-3.5 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateSession(session.sessionId, { starred: !session.starred });
+                      }}
+                    >
+                      <Star className={cn('size-4', session.starred && 'fill-amber-400 text-amber-400')} />
+                      <span>{session.starred ? 'Unstar' : 'Star'}</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateSession(session.sessionId, { status: session.status === 'archived' ? 'active' : 'archived' });
+                      }}
+                    >
+                      {session.status === 'archived'
+                        ? <><ArchiveRestore className="size-4" /><span>Unarchive</span></>
+                        : <><Archive className="size-4" /><span>Archive</span></>
+                      }
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateSession(session.sessionId, { status: 'deleted' });
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                      <span>Delete</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             );
           })}
 
@@ -232,6 +334,108 @@ export function ThreadList() {
                   <p className="text-sm">No threads yet</p>
                   <p className="text-xs mt-1">Create a thread to start chatting</p>
                 </>
+              )}
+            </div>
+          )}
+
+          {/* Archived section */}
+          {!isSearching && archivedSessions.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+              <button
+                onClick={() => setShowArchived(!showArchived)}
+                className="flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+              >
+                <Archive className="size-3" />
+                <span>Archived ({archivedSessions.length})</span>
+                <svg
+                  className={cn('size-3 ml-auto transition-transform', showArchived && 'rotate-180')}
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M3 5l3 3 3-3" />
+                </svg>
+              </button>
+              {showArchived && (
+                <div className="mt-1 space-y-1 opacity-60">
+                  {archivedSessions.map((session) => {
+                    const isSelected = session.sessionId === currentSessionId;
+                    const lastMsg = lastMessageBySession[session.sessionId];
+                    const activityMs = session.lastEventAt;
+                    const displayTime = activityMs
+                      ? timeAgo(new Date(activityMs).toISOString())
+                      : session.createdAt ? timeAgo(session.createdAt) : '';
+                    const preview = lastMsg && lastMsg.content
+                      ? `${lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName}: ${lastMsg.content}`
+                      : 'No messages yet';
+
+                    return (
+                      <div
+                        key={session.sessionId}
+                        onClick={() => setCurrentSessionId(session.sessionId)}
+                        className={cn(
+                          'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group cursor-pointer',
+                          isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+                          'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50'
+                        )}
+                      >
+                        <div className="shrink-0 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 rounded-full size-[30px] bg-white dark:bg-zinc-900">
+                          <AvatarStack agents={
+                            session.participants.length > 0
+                              ? agents.filter((a) => session.participants.includes(a.agentName))
+                              : agents
+                          } />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
+                              {session.title || 'Untitled'}
+                            </span>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {displayTime}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {preview}
+                          </p>
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="size-3.5 text-muted-foreground" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateSession(session.sessionId, { status: 'active' });
+                              }}
+                            >
+                              <ArchiveRestore className="size-4" />
+                              <span>Unarchive</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateSession(session.sessionId, { status: 'deleted' });
+                              }}
+                            >
+                              <Trash2 className="size-4" />
+                              <span>Delete</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}

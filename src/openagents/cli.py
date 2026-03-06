@@ -3923,49 +3923,61 @@ def connect_claude(
                     console.print(f"[red]Failed to join workspace: {e}[/red]")
                     raise typer.Exit(1)
 
-            # Discover channels to find one to listen on
+            # Discover channels — only rejoin channels where this agent is already a participant
             channel_name = channel
-            if not channel_name:
-                try:
-                    import aiohttp
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(
-                            f"{endpoint}/v1/discover",
-                            params={"network": ws_id},
-                            headers={"X-Workspace-Token": ws_token},
-                        ) as resp:
-                            disc = await resp.json()
-                            channels = (disc.get("data") or disc).get("channels", [])
-                            if channels:
-                                channel_name = channels[0]["address"].replace("channel/", "")
-                            else:
-                                channel_name = "general"
-                except Exception:
-                    channel_name = "general"
-                console.print(f"Listening on channel: [cyan]{channel_name}[/cyan]")
-
-            # Join the channel as a participant
+            my_channels: list[str] = []
             try:
                 import aiohttp
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{endpoint}/v1/events",
-                        json={
-                            "type": "network.channel.join",
-                            "source": f"openagents:{agent_name}",
-                            "target": "core",
-                            "payload": {
-                                "channel": channel_name,
-                                "agent_name": agent_name,
-                            },
-                            "network": ws_id,
-                        },
-                        headers={
-                            "X-Workspace-Token": ws_token,
-                            "Content-Type": "application/json",
-                        },
+                    async with session.get(
+                        f"{endpoint}/v1/discover",
+                        params={"network": ws_id},
+                        headers={"X-Workspace-Token": ws_token},
                     ) as resp:
-                        pass  # Best-effort channel join
+                        disc = await resp.json()
+                        channels_data = (disc.get("data") or disc).get("channels", [])
+                        for ch in channels_data:
+                            ch_name = ch["address"].replace("channel/", "")
+                            participants = ch.get("participants") or []
+                            if agent_name in participants:
+                                my_channels.append(ch_name)
+                        if not channel_name:
+                            channel_name = my_channels[0] if my_channels else (
+                                channels_data[0]["address"].replace("channel/", "") if channels_data else "general"
+                            )
+            except Exception:
+                if not channel_name:
+                    channel_name = "general"
+
+            console.print(f"Listening on [cyan]{len(my_channels) or 1}[/cyan] channel(s)")
+
+            # Rejoin channels where this agent is a participant
+            try:
+                import aiohttp
+                channels_to_join = my_channels if my_channels else [channel_name]
+                async with aiohttp.ClientSession() as session:
+                    for ch in channels_to_join:
+                        try:
+                            async with session.post(
+                                f"{endpoint}/v1/events",
+                                json={
+                                    "type": "network.channel.join",
+                                    "source": f"openagents:{agent_name}",
+                                    "target": "core",
+                                    "payload": {
+                                        "channel": ch,
+                                        "agent_name": agent_name,
+                                    },
+                                    "network": ws_id,
+                                },
+                                headers={
+                                    "X-Workspace-Token": ws_token,
+                                    "Content-Type": "application/json",
+                                },
+                            ) as resp:
+                                pass
+                        except Exception:
+                            pass
             except Exception:
                 pass
 

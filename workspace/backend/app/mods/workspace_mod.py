@@ -111,6 +111,64 @@ async def _handle_agent_leave(event: Event, ctx: PipelineContext) -> Optional[Ev
     return event
 
 
+async def _handle_agent_remove(event: Event, ctx: PipelineContext) -> Optional[Event]:
+    """network.agent.remove → delete WorkspaceMember, reassign master if needed."""
+    from app.models import Channel, WorkspaceMember
+
+    db = ctx.extra["db"]
+    workspace = ctx.extra["workspace"]
+    agent_name = event.payload.get("agent_name") if event.payload else None
+    if not agent_name:
+        logger.warning("workspace_mod: agent.remove missing agent_name in payload")
+        return None
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+
+    if not member:
+        return None
+
+    was_master = member.role == "master"
+    db.delete(member)
+    db.flush()
+
+    new_master_name = None
+
+    # If removed agent was master, promote the next available agent
+    if was_master:
+        next_master = db.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace.id,
+            ).order_by(WorkspaceMember.joined_at.asc())
+        ).scalar_one_or_none()
+
+        if next_master:
+            next_master.role = "master"
+            new_master_name = next_master.agent_name
+            db.flush()
+
+    # Reassign channel masters: any channel where removed agent was master
+    channels = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == workspace.id,
+            Channel.master_agent == agent_name,
+        )
+    ).scalars().all()
+
+    for ch in channels:
+        ch.master_agent = new_master_name
+    db.flush()
+
+    event.metadata["removed_agent"] = agent_name
+    if new_master_name:
+        event.metadata["new_master"] = new_master_name
+    return event
+
+
 async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
     """network.ping → update heartbeat timestamp."""
     from app.models import WorkspaceMember
@@ -348,6 +406,7 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
 _HANDLERS = {
     "network.agent.join": _handle_agent_join,
     "network.agent.leave": _handle_agent_leave,
+    "network.agent.remove": _handle_agent_remove,
     "network.ping": _handle_ping,
     "network.channel.create": _handle_channel_create,
     "network.channel.join": _handle_channel_join,

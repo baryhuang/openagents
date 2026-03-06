@@ -80,7 +80,7 @@ class WorkspaceApi {
     });
   }
 
-  async updateChannel(channelName: string, updates: { title?: string; status?: string }): Promise<unknown> {
+  async updateChannel(channelName: string, updates: { title?: string; status?: string; starred?: boolean }): Promise<unknown> {
     return this.request(`/v1/workspaces/${this.workspaceId}/channels/${channelName}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
@@ -132,6 +132,7 @@ class WorkspaceApi {
       createdBy: 'human:user',
       title: opts.title || 'New Thread',
       status: 'active',
+      starred: false,
       participants: opts.participants || [],
       master: opts.master || null,
       createdAt: new Date(event.timestamp).toISOString(),
@@ -174,7 +175,7 @@ class WorkspaceApi {
       channel: channelName,
       type: 'workspace.message',
       after,
-      limit: 50,
+      limit: 200,
     });
 
     return {
@@ -327,8 +328,11 @@ class WorkspaceApi {
     throw new Error('Agent role management is not yet available in event-native mode');
   }
 
-  async removeAgent(_agentName: string): Promise<void> {
-    throw new Error('Agent removal is not yet available in event-native mode');
+  async removeAgent(agentName: string): Promise<void> {
+    await this.request<unknown>('/v1/remove', {
+      method: 'POST',
+      body: JSON.stringify({ agent_name: agentName, network: this.workspaceId }),
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -369,6 +373,7 @@ class WorkspaceApi {
     channel?: string;
     type?: string;
     search?: string;
+    sort?: 'asc' | 'desc';
     limit?: number;
   } = {}): Promise<EventPollResponse> {
     const params = new URLSearchParams({ network: this.workspaceId });
@@ -377,6 +382,7 @@ class WorkspaceApi {
     if (opts.channel) params.set('channel', opts.channel);
     if (opts.type) params.set('type', opts.type);
     if (opts.search) params.set('search', opts.search);
+    if (opts.sort) params.set('sort', opts.sort);
     if (opts.limit) params.set('limit', String(opts.limit));
     return this.request<EventPollResponse>(`/v1/events?${params}`);
   }
