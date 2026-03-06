@@ -187,10 +187,15 @@ class WorkspaceClient:
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
-                data = await resp.json()
                 if resp.status not in (200, 201):
-                    msg = data.get("message", f"HTTP {resp.status}")
+                    try:
+                        data = await resp.json()
+                        msg = data.get("message", f"HTTP {resp.status}")
+                    except Exception:
+                        text = await resp.text()
+                        msg = f"HTTP {resp.status}: {text[:200]}"
                     raise ConnectionError(f"Workspace creation failed: {msg}")
+                data = await resp.json()
                 result = data.get("data", data)
                 ws_id = result["workspaceId"]
                 slug = result.get("slug", ws_id)
