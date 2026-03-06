@@ -123,32 +123,32 @@
 
 /** Thread work-in-progress shimmer **/
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 .thread-wip {
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    rgba(59, 130, 246, 0.06) 25%,
-    rgba(59, 130, 246, 0.10) 50%,
-    rgba(59, 130, 246, 0.06) 75%,
-    transparent 100%
+    rgba(59, 130, 246, 0.04) 0%,
+    rgba(59, 130, 246, 0.15) 30%,
+    rgba(99, 102, 241, 0.20) 50%,
+    rgba(59, 130, 246, 0.15) 70%,
+    rgba(59, 130, 246, 0.04) 100%
   );
   background-size: 200% 100%;
-  animation: shimmer 3s ease-in-out infinite;
+  animation: shimmer 2.5s ease-in-out infinite;
 }
 .dark .thread-wip {
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    rgba(96, 165, 250, 0.08) 25%,
-    rgba(96, 165, 250, 0.14) 50%,
-    rgba(96, 165, 250, 0.08) 75%,
-    transparent 100%
+    rgba(96, 165, 250, 0.05) 0%,
+    rgba(96, 165, 250, 0.18) 30%,
+    rgba(129, 140, 248, 0.25) 50%,
+    rgba(96, 165, 250, 0.18) 70%,
+    rgba(96, 165, 250, 0.05) 100%
   );
   background-size: 200% 100%;
-  animation: shimmer 3s ease-in-out infinite;
+  animation: shimmer 2.5s ease-in-out infinite;
 }
 
 /** Global Styles **/
