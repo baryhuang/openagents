@@ -35,15 +35,16 @@ export function FilePreview() {
       return;
     }
 
+    const ct = file.contentType || '';
     const isText =
-      file.contentType.startsWith('text/') ||
-      file.contentType === 'application/json' ||
-      file.contentType === 'application/javascript' ||
-      file.contentType === 'application/xml' ||
-      file.contentType === 'application/yaml' ||
+      ct.startsWith('text/') ||
+      ct === 'application/json' ||
+      ct === 'application/javascript' ||
+      ct === 'application/xml' ||
+      ct === 'application/yaml' ||
       file.filename.match(/\.(md|txt|csv|json|js|ts|tsx|jsx|py|rs|go|java|rb|c|cpp|h|sh|yaml|yml|toml|cfg|ini|log)$/i);
 
-    const isImage = file.contentType.startsWith('image/');
+    const isImage = ct.startsWith('image/');
 
     if (!isText && !isImage) {
       setContent(null);
@@ -131,7 +132,7 @@ export function FilePreview() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{file.filename}</p>
           <p className="text-xs text-muted-foreground">
-            {formatSize(file.size)} · {file.contentType} · {(file.uploadedBy || 'unknown').replace(/^(openagents:|human:)/, '')}
+            {formatSize(file.size)} · {file.contentType || 'unknown'} · {(file.uploadedBy || 'unknown').replace(/^(openagents:|human:)/, '')}
           </p>
         </div>
         <button
