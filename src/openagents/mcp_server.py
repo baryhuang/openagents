@@ -461,11 +461,27 @@ def create_mcp_server(
 
             elif name == "workspace_read_file":
                 file_id = arguments.get("file_id", "")
+
+                # Get file metadata to determine content type
+                file_info = await client.get_file_info(token=token, file_id=file_id)
+                content_type = file_info.get("content_type", "application/octet-stream")
+
                 data = await client.read_file(
                     workspace_id=workspace_id,
                     token=token,
                     file_id=file_id,
                 )
+
+                # Return images as ImageContent so Claude can natively view them
+                if content_type.startswith("image/"):
+                    import base64
+                    encoded = base64.b64encode(data).decode("ascii")
+                    return [types.ImageContent(
+                        type="image",
+                        data=encoded,
+                        mimeType=content_type,
+                    )]
+
                 # Try to decode as text, fall back to base64
                 try:
                     text = data.decode("utf-8")
