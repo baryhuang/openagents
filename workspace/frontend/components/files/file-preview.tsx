@@ -12,6 +12,26 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isHtmlFile(contentType: string, filename: string): boolean {
+  return contentType === 'text/html' || /\.html?$/i.test(filename);
+}
+
+function isImageFile(contentType: string): boolean {
+  return contentType.startsWith('image/');
+}
+
+function isTextFile(contentType: string, filename: string): boolean {
+  if (isHtmlFile(contentType, filename)) return false; // HTML is handled separately
+  return (
+    contentType.startsWith('text/') ||
+    contentType === 'application/json' ||
+    contentType === 'application/javascript' ||
+    contentType === 'application/xml' ||
+    contentType === 'application/yaml' ||
+    /\.(md|txt|csv|json|js|ts|tsx|jsx|py|rs|go|java|rb|c|cpp|h|sh|yaml|yml|toml|cfg|ini|log)$/i.test(filename)
+  );
+}
+
 export function FilePreview() {
   const { files, selectedFileId, deleteFile, setSelectedFileId } = useWorkspace();
   const [content, setContent] = useState<string | null>(null);
@@ -36,15 +56,20 @@ export function FilePreview() {
     }
 
     const ct = file.contentType || '';
-    const isText =
-      ct.startsWith('text/') ||
-      ct === 'application/json' ||
-      ct === 'application/javascript' ||
-      ct === 'application/xml' ||
-      ct === 'application/yaml' ||
-      file.filename.match(/\.(md|txt|csv|json|js|ts|tsx|jsx|py|rs|go|java|rb|c|cpp|h|sh|yaml|yml|toml|cfg|ini|log)$/i);
+    const fn = file.filename || '';
+    const isHtml = isHtmlFile(ct, fn);
+    const isImage = isImageFile(ct);
+    const isText = isTextFile(ct, fn);
 
-    const isImage = ct.startsWith('image/');
+    // HTML and images use the direct URL — no fetch needed
+    if (isHtml) {
+      setContent(null);
+      const url = workspaceApi.getFileUrl(file.id);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      setBlobUrl(url);
+      setLoading(false);
+      return;
+    }
 
     if (!isText && !isImage) {
       setContent(null);
@@ -57,7 +82,6 @@ export function FilePreview() {
 
     const url = workspaceApi.getFileUrl(file.id);
     const headers: Record<string, string> = {};
-    // We need to pass auth headers for the download
     const token = (workspaceApi as unknown as { token: string }).token;
     if (token) headers['X-Workspace-Token'] = token;
 
@@ -157,7 +181,14 @@ export function FilePreview() {
           <div className="flex items-center justify-center h-full">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
-        ) : blobUrl ? (
+        ) : isHtmlFile(file.contentType || '', file.filename) && blobUrl ? (
+          <iframe
+            src={blobUrl}
+            title={file.filename}
+            className="w-full h-full border-0"
+            sandbox="allow-scripts allow-same-origin"
+          />
+        ) : blobUrl && isImageFile(file.contentType || '') ? (
           <div className="flex items-center justify-center p-4 h-full">
             <img
               src={blobUrl}
