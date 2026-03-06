@@ -3914,6 +3914,7 @@ def connect_claude(
                         agent_name=agent_name,
                         network=join,
                         token=ws_token,
+                        agent_type="claude",
                     )
                     ws_id = join_result.get("network_id", join)
                     console.print(
@@ -3988,7 +3989,7 @@ def connect_claude(
             # Create a new workspace
             with console.status("Creating workspace..."):
                 try:
-                    ws = await client.create_workspace(agent_name, workspace_name)
+                    ws = await client.create_workspace(agent_name, workspace_name, agent_type="claude")
                     console.print(f"[green]Workspace created:[/green] {ws.name}")
                     console.print(
                         f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
@@ -4168,6 +4169,7 @@ def connect_openclaw(
                         agent_name=agent_name,
                         network=join,
                         token=token,
+                        agent_type="openclaw",
                     )
                     ws_id = join_result.get("network_id", join)
                     console.print(f"[green]Joined workspace:[/green] {ws_id}")
@@ -4217,7 +4219,7 @@ def connect_openclaw(
         else:
             with console.status("Creating workspace..."):
                 try:
-                    ws = await client.create_workspace(agent_name, workspace_name)
+                    ws = await client.create_workspace(agent_name, workspace_name, agent_type="openclaw")
                     console.print(f"[green]Workspace created:[/green] {ws.name}")
                     console.print(
                         f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"
@@ -4361,7 +4363,7 @@ def connect_codex(
         # Step 2: Create workspace
         with console.status("Creating workspace..."):
             try:
-                ws = await client.create_workspace(agent_name, workspace_name)
+                ws = await client.create_workspace(agent_name, workspace_name, agent_type="codex")
                 console.print(f"[green]Workspace created:[/green] {ws.name}")
                 console.print(
                     f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]"

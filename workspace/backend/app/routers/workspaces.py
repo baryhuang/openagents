@@ -70,6 +70,7 @@ def _verify_workspace_access(workspace, token: Optional[str], authorization: Opt
 class WorkspaceCreateRequest(BaseModel):
     name: str
     agent_name: str                    # The creating agent (becomes master)
+    agent_type: Optional[str] = None   # "claude", "openclaw", etc.
     creator_email: Optional[str] = None
 
 class ChannelUpdateRequest(BaseModel):
@@ -102,6 +103,7 @@ def _format_workspace(ws: Workspace, members: list, now: datetime) -> dict:
         agents.append({
             "agentName": m.agent_name,
             "role": m.role,
+            "agentType": m.agent_type,
             "status": status,
             "lastHeartbeatAt": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
             "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
@@ -169,6 +171,7 @@ async def create_workspace(
         workspace_id=workspace.id,
         agent_name=body.agent_name,
         role="master",
+        agent_type=body.agent_type,
         status="online",
         last_heartbeat=now,
     )

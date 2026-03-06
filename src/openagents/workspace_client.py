@@ -170,6 +170,7 @@ class WorkspaceClient:
 
     async def create_workspace(
         self, agent_name: str, name: Optional[str] = None,
+        agent_type: str | None = None,
     ) -> WorkspaceInfo:
         """Create a workspace via POST /v1/workspaces."""
         import aiohttp
@@ -177,6 +178,8 @@ class WorkspaceClient:
             "agent_name": agent_name,
             "name": name or f"{agent_name}'s workspace",
         }
+        if agent_type:
+            payload["agent_type"] = agent_type
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.endpoint}/v1/workspaces",
@@ -203,17 +206,21 @@ class WorkspaceClient:
 
     async def join_network(
         self, agent_name: str, network: str, token: str,
+        agent_type: str | None = None,
     ) -> dict:
         """Join an existing workspace via POST /v1/join."""
         import aiohttp
+        body: dict = {
+            "agent_name": agent_name,
+            "token": token,
+            "network": network,
+        }
+        if agent_type:
+            body["agent_type"] = agent_type
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.endpoint}/v1/join",
-                json={
-                    "agent_name": agent_name,
-                    "token": token,
-                    "network": network,
-                },
+                json=body,
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:

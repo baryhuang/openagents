@@ -241,9 +241,9 @@ export function SidebarContent() {
               })}
             </div>
 
-            {/* Navigation */}
+            {/* Collaboration */}
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5 mt-6">
-              Navigation
+              Collaboration
             </p>
             <div className="space-y-0.5">
               <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.length} onClick={() => setViewMode('threads')} />
