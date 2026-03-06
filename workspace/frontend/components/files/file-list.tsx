@@ -120,11 +120,11 @@ export function FileList() {
       ) : (
         <div className="flex-1 overflow-y-auto px-1">
           {filtered.map((file) => (
-            <button
+            <div
               key={file.id}
               onClick={() => setSelectedFileId(file.id)}
               className={cn(
-                'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors group',
+                'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors group cursor-pointer',
                 selectedFileId === file.id
                   ? 'bg-zinc-100 dark:bg-zinc-800'
                   : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
@@ -145,7 +145,7 @@ export function FileList() {
               >
                 <Trash2 className="size-3.5" />
               </button>
-            </button>
+            </div>
           ))}
         </div>
       )}
