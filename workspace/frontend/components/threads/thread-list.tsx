@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { PanelLeft, RefreshCw, Search, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2 } from 'lucide-react';
+import { PanelLeft, RefreshCw, Search, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
@@ -262,6 +262,8 @@ export function ThreadList() {
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
                         <span className="relative inline-flex size-2 rounded-full bg-blue-500" />
                       </span>
+                    ) : isCompleted && !isSelected ? (
+                      <CheckCircle2 className="size-3.5 shrink-0 text-amber-500" />
                     ) : (
                       <span className="text-xs text-muted-foreground shrink-0">
                         {displayTime}

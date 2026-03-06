@@ -263,15 +263,15 @@ export function WorkspaceProvider({
             if (newActive.size > 0 || newInactive.size > 0) {
               setActiveSessionIds((s) => {
                 const next = new Set(s);
-                for (const sid of newActive) next.add(sid);
-                for (const sid of newInactive) next.delete(sid);
+                Array.from(newActive).forEach((sid) => next.add(sid));
+                Array.from(newInactive).forEach((sid) => next.delete(sid));
                 return next;
               });
             }
             if (newCompleted.size > 0) {
               setCompletedSessionIds((s) => {
                 const next = new Set(s);
-                for (const sid of newCompleted) next.add(sid);
+                Array.from(newCompleted).forEach((sid) => next.add(sid));
                 return next;
               });
             }
