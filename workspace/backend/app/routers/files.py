@@ -344,11 +344,15 @@ async def download_file(
     except FileNotFoundError:
         return json_response(ResponseCode.NOT_FOUND, "File data not found in storage")
 
+    # Use inline disposition for images and HTML so browsers can render them
+    ct = record.content_type or ""
+    disposition = "inline" if ct.startswith("image/") or ct == "text/html" else "attachment"
+
     return Response(
         content=data,
         media_type=record.content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{record.filename}"',
+            "Content-Disposition": f'{disposition}; filename="{record.filename}"',
             "Content-Length": str(len(data)),
         },
     )

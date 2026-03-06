@@ -16,6 +16,20 @@ import { eventToMessage } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.openagents.org';
 
+/** Map snake_case file response from backend to camelCase WorkspaceFile. */
+function mapFileResponse(raw: Record<string, unknown>): WorkspaceFile {
+  return {
+    id: raw.id as string,
+    filename: raw.filename as string,
+    contentType: (raw.content_type || raw.contentType || 'application/octet-stream') as string,
+    size: raw.size as number,
+    uploadedBy: (raw.uploaded_by || raw.uploadedBy || 'unknown') as string,
+    channelName: (raw.channel_name ?? raw.channelName ?? null) as string | null,
+    status: (raw.status || 'active') as string,
+    createdAt: (raw.created_at || raw.createdAt || null) as string | null,
+  };
+}
+
 class WorkspaceApi {
   private token: string = '';
   private bearerToken: string = '';
@@ -230,15 +244,19 @@ class WorkspaceApi {
       throw new Error(`Upload failed: ${body}`);
     }
 
-    const json: ApiResponse<WorkspaceFile> = await res.json();
-    return json.data;
+    const json = await res.json();
+    return mapFileResponse(json.data);
   }
 
   /** List files in the workspace. */
   async listFiles(): Promise<{ files: WorkspaceFile[]; total: number }> {
-    return this.request<{ files: WorkspaceFile[]; total: number }>(
+    const raw = await this.request<{ files: Record<string, unknown>[]; total: number }>(
       `/v1/files?network=${this.workspaceId}`
     );
+    return {
+      files: raw.files.map(mapFileResponse),
+      total: raw.total,
+    };
   }
 
   /** Get the download URL for a file. */
