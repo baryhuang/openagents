@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openagents"
-version = "0.8.5.post6"
+version = "0.8.6"
 description = "A flexible framework for building multi-agent systems with customizable protocols"
 readme = "README.md"
 authors = [
