@@ -1,6 +1,8 @@
 """
 Daemon manager — runs multiple agent adapters with auto-restart.
 
+Works on Linux, macOS, and Windows.
+
 Usage:
     from openagents.daemon import DaemonManager
     from openagents.daemon_config import load_config
@@ -15,6 +17,7 @@ import json
 import logging
 import os
 import signal
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -33,6 +36,8 @@ from openagents.daemon_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+IS_WINDOWS = sys.platform == "win32"
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +95,16 @@ class DaemonManager:
 
         # Install signal handlers
         loop = asyncio.get_running_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, self._handle_signal)
+        if IS_WINDOWS:
+            # Windows doesn't support loop.add_signal_handler;
+            # use signal.signal() and schedule callback on the event loop
+            def _sig_handler(*_args):
+                loop.call_soon_threadsafe(self._handle_signal)
+            signal.signal(signal.SIGINT, _sig_handler)
+            signal.signal(signal.SIGTERM, _sig_handler)
+        else:
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                loop.add_signal_handler(sig, self._handle_signal)
 
         # Periodically write status file
         status_task = asyncio.create_task(self._status_loop())
@@ -110,6 +123,8 @@ class DaemonManager:
         if not self._shutting_down:
             logger.info("Shutdown signal received")
             self._shutting_down = True
+            # On Windows, signal handlers run in the main thread, not the
+            # event loop thread, so we need thread-safe event setting.
             self._shutdown_event.set()
 
     def _launch_agent(self, ws: WorkspaceEntry, agent_cfg: AgentEntry):
@@ -209,18 +224,52 @@ class DaemonManager:
 
 
 # ---------------------------------------------------------------------------
-# Daemonization helpers
+# Daemonization helpers (cross-platform)
 # ---------------------------------------------------------------------------
 
-def daemonize():
-    """Fork into background, write PID file, redirect stdio to log.
+def _is_process_alive(pid: int) -> bool:
+    """Check if a process is alive. Works on all platforms."""
+    if IS_WINDOWS:
+        # Use tasklist to check; os.kill(pid, 0) is unreliable on Windows
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return str(pid) in result.stdout
+        except Exception:
+            return False
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
 
+
+def daemonize():
+    """Start the daemon in the background.
+
+    On Unix: double-fork + setsid (classic daemon pattern).
+    On Windows: re-launch as a detached subprocess.
+
+    In both cases, writes PID file and redirects output to log.
     Call this BEFORE asyncio.run() in the parent process.
     """
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PID_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    if IS_WINDOWS:
+        _daemonize_windows()
+    else:
+        _daemonize_unix()
+
+
+def _daemonize_unix():
+    """Unix double-fork daemon."""
     # First fork
     pid = os.fork()
     if pid > 0:
-        # Parent — print info and exit
         print(f"Daemon started (PID {pid})")
         print(f"Logs: {LOG_PATH}")
         print(f"Stop: openagents down")
@@ -234,26 +283,60 @@ def daemonize():
     if pid > 0:
         sys.exit(0)
 
-    # Redirect stdio
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Redirect stdio to log file
     log_fd = open(LOG_PATH, "a")
     os.dup2(log_fd.fileno(), sys.stdout.fileno())
     os.dup2(log_fd.fileno(), sys.stderr.fileno())
-
-    # Redirect stdin to /dev/null
     devnull = open(os.devnull, "r")
     os.dup2(devnull.fileno(), sys.stdin.fileno())
 
     # Write PID file
-    PID_PATH.parent.mkdir(parents=True, exist_ok=True)
     PID_PATH.write_text(str(os.getpid()))
 
-    # Setup logging to go to file
+    # Setup logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=log_fd,
     )
+
+
+def _daemonize_windows():
+    """Windows: re-launch this command as a detached subprocess."""
+    import shutil
+
+    # Find the openagents CLI entry point
+    openagents_bin = shutil.which("openagents")
+    if openagents_bin:
+        args = [openagents_bin, "up", "--foreground"]
+    else:
+        args = [sys.executable, "-m", "openagents", "up", "--foreground"]
+
+    # Pass through --config if it was provided
+    for i, a in enumerate(sys.argv):
+        if a in ("--config", "-c") and i + 1 < len(sys.argv):
+            args.extend(["--config", sys.argv[i + 1]])
+            break
+
+    log_file = open(LOG_PATH, "a")
+    # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS detaches from parent console
+    creation_flags = (
+        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0)
+    )
+    proc = subprocess.Popen(
+        args,
+        stdout=log_file,
+        stderr=log_file,
+        stdin=subprocess.DEVNULL,
+        creationflags=creation_flags,
+    )
+
+    PID_PATH.write_text(str(proc.pid))
+    print(f"Daemon started (PID {proc.pid})")
+    print(f"Logs: {LOG_PATH}")
+    print(f"Stop: openagents down")
+    sys.exit(0)
 
 
 def read_daemon_pid() -> Optional[int]:
@@ -262,40 +345,56 @@ def read_daemon_pid() -> Optional[int]:
         return None
     try:
         pid = int(PID_PATH.read_text().strip())
-        # Check if process is alive
-        os.kill(pid, 0)
-        return pid
-    except (ValueError, ProcessLookupError, PermissionError):
+        if _is_process_alive(pid):
+            return pid
         # Stale PID file
+        PID_PATH.unlink(missing_ok=True)
+        return None
+    except (ValueError, OSError):
         PID_PATH.unlink(missing_ok=True)
         return None
 
 
 def stop_daemon() -> bool:
-    """Send SIGTERM to running daemon. Returns True if stopped."""
+    """Stop running daemon. Returns True if stopped."""
     pid = read_daemon_pid()
     if pid is None:
         return False
 
-    os.kill(pid, signal.SIGTERM)
-
-    # Wait up to 10 seconds for graceful shutdown
     import time
-    for _ in range(20):
-        try:
-            os.kill(pid, 0)
-            time.sleep(0.5)
-        except ProcessLookupError:
-            # Process exited
-            PID_PATH.unlink(missing_ok=True)
-            STATUS_PATH.unlink(missing_ok=True)
-            return True
 
-    # Still alive after 10s — force kill
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+    if IS_WINDOWS:
+        # Windows: use taskkill for graceful then forced termination
+        subprocess.run(
+            ["taskkill", "/PID", str(pid)],
+            capture_output=True, timeout=5,
+        )
+        for _ in range(20):
+            if not _is_process_alive(pid):
+                PID_PATH.unlink(missing_ok=True)
+                STATUS_PATH.unlink(missing_ok=True)
+                return True
+            time.sleep(0.5)
+        # Force kill
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(pid)],
+            capture_output=True, timeout=5,
+        )
+    else:
+        # Unix: SIGTERM then SIGKILL
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(20):
+            if not _is_process_alive(pid):
+                PID_PATH.unlink(missing_ok=True)
+                STATUS_PATH.unlink(missing_ok=True)
+                return True
+            time.sleep(0.5)
+        # Force kill
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
     PID_PATH.unlink(missing_ok=True)
     STATUS_PATH.unlink(missing_ok=True)
     return True
