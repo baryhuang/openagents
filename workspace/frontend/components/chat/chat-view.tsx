@@ -23,6 +23,29 @@ export function ChatView() {
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // Per-thread message drafts
+  const draftsRef = useRef<Record<string, string>>({});
+  const [currentDraft, setCurrentDraft] = useState('');
+
+  // Save/restore draft when switching threads
+  const prevSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    // Save draft from previous session
+    if (prevSessionIdRef.current && prevSessionIdRef.current !== currentSessionId) {
+      draftsRef.current[prevSessionIdRef.current] = currentDraft;
+    }
+    // Restore draft for new session
+    setCurrentDraft(currentSessionId ? (draftsRef.current[currentSessionId] ?? '') : '');
+    prevSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDraftChange = useCallback((draft: string) => {
+    setCurrentDraft(draft);
+    if (currentSessionId) {
+      draftsRef.current[currentSessionId] = draft;
+    }
+  }, [currentSessionId]);
+
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   const agentNames = agents.map((a) => a.agentName);
 
@@ -53,7 +76,14 @@ export function ChatView() {
   }, [currentSessionId, messages, updateLastMessage]);
 
   // Track whether the agent is actively working in this session
+  const prevActiveSessionRef = useRef<string | null>(null);
   useEffect(() => {
+    // Clear active state for previously viewed session when switching
+    if (prevActiveSessionRef.current && prevActiveSessionRef.current !== currentSessionId) {
+      setSessionActive(prevActiveSessionRef.current, false);
+    }
+    prevActiveSessionRef.current = currentSessionId;
+
     if (!currentSessionId || messages.length === 0) {
       if (currentSessionId) setSessionActive(currentSessionId, false);
       return;
@@ -293,6 +323,8 @@ export function ChatView() {
             <ChatInput
               onSend={handleSend}
               agents={agents}
+              draft={currentDraft}
+              onDraftChange={handleDraftChange}
             />
           </div>
         </div>

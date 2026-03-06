@@ -66,7 +66,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 }
 
 export function ThreadList() {
-  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, updateSession } = useWorkspace();
+  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession } = useWorkspace();
   const { sidebarToggle } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
@@ -171,6 +171,7 @@ export function ThreadList() {
             const isSelected = session.sessionId === currentSessionId;
             const lastMsg = lastMessageBySession[session.sessionId];
             const isActive = activeSessionIds.has(session.sessionId);
+            const isCompleted = completedSessionIds.has(session.sessionId);
             const contentHit = hitsByChannel.get(session.sessionId);
 
             // Show last activity time from backend
@@ -230,9 +231,10 @@ export function ThreadList() {
                 key={session.sessionId}
                 onClick={() => setCurrentSessionId(session.sessionId)}
                 className={cn(
-                  'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group cursor-pointer',
+                  'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-all relative group cursor-pointer',
                   isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-                  'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50'
+                  'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50',
+                  isCompleted && !isSelected && 'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200/60 dark:ring-amber-700/40 animate-[glow_2s_ease-in-out_infinite]'
                 )}
               >
                 {/* Avatar stack — show only channel participants */}
