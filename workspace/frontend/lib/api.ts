@@ -245,7 +245,8 @@ class WorkspaceApi {
   getFileUrl(fileId: string): string {
     const params = new URLSearchParams();
     if (this.token) params.set('token', this.token);
-    return `${API_URL}/v1/files/${fileId}`;
+    const qs = params.toString();
+    return `${API_URL}/v1/files/${fileId}${qs ? `?${qs}` : ''}`;
   }
 
   /** Delete a file. */

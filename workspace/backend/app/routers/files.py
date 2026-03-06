@@ -316,6 +316,7 @@ async def file_info(
 @router.get("/files/{file_id}")
 async def download_file(
     file_id: str,
+    token: Optional[str] = Query(None),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
@@ -332,7 +333,8 @@ async def download_file(
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
 
-    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+    effective_token = x_workspace_token or token
+    if not _verify_workspace_access(workspace, effective_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
     store = get_file_store()
