@@ -22,6 +22,7 @@ interface WorkspaceContextValue {
   error: string | null;
   lastMessageBySession: Record<string, LastMessageInfo>;
   activeSessionIds: Set<string>;
+  completedSessionIds: Set<string>;
   agentModes: Record<string, string>;
   updateLastMessage: (sessionId: string, senderName: string, content: string, isStatus?: boolean) => void;
   setSessionActive: (sessionId: string, active: boolean) => void;
@@ -69,11 +70,23 @@ export function WorkspaceProvider({
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentSessionId, _setCurrentSessionId] = useState<string | null>(null);
+  const setCurrentSessionId = useCallback((id: string | null) => {
+    _setCurrentSessionId(id);
+    if (id) {
+      setCompletedSessionIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastMessageBySession, setLastMessageBySession] = useState<Record<string, LastMessageInfo>>({});
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
+  const [completedSessionIds, setCompletedSessionIds] = useState<Set<string>>(new Set());
   const [agentModes, setAgentModes] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -233,7 +246,37 @@ export function WorkspaceProvider({
           }
         }
         if (Object.keys(batch).length > 0) {
-          setLastMessageBySession((prev) => ({ ...prev, ...batch }));
+          // Update active/completed state for background threads
+          setLastMessageBySession((prev) => {
+            const newActive = new Set<string>();
+            const newCompleted = new Set<string>();
+            const newInactive = new Set<string>();
+            for (const [sid, info] of Object.entries(batch)) {
+              const wasStatus = prev[sid]?.isStatus;
+              if (info.isStatus) {
+                newActive.add(sid);
+              } else if (wasStatus && !info.isStatus) {
+                newInactive.add(sid);
+                newCompleted.add(sid);
+              }
+            }
+            if (newActive.size > 0 || newInactive.size > 0) {
+              setActiveSessionIds((s) => {
+                const next = new Set(s);
+                for (const sid of newActive) next.add(sid);
+                for (const sid of newInactive) next.delete(sid);
+                return next;
+              });
+            }
+            if (newCompleted.size > 0) {
+              setCompletedSessionIds((s) => {
+                const next = new Set(s);
+                for (const sid of newCompleted) next.add(sid);
+                return next;
+              });
+            }
+            return { ...prev, ...batch };
+          });
         }
       }
     } catch {
@@ -466,6 +509,7 @@ export function WorkspaceProvider({
         error,
         lastMessageBySession,
         activeSessionIds,
+        completedSessionIds,
         agentModes,
         updateLastMessage,
         setSessionActive,

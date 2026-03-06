@@ -17,14 +17,16 @@ interface ChatInputProps {
   disabled?: boolean;
   className?: string;
   agents?: WorkspaceAgent[];
+  draft?: string;
+  onDraftChange?: (draft: string) => void;
 }
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInputProps) {
-  const [message, setMessage] = React.useState('');
+export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange }: ChatInputProps) {
+  const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
   const [mentionIndex, setMentionIndex] = React.useState(0);
@@ -33,6 +35,15 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const dragCountRef = React.useRef(0);
+
+  // Sync message state when draft prop changes (thread switch)
+  React.useEffect(() => {
+    setMessage(draft ?? '');
+    // Reset textarea height when switching threads
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [draft]);
 
   const agentNames = agents.map((a) => a.agentName);
 
@@ -80,6 +91,7 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
     const mentions = extractMentions(trimmed);
     onSend(trimmed, mentions, pendingFiles);
     setMessage('');
+    onDraftChange?.('');
     setPendingFiles([]);
     setShowMentions(false);
     if (textareaRef.current) {
@@ -101,6 +113,7 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
 
     const newText = textBefore.slice(0, atIndex) + `@${agentName} ` + textAfter;
     setMessage(newText);
+    onDraftChange?.(newText);
     setShowMentions(false);
     setMentionFilter('');
 
@@ -145,6 +158,7 @@ export function ChatInput({ onSend, disabled, className, agents = [] }: ChatInpu
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setMessage(value);
+    onDraftChange?.(value);
     const textarea = e.target;
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
