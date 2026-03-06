@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Globe, Plus, X, Monitor } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
+import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -32,6 +33,7 @@ export function BrowserTabList() {
     browserTabs, selectedBrowserTabId, setSelectedBrowserTabId,
     openBrowserTab, closeBrowserTab, refreshBrowserTabs,
   } = useWorkspace();
+  const { isMobile, openMobileDetail } = useLayout();
   const [opening, setOpening] = useState(false);
 
   const handleOpen = async () => {
@@ -93,7 +95,10 @@ export function BrowserTabList() {
           {browserTabs.map((tab) => (
             <div
               key={tab.id}
-              onClick={() => setSelectedBrowserTabId(tab.id)}
+              onClick={() => {
+                setSelectedBrowserTabId(tab.id);
+                if (isMobile) openMobileDetail();
+              }}
               className={cn(
                 'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors group cursor-pointer',
                 selectedBrowserTabId === tab.id

@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Globe, X, RefreshCw, Users } from 'lucide-react';
+import { Globe, X, RefreshCw, Users, ChevronLeft } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
+import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function BrowserView() {
   const { browserTabs, selectedBrowserTabId, setSelectedBrowserTabId, closeBrowserTab } = useWorkspace();
+  const { isMobile, openMobileList } = useLayout();
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const prevBlobRef = useRef<string | null>(null);
@@ -90,7 +92,15 @@ export function BrowserView() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-input shrink-0">
+      <div className="flex items-center gap-2 px-2 lg:px-4 py-2 lg:py-2.5 border-b border-input shrink-0">
+        {isMobile && (
+          <button
+            onClick={openMobileList}
+            className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
+          >
+            <ChevronLeft className="size-5" />
+          </button>
+        )}
         <Globe className="size-4 text-blue-500 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{tab.title || 'Untitled'}</p>

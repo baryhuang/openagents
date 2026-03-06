@@ -180,9 +180,22 @@
   }
 }
 
-/** Smooth scroll **/
+/** Smooth scroll + mobile viewport **/
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+/** Safe area for iOS notch/home indicator **/
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/** Prevent overscroll bounce on mobile **/
+@media (max-width: 1023px) {
+  body {
+    overscroll-behavior: none;
+  }
 }
 
 /** Custom Containers **/

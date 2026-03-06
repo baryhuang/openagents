@@ -67,7 +67,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 
 export function ThreadList() {
   const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession } = useWorkspace();
-  const { sidebarToggle } = useLayout();
+  const { sidebarToggle, isMobile, openMobileDetail } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -135,12 +135,14 @@ export function ThreadList() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-1 px-2 py-3 shrink-0">
-        <button
-          onClick={sidebarToggle}
-          className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-muted-foreground transition-colors shrink-0"
-        >
-          <PanelLeft className="size-4" />
-        </button>
+        {!isMobile && (
+          <button
+            onClick={sidebarToggle}
+            className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-muted-foreground transition-colors shrink-0"
+          >
+            <PanelLeft className="size-4" />
+          </button>
+        )}
         <div className="flex items-center w-full gap-1">
           <div className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-muted/50 border border-input text-muted-foreground">
             <Search className="size-3.5" />
@@ -229,7 +231,10 @@ export function ThreadList() {
             return (
               <div
                 key={session.sessionId}
-                onClick={() => setCurrentSessionId(session.sessionId)}
+                onClick={() => {
+                  setCurrentSessionId(session.sessionId);
+                  if (isMobile) openMobileDetail();
+                }}
                 className={cn(
                   'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-all relative group cursor-pointer',
                   isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
@@ -373,7 +378,10 @@ export function ThreadList() {
                     return (
                       <div
                         key={session.sessionId}
-                        onClick={() => setCurrentSessionId(session.sessionId)}
+                        onClick={() => {
+                          setCurrentSessionId(session.sessionId);
+                          if (isMobile) openMobileDetail();
+                        }}
                         className={cn(
                           'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group cursor-pointer',
                           isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',

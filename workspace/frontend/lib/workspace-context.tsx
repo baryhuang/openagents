@@ -293,6 +293,10 @@ export function WorkspaceProvider({
           });
         }
       }
+
+      // Also refresh files and browser tabs so sidebar counts stay current
+      workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {});
+      workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {});
     } catch {
       // Non-critical — keep existing state
     }

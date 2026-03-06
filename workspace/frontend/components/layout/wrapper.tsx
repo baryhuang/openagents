@@ -13,18 +13,54 @@ import { ConnectAgentView } from '@/components/connect/connect-agent-view';
 import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 
 export function Wrapper() {
-  const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen } = useLayout();
+  const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen, mobilePane } = useLayout();
 
+  // ── Mobile layout: single-pane with list/detail switching ──
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-screen w-full [&_.container-fluid]:px-5">
+        <MobileHeader />
+        <div className="flex-1 min-h-0 pt-[var(--header-height-mobile)] pb-[calc(48px+env(safe-area-inset-bottom))]">
+          {/* Connect view is always full-screen (no list/detail split) */}
+          {viewMode === 'connect' ? (
+            <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+              <ConnectAgentView />
+            </div>
+          ) : mobilePane === 'list' ? (
+            /* List pane — full width */
+            <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
+              {viewMode === 'threads' && <ThreadList />}
+              {viewMode === 'files' && <FileList />}
+              {viewMode === 'browser' && <BrowserTabList />}
+            </div>
+          ) : (
+            /* Detail pane — full width */
+            <div className="relative h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+              {viewMode === 'threads' && (
+                <main className="h-full" role="content">
+                  <ChatView />
+                </main>
+              )}
+              {viewMode === 'files' && <FilePreview />}
+              {viewMode === 'browser' && <BrowserView />}
+              {isAgentPanelOpen && <AgentProfilePanel />}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop layout: sidebar + two panes ──
   return (
     <div className="flex h-screen w-full [&_.container-fluid]:px-5">
-      {!isMobile && <Sidebar />}
+      <Sidebar />
 
-      <div className="flex flex-col flex-1 min-w-0 w-full pt-[var(--header-height-mobile)] lg:pt-0">
-        {isMobile && <MobileHeader />}
-        <div className="flex grow min-h-0 overflow-hidden lg:mx-2.5 mx-5 py-2.5 gap-2.5">
+      <div className="flex flex-col flex-1 min-w-0 w-full">
+        <div className="flex grow min-h-0 overflow-hidden mx-2.5 py-2.5 gap-2.5">
           {/* Invisible spacer for fixed sidebar */}
           <div
-            className="hidden lg:block shrink-0 transition-all duration-300"
+            className="shrink-0 transition-all duration-300"
             style={{
               width: isSidebarOpen
                 ? 'var(--sidebar-width)'

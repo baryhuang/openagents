@@ -32,10 +32,10 @@ export function ConnectAgentView() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center justify-between px-3 lg:px-4 py-2 lg:py-3 border-b shrink-0">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-0.5 lg:gap-3 min-w-0">
           <h2 className="text-sm font-semibold">Connect an Agent</h2>
-          <span className="text-xs text-muted-foreground">Choose a client and run the command to join this workspace</span>
+          <span className="text-xs text-muted-foreground hidden lg:inline">Choose a client and run the command to join this workspace</span>
         </div>
         <button
           onClick={() => setViewMode('threads')}
@@ -72,7 +72,7 @@ export function ConnectAgentView() {
                     <code>{client.command}</code>
                   </pre>
                   <button
-                    className="absolute top-1.5 right-1.5 size-7 flex items-center justify-center rounded-md bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1.5 right-1.5 size-7 flex items-center justify-center rounded-md bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                     title="Copy command"
                     onClick={() => copyToClipboard(client.command)}
                   >

@@ -13,6 +13,9 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 export type ViewMode = 'threads' | 'files' | 'browser' | 'connect';
 
+/** On mobile, which pane is showing: the list or the detail */
+export type MobilePane = 'list' | 'detail';
+
 interface LayoutState {
   isMobile: boolean;
   isSidebarOpen: boolean;
@@ -22,6 +25,12 @@ interface LayoutState {
   selectedAgentName: string | null;
   setSelectedAgentName: (name: string | null) => void;
   isAgentPanelOpen: boolean;
+  /** Which pane is visible on mobile (ignored on desktop) */
+  mobilePane: MobilePane;
+  /** Navigate to detail pane on mobile */
+  openMobileDetail: () => void;
+  /** Navigate back to list pane on mobile */
+  openMobileList: () => void;
 }
 
 const LayoutContext = createContext<LayoutState | undefined>(undefined);
@@ -31,8 +40,11 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('threads');
   const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
+  const [mobilePane, setMobilePane] = useState<MobilePane>('list');
 
   const isAgentPanelOpen = selectedAgentName !== null;
+  const openMobileDetail = () => setMobilePane('detail');
+  const openMobileList = () => setMobilePane('list');
 
   const cssVariables = useMemo(() => ({
     '--sidebar-width': '240px',
@@ -70,6 +82,9 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
       selectedAgentName,
       setSelectedAgentName,
       isAgentPanelOpen,
+      mobilePane,
+      openMobileDetail,
+      openMobileList,
     }}>
       <div data-slot="layout-wrapper" className="flex grow">
         <TooltipProvider delayDuration={0}>

@@ -8,13 +8,15 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft } from 'lucide-react';
+import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import type { WorkspaceMessage } from '@/lib/types';
 
 export function ChatView() {
   const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, renameSession } = useWorkspace();
+  const { isMobile, openMobileList } = useLayout();
   const { messages, loading, forceRefresh } = useMessagePolling({
     sessionId: currentSessionId,
   });
@@ -154,8 +156,17 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-full">
       {/* Thread header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center justify-between px-2 lg:px-4 py-2 lg:py-3 border-b shrink-0">
+        <div className="flex items-center gap-2 lg:gap-3 min-w-0">
+          {/* Back button — mobile only */}
+          {isMobile && (
+            <button
+              onClick={openMobileList}
+              className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 -ml-1"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+          )}
           {editingTitle ? (
             <input
               ref={titleInputRef}
@@ -194,9 +205,9 @@ export function ChatView() {
             );
           })()}
         </div>
-        <div className="flex items-center gap-1.5">
-          {/* Participant chips — show only channel participants */}
-          <div className="flex items-center gap-1 overflow-x-auto">
+        <div className="flex items-center gap-1 lg:gap-1.5">
+          {/* Participant chips — hidden on mobile, shown on desktop */}
+          <div className="hidden lg:flex items-center gap-1 overflow-x-auto">
             {(() => {
               const participants = currentSession?.participants || [];
               const sessionAgents = participants.length > 0
@@ -227,6 +238,38 @@ export function ChatView() {
               });
             })()}
           </div>
+
+          {/* Compact avatar stack on mobile */}
+          {isMobile && (() => {
+            const participants = currentSession?.participants || [];
+            const sessionAgents = participants.length > 0
+              ? agents.filter((a) => participants.includes(a.agentName))
+              : agents;
+            if (sessionAgents.length === 0) return null;
+            return (
+              <div className="flex -space-x-1.5">
+                {sessionAgents.slice(0, 3).map((agent) => {
+                  const color = getAgentColor(agent.agentName, agentNames);
+                  return (
+                    <div
+                      key={agent.agentName}
+                      className={cn(
+                        'size-5 rounded-full flex items-center justify-center text-white text-[7px] font-bold border-2 border-background',
+                        color.initials
+                      )}
+                    >
+                      {getAgentInitials(agent.agentName)}
+                    </div>
+                  );
+                })}
+                {sessionAgents.length > 3 && (
+                  <div className="size-5 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-medium text-zinc-600 border-2 border-background">
+                    +{sessionAgents.length - 3}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Agent mode toggle */}
           {agents.length > 0 && (() => {
@@ -313,12 +356,12 @@ export function ChatView() {
             messages={messages}
             agents={agents}
             showAllSteps={showAllSteps}
-            className="flex-1 overflow-y-auto px-5 py-3"
+            className="flex-1 overflow-y-auto px-3 lg:px-5 py-3"
           />
         )}
 
         {/* Input */}
-        <div className="px-4 py-3 border-t">
+        <div className="px-3 lg:px-4 py-2 lg:py-3 border-t">
           <div className="max-w-3xl mx-auto w-full">
             <ChatInput
               onSend={handleSend}

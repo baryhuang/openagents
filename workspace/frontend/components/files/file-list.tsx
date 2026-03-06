@@ -6,6 +6,7 @@ import {
   File as FileIcon, Trash2,
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
+import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -42,6 +43,7 @@ function timeAgo(dateStr: string): string {
 
 export function FileList() {
   const { files, selectedFileId, setSelectedFileId, uploadFile, deleteFile, refreshFiles } = useWorkspace();
+  const { isMobile, openMobileDetail } = useLayout();
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -122,7 +124,10 @@ export function FileList() {
           {filtered.map((file) => (
             <div
               key={file.id}
-              onClick={() => setSelectedFileId(file.id)}
+              onClick={() => {
+                setSelectedFileId(file.id);
+                if (isMobile) openMobileDetail();
+              }}
               className={cn(
                 'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors group cursor-pointer',
                 selectedFileId === file.id

@@ -8,7 +8,7 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { cn } from '@/lib/utils';
 
 export function AgentProfilePanel() {
-  const { selectedAgentName, setSelectedAgentName } = useLayout();
+  const { selectedAgentName, setSelectedAgentName, isMobile } = useLayout();
   const { agents } = useWorkspace();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
 
@@ -34,8 +34,11 @@ export function AgentProfilePanel() {
         onClick={() => setSelectedAgentName(null)}
       />
 
-      {/* Panel */}
-      <div className="absolute top-0 right-0 bottom-0 w-[320px] bg-background border-l shadow-xl z-20 flex flex-col animate-in slide-in-from-right duration-200">
+      {/* Panel — full-width on mobile, 320px sidebar on desktop */}
+      <div className={cn(
+        'absolute top-0 right-0 bottom-0 bg-background border-l shadow-xl z-20 flex flex-col animate-in slide-in-from-right duration-200',
+        isMobile ? 'left-0 w-full' : 'w-[320px]'
+      )}>
         {/* Close button */}
         <div className="flex items-center justify-end px-3 pt-3">
           <button

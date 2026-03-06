@@ -9,12 +9,17 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Menu, Bot } from 'lucide-react';
+import { Menu, Bot, MessageSquare, FileText, Globe, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { SidebarContent } from './sidebar-content';
+import { useLayout, type ViewMode } from './layout-context';
+import { useWorkspace } from '@/lib/workspace-context';
+import { cn } from '@/lib/utils';
 
 export function MobileHeader() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const { viewMode, setViewMode, openMobileList, openMobileDetail } = useLayout();
+  const { workspace, createSession, sessions, agents } = useWorkspace();
 
   // Close sheet when clicking a session
   useEffect(() => {
@@ -28,31 +33,85 @@ export function MobileHeader() {
     }
   }, [isSheetOpen]);
 
+  const handleViewSwitch = (mode: ViewMode) => {
+    setViewMode(mode);
+    openMobileList();
+  };
+
+  const handleNewThread = () => {
+    createSession();
+    setViewMode('threads');
+    openMobileDetail();
+  };
+
+  const tabs: { mode: ViewMode; icon: typeof MessageSquare; label: string }[] = [
+    { mode: 'threads', icon: MessageSquare, label: 'Threads' },
+    { mode: 'files', icon: FileText, label: 'Files' },
+    { mode: 'browser', icon: Globe, label: 'Browser' },
+  ];
+
   return (
-    <header className="fixed top-0 start-0 end-0 z-50 flex items-center shrink-0 bg-background/95 backdrop-blur-sm h-[var(--header-height-mobile)]">
-      <div className="container-fluid grow flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center p-[8px] gap-2 rounded-[60px] bg-gradient-to-r from-primary to-purple-600 dark:from-purple-950 dark:to-purple-800 shadow-lg">
-            <Bot className="size-4 text-white" />
+    <>
+      <header className="fixed top-0 start-0 end-0 z-50 flex items-center shrink-0 bg-background/95 backdrop-blur-sm border-b h-[var(--header-height-mobile)]">
+        <div className="grow flex items-center justify-between gap-2 px-3">
+          {/* Left: menu + logo + workspace name */}
+          <div className="flex items-center gap-2 min-w-0">
+            <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" mode="icon" size="sm" className="shrink-0">
+                  <Menu className="size-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="p-0 gap-0 w-[280px]" side="left" close={false}>
+                <SheetHeader className="p-0 space-y-0">
+                  <SheetTitle className="sr-only">Navigation</SheetTitle>
+                </SheetHeader>
+                <SheetBody className="flex grow p-0">
+                  <SidebarContent />
+                </SheetBody>
+              </SheetContent>
+            </Sheet>
+
+            <div className="flex items-center p-[6px] rounded-[60px] bg-gradient-to-r from-primary to-purple-600 dark:from-purple-950 dark:to-purple-800 shadow-sm shrink-0">
+              <Bot className="size-3.5 text-white" />
+            </div>
+
+            <span className="text-sm font-medium truncate">
+              {workspace?.name || 'Workspace'}
+            </span>
           </div>
 
-          <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" mode="icon" size="sm">
-                <Menu className="size-4" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="p-0 gap-0 w-[255px]" side="left" close={false}>
-              <SheetHeader className="p-0 space-y-0">
-                <SheetTitle className="sr-only">Navigation</SheetTitle>
-              </SheetHeader>
-              <SheetBody className="flex grow p-0">
-                <SidebarContent />
-              </SheetBody>
-            </SheetContent>
-          </Sheet>
+          {/* Right: new thread button */}
+          <button
+            onClick={handleNewThread}
+            className="size-8 flex items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0"
+            title="New Thread"
+          >
+            <Plus className="size-4" />
+          </button>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {/* Bottom navigation tabs */}
+      <nav className="fixed bottom-0 start-0 end-0 z-50 bg-background/95 backdrop-blur-sm border-t safe-bottom">
+        <div className="flex items-center justify-around h-12">
+          {tabs.map(({ mode, icon: Icon, label }) => (
+            <button
+              key={mode}
+              onClick={() => handleViewSwitch(mode)}
+              className={cn(
+                'flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors',
+                viewMode === mode
+                  ? 'text-primary'
+                  : 'text-muted-foreground'
+              )}
+            >
+              <Icon className="size-5" />
+              <span className="text-[10px] font-medium">{label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+    </>
   );
 }
