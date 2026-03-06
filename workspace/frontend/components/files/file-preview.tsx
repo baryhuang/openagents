@@ -131,7 +131,7 @@ export function FilePreview() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{file.filename}</p>
           <p className="text-xs text-muted-foreground">
-            {formatSize(file.size)} · {file.contentType} · {file.uploadedBy.replace(/^(openagents:|human:)/, '')}
+            {formatSize(file.size)} · {file.contentType} · {(file.uploadedBy || 'unknown').replace(/^(openagents:|human:)/, '')}
           </p>
         </div>
         <button
