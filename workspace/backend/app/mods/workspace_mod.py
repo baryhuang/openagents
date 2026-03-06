@@ -63,15 +63,20 @@ async def _handle_agent_join(event: Event, ctx: PipelineContext) -> Optional[Eve
 
     now = datetime.now(timezone.utc)
 
+    agent_type = event.payload.get("agent_type") if event.payload else None
+
     if existing:
         existing.status = "online"
         existing.last_heartbeat = now
+        if agent_type and not existing.agent_type:
+            existing.agent_type = agent_type
     else:
         role = event.payload.get("role", "member")
         member = WorkspaceMember(
             workspace_id=workspace.id,
             agent_name=agent_name,
             role=role,
+            agent_type=agent_type,
             status="online",
             last_heartbeat=now,
         )

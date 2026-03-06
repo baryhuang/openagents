@@ -13,6 +13,7 @@ export interface Workspace {
 export interface WorkspaceAgent {
   agentName: string;
   role: string;
+  agentType: string | null;
   status: string;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
@@ -103,6 +104,7 @@ export interface NetworkAgent {
   address: string;
   role: string;
   status: string;
+  agent_type: string | null;
 }
 
 export interface NetworkChannel {
@@ -194,6 +196,7 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
   return {
     agentName: agent.address.replace(/^openagents:/, ''),
     role: agent.role,
+    agentType: agent.agent_type || null,
     status: agent.status,
     lastHeartbeatAt: null,
     joinedAt: null,

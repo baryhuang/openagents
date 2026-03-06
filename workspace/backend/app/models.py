@@ -97,6 +97,7 @@ class WorkspaceMember(Base):
     workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     agent_name = Column(Text, nullable=False)
     role = Column(Text, default="member")           # master | member | observer
+    agent_type = Column(Text, nullable=True)          # "claude", "openclaw", etc.
     status = Column(Text, default="offline")         # online | offline
     last_heartbeat = Column(DateTime(timezone=True), nullable=True)
     joined_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))

@@ -47,6 +47,7 @@ class JoinRequest(BaseModel):
     agent_name: str
     token: str                         # workspace token
     network: Optional[str] = None      # workspace ID or slug
+    agent_type: Optional[str] = None   # "claude", "openclaw", etc.
 
 class LeaveRequest(BaseModel):
     agent_name: str
@@ -139,13 +140,15 @@ async def join_network(
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
 
+    payload = {"agent_name": body.agent_name}
+    if body.agent_type:
+        payload["agent_type"] = body.agent_type
+
     event = Event(
         type="network.agent.join",
         source=f"openagents:{body.agent_name}",
         target="core",
-        payload={
-            "agent_name": body.agent_name,
-        },
+        payload=payload,
     )
 
     result = await _emit_event(event, workspace, db, token=body.token)
@@ -292,6 +295,7 @@ async def discover(
             "address": f"openagents:{m.agent_name}",
             "role": m.role,
             "status": status,
+            "agent_type": m.agent_type,
         })
 
     channels_rows = db.execute(

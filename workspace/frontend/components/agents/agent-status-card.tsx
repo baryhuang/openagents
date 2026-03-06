@@ -82,6 +82,7 @@ export function AgentStatusCard({ agents }: AgentStatusCardProps) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{agent.agentName}</p>
                 <p className="text-xs text-muted-foreground">
+                  {agent.agentType && <span className="capitalize">{agent.agentType} · </span>}
                   {isOnline
                     ? 'Online'
                     : agent.lastHeartbeatAt
