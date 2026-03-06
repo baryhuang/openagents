@@ -234,6 +234,7 @@ export function ThreadList() {
                   'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-all relative group cursor-pointer',
                   isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
                   'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50',
+                  isActive && !isSelected && 'thread-wip',
                   isCompleted && !isSelected && 'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200/60 dark:ring-amber-700/40 animate-[glow_2s_ease-in-out_infinite]'
                 )}
               >
@@ -257,12 +258,7 @@ export function ThreadList() {
                         ? highlightMatch(session.title || 'Untitled', searchQuery)
                         : (session.title || 'Untitled')}
                     </span>
-                    {isActive ? (
-                      <span className="relative flex size-2 shrink-0">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-                        <span className="relative inline-flex size-2 rounded-full bg-blue-500" />
-                      </span>
-                    ) : isCompleted && !isSelected ? (
+                    {isCompleted && !isSelected ? (
                       <CheckCircle2 className="size-3.5 shrink-0 text-amber-500" />
                     ) : (
                       <span className="text-xs text-muted-foreground shrink-0">
@@ -272,7 +268,7 @@ export function ThreadList() {
                   </div>
                   <p className={cn(
                     'text-xs text-muted-foreground truncate',
-                    previewIsStatus && 'italic animate-pulse'
+                    previewIsStatus && 'italic'
                   )}>
                     {preview}
                   </p>
