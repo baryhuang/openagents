@@ -2,13 +2,15 @@
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, User, FileIcon, Download } from 'lucide-react';
+import { Copy, Check, User, FileIcon, Download, Eye } from 'lucide-react';
 import { toast } from 'sonner';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import { MarkdownContent } from './markdown-content';
 import { workspaceApi } from '@/lib/api';
+import { useLayout } from '@/components/layout/layout-context';
+import { useWorkspace } from '@/lib/workspace-context';
 
 interface Attachment {
   fileId: string;
@@ -17,8 +19,22 @@ interface Attachment {
   url: string;
 }
 
+function isPreviewable(contentType: string, filename: string): boolean {
+  if (contentType?.startsWith('image/')) return true;
+  if (contentType === 'text/html' || /\.html?$/i.test(filename)) return true;
+  return false;
+}
+
 function Attachments({ items }: { items: Attachment[] }) {
   if (!items || items.length === 0) return null;
+
+  const { setViewMode } = useLayout();
+  const { setSelectedFileId } = useWorkspace();
+
+  const openPreview = useCallback((fileId: string) => {
+    setSelectedFileId(fileId);
+    setViewMode('files');
+  }, [setSelectedFileId, setViewMode]);
 
   // Regenerate URLs from fileId to ensure they include current auth token
   const fixedItems = useMemo(() =>
@@ -34,12 +50,11 @@ function Attachments({ items }: { items: Attachment[] }) {
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {images.map((img) => (
-            <a
+            <button
               key={img.fileId}
-              href={img.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block rounded-lg overflow-hidden border hover:shadow-md transition-shadow max-w-sm"
+              type="button"
+              onClick={() => openPreview(img.fileId)}
+              className="block rounded-lg overflow-hidden border hover:shadow-md transition-shadow max-w-sm cursor-pointer text-left"
             >
               <img
                 src={img.url}
@@ -47,25 +62,38 @@ function Attachments({ items }: { items: Attachment[] }) {
                 className="max-h-64 w-auto object-contain"
                 loading="lazy"
               />
-            </a>
+            </button>
           ))}
         </div>
       )}
       {files.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {files.map((file) => (
-            <a
-              key={file.fileId}
-              href={file.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted hover:bg-muted/80 transition-colors text-sm"
-            >
-              <FileIcon className="size-4 text-muted-foreground shrink-0" />
-              <span className="truncate max-w-[200px]">{file.filename}</span>
-              <Download className="size-3 text-muted-foreground shrink-0" />
-            </a>
-          ))}
+          {files.map((file) => {
+            const previewable = isPreviewable(file.contentType, file.filename);
+            return previewable ? (
+              <button
+                key={file.fileId}
+                type="button"
+                onClick={() => openPreview(file.fileId)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted hover:bg-muted/80 transition-colors text-sm cursor-pointer"
+              >
+                <Eye className="size-4 text-muted-foreground shrink-0" />
+                <span className="truncate max-w-[200px]">{file.filename}</span>
+              </button>
+            ) : (
+              <a
+                key={file.fileId}
+                href={file.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted hover:bg-muted/80 transition-colors text-sm"
+              >
+                <FileIcon className="size-4 text-muted-foreground shrink-0" />
+                <span className="truncate max-w-[200px]">{file.filename}</span>
+                <Download className="size-3 text-muted-foreground shrink-0" />
+              </a>
+            );
+          })}
         </div>
       )}
     </div>
