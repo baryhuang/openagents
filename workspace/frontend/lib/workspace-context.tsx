@@ -225,16 +225,30 @@ export function WorkspaceProvider({
                 channel: ch.sessionId,
                 type: 'workspace.message',
                 sort: 'desc',
-                limit: 1,
+                limit: 3,
               });
+              if (result.events.length === 0) return null;
               const latest = result.events[0];
-              if (latest) {
-                const payload = latest.payload as Record<string, string>;
-                const sender = latest.source.replace(/^(openagents:|human:)/, '');
-                const content = payload?.content || '';
-                const isStatus = payload?.message_type === 'status';
-                return { sessionId: ch.sessionId, senderName: sender, content, isStatus };
+              const latestPayload = latest.payload as Record<string, string>;
+              const latestIsStatus = latestPayload?.message_type === 'status';
+              // If latest is status, show it (agent working). But if it looks like
+              // a cleanup (e.g. TodoWrite with empty todos), prefer the last chat message.
+              let pick = latest;
+              if (latestIsStatus) {
+                const content = latestPayload?.content || '';
+                const isCleanup = /TodoWrite.*\[\]|todos.*\[\]/i.test(content);
+                if (isCleanup) {
+                  const chatMsg = result.events.find(
+                    (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
+                  );
+                  if (chatMsg) pick = chatMsg;
+                }
               }
+              const payload = pick.payload as Record<string, string>;
+              const sender = pick.source.replace(/^(openagents:|human:)/, '');
+              const content = payload?.content || '';
+              const isStatus = payload?.message_type === 'status';
+              return { sessionId: ch.sessionId, senderName: sender, content, isStatus };
             } catch { /* ignore */ }
             return null;
           })
@@ -376,12 +390,19 @@ export function WorkspaceProvider({
               const latest = result.events[0];
               const latestPayload = latest.payload as Record<string, string>;
               const latestIsStatus = latestPayload?.message_type === 'status';
-              // If latest is a status, show it (agent in progress); otherwise show the last chat
-              const pick = latestIsStatus
-                ? latest
-                : result.events.find(
-                    (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
-                  ) || latest;
+              // If latest is a status, show it (agent in progress) — unless it's
+              // a cleanup (e.g. TodoWrite clearing todos), in which case show last chat
+              const lastChat = result.events.find(
+                (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
+              );
+              let pick: typeof latest;
+              if (latestIsStatus) {
+                const content = latestPayload?.content || '';
+                const isCleanup = /TodoWrite.*\[\]|todos.*\[\]/i.test(content);
+                pick = (isCleanup && lastChat) ? lastChat : latest;
+              } else {
+                pick = lastChat || latest;
+              }
               const payload = pick.payload as Record<string, string>;
               if (pick) {
                 const sender = pick.source.replace(/^(openagents:|human:)/, '');
