@@ -236,7 +236,7 @@ export function WorkspaceProvider({
               let pick = latest;
               if (latestIsStatus) {
                 const content = latestPayload?.content || '';
-                const isCleanup = /TodoWrite.*\[\]|todos.*\[\]/i.test(content);
+                const isCleanup = /TodoWrite/i.test(content) && /\[\s*\]/.test(content);
                 if (isCleanup) {
                   const chatMsg = result.events.find(
                     (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
@@ -398,7 +398,7 @@ export function WorkspaceProvider({
               let pick: typeof latest;
               if (latestIsStatus) {
                 const content = latestPayload?.content || '';
-                const isCleanup = /TodoWrite.*\[\]|todos.*\[\]/i.test(content);
+                const isCleanup = /TodoWrite/i.test(content) && /\[\s*\]/.test(content);
                 pick = (isCleanup && lastChat) ? lastChat : latest;
               } else {
                 pick = lastChat || latest;
