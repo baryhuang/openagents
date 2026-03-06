@@ -5,6 +5,7 @@ import {
   SheetBody,
   SheetContent,
   SheetHeader,
+  SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -42,7 +43,9 @@ export function MobileHeader() {
               </Button>
             </SheetTrigger>
             <SheetContent className="p-0 gap-0 w-[255px]" side="left" close={false}>
-              <SheetHeader className="p-0 space-y-0" />
+              <SheetHeader className="p-0 space-y-0">
+                <SheetTitle className="sr-only">Navigation</SheetTitle>
+              </SheetHeader>
               <SheetBody className="flex grow p-0">
                 <SidebarContent />
               </SheetBody>
