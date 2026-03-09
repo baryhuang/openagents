@@ -3850,7 +3850,7 @@ def daemon_up(
     else:
         console.print("[dim]Running in foreground. Press Ctrl+C to stop.[/dim]\n")
 
-    manager = DaemonManager(cfg)
+    manager = DaemonManager(cfg, config_path=config)
     try:
         asyncio.run(manager.start())
     except KeyboardInterrupt:
@@ -4202,7 +4202,7 @@ def _start_daemon():
     console.print(table)
 
     daemonize()
-    manager = DaemonManager(cfg)
+    manager = DaemonManager(cfg, config_path=config)
     try:
         asyncio.run(manager.start())
     except KeyboardInterrupt:

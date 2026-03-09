@@ -34,6 +34,7 @@ from openagents.daemon_config import (
     LOG_PATH,
     STATUS_PATH,
     get_agent_network,
+    load_config,
     write_status,
 )
 
@@ -77,12 +78,14 @@ class AgentStatus:
 class DaemonManager:
     """Manages multiple agent adapters in a single asyncio event loop."""
 
-    def __init__(self, config: DaemonConfig):
+    def __init__(self, config: DaemonConfig, config_path=None):
         self.config = config
+        self.config_path = config_path
         self.tasks: dict[str, asyncio.Task] = {}
         self.agent_status: dict[str, AgentStatus] = {}
         self._shutting_down = False
         self._shutdown_event = asyncio.Event()
+        self._reload_pending = False
 
     async def start(self):
         """Start all configured agents and block until shutdown."""
@@ -102,6 +105,8 @@ class DaemonManager:
         else:
             for sig in (signal.SIGTERM, signal.SIGINT):
                 loop.add_signal_handler(sig, self._handle_signal)
+            if hasattr(signal, "SIGHUP"):
+                loop.add_signal_handler(signal.SIGHUP, self._handle_reload)
 
         # Periodically write status file
         status_task = asyncio.create_task(self._status_loop())
@@ -121,6 +126,40 @@ class DaemonManager:
             logger.info("Shutdown signal received")
             self._shutting_down = True
             self._shutdown_event.set()
+
+    def _handle_reload(self):
+        """SIGHUP handler — flag config reload for next status loop iteration."""
+        logger.info("SIGHUP received — scheduling config reload")
+        self._reload_pending = True
+
+    async def _do_reload(self):
+        """Re-read config and start/stop agents as needed."""
+        self._reload_pending = False
+        try:
+            new_config = load_config(self.config_path)
+        except Exception as e:
+            logger.error(f"Failed to reload config: {e}")
+            return
+
+        old_names = {a.name for a in self.config.agents}
+        new_names = {a.name for a in new_config.agents}
+
+        # Stop removed agents
+        for name in old_names - new_names:
+            self._stop_agent(name)
+            logger.info(f"Reload: stopped removed agent '{name}'")
+
+        # Start new agents
+        new_agent_map = {a.name: a for a in new_config.agents}
+        for name in new_names - old_names:
+            agent_cfg = new_agent_map[name]
+            net = get_agent_network(agent_cfg, new_config)
+            self._launch_agent(agent_cfg, net)
+            logger.info(f"Reload: started new agent '{name}'")
+
+        self.config = new_config
+        self._write_status()
+        logger.info(f"Config reloaded: {len(new_config.agents)} agent(s)")
 
     def _launch_agent(self, agent_cfg: AgentEntry, net: Optional[NetworkEntry]):
         """Create status entry and launch agent task."""
@@ -295,11 +334,13 @@ class DaemonManager:
             await asyncio.gather(*self.tasks.values(), return_exceptions=True)
 
     async def _status_loop(self):
-        """Periodically write status file and check for commands."""
+        """Periodically write status file, check for commands, and handle reloads."""
         try:
             while True:
                 self._write_status()
                 self._process_commands()
+                if self._reload_pending:
+                    await self._do_reload()
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
             pass
@@ -318,6 +359,8 @@ class DaemonManager:
                 if line.startswith("stop:"):
                     agent_name = line[5:].strip()
                     self._stop_agent(agent_name)
+                elif line == "reload":
+                    self._reload_pending = True
                 else:
                     logger.warning(f"Unknown daemon command: {line}")
         except Exception as e:

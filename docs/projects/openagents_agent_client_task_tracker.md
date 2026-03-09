@@ -36,12 +36,12 @@
 | 28 | Integration tests for `POST /v1/token/resolve` and token-only `POST /v1/join` | `test_network.py` | Done |
 | 29 | Local agent process management — subprocess launch via `get_launch_command()` | `daemon.py`, `plugin_registry.py` | Done |
 | 30 | Individual agent stop via file-based command (`daemon.cmd`) | `daemon.py`, `daemon_config.py`, `cli.py` | Done |
+| 31 | Hot reload — SIGHUP re-reads config, starts/stops agents as needed | `daemon.py`, `cli.py` | Done |
 
 ## Pending
 
 | # | Task | Files | Priority | Notes |
 |---|------|-------|----------|-------|
-| P2 | Hot reload — SIGHUP to re-read config | `daemon.py` | Medium | Currently must `openagents down && openagents up` to pick up new agents. SIGHUP handler should re-read `daemon.yaml` and start/stop agents as needed. |
 | P4 | Connector extraction | `connector/` (new) | High | Extract shared connectivity logic (auth, discovery, reconnect, transport negotiation) from adapters into a shared connector layer. Adapters become thin I/O translators. |
 | P5 | Network manifest | workspace backend, SDK networks | Medium | Implement `/.well-known/openagents.json` on hosted workspace and SDK networks. Formalize in ONM spec. |
 | P6 | `yaml-agent` plugin type | `plugin_registry.py` | Medium | Convert `openagents agents start <folder>` into a plugin type so YAML-defined agents are managed by daemon. |
@@ -58,14 +58,6 @@
 | P18 | Workspace member list / invite management | workspace backend, `cli.py` | Medium | `openagents workspace members`, `openagents workspace invite`. |
 
 ## Context
-
-### P2: Hot Reload (SIGHUP)
-
-**Current state:** `daemon.py:86-115` — `start()` installs SIGTERM/SIGINT handlers but no SIGHUP. To pick up config changes, user must `openagents down && openagents up`.
-
-**What's needed:** Add SIGHUP handler that re-reads `daemon.yaml` via `load_config()`, diffs against current `self.config`, cancels removed agents, launches new agents. Reuse `_launch_agent()` for new entries.
-
----
 
 ### P4: Connector Extraction
 
