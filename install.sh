@@ -9,7 +9,7 @@ set -euo pipefail
 # Works on macOS, Linux, and Windows (WSL/Git Bash).
 # =============================================================================
 
-VERSION="0.8.6"
+VERSION="0.9.0"
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=10
 

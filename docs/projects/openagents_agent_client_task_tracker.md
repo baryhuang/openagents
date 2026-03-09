@@ -65,6 +65,7 @@
 | P11 | Remote agents via SSH tunnel | `daemon.py` | Low | Support agents running on remote servers, connected via SSH tunnel. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
 | P25 | Update internal docs — agent workspace concept | `~/works/openagents-web/internal_frontend/docs/202602-agent-workspace` | Medium | Update the agent-workspace internal doc to reflect latest concept: token-only join, `openagents start` flow, workspace CLI commands, agent registry, layered architecture, repo restructure plan. |
+| P27 | README rewrite — three-layer narrative | `README.md` | High | Full rewrite. Layer 1: lead with user experience (`curl \| bash`, `openagents start claude`, workspace). Layer 2: agent networks — the workspace runs on an agent network, build your own with `openagents network start`, Studio, mods, YAML/Python agents. Layer 3: full SDK (`pip install openagents[sdk]`) for custom transports, protocols, MCP, A2A. Trim badge/star noise, update architecture diagram, add supported agents table, replace old quick start. ~200 lines, focused. |
 
 ## Context
 
