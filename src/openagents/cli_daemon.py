@@ -158,6 +158,73 @@ def daemon_status():
     console.print(table)
 
 
+@app.command("logs")
+def daemon_logs(
+    agent: Optional[str] = typer.Argument(
+        None, help="Filter logs by agent name",
+    ),
+    follow: bool = typer.Option(
+        False, "--follow", "-f", help="Follow log output (like tail -f)",
+    ),
+    lines: int = typer.Option(
+        50, "--lines", "-n", help="Number of lines to show",
+    ),
+):
+    """View daemon and agent logs."""
+    from openagents.daemon_config import LOG_PATH
+
+    if not LOG_PATH.exists():
+        console.print("[yellow]No log file found. Is the daemon running?[/yellow]")
+        console.print(f"[dim]Expected: {LOG_PATH}[/dim]")
+        raise typer.Exit(1)
+
+    if follow:
+        # Tail -f mode
+        console.print(f"[dim]Following {LOG_PATH}" + (f" (filter: {agent})" if agent else "") + "[/dim]")
+        console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+        try:
+            cmd = ["tail", "-f", "-n", str(lines), str(LOG_PATH)]
+            if agent:
+                # Pipe through grep for agent filtering
+                tail = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
+                try:
+                    for line in tail.stdout:
+                        if agent in line:
+                            console.print(line.rstrip())
+                except KeyboardInterrupt:
+                    pass
+                finally:
+                    tail.terminate()
+                    tail.wait()
+            else:
+                subprocess.run(cmd)
+        except KeyboardInterrupt:
+            pass
+    else:
+        # Static view
+        try:
+            with open(LOG_PATH, "r") as f:
+                all_lines = f.readlines()
+        except OSError as e:
+            console.print(f"[red]Cannot read log file: {e}[/red]")
+            raise typer.Exit(1)
+
+        if agent:
+            all_lines = [l for l in all_lines if agent in l]
+
+        tail_lines = all_lines[-lines:]
+        if not tail_lines:
+            console.print("[yellow]No matching log entries found.[/yellow]")
+            return
+
+        for line in tail_lines:
+            console.print(line.rstrip())
+
+        total = len(all_lines)
+        if total > lines:
+            console.print(f"\n[dim]Showing last {lines} of {total} lines. Use -n to show more, -f to follow.[/dim]")
+
+
 @app.command("start")
 def daemon_start_agent(
     agent_type: str = typer.Argument(
