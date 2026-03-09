@@ -2,11 +2,25 @@
 Daemon configuration — YAML-based persistent config for agent connections.
 
 Config file: ~/.openagents/daemon.yaml
+
+Schema v2 separates agents from networks:
+    agents:
+      - name: my-bot
+        type: claude
+        network: my-workspace   # optional — null = local-only
+        ...
+    networks:
+      - slug: my-workspace
+        id: ws-123
+        token: xxx
+        ...
+
+Schema v1 (legacy) nests agents inside workspaces. Migrated on load.
 """
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -25,39 +39,70 @@ DEFAULT_ENDPOINT = "https://workspace-endpoint.openagents.org"
 
 
 # ---------------------------------------------------------------------------
-# Data classes
+# Data classes (v2)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class AgentEntry:
-    """A single agent in a workspace."""
+    """A single agent managed by the daemon."""
     name: str
-    type: str  # claude, openclaw, codex
+    type: str  # claude, openclaw, codex, etc.
     role: str = "worker"
+    path: Optional[str] = None  # working directory
+    network: Optional[str] = None  # network slug/id — None = local-only
     options: dict = field(default_factory=dict)
 
 
 @dataclass
-class WorkspaceEntry:
-    """A workspace with its agents."""
+class NetworkEntry:
+    """A remote network the client can connect agents to."""
     id: str
     slug: str
     name: str
     token: str
     endpoint: str = DEFAULT_ENDPOINT
-    agents: list[AgentEntry] = field(default_factory=list)
 
 
 @dataclass
 class DaemonConfig:
-    """Top-level daemon configuration."""
-    version: int = 1
-    workspaces: list[WorkspaceEntry] = field(default_factory=list)
+    """Top-level daemon configuration (v2)."""
+    version: int = 2
+    agents: list[AgentEntry] = field(default_factory=list)
+    networks: list[NetworkEntry] = field(default_factory=list)
+
+
+# Legacy alias for backward compatibility with code that imports WorkspaceEntry
+WorkspaceEntry = NetworkEntry
 
 
 # ---------------------------------------------------------------------------
 # Load / Save
 # ---------------------------------------------------------------------------
+
+def _migrate_v1(raw: dict) -> dict:
+    """Migrate v1 config (agents nested in workspaces) to v2 (flat)."""
+    agents = []
+    networks = []
+    for ws_raw in raw.get("workspaces", []):
+        slug = ws_raw.get("slug", "")
+        net = {
+            "id": ws_raw["id"],
+            "slug": slug,
+            "name": ws_raw.get("name", ""),
+            "token": ws_raw["token"],
+            "endpoint": ws_raw.get("endpoint", DEFAULT_ENDPOINT),
+        }
+        networks.append(net)
+        for a in ws_raw.get("agents", []):
+            agents.append({
+                "name": a["name"],
+                "type": a["type"],
+                "role": a.get("role", "worker"),
+                "network": slug or ws_raw["id"],
+                "options": a.get("options", {}),
+            })
+    return {"version": 2, "agents": agents, "networks": networks}
+
 
 def load_config(path: Optional[Path] = None) -> DaemonConfig:
     """Load daemon config from YAML. Returns empty config if file missing."""
@@ -71,67 +116,82 @@ def load_config(path: Optional[Path] = None) -> DaemonConfig:
         logger.warning(f"Failed to parse {p}: {e}")
         return DaemonConfig()
 
-    workspaces = []
-    for ws_raw in raw.get("workspaces", []):
-        agents = [
-            AgentEntry(
-                name=a["name"],
-                type=a["type"],
-                role=a.get("role", "worker"),
-                options=a.get("options", {}),
-            )
-            for a in ws_raw.get("agents", [])
-        ]
-        workspaces.append(WorkspaceEntry(
-            id=ws_raw["id"],
-            slug=ws_raw.get("slug", ""),
-            name=ws_raw.get("name", ""),
-            token=ws_raw["token"],
-            endpoint=ws_raw.get("endpoint", DEFAULT_ENDPOINT),
-            agents=agents,
-        ))
+    # Auto-migrate v1 → v2
+    version = raw.get("version", 1)
+    if version < 2:
+        raw = _migrate_v1(raw)
+        # Save migrated config
+        try:
+            _save_raw(raw, p)
+        except Exception as e:
+            logger.warning(f"Failed to save migrated config: {e}")
 
-    return DaemonConfig(
-        version=raw.get("version", 1),
-        workspaces=workspaces,
-    )
+    agents = [
+        AgentEntry(
+            name=a["name"],
+            type=a["type"],
+            role=a.get("role", "worker"),
+            path=a.get("path"),
+            network=a.get("network"),
+            options=a.get("options", {}),
+        )
+        for a in raw.get("agents", [])
+    ]
+
+    networks = [
+        NetworkEntry(
+            id=n["id"],
+            slug=n.get("slug", ""),
+            name=n.get("name", ""),
+            token=n["token"],
+            endpoint=n.get("endpoint", DEFAULT_ENDPOINT),
+        )
+        for n in raw.get("networks", [])
+    ]
+
+    return DaemonConfig(version=2, agents=agents, networks=networks)
+
+
+def _save_raw(data: dict, p: Path) -> None:
+    """Write raw dict to YAML."""
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    try:
+        p.chmod(0o600)
+    except OSError:
+        pass
 
 
 def save_config(config: DaemonConfig, path: Optional[Path] = None) -> None:
     """Save daemon config to YAML."""
     p = Path(path) if path else CONFIG_PATH
-    p.parent.mkdir(parents=True, exist_ok=True)
 
     data = {
         "version": config.version,
-        "workspaces": [
-            {
-                "id": ws.id,
-                "slug": ws.slug,
-                "name": ws.name,
-                "token": ws.token,
-                "endpoint": ws.endpoint,
-                "agents": [
-                    {
-                        k: v for k, v in {
-                            "name": a.name,
-                            "type": a.type,
-                            "role": a.role,
-                            "options": a.options or None,
-                        }.items() if v is not None
-                    }
-                    for a in ws.agents
-                ],
-            }
-            for ws in config.workspaces
+        "agents": [
+            {k: v for k, v in {
+                "name": a.name,
+                "type": a.type,
+                "role": a.role,
+                "path": a.path,
+                "network": a.network,
+                "options": a.options or None,
+            }.items() if v is not None}
+            for a in config.agents
+        ],
+        "networks": [
+            {k: v for k, v in {
+                "id": n.id,
+                "slug": n.slug,
+                "name": n.name,
+                "token": n.token,
+                "endpoint": n.endpoint if n.endpoint != DEFAULT_ENDPOINT else None,
+            }.items() if v is not None}
+            for n in config.networks
         ],
     }
 
-    p.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
-    try:
-        p.chmod(0o600)  # token is sensitive
-    except OSError:
-        pass
+    _save_raw(data, p)
 
 
 # ---------------------------------------------------------------------------
@@ -139,44 +199,68 @@ def save_config(config: DaemonConfig, path: Optional[Path] = None) -> None:
 # ---------------------------------------------------------------------------
 
 def add_agent_to_config(
-    workspace_id: str,
     agent: AgentEntry,
     path: Optional[Path] = None,
 ) -> None:
-    """Add an agent to an existing workspace in the config."""
+    """Add or update an agent in the config."""
     config = load_config(path)
-    for ws in config.workspaces:
-        if ws.id == workspace_id or ws.slug == workspace_id:
-            # Check for duplicate
-            if any(a.name == agent.name for a in ws.agents):
-                # Update existing
-                ws.agents = [agent if a.name == agent.name else a for a in ws.agents]
-            else:
-                ws.agents.append(agent)
+    for i, a in enumerate(config.agents):
+        if a.name == agent.name:
+            config.agents[i] = agent
             save_config(config, path)
             return
-    raise ValueError(f"Workspace {workspace_id} not found in config")
+    config.agents.append(agent)
+    save_config(config, path)
 
 
-def add_workspace_to_config(
-    workspace: WorkspaceEntry,
+def add_network_to_config(
+    network: NetworkEntry,
     path: Optional[Path] = None,
 ) -> None:
-    """Add a workspace to the config (or update if exists)."""
+    """Add a network to the config (or update if exists)."""
     config = load_config(path)
-    for i, ws in enumerate(config.workspaces):
-        if ws.id == workspace.id:
-            # Merge agents
-            existing_names = {a.name for a in ws.agents}
-            for a in workspace.agents:
-                if a.name not in existing_names:
-                    ws.agents.append(a)
-            ws.token = workspace.token
-            ws.endpoint = workspace.endpoint
+    for i, n in enumerate(config.networks):
+        if n.id == network.id or n.slug == network.slug:
+            config.networks[i] = network
             save_config(config, path)
             return
-    config.workspaces.append(workspace)
+    config.networks.append(network)
     save_config(config, path)
+
+
+# Backward-compat aliases
+def add_workspace_to_config(workspace: NetworkEntry, path: Optional[Path] = None) -> None:
+    """Backward-compat alias for add_network_to_config."""
+    add_network_to_config(workspace, path)
+
+
+def connect_agent_to_network(
+    agent_name: str,
+    network_slug: str,
+    path: Optional[Path] = None,
+) -> bool:
+    """Set an agent's network field. Returns True if agent found."""
+    config = load_config(path)
+    for a in config.agents:
+        if a.name == agent_name:
+            a.network = network_slug
+            save_config(config, path)
+            return True
+    return False
+
+
+def disconnect_agent_from_network(
+    agent_name: str,
+    path: Optional[Path] = None,
+) -> bool:
+    """Clear an agent's network field (make it local-only). Returns True if found."""
+    config = load_config(path)
+    for a in config.agents:
+        if a.name == agent_name:
+            a.network = None
+            save_config(config, path)
+            return True
+    return False
 
 
 def remove_agent_from_config(
@@ -185,25 +269,48 @@ def remove_agent_from_config(
 ) -> bool:
     """Remove an agent by name. Returns True if found and removed."""
     config = load_config(path)
-    for ws in config.workspaces:
-        original_len = len(ws.agents)
-        ws.agents = [a for a in ws.agents if a.name != agent_name]
-        if len(ws.agents) < original_len:
-            save_config(config, path)
-            return True
+    original_len = len(config.agents)
+    config.agents = [a for a in config.agents if a.name != agent_name]
+    if len(config.agents) < original_len:
+        save_config(config, path)
+        return True
     return False
 
 
 def find_agent_in_config(
     agent_name: str,
     path: Optional[Path] = None,
-) -> Optional[tuple[WorkspaceEntry, AgentEntry]]:
-    """Find an agent by name across all workspaces."""
+) -> Optional[AgentEntry]:
+    """Find an agent by name."""
     config = load_config(path)
-    for ws in config.workspaces:
-        for a in ws.agents:
-            if a.name == agent_name:
-                return ws, a
+    for a in config.agents:
+        if a.name == agent_name:
+            return a
+    return None
+
+
+def find_network_in_config(
+    network_ref: str,
+    path: Optional[Path] = None,
+) -> Optional[NetworkEntry]:
+    """Find a network by slug or id."""
+    config = load_config(path)
+    for n in config.networks:
+        if n.slug == network_ref or n.id == network_ref:
+            return n
+    return None
+
+
+def get_agent_network(
+    agent: AgentEntry,
+    config: DaemonConfig,
+) -> Optional[NetworkEntry]:
+    """Get the network entry for an agent, if connected."""
+    if not agent.network:
+        return None
+    for n in config.networks:
+        if n.slug == agent.network or n.id == agent.network:
+            return n
     return None
 
 

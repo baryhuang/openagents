@@ -5,45 +5,20 @@ Used by both `openagents connect` (single agent) and `openagents up` (daemon).
 """
 
 import logging
-import shutil
 from typing import Optional
+
+from openagents.plugin_registry import registry
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINT = "https://workspace-endpoint.openagents.org"
 
 # ---------------------------------------------------------------------------
-# Agent runtime detection
+# Agent runtime detection (delegates to plugin registry)
 # ---------------------------------------------------------------------------
 
-AGENT_RUNTIMES = {
-    "claude": {
-        "check": lambda: shutil.which("claude") is not None,
-        "label": "Claude Code CLI",
-        "install": "See https://docs.anthropic.com/en/docs/claude-code",
-        "which": lambda: shutil.which("claude"),
-    },
-    "openclaw": {
-        "check": lambda: _can_import("openclaw"),
-        "label": "OpenClaw",
-        "install": "pip install openclaw",
-        "which": lambda: "python module",
-    },
-    "codex": {
-        "check": lambda: shutil.which("codex") is not None,
-        "label": "OpenAI Codex CLI",
-        "install": "npm install -g @openai/codex",
-        "which": lambda: shutil.which("codex"),
-    },
-}
-
-
-def _can_import(module_name: str) -> bool:
-    try:
-        __import__(module_name)
-        return True
-    except ImportError:
-        return False
+# Backward-compatible alias
+AGENT_RUNTIMES = None  # Use registry.detect_runtimes() instead
 
 
 def detect_runtimes() -> dict[str, dict]:
@@ -52,16 +27,7 @@ def detect_runtimes() -> dict[str, dict]:
     Returns dict like:
         {"claude": {"installed": True, "path": "/usr/bin/claude", ...}, ...}
     """
-    results = {}
-    for name, info in AGENT_RUNTIMES.items():
-        installed = info["check"]()
-        results[name] = {
-            "installed": installed,
-            "label": info["label"],
-            "install": info["install"],
-            "path": info["which"]() if installed else None,
-        }
-    return results
+    return registry.detect_runtimes()
 
 
 # ---------------------------------------------------------------------------
@@ -194,45 +160,21 @@ async def setup_agent(
 
     logger.info(f"Listening on {len(channels_to_join)} channel(s)")
 
-    # Step 3: Create adapter
-    if agent_type == "claude":
-        from openagents.adapters.claude import ClaudeAdapter
-        disabled_modules: set = set()
-        if opts.get("disable_files"):
-            disabled_modules.add("files")
-        if opts.get("disable_browser"):
-            disabled_modules.add("browser")
-        adapter = ClaudeAdapter(
-            workspace_id=workspace_id,
-            channel_name=channel_name,
-            token=token,
-            agent_name=agent_name,
-            endpoint=endpoint,
-            disabled_modules=disabled_modules or None,
+    # Step 3: Create adapter via plugin registry
+    plugin = registry.get(agent_type)
+    if plugin is None:
+        raise ValueError(
+            f"Unknown agent type: {agent_type}. "
+            f"Available: {', '.join(registry.list_names())}"
         )
-    elif agent_type == "openclaw":
-        from openagents.adapters.openclaw import OpenClawAdapter
-        adapter = OpenClawAdapter(
-            workspace_id=workspace_id,
-            channel_name=channel_name,
-            token=token,
-            agent_name=agent_name,
-            endpoint=endpoint,
-            openclaw_host=opts.get("openclaw_host", "127.0.0.1"),
-            openclaw_port=opts.get("openclaw_port", 18789),
-            openclaw_token=opts.get("openclaw_token"),
-            openclaw_agent_id=opts.get("openclaw_agent_id", "main"),
-        )
-    elif agent_type == "codex":
-        from openagents.adapters.codex import CodexAdapter
-        adapter = CodexAdapter(
-            workspace_id=workspace_id,
-            channel_name=channel_name,
-            token=token,
-            agent_name=agent_name,
-            endpoint=endpoint,
-        )
-    else:
-        raise ValueError(f"Unknown agent type: {agent_type}")
+
+    adapter = plugin.create_adapter(
+        workspace_id=workspace_id,
+        channel_name=channel_name,
+        token=token,
+        agent_name=agent_name,
+        endpoint=endpoint,
+        options=opts,
+    )
 
     return adapter

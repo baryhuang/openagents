@@ -117,9 +117,13 @@ def clear_user_email() -> None:
     _save_identities(data)
 
 
-def generate_agent_name(agent_type: str) -> str:
-    """Generate an auto-name: {type}-{4hex}."""
-    return f"{agent_type}-{secrets.token_hex(2)}"
+def generate_agent_name(agent_type: str, context: Optional[str] = None) -> str:
+    """Generate an auto-name: {type}-{context}-{4hex} or {type}-{4hex}."""
+    suffix = secrets.token_hex(2)
+    if context:
+        ctx = context.lower().replace(" ", "-")[:20]
+        return f"{agent_type}-{ctx}-{suffix}"
+    return f"{agent_type}-{suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +214,7 @@ class WorkspaceClient:
                 )
 
     async def join_network(
-        self, agent_name: str, network: str, token: str,
+        self, agent_name: str, network: Optional[str], token: str,
         agent_type: str | None = None,
     ) -> dict:
         """Join an existing workspace via POST /v1/join."""
@@ -218,8 +222,9 @@ class WorkspaceClient:
         body: dict = {
             "agent_name": agent_name,
             "token": token,
-            "network": network,
         }
+        if network:
+            body["network"] = network
         if agent_type:
             body["agent_type"] = agent_type
         async with aiohttp.ClientSession() as session:
@@ -233,6 +238,26 @@ class WorkspaceClient:
                 if resp.status not in (200, 201):
                     msg = data.get("message", f"HTTP {resp.status}")
                     raise ConnectionError(f"Failed to join network: {msg}")
+                return data.get("data", data)
+
+    async def resolve_token(self, token: str) -> dict:
+        """Resolve a workspace token to workspace info.
+
+        Returns dict with workspace_id, slug, name.
+        Raises ConnectionError if token is invalid.
+        """
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/token/resolve",
+                json={"token": token},
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                data = await resp.json()
+                if resp.status not in (200, 201):
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    raise ConnectionError(f"Token resolution failed: {msg}")
                 return data.get("data", data)
 
     async def heartbeat(

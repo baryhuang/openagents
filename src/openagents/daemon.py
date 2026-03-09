@@ -28,10 +28,11 @@ from openagents.agent_setup import setup_agent
 from openagents.daemon_config import (
     AgentEntry,
     DaemonConfig,
-    WorkspaceEntry,
+    NetworkEntry,
     PID_PATH,
     LOG_PATH,
     STATUS_PATH,
+    get_agent_network,
     write_status,
 )
 
@@ -48,8 +49,8 @@ IS_WINDOWS = sys.platform == "win32"
 class AgentStatus:
     name: str
     type: str
-    workspace_slug: str
-    state: str = "starting"  # starting, online, reconnecting, stopped, error
+    network: str  # network slug or "(local)"
+    state: str = "starting"  # starting, online, running, reconnecting, stopped, error
     started_at: Optional[str] = None
     restarts: int = 0
     last_error: Optional[str] = None
@@ -58,7 +59,9 @@ class AgentStatus:
         return {
             "name": self.name,
             "type": self.type,
-            "workspace": self.workspace_slug,
+            "network": self.network,
+            # Keep "workspace" key for backward compat with status readers
+            "workspace": self.network,
             "state": self.state,
             "started_at": self.started_at,
             "restarts": self.restarts,
@@ -82,22 +85,15 @@ class DaemonManager:
 
     async def start(self):
         """Start all configured agents and block until shutdown."""
-        # Start all agents
-        for ws in self.config.workspaces:
-            for agent_cfg in ws.agents:
-                self._launch_agent(ws, agent_cfg)
+        for agent_cfg in self.config.agents:
+            net = get_agent_network(agent_cfg, self.config)
+            self._launch_agent(agent_cfg, net)
 
-        total = sum(len(ws.agents) for ws in self.config.workspaces)
-        logger.info(
-            f"Started {total} agent(s) across "
-            f"{len(self.config.workspaces)} workspace(s)"
-        )
+        logger.info(f"Started {len(self.config.agents)} agent(s)")
 
         # Install signal handlers
         loop = asyncio.get_running_loop()
         if IS_WINDOWS:
-            # Windows doesn't support loop.add_signal_handler;
-            # use signal.signal() and schedule callback on the event loop
             def _sig_handler(*_args):
                 loop.call_soon_threadsafe(self._handle_signal)
             signal.signal(signal.SIGINT, _sig_handler)
@@ -123,29 +119,34 @@ class DaemonManager:
         if not self._shutting_down:
             logger.info("Shutdown signal received")
             self._shutting_down = True
-            # On Windows, signal handlers run in the main thread, not the
-            # event loop thread, so we need thread-safe event setting.
             self._shutdown_event.set()
 
-    def _launch_agent(self, ws: WorkspaceEntry, agent_cfg: AgentEntry):
+    def _launch_agent(self, agent_cfg: AgentEntry, net: Optional[NetworkEntry]):
         """Create status entry and launch agent task."""
+        network_label = net.slug if net else "(local)"
         status = AgentStatus(
             name=agent_cfg.name,
             type=agent_cfg.type,
-            workspace_slug=ws.slug,
+            network=network_label,
         )
         self.agent_status[agent_cfg.name] = status
-        self.tasks[agent_cfg.name] = asyncio.create_task(
-            self._run_with_restart(ws, agent_cfg, status)
-        )
 
-    async def _run_with_restart(
+        if net:
+            self.tasks[agent_cfg.name] = asyncio.create_task(
+                self._run_network_agent(agent_cfg, net, status)
+            )
+        else:
+            self.tasks[agent_cfg.name] = asyncio.create_task(
+                self._run_local_agent(agent_cfg, status)
+            )
+
+    async def _run_network_agent(
         self,
-        ws: WorkspaceEntry,
         agent_cfg: AgentEntry,
+        net: NetworkEntry,
         status: AgentStatus,
     ):
-        """Run an adapter with exponential backoff on crash."""
+        """Run a network-connected adapter with exponential backoff on crash."""
         backoff = 2
         while not self._shutting_down:
             try:
@@ -155,9 +156,9 @@ class DaemonManager:
                 adapter = await setup_agent(
                     agent_type=agent_cfg.type,
                     agent_name=agent_cfg.name,
-                    workspace_id=ws.id,
-                    token=ws.token,
-                    endpoint=ws.endpoint,
+                    workspace_id=net.id,
+                    token=net.token,
+                    endpoint=net.endpoint,
                     role=agent_cfg.role,
                     options=agent_cfg.options,
                     quiet=True,
@@ -166,10 +167,9 @@ class DaemonManager:
                 status.state = "online"
                 status.started_at = datetime.now(timezone.utc).isoformat()
                 self._write_status()
-                logger.info(f"{agent_cfg.name} is online")
+                logger.info(f"{agent_cfg.name} is online → {net.slug}")
 
                 await adapter.run()
-                # Clean exit
                 logger.info(f"{agent_cfg.name} exited cleanly")
                 break
 
@@ -191,6 +191,27 @@ class DaemonManager:
                 except asyncio.CancelledError:
                     break
                 backoff = min(backoff * 2, 60)
+
+        status.state = "stopped"
+
+    async def _run_local_agent(
+        self,
+        agent_cfg: AgentEntry,
+        status: AgentStatus,
+    ):
+        """Run a local-only agent as a managed process (no network)."""
+        status.state = "running"
+        status.started_at = datetime.now(timezone.utc).isoformat()
+        self._write_status()
+        logger.info(f"{agent_cfg.name} running locally (no network)")
+
+        # Local agents just stay alive — the daemon keeps them registered.
+        # Future: launch the actual agent process and monitor it.
+        try:
+            while not self._shutting_down:
+                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            pass
 
         status.state = "stopped"
 
@@ -230,7 +251,6 @@ class DaemonManager:
 def _is_process_alive(pid: int) -> bool:
     """Check if a process is alive. Works on all platforms."""
     if IS_WINDOWS:
-        # Use tasklist to check; os.kill(pid, 0) is unreliable on Windows
         try:
             result = subprocess.run(
                 ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
@@ -364,7 +384,6 @@ def stop_daemon() -> bool:
     import time
 
     if IS_WINDOWS:
-        # Windows: use taskkill for graceful then forced termination
         subprocess.run(
             ["taskkill", "/PID", str(pid)],
             capture_output=True, timeout=5,
@@ -375,13 +394,11 @@ def stop_daemon() -> bool:
                 STATUS_PATH.unlink(missing_ok=True)
                 return True
             time.sleep(0.5)
-        # Force kill
         subprocess.run(
             ["taskkill", "/F", "/PID", str(pid)],
             capture_output=True, timeout=5,
         )
     else:
-        # Unix: SIGTERM then SIGKILL
         os.kill(pid, signal.SIGTERM)
         for _ in range(20):
             if not _is_process_alive(pid):
@@ -389,7 +406,6 @@ def stop_daemon() -> bool:
                 STATUS_PATH.unlink(missing_ok=True)
                 return True
             time.sleep(0.5)
-        # Force kill
         try:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:

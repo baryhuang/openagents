@@ -53,7 +53,8 @@ app = typer.Typer(
     name="openagents",
     help="🤖 [bold blue]OpenAgents[/bold blue] - AI Agent Networks for Open Collaboration",
     add_completion=False,
-    rich_markup_mode="rich"
+    rich_markup_mode="rich",
+    invoke_without_command=True,
 )
 
 # Global verbose flag that can be imported by other modules
@@ -1614,12 +1615,20 @@ agentid_app = typer.Typer(
     rich_markup_mode="rich"
 )
 
+# Workspace command group
+workspace_app = typer.Typer(
+    name="workspace",
+    help="Workspace management — create, join, and list workspaces",
+    rich_markup_mode="rich"
+)
+
 # Add subcommands to main app
 app.add_typer(network_app, name="network")
 app.add_typer(agent_app, name="agent")
 app.add_typer(agents_app, name="agents")
 app.add_typer(certs_app, name="certs")
 app.add_typer(agentid_app, name="agentid")
+app.add_typer(workspace_app, name="workspace")
 
 
 # OpenAgents API constants
@@ -3802,9 +3811,9 @@ def daemon_up(
         False, "--foreground", "-f", help="Run in foreground (don't daemonize)",
     ),
 ):
-    """Start the OpenAgents daemon — connect all configured agents."""
+    """Start the OpenAgents daemon — run all configured agents."""
     import asyncio
-    from openagents.daemon_config import load_config, CONFIG_PATH
+    from openagents.daemon_config import load_config, get_agent_network
     from openagents.daemon import DaemonManager, daemonize, read_daemon_pid
 
     # Check if already running
@@ -3815,26 +3824,25 @@ def daemon_up(
         raise typer.Exit(1)
 
     cfg = load_config(config)
-    if not cfg.workspaces:
-        console.print("[yellow]No workspaces configured.[/yellow]")
-        console.print("Run [bold]openagents add claude[/bold] to set up your first agent.")
+    if not cfg.agents:
+        console.print("[yellow]No agents configured.[/yellow]")
+        console.print("Run [bold]openagents start claude[/bold] to set up your first agent.")
         raise typer.Exit(1)
 
     # Print summary
-    total_agents = sum(len(ws.agents) for ws in cfg.workspaces)
-    console.print(
-        f"\nStarting [bold]{total_agents}[/bold] agent(s) across "
-        f"[bold]{len(cfg.workspaces)}[/bold] workspace(s)...\n"
-    )
+    network_count = len(set(a.network for a in cfg.agents if a.network))
+    local_count = sum(1 for a in cfg.agents if not a.network)
+    console.print(f"\nStarting [bold]{len(cfg.agents)}[/bold] agent(s)...\n")
 
     table = Table(box=box.SIMPLE)
     table.add_column("Agent", style="cyan")
     table.add_column("Type")
     table.add_column("Role")
-    table.add_column("Workspace", style="dim")
-    for ws in cfg.workspaces:
-        for a in ws.agents:
-            table.add_row(a.name, a.type, a.role, ws.slug or ws.name)
+    table.add_column("Network", style="dim")
+    for a in cfg.agents:
+        net = get_agent_network(a, cfg)
+        net_label = net.slug if net else "(local)"
+        table.add_row(a.name, a.type, a.role, net_label)
     console.print(table)
 
     if not foreground:
@@ -3869,7 +3877,7 @@ def daemon_down():
 
 @app.command("status")
 def daemon_status():
-    """Show status of the OpenAgents daemon and connected agents."""
+    """Show status of the OpenAgents daemon and managed agents."""
     from openagents.daemon import read_daemon_pid
     from openagents.daemon_config import read_status, load_config
 
@@ -3878,17 +3886,12 @@ def daemon_status():
 
     if pid is None:
         console.print("[dim]Daemon is not running.[/dim]")
-        # Show config summary
         cfg = load_config()
-        if cfg.workspaces:
-            total = sum(len(ws.agents) for ws in cfg.workspaces)
-            console.print(
-                f"\nConfig: {total} agent(s) across "
-                f"{len(cfg.workspaces)} workspace(s)"
-            )
+        if cfg.agents:
+            console.print(f"\nConfig: {len(cfg.agents)} agent(s)")
             console.print("Run [bold]openagents up[/bold] to start.")
         else:
-            console.print("Run [bold]openagents add claude[/bold] to set up your first agent.")
+            console.print("Run [bold]openagents start claude[/bold] to set up your first agent.")
         return
 
     console.print(f"[green]Daemon running[/green] (PID {pid})")
@@ -3904,7 +3907,7 @@ def daemon_status():
     table = Table(box=box.SIMPLE)
     table.add_column("Agent", style="cyan")
     table.add_column("Type")
-    table.add_column("Workspace", style="dim")
+    table.add_column("Network", style="dim")
     table.add_column("State")
     table.add_column("Restarts")
     table.add_column("Error", style="dim", max_width=40)
@@ -3913,6 +3916,7 @@ def daemon_status():
         state = info.get("state", "unknown")
         state_style = {
             "online": "[green]online[/green]",
+            "running": "[green]running[/green]",
             "starting": "[yellow]starting[/yellow]",
             "reconnecting": "[yellow]reconnecting[/yellow]",
             "stopped": "[dim]stopped[/dim]",
@@ -3922,7 +3926,7 @@ def daemon_status():
         table.add_row(
             name,
             info.get("type", ""),
-            info.get("workspace", ""),
+            info.get("network", info.get("workspace", "")),
             state_style,
             str(info.get("restarts", 0)),
             info.get("last_error", "") or "",
@@ -3931,7 +3935,397 @@ def daemon_status():
     console.print(table)
 
 
-@app.command("add")
+@app.command("start")
+def daemon_start_agent(
+    agent_type: str = typer.Argument(
+        ..., help="Agent type (claude, openclaw, codex, etc.)",
+    ),
+    name: Optional[str] = typer.Option(
+        None, "--name", "-n", help="Agent name (default: same as type)",
+    ),
+    path: Optional[str] = typer.Option(
+        None, "--path", "-p", help="Working directory for the agent",
+    ),
+    role: str = typer.Option(
+        "worker", "--role", "-r", help="Agent role (master/worker)",
+    ),
+):
+    """Start an agent — creates it if it doesn't exist yet."""
+    from openagents.daemon_config import (
+        load_config, AgentEntry, add_agent_to_config, find_agent_in_config,
+        get_agent_network,
+    )
+    from openagents.plugin_registry import registry
+    from openagents.daemon import read_daemon_pid
+
+    # Validate agent type
+    plugin = registry.get(agent_type)
+    if plugin is None:
+        console.print(f"[red]Unknown agent type: {agent_type}[/red]")
+        console.print(f"Available types: {', '.join(registry.list_names())}")
+        raise typer.Exit(1)
+
+    if not plugin.is_installed():
+        console.print(f"[yellow]{plugin.label} is not installed.[/yellow]")
+        console.print(f"Install with: [bold]openagents install {agent_type}[/bold]")
+        raise typer.Exit(1)
+
+    # Check readiness (credentials, config)
+    ready, message = plugin.check_ready()
+    if ready:
+        console.print(f"[green]{plugin.label}[/green] — {message}")
+    else:
+        console.print(f"[yellow]{plugin.label}[/yellow] — {message}")
+        if not Confirm.ask("Continue anyway?", default=False):
+            raise typer.Exit(0)
+
+    # Default name = agent type (e.g. "claude")
+    if not name:
+        name = agent_type
+
+    # Idempotent: if agent already exists, just ensure daemon is running
+    existing = find_agent_in_config(name)
+    if existing:
+        console.print(f"[dim]Agent '{name}' already configured.[/dim]")
+        pid = read_daemon_pid()
+        if pid:
+            console.print(f"[green]Daemon running[/green] (PID {pid})")
+            return
+        # Daemon not running — start it
+        _start_daemon()
+        return
+
+    # Create new agent entry
+    agent_entry = AgentEntry(
+        name=name,
+        type=agent_type,
+        role=role,
+        path=path,
+    )
+
+    console.print(f"\n[green]Created[/green] [cyan]{name}[/cyan] ({agent_type})")
+    if path:
+        console.print(f"  Working dir: {path}")
+
+    # Check if there's already a workspace configured
+    cfg = load_config()
+    if cfg.networks:
+        # Auto-connect to first workspace
+        net = cfg.networks[0]
+        agent_entry.network = net.slug or net.id
+        add_agent_to_config(agent_entry)
+        console.print(
+            f"  Connected to workspace: [bold]{net.name or net.slug}[/bold]"
+        )
+    else:
+        # No workspace — prompt user
+        add_agent_to_config(agent_entry)
+        console.print()
+        choice = Prompt.ask(
+            "  Set up a workspace?\n\n"
+            "  [bold]1[/bold] Create a new workspace (free)\n"
+            "  [bold]2[/bold] Join with a token\n"
+            "  [bold]3[/bold] Skip — run locally only\n\n"
+            "  Choice",
+            choices=["1", "2", "3"],
+            default="3",
+        )
+
+        if choice == "1":
+            # Create workspace inline
+            ws_name = Prompt.ask("  Workspace name", default=f"{name}'s workspace")
+            net_entry = _resolve_or_create_network(
+                join_id=None, token=None,
+                endpoint="https://workspace-endpoint.openagents.org",
+                agent_name=name, agent_type=agent_type,
+                workspace_name=ws_name,
+            )
+            if net_entry:
+                from openagents.daemon_config import (
+                    add_network_to_config, connect_agent_to_network,
+                )
+                add_network_to_config(net_entry)
+                connect_agent_to_network(name, net_entry.slug or net_entry.id)
+                # Open browser
+                import webbrowser
+                frontend_url = "https://workspace-endpoint.openagents.org".replace(
+                    "workspace-endpoint", "workspace"
+                )
+                ws_url = f"{frontend_url}/{net_entry.slug}?token={net_entry.token}"
+                try:
+                    webbrowser.open(ws_url)
+                except Exception:
+                    pass
+
+        elif choice == "2":
+            # Join with token
+            ws_token = Prompt.ask("  Paste workspace token")
+            if ws_token.strip():
+                import asyncio
+                from openagents.workspace_client import WorkspaceClient
+                from openagents.daemon_config import (
+                    NetworkEntry, add_network_to_config, connect_agent_to_network,
+                )
+                client = WorkspaceClient(endpoint="https://workspace-endpoint.openagents.org")
+                try:
+                    info = asyncio.run(client.resolve_token(ws_token.strip()))
+                    ws_id = info["workspace_id"]
+                    slug = info.get("slug", ws_id)
+                    ws_name = info.get("name", slug)
+
+                    # Join the workspace
+                    asyncio.run(client.join_network(
+                        agent_name=name,
+                        network=None,
+                        token=ws_token.strip(),
+                        agent_type=agent_type,
+                    ))
+
+                    net_entry = NetworkEntry(
+                        id=ws_id, slug=slug, name=ws_name,
+                        token=ws_token.strip(),
+                        endpoint="https://workspace-endpoint.openagents.org",
+                    )
+                    add_network_to_config(net_entry)
+                    connect_agent_to_network(name, slug or ws_id)
+                    console.print(
+                        f"  [green]Joined workspace:[/green] [bold]{ws_name}[/bold]"
+                    )
+                    # Open browser
+                    import webbrowser
+                    frontend_url = "https://workspace-endpoint.openagents.org".replace(
+                        "workspace-endpoint", "workspace"
+                    )
+                    ws_url = f"{frontend_url}/{slug}?token={ws_token.strip()}"
+                    try:
+                        webbrowser.open(ws_url)
+                    except Exception:
+                        pass
+                except Exception as e:
+                    console.print(f"  [red]Failed to join: {e}[/red]")
+
+        # else choice == "3": skip, run locally
+
+    # Start daemon
+    _start_daemon()
+
+
+@app.command("stop")
+def daemon_stop_agent(
+    agent_name: Optional[str] = typer.Argument(
+        None, help="Agent name to stop (omit to stop all / stop daemon)",
+    ),
+):
+    """Stop an agent or the entire daemon."""
+    from openagents.daemon import read_daemon_pid, stop_daemon
+    from openagents.daemon_config import find_agent_in_config
+
+    pid = read_daemon_pid()
+    if pid is None:
+        console.print("[dim]Daemon is not running.[/dim]")
+        return
+
+    if agent_name:
+        # TODO: support stopping individual agents via daemon API
+        # For now, stopping an individual agent requires restarting daemon
+        agent = find_agent_in_config(agent_name)
+        if agent is None:
+            console.print(f"[red]Agent '{agent_name}' not found.[/red]")
+            raise typer.Exit(1)
+        console.print(
+            f"[dim]Individual agent stop not yet supported. "
+            f"To stop all agents:[/dim] [bold]openagents stop[/bold]"
+        )
+        return
+
+    # Stop entire daemon
+    console.print(f"Stopping daemon (PID {pid})...")
+    if stop_daemon():
+        console.print("[green]Daemon stopped.[/green]")
+    else:
+        console.print("[red]Failed to stop daemon.[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("create", hidden=True)
+def daemon_create(
+    agent_type: str = typer.Argument(..., help="Agent type"),
+    name: Optional[str] = typer.Option(None, "--name", "-n"),
+    path: Optional[str] = typer.Option(None, "--path", "-p"),
+    role: str = typer.Option("worker", "--role", "-r"),
+):
+    """[hidden] Alias for 'start'. Use 'openagents start' instead."""
+    daemon_start_agent(agent_type=agent_type, name=name, path=path, role=role)
+
+
+def _start_daemon():
+    """Start the daemon if not already running."""
+    import asyncio
+    from openagents.daemon import read_daemon_pid, DaemonManager, daemonize
+    from openagents.daemon_config import load_config, get_agent_network
+
+    pid = read_daemon_pid()
+    if pid:
+        console.print(f"[green]Daemon already running[/green] (PID {pid})")
+        return
+
+    cfg = load_config()
+    if not cfg.agents:
+        console.print("[dim]No agents configured.[/dim]")
+        return
+
+    console.print("\nStarting daemon...\n")
+
+    table = Table(box=box.SIMPLE)
+    table.add_column("Agent", style="cyan")
+    table.add_column("Type")
+    table.add_column("Network", style="dim")
+    for a in cfg.agents:
+        net = get_agent_network(a, cfg)
+        table.add_row(a.name, a.type, net.slug if net else "(local)")
+    console.print(table)
+
+    daemonize()
+    manager = DaemonManager(cfg)
+    try:
+        asyncio.run(manager.start())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Daemon stopped.[/yellow]")
+
+
+@app.command("connect")
+def daemon_connect_agent(
+    agent_name: str = typer.Argument(..., help="Name of the agent to connect"),
+    network: Optional[str] = typer.Argument(
+        None, help="Network slug, ID, or URL (optional if using --token)",
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token", "-t", help="Workspace token (can be used alone — workspace is resolved from token)",
+    ),
+    role: Optional[str] = typer.Option(
+        None, "--role", "-r", help="Agent role in the network",
+    ),
+    endpoint: str = typer.Option(
+        "https://workspace-endpoint.openagents.org", "--endpoint",
+        envvar="OA_ENDPOINT",
+    ),
+):
+    """Attach an agent to a remote network (Layer 2).
+
+    You can connect using just a token — the workspace is resolved automatically:
+
+        openagents connect my-bot --token <token>
+    """
+    import asyncio
+    from openagents.daemon_config import (
+        load_config, find_agent_in_config, find_network_in_config,
+        NetworkEntry, add_network_to_config, connect_agent_to_network,
+        add_agent_to_config, AgentEntry,
+    )
+
+    # Find agent
+    agent = find_agent_in_config(agent_name)
+    if agent is None:
+        console.print(f"[red]Agent '{agent_name}' not found.[/red]")
+        console.print("Start it first: [bold]openagents start " + agent_name.split("-")[0] + " --name " + agent_name + "[/bold]")
+        raise typer.Exit(1)
+
+    if agent.network:
+        console.print(
+            f"[yellow]{agent_name} is already connected to '{agent.network}'.[/yellow]"
+        )
+        if not Confirm.ask("Reconnect to a different network?", default=False):
+            raise typer.Exit(0)
+
+    net_entry = None
+
+    # If network slug/id provided, check config first
+    if network:
+        net_entry = find_network_in_config(network)
+
+    if net_entry is None:
+        # Need token — either provided or prompted
+        if not token:
+            token = Prompt.ask("Workspace token")
+
+        if network:
+            # Have both network ID and token — join directly
+            net_entry = _resolve_or_create_network(
+                network, token, endpoint, agent_name, agent.type,
+            )
+        else:
+            # Token-only: resolve workspace from token
+            from openagents.workspace_client import WorkspaceClient
+
+            client = WorkspaceClient(endpoint=endpoint)
+            try:
+                info = asyncio.run(client.resolve_token(token))
+                ws_id = info["workspace_id"]
+                slug = info.get("slug", ws_id)
+                ws_name = info.get("name", slug)
+
+                # Join the workspace
+                asyncio.run(client.join_network(
+                    agent_name=agent_name,
+                    network=None,
+                    token=token,
+                    agent_type=agent.type,
+                ))
+
+                net_entry = NetworkEntry(
+                    id=ws_id, slug=slug, name=ws_name,
+                    token=token, endpoint=endpoint,
+                )
+            except Exception as e:
+                console.print(f"[red]Failed to join: {e}[/red]")
+                raise typer.Exit(1)
+
+        if net_entry is None:
+            raise typer.Exit(1)
+
+        add_network_to_config(net_entry)
+
+    # Update role if provided
+    if role:
+        agent.role = role
+        add_agent_to_config(agent)
+
+    # Connect
+    connect_agent_to_network(agent_name, net_entry.slug or net_entry.id)
+    console.print(
+        f"\n[green]Connected[/green] [cyan]{agent_name}[/cyan] ({agent.type}) "
+        f"→ [bold]{net_entry.name or net_entry.slug}[/bold]"
+    )
+    console.print("Run [bold]openagents up[/bold] to start.")
+
+
+@app.command("disconnect")
+def daemon_disconnect_agent(
+    agent_name: str = typer.Argument(..., help="Name of the agent to disconnect"),
+):
+    """Detach an agent from its network (becomes local-only)."""
+    from openagents.daemon_config import (
+        find_agent_in_config, disconnect_agent_from_network,
+    )
+
+    agent = find_agent_in_config(agent_name)
+    if agent is None:
+        console.print(f"[red]Agent '{agent_name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    if not agent.network:
+        console.print(f"[dim]{agent_name} is already local-only.[/dim]")
+        raise typer.Exit(0)
+
+    old_network = agent.network
+    disconnect_agent_from_network(agent_name)
+    console.print(
+        f"[green]Disconnected[/green] [cyan]{agent_name}[/cyan] from {old_network}. "
+        f"Agent will run locally."
+    )
+
+
+@app.command("add", hidden=True)
 def daemon_add(
     agent_type: str = typer.Argument(
         ..., help="Agent type to add (claude, openclaw, codex)",
@@ -3940,10 +4334,10 @@ def daemon_add(
         None, "--name", "-n", help="Agent name (default: auto-generated)",
     ),
     join: Optional[str] = typer.Option(
-        None, "--join", "-j", help="Workspace ID or slug to join",
+        None, "--join", "-j", help="Network/workspace ID or slug to join",
     ),
     token: Optional[str] = typer.Option(
-        None, "--token", "-t", help="Workspace token",
+        None, "--token", "-t", help="Network token",
     ),
     workspace_name: Optional[str] = typer.Option(
         None, "--workspace-name", "-w", help="New workspace name (if creating)",
@@ -3956,16 +4350,15 @@ def daemon_add(
         envvar="OA_ENDPOINT",
     ),
 ):
-    """Add an agent to the daemon config (interactive if flags omitted)."""
+    """[deprecated] Use 'create' + 'connect' instead. Kept for backward compat."""
     import asyncio
     from openagents.daemon_config import (
-        load_config, save_config, AgentEntry, WorkspaceEntry,
-        add_workspace_to_config, add_agent_to_config,
+        load_config, AgentEntry, NetworkEntry,
+        add_network_to_config, add_agent_to_config,
+        connect_agent_to_network,
     )
     from openagents.agent_setup import detect_runtimes
-    from openagents.workspace_client import (
-        WorkspaceClient, generate_agent_name, get_identity,
-    )
+    from openagents.workspace_client import generate_agent_name
 
     # Validate agent type
     runtimes = detect_runtimes()
@@ -3981,116 +4374,194 @@ def daemon_add(
         if not Confirm.ask("Continue anyway?", default=False):
             raise typer.Exit(0)
 
-    console.print(f"[green]{rt['label']}[/green] detected at {rt['path']}\n")
+    if rt["path"]:
+        console.print(f"[green]{rt['label']}[/green] detected at {rt['path']}\n")
 
     # Resolve agent name
     if not name:
-        identity = get_identity(agent_type)
-        if identity:
-            suggested = identity.agent_name
-        else:
-            suggested = generate_agent_name(agent_type)
-        name = Prompt.ask("Agent name", default=suggested)
+        name = generate_agent_name(agent_type)
 
-    # Resolve workspace
-    cfg = load_config()
-    ws_entry = None
-
-    if join:
-        # Join an existing workspace by ID/slug
-        if not token:
-            token = Prompt.ask("Workspace token")
-        ws_entry = _resolve_or_create_workspace(
-            cfg, join, token, endpoint, name, agent_type, workspace_name,
-        )
-    elif cfg.workspaces:
-        # Interactive: pick from existing or create new
-        console.print("Select a workspace:")
-        for i, ws in enumerate(cfg.workspaces, 1):
-            agent_count = len(ws.agents)
-            console.print(
-                f"  [bold]{i}.[/bold] {ws.name or ws.slug} "
-                f"[dim]({agent_count} agent{'s' if agent_count != 1 else ''})[/dim]"
-            )
-        console.print(f"  [bold]{len(cfg.workspaces) + 1}.[/bold] [cyan]Create new workspace[/cyan]")
-        console.print(f"  [bold]{len(cfg.workspaces) + 2}.[/bold] [cyan]Join by invite[/cyan]")
-
-        choice = Prompt.ask(
-            "Choice",
-            default="1",
-        )
-        try:
-            idx = int(choice)
-        except ValueError:
-            idx = 1
-
-        if idx <= len(cfg.workspaces):
-            ws_entry = cfg.workspaces[idx - 1]
-        elif idx == len(cfg.workspaces) + 2:
-            # Join by invite
-            join_id = Prompt.ask("Workspace ID or slug")
-            tok = Prompt.ask("Workspace token")
-            ws_entry = _resolve_or_create_workspace(
-                cfg, join_id, tok, endpoint, name, agent_type, workspace_name,
-            )
-        else:
-            # Create new
-            ws_entry = _resolve_or_create_workspace(
-                cfg, None, None, endpoint, name, agent_type, workspace_name,
-            )
-    else:
-        # No workspaces in config — create or join
-        if Confirm.ask("No workspaces configured. Create a new workspace?", default=True):
-            ws_entry = _resolve_or_create_workspace(
-                cfg, None, None, endpoint, name, agent_type, workspace_name,
-            )
-        else:
-            join_id = Prompt.ask("Workspace ID or slug to join")
-            tok = Prompt.ask("Workspace token")
-            ws_entry = _resolve_or_create_workspace(
-                cfg, join_id, tok, endpoint, name, agent_type, workspace_name,
-            )
-
-    if ws_entry is None:
-        console.print("[red]Failed to configure workspace.[/red]")
-        raise typer.Exit(1)
-
-    # Interactive role selection
-    if not typer.get_app().registered_groups:
-        role = Prompt.ask("Role", default=role, choices=["master", "worker"])
-
-    # Build agent entry
+    # Create agent entry
     agent_entry = AgentEntry(name=name, type=agent_type, role=role)
 
-    # Save to config
-    add_workspace_to_config(ws_entry)
-    add_agent_to_config(ws_entry.id, agent_entry)
+    if join:
+        # Join network — resolve and connect
+        if not token:
+            token = Prompt.ask("Network token")
+        net_entry = _resolve_or_create_network(
+            join, token, endpoint, name, agent_type, workspace_name,
+        )
+        if net_entry is None:
+            raise typer.Exit(1)
+        agent_entry.network = net_entry.slug or net_entry.id
+        add_network_to_config(net_entry)
+        add_agent_to_config(agent_entry)
+        console.print(
+            f"\n[green]Added[/green] [cyan]{name}[/cyan] ({agent_type}) "
+            f"→ [bold]{net_entry.name or net_entry.slug}[/bold]"
+        )
+    else:
+        # Local-only (no network)
+        add_agent_to_config(agent_entry)
+        console.print(f"\n[green]Added[/green] [cyan]{name}[/cyan] ({agent_type}), local-only.")
 
-    console.print(
-        f"\n[green]Added[/green] [cyan]{name}[/cyan] ({agent_type}) "
-        f"to workspace [bold]{ws_entry.name or ws_entry.slug}[/bold]"
-    )
     console.print("Run [bold]openagents up[/bold] to start all agents.")
 
 
-def _resolve_or_create_workspace(
-    cfg,
+# ---------------------------------------------------------------------------
+# Workspace commands
+# ---------------------------------------------------------------------------
+
+@workspace_app.command("create")
+def workspace_create(
+    name: Optional[str] = typer.Option(
+        None, "--name", "-n", help="Workspace name",
+    ),
+    endpoint: str = typer.Option(
+        "https://workspace-endpoint.openagents.org", "--endpoint",
+        envvar="OA_ENDPOINT",
+    ),
+):
+    """Create a new workspace and get a token."""
+    import asyncio
+    from openagents.workspace_client import WorkspaceClient, generate_agent_name
+    from openagents.daemon_config import (
+        NetworkEntry, add_network_to_config, load_config,
+    )
+
+    ws_name = name or Prompt.ask("Workspace name", default="my-workspace")
+    agent_name = generate_agent_name("cli")
+
+    client = WorkspaceClient(endpoint=endpoint)
+
+    try:
+        ws = asyncio.run(client.create_workspace(agent_name, ws_name))
+    except Exception as e:
+        console.print(f"[red]Failed to create workspace: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Save to config
+    net_entry = NetworkEntry(
+        id=ws.workspace_id,
+        slug=ws.slug,
+        name=ws.name,
+        token=ws.token,
+        endpoint=endpoint,
+    )
+    add_network_to_config(net_entry)
+
+    console.print(f"\n[green]Workspace created![/green]\n")
+    console.print(f"  Name:  [bold]{ws.name}[/bold]")
+    console.print(f"  Slug:  {ws.slug}")
+    console.print(f"  Token: [bold]{ws.token}[/bold]")
+    console.print(f"  URL:   [link={ws.url}]{ws.url}[/link]")
+    console.print(f"\n  Share this token to invite others:")
+    console.print(f"    [bold]openagents workspace join {ws.token}[/bold]")
+    console.print(f"\n  Connect an agent:")
+    console.print(f"    [bold]openagents start claude[/bold]")
+
+
+@workspace_app.command("join")
+def workspace_join(
+    token: str = typer.Argument(..., help="Workspace token"),
+    endpoint: str = typer.Option(
+        "https://workspace-endpoint.openagents.org", "--endpoint",
+        envvar="OA_ENDPOINT",
+    ),
+):
+    """Join an existing workspace using a token."""
+    import asyncio
+    from openagents.workspace_client import WorkspaceClient
+    from openagents.daemon_config import (
+        NetworkEntry, add_network_to_config, find_network_in_config,
+    )
+
+    client = WorkspaceClient(endpoint=endpoint)
+
+    # Resolve token to workspace info
+    try:
+        info = asyncio.run(client.resolve_token(token))
+    except Exception as e:
+        console.print(f"[red]Invalid token: {e}[/red]")
+        raise typer.Exit(1)
+
+    ws_id = info["workspace_id"]
+    slug = info.get("slug", ws_id)
+    name = info.get("name", slug)
+
+    # Check if already in config
+    existing = find_network_in_config(slug) or find_network_in_config(ws_id)
+    if existing:
+        console.print(f"[dim]Already joined workspace '{existing.name or existing.slug}'.[/dim]")
+        return
+
+    # Save to config
+    net_entry = NetworkEntry(
+        id=ws_id,
+        slug=slug,
+        name=name,
+        token=token,
+        endpoint=endpoint,
+    )
+    add_network_to_config(net_entry)
+
+    frontend_url = endpoint.replace("workspace-endpoint", "workspace").replace("/v1", "")
+    ws_url = f"{frontend_url}/{slug}?token={token}"
+
+    console.print(f"\n[green]Joined workspace![/green]\n")
+    console.print(f"  Name:  [bold]{name}[/bold]")
+    console.print(f"  URL:   [link={ws_url}]{ws_url}[/link]")
+    console.print(f"\n  Connect an agent:")
+    console.print(f"    [bold]openagents start claude[/bold]")
+
+
+@workspace_app.command("list")
+def workspace_list():
+    """List configured workspaces."""
+    from openagents.daemon_config import load_config
+
+    cfg = load_config()
+    if not cfg.networks:
+        console.print("[dim]No workspaces configured.[/dim]")
+        console.print("Create one: [bold]openagents workspace create[/bold]")
+        console.print("Or join:    [bold]openagents workspace join <token>[/bold]")
+        return
+
+    table = Table(box=box.SIMPLE)
+    table.add_column("Name", style="cyan")
+    table.add_column("Slug")
+    table.add_column("Agents", style="dim")
+
+    for net in cfg.networks:
+        agent_count = sum(
+            1 for a in cfg.agents
+            if a.network == net.slug or a.network == net.id
+        )
+        table.add_row(
+            net.name or net.slug,
+            net.slug,
+            str(agent_count) if agent_count else "-",
+        )
+
+    console.print(table)
+
+
+def _resolve_or_create_network(
     join_id: Optional[str],
     token: Optional[str],
     endpoint: str,
     agent_name: str,
     agent_type: str,
-    workspace_name: Optional[str],
-) -> Optional["WorkspaceEntry"]:
-    """Create or join a workspace, returning a WorkspaceEntry."""
+    workspace_name: Optional[str] = None,
+) -> Optional["NetworkEntry"]:
+    """Join or create a network, returning a NetworkEntry."""
     import asyncio
     from openagents.workspace_client import WorkspaceClient
-    from openagents.daemon_config import WorkspaceEntry
+    from openagents.daemon_config import NetworkEntry
 
     client = WorkspaceClient(endpoint=endpoint)
 
     if join_id and token:
-        # Join existing
         async def _join():
             result = await client.join_network(
                 agent_name=agent_name,
@@ -4099,7 +4570,7 @@ def _resolve_or_create_workspace(
                 agent_type=agent_type,
             )
             ws_id = result.get("network_id", join_id)
-            return WorkspaceEntry(
+            return NetworkEntry(
                 id=ws_id,
                 slug=join_id,
                 name=join_id,
@@ -4113,14 +4584,13 @@ def _resolve_or_create_workspace(
             console.print(f"[red]Failed to join: {e}[/red]")
             return None
     else:
-        # Create new
         async def _create():
             ws = await client.create_workspace(
                 agent_name, workspace_name, agent_type=agent_type,
             )
-            console.print(f"[green]Workspace created:[/green] {ws.name}")
+            console.print(f"[green]Network created:[/green] {ws.name}")
             console.print(f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]")
-            return WorkspaceEntry(
+            return NetworkEntry(
                 id=ws.workspace_id,
                 slug=ws.slug if hasattr(ws, "slug") else ws.workspace_id,
                 name=ws.name,
@@ -4131,7 +4601,7 @@ def _resolve_or_create_workspace(
         try:
             return asyncio.run(_create())
         except Exception as e:
-            console.print(f"[red]Failed to create workspace: {e}[/red]")
+            console.print(f"[red]Failed to create network: {e}[/red]")
             return None
 
 
@@ -4142,15 +4612,14 @@ def daemon_remove(
     """Remove an agent from the daemon config."""
     from openagents.daemon_config import remove_agent_from_config, find_agent_in_config
 
-    result = find_agent_in_config(agent_name)
-    if result is None:
+    agent = find_agent_in_config(agent_name)
+    if agent is None:
         console.print(f"[red]Agent '{agent_name}' not found in config.[/red]")
         raise typer.Exit(1)
 
-    ws, agent = result
+    net_info = f" → {agent.network}" if agent.network else " (local)"
     if not Confirm.ask(
-        f"Remove [cyan]{agent_name}[/cyan] ({agent.type}) "
-        f"from workspace [bold]{ws.name or ws.slug}[/bold]?"
+        f"Remove [cyan]{agent_name}[/cyan] ({agent.type}{net_info})?"
     ):
         raise typer.Exit(0)
 
@@ -4195,28 +4664,303 @@ def list_runtimes():
     # Also show configured agents
     from openagents.daemon_config import load_config
     cfg = load_config()
-    if cfg.workspaces:
-        total = sum(len(ws.agents) for ws in cfg.workspaces)
-        if total:
-            console.print(f"\n[dim]{total} agent(s) configured in daemon.yaml[/dim]")
-            for ws in cfg.workspaces:
-                for a in ws.agents:
-                    console.print(f"  [cyan]{a.name}[/cyan] ({a.type}, {a.role}) → {ws.slug or ws.name}")
+    if cfg.agents:
+        console.print(f"\n[dim]{len(cfg.agents)} agent(s) configured in daemon.yaml[/dim]")
+        for a in cfg.agents:
+            net_label = a.network or "(local)"
+            console.print(f"  [cyan]{a.name}[/cyan] ({a.type}, {a.role}) → {net_label}")
+
+
+@app.command("install")
+def install_agent(
+    agent_type: str = typer.Argument(..., help="Agent type to install (e.g. claude, aider, codex)"),
+):
+    """Install an agent runtime on this machine."""
+    import subprocess
+    import sys as _sys
+    from openagents.plugin_registry import registry
+
+    catalog = registry.get_catalog()
+    info = catalog.get(agent_type)
+    if info is None:
+        console.print(f"[red]Unknown agent type: {agent_type}[/red]")
+        console.print(f"Run [cyan]openagents search[/cyan] to see available agents.")
+        raise typer.Exit(1)
+
+    # Check if already installed
+    plugin = registry.get(agent_type)
+    if plugin and plugin.is_installed():
+        console.print(f"[green]{info.label}[/green] is already installed.")
+        path = plugin.which()
+        if path:
+            console.print(f"  Location: {path}")
+        raise typer.Exit(0)
+
+    cmd = info.install_command
+    console.print(f"Installing [cyan]{info.label}[/cyan]...")
+    console.print(f"  Command: [dim]{cmd}[/dim]\n")
+
+    # Determine how to run the install command
+    if cmd.startswith("pip install "):
+        package = cmd.replace("pip install ", "")
+        run_args = [_sys.executable, "-m", "pip", "install", package]
+    elif cmd.startswith("npm install "):
+        # Check if npm is available
+        if shutil.which("npm") is None:
+            console.print("[yellow]npm is not installed.[/yellow]")
+            console.print(
+                "Install Node.js first: [bold]https://nodejs.org[/bold]\n"
+                "Or use your package manager:"
+            )
+            import platform
+            if platform.system() == "Darwin":
+                console.print("  [dim]brew install node[/dim]")
+            elif platform.system() == "Linux":
+                console.print("  [dim]sudo apt install nodejs npm[/dim]  (Debian/Ubuntu)")
+                console.print("  [dim]sudo dnf install nodejs npm[/dim]  (Fedora)")
+            console.print(f"\nThen retry: [bold]openagents install {agent_type}[/bold]")
+            raise typer.Exit(1)
+        run_args = cmd.split()
+    elif cmd.startswith("See "):
+        console.print(f"[yellow]Manual installation required:[/yellow]")
+        console.print(f"  {cmd}")
+        raise typer.Exit(0)
+    else:
+        run_args = cmd.split()
+
+    if not Confirm.ask(f"Run `{' '.join(run_args)}`?"):
+        raise typer.Exit(0)
+
+    try:
+        result = subprocess.run(run_args, check=False)
+        if result.returncode == 0:
+            console.print(f"\n[green]Successfully installed {info.label}[/green]")
+            # Verify installation
+            plugin = registry.get(agent_type)
+            if plugin and plugin.is_installed():
+                path = plugin.which()
+                if path:
+                    console.print(f"  Location: {path}")
+                console.print(f"\nNext: [bold]openagents start {agent_type}[/bold]")
+            else:
+                console.print(
+                    "[yellow]Installed but not detected in PATH.[/yellow]\n"
+                    "You may need to restart your terminal."
+                )
+        else:
+            console.print(f"\n[red]Installation failed (exit code {result.returncode})[/red]")
+            raise typer.Exit(1)
+    except FileNotFoundError:
+        console.print(f"[red]Command not found: {run_args[0]}[/red]")
+        console.print(f"Install manually: {cmd}")
+        raise typer.Exit(1)
+
+
+@app.command("search")
+def search_agents(
+    query: str = typer.Argument("", help="Search query (empty = list all)"),
+):
+    """Search available agent types."""
+    from openagents.plugin_registry import registry
+
+    if query:
+        results = registry.search_catalog(query)
+    else:
+        results = list(registry.get_catalog().values())
+
+    if not results:
+        console.print(f"[yellow]No agents found matching '{query}'[/yellow]")
+        raise typer.Exit(0)
+
+    table = Table(title="Available Agents", box=box.SIMPLE)
+    table.add_column("Name", style="cyan")
+    table.add_column("Label")
+    table.add_column("Status")
+    table.add_column("Install Command", style="dim")
+    table.add_column("Description", style="dim")
+
+    for info in results:
+        plugin = registry.get(info.name)
+        if plugin and plugin.is_installed():
+            status = "[green]installed[/green]"
+        elif info.builtin:
+            status = "[yellow]not installed[/yellow]"
+        else:
+            status = "[dim]available[/dim]"
+
+        table.add_row(
+            info.name,
+            info.label,
+            status,
+            info.install_command,
+            info.description or "",
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Install with: openagents install <name>[/dim]")
+
+
+@app.command("autostart")
+def init_autostart(
+    remove: bool = typer.Option(False, "--remove", help="Remove auto-start configuration"),
+):
+    """Set up OpenAgents daemon to auto-start on login."""
+    import sys as _sys
+
+    IS_WINDOWS = _sys.platform == "win32"
+    IS_MACOS = _sys.platform == "darwin"
+
+    if IS_WINDOWS:
+        _init_windows(remove)
+    elif IS_MACOS:
+        _init_launchd(remove)
+    else:
+        _init_systemd(remove)
+
+
+def _init_systemd(remove: bool):
+    """Set up systemd user service for auto-start."""
+    import shutil
+    service_dir = Path.home() / ".config" / "systemd" / "user"
+    service_file = service_dir / "openagents.service"
+
+    if remove:
+        if service_file.exists():
+            service_file.unlink()
+            os.system("systemctl --user daemon-reload")
+            console.print("[green]Removed systemd service.[/green]")
+        else:
+            console.print("[yellow]No systemd service found.[/yellow]")
+        return
+
+    openagents_bin = shutil.which("openagents")
+    if not openagents_bin:
+        console.print("[red]Cannot find 'openagents' in PATH.[/red]")
+        raise typer.Exit(1)
+
+    service_dir.mkdir(parents=True, exist_ok=True)
+    service_content = f"""[Unit]
+Description=OpenAgents Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={openagents_bin} up --foreground
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+"""
+    service_file.write_text(service_content)
+    os.system("systemctl --user daemon-reload")
+    os.system("systemctl --user enable openagents.service")
+    os.system("systemctl --user start openagents.service")
+    console.print("[green]Installed and started systemd user service.[/green]")
+    console.print("[dim]  Status: systemctl --user status openagents[/dim]")
+    console.print("[dim]  Logs:   journalctl --user -u openagents -f[/dim]")
+    console.print("[dim]  Stop:   systemctl --user stop openagents[/dim]")
+    console.print("[dim]  Remove: openagents init --remove[/dim]")
+
+
+def _init_launchd(remove: bool):
+    """Set up launchd plist for auto-start on macOS."""
+    import shutil
+    plist_dir = Path.home() / "Library" / "LaunchAgents"
+    plist_file = plist_dir / "org.openagents.daemon.plist"
+
+    if remove:
+        if plist_file.exists():
+            os.system(f"launchctl unload {plist_file}")
+            plist_file.unlink()
+            console.print("[green]Removed launchd agent.[/green]")
+        else:
+            console.print("[yellow]No launchd agent found.[/yellow]")
+        return
+
+    openagents_bin = shutil.which("openagents")
+    if not openagents_bin:
+        console.print("[red]Cannot find 'openagents' in PATH.[/red]")
+        raise typer.Exit(1)
+
+    plist_dir.mkdir(parents=True, exist_ok=True)
+    log_path = Path.home() / ".openagents" / "daemon.log"
+    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.openagents.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{openagents_bin}</string>
+        <string>up</string>
+        <string>--foreground</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{log_path}</string>
+    <key>StandardErrorPath</key>
+    <string>{log_path}</string>
+</dict>
+</plist>
+"""
+    plist_file.write_text(plist_content)
+    os.system(f"launchctl load {plist_file}")
+    console.print("[green]Installed and loaded launchd agent.[/green]")
+    console.print(f"[dim]  Logs:   tail -f {log_path}[/dim]")
+    console.print("[dim]  Stop:   launchctl unload ~/Library/LaunchAgents/org.openagents.daemon.plist[/dim]")
+    console.print("[dim]  Remove: openagents init --remove[/dim]")
+
+
+def _init_windows(remove: bool):
+    """Set up Windows Task Scheduler for auto-start."""
+    import shutil
+    task_name = "OpenAgentsDaemon"
+
+    if remove:
+        ret = os.system(f'schtasks /Delete /TN "{task_name}" /F >nul 2>&1')
+        if ret == 0:
+            console.print("[green]Removed scheduled task.[/green]")
+        else:
+            console.print("[yellow]No scheduled task found.[/yellow]")
+        return
+
+    openagents_bin = shutil.which("openagents")
+    if not openagents_bin:
+        console.print("[red]Cannot find 'openagents' in PATH.[/red]")
+        raise typer.Exit(1)
+
+    cmd = f'schtasks /Create /TN "{task_name}" /TR "\"{openagents_bin}\" up --foreground" /SC ONLOGON /RL HIGHEST /F'
+    ret = os.system(cmd)
+    if ret == 0:
+        console.print("[green]Created scheduled task for auto-start on login.[/green]")
+        console.print(f"[dim]  Check:  schtasks /Query /TN \"{task_name}\"[/dim]")
+        console.print(f"[dim]  Remove: openagents init --remove[/dim]")
+    else:
+        console.print("[red]Failed to create scheduled task. Try running as Administrator.[/red]")
+        raise typer.Exit(1)
 
 
 # ============================================================================
 # WORKSPACE CONNECT COMMANDS
 # ============================================================================
 
-connect_app = typer.Typer(
-    name="connect",
-    help="Connect local agents to an OpenAgents workspace",
+connect_legacy_app = typer.Typer(
+    name="connect-legacy",
+    help="[deprecated] Use 'create' + 'connect' instead. One-shot agent connection.",
     rich_markup_mode="rich",
+    hidden=True,
 )
-app.add_typer(connect_app, name="connect")
+app.add_typer(connect_legacy_app, name="connect-legacy")
 
 
-@connect_app.command("claude")
+@connect_legacy_app.command("claude")
 def connect_claude(
     api_key: str = typer.Option(
         None, "--api-key", envvar="OA_API_KEY",
@@ -4424,19 +5168,21 @@ def connect_claude(
         # Save to daemon config if requested
         if save:
             from openagents.daemon_config import (
-                WorkspaceEntry, AgentEntry,
-                add_workspace_to_config, add_agent_to_config,
+                NetworkEntry, AgentEntry,
+                add_network_to_config, add_agent_to_config,
             )
-            ws_entry = WorkspaceEntry(
+            net_entry = NetworkEntry(
                 id=ws_workspace_id,
                 slug=join or ws_workspace_id,
                 name=workspace_name or ws_workspace_id,
                 token=ws_tok,
                 endpoint=endpoint,
             )
-            add_workspace_to_config(ws_entry)
-            add_agent_to_config(ws_workspace_id, AgentEntry(
+            add_network_to_config(net_entry)
+            net_ref = net_entry.slug or net_entry.id
+            add_agent_to_config(AgentEntry(
                 name=agent_name, type="claude", role="master",
+                network=net_ref,
                 options={
                     k: v for k, v in {
                         "disable_files": disable_files or None,
@@ -4478,7 +5224,7 @@ def connect_claude(
         console.print("\n[yellow]Disconnected.[/yellow]")
 
 
-@connect_app.command("openclaw")
+@connect_legacy_app.command("openclaw")
 def connect_openclaw(
     api_key: str = typer.Option(
         None, "--api-key", envvar="OA_API_KEY",
@@ -4685,19 +5431,21 @@ def connect_openclaw(
         # Save to daemon config if requested
         if save:
             from openagents.daemon_config import (
-                WorkspaceEntry, AgentEntry,
-                add_workspace_to_config, add_agent_to_config,
+                NetworkEntry, AgentEntry,
+                add_network_to_config, add_agent_to_config,
             )
-            ws_entry = WorkspaceEntry(
+            net_entry = NetworkEntry(
                 id=ws_workspace_id,
                 slug=join or ws_workspace_id,
                 name=workspace_name or ws_workspace_id,
                 token=ws_tok,
                 endpoint=endpoint,
             )
-            add_workspace_to_config(ws_entry)
-            add_agent_to_config(ws_workspace_id, AgentEntry(
+            add_network_to_config(net_entry)
+            net_ref = net_entry.slug or net_entry.id
+            add_agent_to_config(AgentEntry(
                 name=agent_name, type="openclaw", role="worker",
+                network=net_ref,
                 options={
                     k: v for k, v in {
                         "openclaw_host": openclaw_host if openclaw_host != "127.0.0.1" else None,
@@ -4739,7 +5487,7 @@ def connect_openclaw(
         console.print("\n[yellow]Disconnected.[/yellow]")
 
 
-@connect_app.command("codex")
+@connect_legacy_app.command("codex")
 def connect_codex(
     api_key: str = typer.Option(
         None, "--api-key", envvar="OA_API_KEY",
@@ -4858,19 +5606,21 @@ def connect_codex(
         # Save to daemon config if requested
         if save:
             from openagents.daemon_config import (
-                WorkspaceEntry, AgentEntry,
-                add_workspace_to_config, add_agent_to_config,
+                NetworkEntry, AgentEntry,
+                add_network_to_config, add_agent_to_config,
             )
-            ws_entry = WorkspaceEntry(
+            net_entry = NetworkEntry(
                 id=ws.workspace_id,
                 slug=ws.workspace_id,
                 name=workspace_name or ws.name,
                 token=ws.token,
                 endpoint=endpoint,
             )
-            add_workspace_to_config(ws_entry)
-            add_agent_to_config(ws.workspace_id, AgentEntry(
+            add_network_to_config(net_entry)
+            net_ref = net_entry.slug or net_entry.id
+            add_agent_to_config(AgentEntry(
                 name=agent_name, type="codex", role="worker",
+                network=net_ref,
             ))
             console.print(
                 "[green]Saved to daemon config.[/green] "
@@ -5106,6 +5856,7 @@ def show_banner():
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     version_flag: Optional[bool] = typer.Option(
         None, "--version", callback=version_callback, is_eager=True,
         help="Show version and exit"
@@ -5119,20 +5870,96 @@ def main(
         help="Set the logging level"
     ),
     no_banner: bool = typer.Option(
-        False, "--no-banner", 
+        False, "--no-banner",
         help="Don't show the startup banner"
     ),
 ):
     """
     🤖 [bold blue]OpenAgents[/bold blue] - AI Agent Networks for Open Collaboration
-    
+
     Create and manage distributed AI agent networks with ease.
     """
     setup_logging(log_level, verbose)
-    
+
     # Show banner for studio command (network start shows banner after startup completes)
     if not no_banner and len(sys.argv) > 1 and sys.argv[1] == 'studio':
         show_banner()
+
+    # No subcommand → scan machine and show agent status
+    if ctx.invoked_subcommand is None:
+        _show_agent_scan()
+
+
+def _show_agent_scan():
+    """Scan machine for agents and show readiness status."""
+    from openagents.plugin_registry import registry
+    from openagents.daemon import read_daemon_pid
+    from openagents.daemon_config import load_config, read_status
+
+    console.print("\n[bold blue]OpenAgents[/bold blue] — scanning for agents...\n")
+
+    # Scan installed agents
+    scan = registry.scan_agents()
+
+    table = Table(box=box.SIMPLE)
+    table.add_column("Agent", style="cyan")
+    table.add_column("Status")
+    table.add_column("Notes", style="dim")
+
+    installed_count = 0
+    ready_count = 0
+    for agent in scan:
+        if agent["installed"]:
+            installed_count += 1
+            if agent["ready"]:
+                ready_count += 1
+                status = "[green]ready[/green]"
+            else:
+                status = "[yellow]needs setup[/yellow]"
+            notes = agent["message"]
+            if agent["path"] and agent["ready"]:
+                notes = agent["path"]
+        else:
+            status = "[dim]not installed[/dim]"
+            notes = agent["install_command"]
+        table.add_row(agent["label"], status, notes)
+
+    console.print(table)
+
+    # Show configured agents
+    cfg = load_config()
+    if cfg.agents:
+        console.print(f"[dim]{len(cfg.agents)} agent(s) configured[/dim]")
+        for a in cfg.agents:
+            net_label = f"→ {a.network}" if a.network else "(local)"
+            console.print(f"  [cyan]{a.name}[/cyan] ({a.type}) {net_label}")
+        console.print()
+
+    # Show daemon status
+    pid = read_daemon_pid()
+    if pid:
+        console.print(f"[green]Daemon running[/green] (PID {pid})")
+        status_data = read_status()
+        if status_data and "agents" in status_data:
+            for name, info in status_data["agents"].items():
+                state = info.get("state", "unknown")
+                net = info.get("network", info.get("workspace", ""))
+                console.print(f"  [cyan]{name}[/cyan] — {state} {net}")
+        console.print()
+
+    # Helpful next steps
+    if installed_count == 0:
+        console.print("Install an agent: [bold]openagents install claude[/bold]")
+    elif ready_count > 0 and not cfg.agents:
+        ready_names = [a["name"] for a in scan if a["ready"]]
+        console.print(f"Start an agent:   [bold]openagents start {ready_names[0]}[/bold]")
+    elif cfg.agents and not pid:
+        console.print("Start agents:     [bold]openagents up[/bold]")
+    elif not pid:
+        not_ready = [a for a in scan if a["installed"] and not a["ready"]]
+        if not_ready:
+            console.print(f"Setup needed:     {not_ready[0]['message']}")
+    console.print()
 
 
 def cli_main():
