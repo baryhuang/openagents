@@ -62,7 +62,7 @@
 | P10 | Agent registry API — seed data + deployment | `openagents-web/backend` | Medium | Seed built-in + known agents into DB. Deploy to `endpoint.openagents.org`. |
 | P11 | Remote agents via SSH tunnel | `daemon.py` | Low | Support agents running on remote servers, connected via SSH tunnel. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
-| P23 | Repository restructure — layered architecture | `src/openagents/` | High | **Phase 1 (CLI split) DONE** — 6K-line `cli.py` split into 9 domain modules. Phase 2 remaining: create `client/` + `sdk/` directories, move files, update imports. |
+| P23 | Repository restructure — layered architecture | `src/openagents/` | High | **Phase 1 (CLI split) DONE.** **Phase 2 (client/ extraction) DONE** — 16 files moved to `client/`, backward-compat shims at old paths. Remaining: Phase 3 `sdk/` extraction (move `core/` non-ONM files to `sdk/`). |
 | P24 | Package + test split (`openagents` vs `openagents[sdk]`) | `pyproject.toml`, `conftest.py` | High | **DONE** — pyproject.toml split, import guards, pytest markers. Remaining: CI pipeline split (fast client-tests vs full sdk-tests). |
 | P25 | Update internal docs — agent workspace concept | `~/works/openagents-web/internal_frontend/docs/202602-agent-workspace` | Medium | Update the agent-workspace internal doc to reflect latest concept: token-only join, `openagents start` flow, workspace CLI commands, agent registry, layered architecture, repo restructure plan. |
 
