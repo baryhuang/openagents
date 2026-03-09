@@ -49,17 +49,16 @@
 | 41 | `yaml-agent` plugin type — YAML-defined agents managed by daemon | `plugin_registry.py` | Done |
 | 42 | Package split — `openagents[sdk]` optional extra for heavy deps | `pyproject.toml`, SDK files | Done |
 | 43 | `openagents logs` — view and follow daemon logs with agent filtering | `cli_daemon.py` | Done |
+| 44 | Windows installer — `install.ps1` for native PowerShell | `install.ps1` | Done |
 
 ## Pending
 
 | # | Task | Files | Priority | Notes |
 |---|------|-------|----------|-------|
-| P7 | `openagents[sdk]` package split | `pyproject.toml` | Low | Move heavy deps (grpcio, cryptography, framework bridges) to optional extra. Base package stays lightweight. |
 | P8 | `network start` refactor | `cli.py` | Low | Separate network launching (Layer 3) from agent launching. Currently `network start` also launches agents. |
 | P9 | Community plugins | `openagents-aider/`, etc. | Low | Publish `openagents-aider`, `openagents-goose` as pip-installable plugin packages. |
 | P10 | Agent registry API (backend) | `openagents-web/backend` | High | `agent_registry` DB table + `GET/POST /v1/agent-registry` endpoints on `endpoint.openagents.org`. SDK client side done (item 39). |
 | P11 | Remote agents via SSH tunnel | `daemon.py` | Low | Support agents running on remote servers, connected via SSH tunnel. |
-| P14 | Windows installer (`install.ps1`) | `install.ps1` (new) | Medium | PowerShell equivalent of `install.sh` for native Windows (not WSL). |
 | P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
 | P23 | Repository restructure — layered architecture | `src/openagents/` | High | **Phase 1 (CLI split) DONE** — 6K-line `cli.py` split into 9 domain modules. Phase 2 remaining: create `client/` + `sdk/` directories, move files, update imports. |
@@ -67,17 +66,6 @@
 | P25 | Update internal docs — agent workspace concept | `~/works/openagents-web/internal_frontend/docs/202602-agent-workspace` | Medium | Update the agent-workspace internal doc to reflect latest concept: token-only join, `openagents start` flow, workspace CLI commands, agent registry, layered architecture, repo restructure plan. |
 
 ## Context
-
-### P7: `openagents[sdk]` Package Split
-
-**Current `pyproject.toml` dependencies** (all bundled):
-- **Lightweight (keep in base):** `typer`, `rich`, `pyyaml`, `pydantic`, `aiohttp`, `requests`, `click`
-- **Heavy (move to `[sdk]` extra):** `grpcio` + `grpcio-tools`, `cryptography`, `pynacl`, `mcp`, `openai`, `prometheus-client`, `jinja2`
-- **Existing extras:** `p2p`, `webrtc`, `langchain`, `dev`, `docs`
-
-**What's needed:** Add `[sdk]` extra in `pyproject.toml` that includes grpcio, cryptography, pynacl, mcp, jinja2. Guard imports in Layer 3 code with try/except. Base package (`pip install openagents`) should only need ~10 deps for the CLI + client.
-
----
 
 ### P8: `network start` Refactor
 
