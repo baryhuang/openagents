@@ -192,6 +192,43 @@ class OpenClawPlugin(AgentPlugin):
         )
 
 
+class YamlAgentPlugin(AgentPlugin):
+    """Plugin for YAML-defined agents (Layer 3 SDK agents).
+
+    Agents are defined in YAML config files and launched via
+    ``openagents agent start <config.yaml>``.  The daemon manages them
+    as local subprocesses — the ``path`` field in :class:`AgentEntry`
+    should point to the YAML config file.
+    """
+
+    name = "yaml-agent"
+    label = "YAML-defined Agent"
+    install_command = "pip install openagents"
+
+    def is_installed(self) -> bool:
+        return True  # built-in
+
+    def which(self) -> Optional[str]:
+        return "built-in"
+
+    def check_ready(self) -> tuple[bool, str]:
+        return True, "Ready (built-in)"
+
+    def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
+        if not path:
+            return None
+        config_path = Path(path)
+        if not config_path.exists():
+            return None
+        return [sys.executable, "-m", "openagents", "agent", "start", str(config_path)]
+
+    def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
+        raise NotImplementedError(
+            "YAML agents use gRPC (Layer 3), not HTTP adapters. "
+            "Use get_launch_command() for subprocess management instead."
+        )
+
+
 class CodexPlugin(AgentPlugin):
     name = "codex"
     label = "OpenAI Codex CLI"
@@ -460,6 +497,7 @@ registry = PluginRegistry()
 registry.register(ClaudePlugin(), builtin=True)
 registry.register(OpenClawPlugin(), builtin=True)
 registry.register(CodexPlugin(), builtin=True)
+registry.register(YamlAgentPlugin(), builtin=True)
 
 # Known agents catalog (available for `openagents search` even if not installed)
 _KNOWN_AGENTS = [
@@ -501,7 +539,7 @@ for _info in _KNOWN_AGENTS:
     registry.add_catalog_entry(_info)
 
 # Also add built-in agents to catalog
-for _p in [ClaudePlugin(), OpenClawPlugin(), CodexPlugin()]:
+for _p in [ClaudePlugin(), OpenClawPlugin(), CodexPlugin(), YamlAgentPlugin()]:
     registry.add_catalog_entry(PluginInfo(
         name=_p.name,
         label=_p.label,

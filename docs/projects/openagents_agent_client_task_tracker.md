@@ -45,12 +45,13 @@
 | 37 | Workspace auto-open browser — `--no-browser` flag on `start` | `cli.py` | Done |
 | 38 | `openagents update` — self-update + agent runtime check | `cli.py` | Done |
 | 39 | Remote agent catalog client — 24h cache + offline fallback | `plugin_registry.py` | Done |
+| 40 | CLI split — 6,154-line `cli.py` into 9 domain modules | `cli.py`, `cli_shared.py`, `cli_helpers.py`, `cli_network.py`, `cli_agent.py`, `cli_identity.py`, `cli_daemon.py`, `cli_packages.py`, `cli_legacy.py` | Done |
+| 41 | `yaml-agent` plugin type — YAML-defined agents managed by daemon | `plugin_registry.py` | Done |
 
 ## Pending
 
 | # | Task | Files | Priority | Notes |
 |---|------|-------|----------|-------|
-| P6 | `yaml-agent` plugin type | `plugin_registry.py` | Medium | Convert `openagents agents start <folder>` into a plugin type so YAML-defined agents are managed by daemon. |
 | P7 | `openagents[sdk]` package split | `pyproject.toml` | Low | Move heavy deps (grpcio, cryptography, framework bridges) to optional extra. Base package stays lightweight. |
 | P8 | `network start` refactor | `cli.py` | Low | Separate network launching (Layer 3) from agent launching. Currently `network start` also launches agents. |
 | P9 | Community plugins | `openagents-aider/`, etc. | Low | Publish `openagents-aider`, `openagents-goose` as pip-installable plugin packages. |
@@ -59,25 +60,11 @@
 | P14 | Windows installer (`install.ps1`) | `install.ps1` (new) | Medium | PowerShell equivalent of `install.sh` for native Windows (not WSL). |
 | P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
-| P23 | Repository restructure — layered architecture | `src/openagents/` | High | Split flat `src/openagents/` into `client/`, `sdk/`, keep `core/` for ONM primitives, keep `adapters/`. Split 6K-line `cli.py` into domain files. Enables clean `openagents[sdk]` package split (P7). Two phases: (1) create `client/` + split CLI, (2) create `sdk/` + guard heavy imports. |
+| P23 | Repository restructure — layered architecture | `src/openagents/` | High | **Phase 1 (CLI split) DONE** — 6K-line `cli.py` split into 9 domain modules. Phase 2 remaining: create `client/` + `sdk/` directories, move files, update imports. |
 | P24 | Package + test split (`openagents` vs `openagents[sdk]`) | `pyproject.toml`, `conftest.py` | High | **Depends on P23.** Move grpcio/cryptography/pynacl/mcp/openai/jinja2/prometheus/structlog to `[sdk]` optional extra. Add pytest markers (`client`/`sdk`) with auto-marking by directory in conftest. Guard SDK imports with try/except. Split CI into fast client-tests (base install, `pytest -m client`) and full sdk-tests (`pip install .[sdk]`, `pytest -m sdk`). |
 | P25 | Update internal docs — agent workspace concept | `~/works/openagents-web/internal_frontend/docs/202602-agent-workspace` | Medium | Update the agent-workspace internal doc to reflect latest concept: token-only join, `openagents start` flow, workspace CLI commands, agent registry, layered architecture, repo restructure plan. |
 
 ## Context
-
-### P6: `yaml-agent` Plugin Type
-
-**Current state:** `cli.py:2775-2854` — `@agents_app.command("start")` takes a folder path, discovers `*.yaml/*.yml` files via `BulkAgentManager().discover_agents(folder_path)`, returns `AgentInfo` objects, manages concurrent startup.
-
-**What's needed:** Create a `YamlAgentPlugin(AgentPlugin)` in `plugin_registry.py` that:
-- `name = "yaml-agent"`
-- `is_installed()` always returns True
-- `create_adapter()` loads the YAML config and creates the appropriate adapter
-- Agents defined in YAML can then be managed by `openagents start yaml-agent --path ./my-agents/` and run by the daemon like any other plugin.
-
-This replaces the separate `openagents agents start <folder>` command.
-
----
 
 ### P7: `openagents[sdk]` Package Split
 
