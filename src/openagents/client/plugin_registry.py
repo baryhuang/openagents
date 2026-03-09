@@ -103,7 +103,7 @@ class AgentPlugin(ABC):
 class ClaudePlugin(AgentPlugin):
     name = "claude"
     label = "Claude Code CLI"
-    install_command = "npm install -g @anthropic-ai/claude-code"
+    install_command = "curl -fsSL https://claude.ai/install.sh | bash"
 
     def is_installed(self) -> bool:
         return shutil.which("claude") is not None
@@ -156,17 +156,13 @@ class ClaudePlugin(AgentPlugin):
 class OpenClawPlugin(AgentPlugin):
     name = "openclaw"
     label = "OpenClaw"
-    install_command = "pip install openclaw"
+    install_command = "npm install -g openclaw@latest"
 
     def is_installed(self) -> bool:
-        try:
-            __import__("openclaw")
-            return True
-        except ImportError:
-            return False
+        return shutil.which("openclaw") is not None
 
     def which(self) -> Optional[str]:
-        return "python module" if self.is_installed() else None
+        return shutil.which("openclaw")
 
     def check_ready(self) -> tuple[bool, str]:
         if not self.is_installed():
@@ -532,6 +528,46 @@ _KNOWN_AGENTS = [
         description="Language model agent for software engineering tasks",
         homepage="https://swe-agent.com",
         tags=["coding", "benchmarks", "research"],
+    ),
+    PluginInfo(
+        name="gemini",
+        label="Gemini CLI",
+        install_command="npm install -g @google/gemini-cli",
+        description="Google's open-source AI agent for the command line",
+        homepage="https://github.com/google-gemini/gemini-cli",
+        tags=["coding", "google", "open-source", "cli"],
+    ),
+    PluginInfo(
+        name="copilot",
+        label="GitHub Copilot CLI",
+        install_command="npm install -g @github/copilot",
+        description="GitHub Copilot coding agent for the terminal",
+        homepage="https://github.com/features/copilot",
+        tags=["coding", "github", "cli"],
+    ),
+    PluginInfo(
+        name="amp",
+        label="Amp (Sourcegraph)",
+        install_command="curl -fsSL https://ampcode.com/install.sh | bash",
+        description="Sourcegraph's AI coding agent for CLI and VS Code",
+        homepage="https://ampcode.com",
+        tags=["coding", "sourcegraph", "cli", "vscode"],
+    ),
+    PluginInfo(
+        name="opencode",
+        label="OpenCode",
+        install_command="npm install -g opencode-ai@latest",
+        description="Open-source terminal-native AI coding agent",
+        homepage="https://opencode.ai",
+        tags=["coding", "open-source", "cli", "terminal"],
+    ),
+    PluginInfo(
+        name="nanoclaw",
+        label="NanoClaw",
+        install_command="docker pull qwibitai/nanoclaw",
+        description="Lightweight containerized coding agent built on Claude Agent SDK",
+        homepage="https://github.com/qwibitai/nanoclaw",
+        tags=["coding", "container", "lightweight", "open-source"],
     ),
 ]
 

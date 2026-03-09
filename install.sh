@@ -214,6 +214,15 @@ else
     echo "  ${DIM}Claude Code — not installed${RESET}"
 fi
 
+# OpenClaw
+if command -v openclaw >/dev/null 2>&1; then
+    openclaw_ver=$(openclaw --version 2>/dev/null | head -1 || echo "unknown")
+    ok "OpenClaw ($openclaw_ver)"
+    agent_count=$((agent_count + 1))
+else
+    echo "  ${DIM}OpenClaw — not installed${RESET}"
+fi
+
 # OpenAI Codex
 if command -v codex >/dev/null 2>&1; then
     ok "OpenAI Codex CLI"
@@ -238,6 +247,38 @@ else
     echo "  ${DIM}Goose — not installed${RESET}"
 fi
 
+# Gemini CLI
+if command -v gemini >/dev/null 2>&1; then
+    ok "Gemini CLI"
+    agent_count=$((agent_count + 1))
+else
+    echo "  ${DIM}Gemini CLI — not installed${RESET}"
+fi
+
+# GitHub Copilot CLI
+if command -v copilot >/dev/null 2>&1; then
+    ok "GitHub Copilot CLI"
+    agent_count=$((agent_count + 1))
+else
+    echo "  ${DIM}GitHub Copilot CLI — not installed${RESET}"
+fi
+
+# Amp (Sourcegraph)
+if command -v amp >/dev/null 2>&1; then
+    ok "Amp (Sourcegraph)"
+    agent_count=$((agent_count + 1))
+else
+    echo "  ${DIM}Amp — not installed${RESET}"
+fi
+
+# OpenCode
+if command -v opencode >/dev/null 2>&1; then
+    ok "OpenCode"
+    agent_count=$((agent_count + 1))
+else
+    echo "  ${DIM}OpenCode — not installed${RESET}"
+fi
+
 if [ "$agent_count" -eq 0 ]; then
     echo ""
     warn "No AI agents found. Install one to get started:"
@@ -245,11 +286,14 @@ if [ "$agent_count" -eq 0 ]; then
     echo "  ${BOLD}Claude Code${RESET}  (recommended)"
     echo "    curl -fsSL https://claude.ai/install.sh | bash"
     echo ""
+    echo "  ${BOLD}OpenClaw${RESET}"
+    echo "    curl -fsSL https://openclaw.ai/install.sh | bash"
+    echo ""
+    echo "  ${BOLD}Gemini CLI${RESET}"
+    echo "    npm install -g @google/gemini-cli"
+    echo ""
     echo "  ${BOLD}OpenAI Codex${RESET}"
     echo "    npm install -g @openai/codex"
-    echo ""
-    echo "  ${BOLD}Aider${RESET}"
-    echo "    pip install aider-chat"
     echo ""
 fi
 

@@ -112,7 +112,12 @@ def install_agent(
     console.print(f"  Command: [dim]{cmd}[/dim]\n")
 
     # Determine how to run the install command
-    if cmd.startswith("pip install "):
+    use_shell = False
+    if "| bash" in cmd or "| sh" in cmd:
+        # Curl-pipe-bash style installer (e.g. Claude Code native installer)
+        run_args = ["bash", "-c", cmd]
+        use_shell = False
+    elif cmd.startswith("pip install "):
         package = cmd.replace("pip install ", "")
         run_args = [_sys.executable, "-m", "pip", "install", package]
     elif cmd.startswith("npm install "):
