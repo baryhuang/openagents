@@ -50,6 +50,7 @@
 | 42 | Package split — `openagents[sdk]` optional extra for heavy deps | `pyproject.toml`, SDK files | Done |
 | 43 | `openagents logs` — view and follow daemon logs with agent filtering | `cli_daemon.py` | Done |
 | 44 | Windows installer — `install.ps1` for native PowerShell | `install.ps1` | Done |
+| 45 | Homebrew formula template for `brew install openagents` | `Formula/openagents.rb` | Done |
 
 ## Pending
 
@@ -59,7 +60,6 @@
 | P9 | Community plugins | `openagents-aider/`, etc. | Low | Publish `openagents-aider`, `openagents-goose` as pip-installable plugin packages. |
 | P10 | Agent registry API (backend) | `openagents-web/backend` | High | `agent_registry` DB table + `GET/POST /v1/agent-registry` endpoints on `endpoint.openagents.org`. SDK client side done (item 39). |
 | P11 | Remote agents via SSH tunnel | `daemon.py` | Low | Support agents running on remote servers, connected via SSH tunnel. |
-| P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
 | P23 | Repository restructure — layered architecture | `src/openagents/` | High | **Phase 1 (CLI split) DONE** — 6K-line `cli.py` split into 9 domain modules. Phase 2 remaining: create `client/` + `sdk/` directories, move files, update imports. |
 | P24 | Package + test split (`openagents` vs `openagents[sdk]`) | `pyproject.toml`, `conftest.py` | High | **DONE** — pyproject.toml split, import guards, pytest markers. Remaining: CI pipeline split (fast client-tests vs full sdk-tests). |
