@@ -44,6 +44,7 @@
 | 36 | Network manifest — `GET /.well-known/openagents.json` | `workspace/backend/app/main.py`, `test_network.py` | Done |
 | 37 | Workspace auto-open browser — `--no-browser` flag on `start` | `cli.py` | Done |
 | 38 | `openagents update` — self-update + agent runtime check | `cli.py` | Done |
+| 39 | Remote agent catalog client — 24h cache + offline fallback | `plugin_registry.py` | Done |
 
 ## Pending
 
@@ -53,7 +54,7 @@
 | P7 | `openagents[sdk]` package split | `pyproject.toml` | Low | Move heavy deps (grpcio, cryptography, framework bridges) to optional extra. Base package stays lightweight. |
 | P8 | `network start` refactor | `cli.py` | Low | Separate network launching (Layer 3) from agent launching. Currently `network start` also launches agents. |
 | P9 | Community plugins | `openagents-aider/`, etc. | Low | Publish `openagents-aider`, `openagents-goose` as pip-installable plugin packages. |
-| P10 | Agent registry API + client | `openagents-web/backend`, `plugin_registry.py` | High | Remote agent catalog on `endpoint.openagents.org`. New `agent_registry` DB table + `GET/POST /v1/agent-registry` endpoints. SDK fetches catalog with 24h cache + offline fallback. Replaces hardcoded `_KNOWN_AGENTS`. Enables `openagents search/install` without upgrading openagents. |
+| P10 | Agent registry API (backend) | `openagents-web/backend` | High | `agent_registry` DB table + `GET/POST /v1/agent-registry` endpoints on `endpoint.openagents.org`. SDK client side done (item 39). |
 | P11 | Remote agents via SSH tunnel | `daemon.py` | Low | Support agents running on remote servers, connected via SSH tunnel. |
 | P14 | Windows installer (`install.ps1`) | `install.ps1` (new) | Medium | PowerShell equivalent of `install.sh` for native Windows (not WSL). |
 | P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |

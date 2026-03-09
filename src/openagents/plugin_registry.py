@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -242,6 +243,73 @@ class PluginInfo:
     builtin: bool = False
 
 
+# ---------------------------------------------------------------------------
+# Remote catalog
+# ---------------------------------------------------------------------------
+
+REGISTRY_URL = "https://endpoint.openagents.org/v1/agent-registry"
+CACHE_DIR = Path.home() / ".openagents"
+CACHE_PATH = CACHE_DIR / "agent_catalog.json"
+CACHE_TTL = 86400  # 24 hours
+
+
+def _fetch_remote_catalog() -> list[PluginInfo]:
+    """Fetch agent catalog from remote registry with 24h cache + offline fallback.
+
+    Returns remote entries on success, cached entries if offline, empty list on cold start.
+    """
+    # Check cache first
+    if CACHE_PATH.exists():
+        try:
+            age = time.time() - CACHE_PATH.stat().st_mtime
+            if age < CACHE_TTL:
+                return _parse_cached()
+        except Exception:
+            pass
+
+    # Try remote fetch
+    try:
+        import requests
+        resp = requests.get(REGISTRY_URL, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            entries = data.get("data", data) if isinstance(data, dict) else data
+            if isinstance(entries, list):
+                CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                CACHE_PATH.write_text(json.dumps(entries))
+                return [_entry_to_plugin_info(e) for e in entries]
+    except Exception as e:
+        logger.debug(f"Remote catalog fetch failed: {e}")
+
+    # Offline fallback: use stale cache if available
+    if CACHE_PATH.exists():
+        try:
+            return _parse_cached()
+        except Exception:
+            pass
+
+    return []  # No cache, no remote — caller will use bundled _KNOWN_AGENTS
+
+
+def _parse_cached() -> list[PluginInfo]:
+    """Parse cached catalog JSON file."""
+    data = json.loads(CACHE_PATH.read_text())
+    return [_entry_to_plugin_info(e) for e in data]
+
+
+def _entry_to_plugin_info(entry: dict) -> PluginInfo:
+    """Convert a registry API entry dict to a PluginInfo."""
+    return PluginInfo(
+        name=entry.get("name", ""),
+        label=entry.get("label", ""),
+        install_command=entry.get("install_command", ""),
+        description=entry.get("description", ""),
+        homepage=entry.get("homepage", ""),
+        tags=entry.get("tags", []),
+        builtin=entry.get("builtin", False),
+    )
+
+
 class PluginRegistry:
     """Central registry of agent plugins."""
 
@@ -249,6 +317,7 @@ class PluginRegistry:
         self._plugins: dict[str, AgentPlugin] = {}
         self._catalog: dict[str, PluginInfo] = {}
         self._loaded_entry_points = False
+        self._loaded_remote_catalog = False
 
     def register(self, plugin: AgentPlugin, builtin: bool = False) -> None:
         """Register a plugin instance."""
@@ -316,13 +385,15 @@ class PluginRegistry:
         self._catalog[info.name] = info
 
     def get_catalog(self) -> dict[str, PluginInfo]:
-        """Return the full catalog (installed + known-available)."""
+        """Return the full catalog (installed + known-available + remote)."""
         self._ensure_entry_points()
+        self._ensure_remote_catalog()
         return dict(self._catalog)
 
     def search_catalog(self, query: str) -> list[PluginInfo]:
         """Search catalog entries by name/label/tags."""
         self._ensure_entry_points()
+        self._ensure_remote_catalog()
         q = query.lower()
         results = []
         for info in self._catalog.values():
@@ -356,6 +427,29 @@ class PluginRegistry:
                     logger.debug(f"Failed to load plugin entry_point '{ep.name}': {e}")
         except Exception as e:
             logger.debug(f"Failed to scan entry_points: {e}")
+
+    def _ensure_remote_catalog(self):
+        """Fetch remote agent catalog (once per process)."""
+        if self._loaded_remote_catalog:
+            return
+        self._loaded_remote_catalog = True
+        try:
+            remote_entries = _fetch_remote_catalog()
+            for info in remote_entries:
+                if info.name and info.name not in self._catalog:
+                    self._catalog[info.name] = info
+                    logger.debug(f"Added remote catalog entry: {info.name}")
+                elif info.name and info.name in self._catalog:
+                    # Update description/homepage/tags from remote if local is sparse
+                    existing = self._catalog[info.name]
+                    if not existing.description and info.description:
+                        existing.description = info.description
+                    if not existing.homepage and info.homepage:
+                        existing.homepage = info.homepage
+                    if not existing.tags and info.tags:
+                        existing.tags = info.tags
+        except Exception as e:
+            logger.debug(f"Failed to load remote catalog: {e}")
 
 
 # ---------------------------------------------------------------------------
