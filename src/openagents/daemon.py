@@ -27,6 +27,7 @@ from typing import Optional
 from openagents.agent_setup import setup_agent
 from openagents.daemon_config import (
     AgentEntry,
+    CMD_PATH,
     DaemonConfig,
     NetworkEntry,
     PID_PATH,
@@ -199,19 +200,89 @@ class DaemonManager:
         agent_cfg: AgentEntry,
         status: AgentStatus,
     ):
-        """Run a local-only agent as a managed process (no network)."""
-        status.state = "running"
-        status.started_at = datetime.now(timezone.utc).isoformat()
-        self._write_status()
-        logger.info(f"{agent_cfg.name} running locally (no network)")
+        """Run a local-only agent as a managed subprocess (no network)."""
+        from openagents.plugin_registry import registry
 
-        # Local agents just stay alive — the daemon keeps them registered.
-        # Future: launch the actual agent process and monitor it.
-        try:
-            while not self._shutting_down:
-                await asyncio.sleep(5)
-        except asyncio.CancelledError:
-            pass
+        plugin = registry.get(agent_cfg.type)
+        cmd = plugin.get_launch_command(
+            agent_name=agent_cfg.name,
+            path=agent_cfg.path,
+        ) if plugin else None
+
+        if not cmd:
+            # No launch command — keep agent registered but idle
+            status.state = "running"
+            status.started_at = datetime.now(timezone.utc).isoformat()
+            self._write_status()
+            logger.info(f"{agent_cfg.name} registered (no launch command for {agent_cfg.type})")
+            try:
+                while not self._shutting_down:
+                    await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                pass
+            status.state = "stopped"
+            return
+
+        cwd = agent_cfg.path or None
+        backoff = 2
+
+        while not self._shutting_down:
+            try:
+                status.state = "starting"
+                self._write_status()
+
+                logger.info(f"{agent_cfg.name} launching: {' '.join(cmd)}"
+                            + (f" (cwd={cwd})" if cwd else ""))
+
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=cwd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+
+                status.state = "running"
+                status.started_at = datetime.now(timezone.utc).isoformat()
+                self._write_status()
+                logger.info(f"{agent_cfg.name} running (PID {proc.pid})")
+
+                # Stream output to daemon log
+                assert proc.stdout is not None
+                async for line in proc.stdout:
+                    logger.info(f"[{agent_cfg.name}] {line.decode(errors='replace').rstrip()}")
+
+                returncode = await proc.wait()
+
+                if returncode == 0:
+                    logger.info(f"{agent_cfg.name} exited cleanly")
+                    break
+                else:
+                    raise RuntimeError(f"Process exited with code {returncode}")
+
+            except asyncio.CancelledError:
+                # Daemon shutting down — terminate the subprocess
+                if proc and proc.returncode is None:
+                    proc.terminate()
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=5)
+                    except asyncio.TimeoutError:
+                        proc.kill()
+                break
+
+            except Exception as e:
+                status.restarts += 1
+                status.state = "error"
+                status.last_error = str(e)[:200]
+                self._write_status()
+                logger.warning(
+                    f"{agent_cfg.name} crashed: {e}, "
+                    f"restarting in {backoff}s (attempt {status.restarts})"
+                )
+                try:
+                    await asyncio.sleep(backoff)
+                except asyncio.CancelledError:
+                    break
+                backoff = min(backoff * 2, 60)
 
         status.state = "stopped"
 
@@ -224,13 +295,46 @@ class DaemonManager:
             await asyncio.gather(*self.tasks.values(), return_exceptions=True)
 
     async def _status_loop(self):
-        """Periodically write status file for `openagents status` to read."""
+        """Periodically write status file and check for commands."""
         try:
             while True:
                 self._write_status()
+                self._process_commands()
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
             pass
+
+    def _process_commands(self):
+        """Check for and process commands from daemon.cmd file."""
+        if not CMD_PATH.exists():
+            return
+        try:
+            raw = CMD_PATH.read_text().strip()
+            CMD_PATH.unlink(missing_ok=True)
+            if not raw:
+                return
+            for line in raw.splitlines():
+                line = line.strip()
+                if line.startswith("stop:"):
+                    agent_name = line[5:].strip()
+                    self._stop_agent(agent_name)
+                else:
+                    logger.warning(f"Unknown daemon command: {line}")
+        except Exception as e:
+            logger.debug(f"Failed to process commands: {e}")
+
+    def _stop_agent(self, agent_name: str):
+        """Stop a single agent by cancelling its task."""
+        task = self.tasks.get(agent_name)
+        if task and not task.done():
+            logger.info(f"Stopping agent: {agent_name}")
+            task.cancel()
+            status = self.agent_status.get(agent_name)
+            if status:
+                status.state = "stopped"
+            self._write_status()
+        else:
+            logger.warning(f"Cannot stop agent '{agent_name}': not running")
 
     def _write_status(self):
         """Write current agent statuses to disk."""

@@ -4126,16 +4126,32 @@ def daemon_stop_agent(
         return
 
     if agent_name:
-        # TODO: support stopping individual agents via daemon API
-        # For now, stopping an individual agent requires restarting daemon
+        from openagents.daemon_config import CMD_PATH, read_status
         agent = find_agent_in_config(agent_name)
         if agent is None:
             console.print(f"[red]Agent '{agent_name}' not found.[/red]")
             raise typer.Exit(1)
-        console.print(
-            f"[dim]Individual agent stop not yet supported. "
-            f"To stop all agents:[/dim] [bold]openagents stop[/bold]"
-        )
+        # Check if agent is actually running
+        status_data = read_status()
+        agents_status = status_data.get("agents", {}) if status_data else {}
+        agent_state = agents_status.get(agent_name, {}).get("state", "unknown")
+        if agent_state in ("stopped", "unknown"):
+            console.print(f"[dim]Agent '{agent_name}' is not running.[/dim]")
+            return
+        # Write stop command for daemon to pick up
+        CMD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CMD_PATH.write_text(f"stop:{agent_name}\n")
+        console.print(f"Stopping [cyan]{agent_name}[/cyan]...")
+        # Wait briefly for the daemon to process the command
+        import time
+        for _ in range(6):
+            time.sleep(1)
+            status_data = read_status()
+            agents_status = status_data.get("agents", {}) if status_data else {}
+            if agents_status.get(agent_name, {}).get("state") == "stopped":
+                console.print(f"[green]Agent '{agent_name}' stopped.[/green]")
+                return
+        console.print(f"[yellow]Stop command sent. Check status with:[/yellow] [bold]openagents status[/bold]")
         return
 
     # Stop entire daemon

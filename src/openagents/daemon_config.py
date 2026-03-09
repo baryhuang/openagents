@@ -34,6 +34,7 @@ CONFIG_PATH = CONFIG_DIR / "daemon.yaml"
 PID_PATH = CONFIG_DIR / "daemon.pid"
 LOG_PATH = CONFIG_DIR / "daemon.log"
 STATUS_PATH = CONFIG_DIR / "daemon.status.json"
+CMD_PATH = CONFIG_DIR / "daemon.cmd"
 
 DEFAULT_ENDPOINT = "https://workspace-endpoint.openagents.org"
 

@@ -82,6 +82,14 @@ class AgentPlugin(ABC):
             return False, f"Not installed. Run: openagents install {self.name}"
         return True, "Ready"
 
+    def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
+        """Return the command to launch this agent as a subprocess.
+
+        Returns None if this agent type doesn't support local process management.
+        Override in subclasses to provide agent-specific launch commands.
+        """
+        return None
+
     def health_check(self) -> bool:
         """Optional deeper health check beyond is_installed()."""
         return self.is_installed()
@@ -119,6 +127,12 @@ class ClaudePlugin(AgentPlugin):
             except Exception:
                 pass
         return False, "Not logged in. Run: claude login"
+
+    def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
+        binary = shutil.which("claude")
+        if not binary:
+            return None
+        return [binary, "--name", agent_name]
 
     def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
         from openagents.adapters.claude import ClaudeAdapter
@@ -194,6 +208,12 @@ class CodexPlugin(AgentPlugin):
         if os.environ.get("OPENAI_API_KEY"):
             return True, "Ready (API key set)"
         return False, "No API key. Run: export OPENAI_API_KEY=sk-..."
+
+    def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
+        binary = shutil.which("codex")
+        if not binary:
+            return None
+        return [binary]
 
     def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
         from openagents.adapters.codex import CodexAdapter
