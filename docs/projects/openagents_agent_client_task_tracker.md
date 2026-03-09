@@ -47,6 +47,7 @@
 | 39 | Remote agent catalog client — 24h cache + offline fallback | `plugin_registry.py` | Done |
 | 40 | CLI split — 6,154-line `cli.py` into 9 domain modules | `cli.py`, `cli_shared.py`, `cli_helpers.py`, `cli_network.py`, `cli_agent.py`, `cli_identity.py`, `cli_daemon.py`, `cli_packages.py`, `cli_legacy.py` | Done |
 | 41 | `yaml-agent` plugin type — YAML-defined agents managed by daemon | `plugin_registry.py` | Done |
+| 42 | Package split — `openagents[sdk]` optional extra for heavy deps | `pyproject.toml`, SDK files | Done |
 
 ## Pending
 
@@ -61,8 +62,9 @@
 | P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
 | P23 | Repository restructure — layered architecture | `src/openagents/` | High | **Phase 1 (CLI split) DONE** — 6K-line `cli.py` split into 9 domain modules. Phase 2 remaining: create `client/` + `sdk/` directories, move files, update imports. |
-| P24 | Package + test split (`openagents` vs `openagents[sdk]`) | `pyproject.toml`, `conftest.py` | High | **Depends on P23.** Move grpcio/cryptography/pynacl/mcp/openai/jinja2/prometheus/structlog to `[sdk]` optional extra. Add pytest markers (`client`/`sdk`) with auto-marking by directory in conftest. Guard SDK imports with try/except. Split CI into fast client-tests (base install, `pytest -m client`) and full sdk-tests (`pip install .[sdk]`, `pytest -m sdk`). |
+| P24 | Package + test split (`openagents` vs `openagents[sdk]`) | `pyproject.toml`, `conftest.py` | High | **DONE** — pyproject.toml split, import guards, pytest markers. Remaining: CI pipeline split (fast client-tests vs full sdk-tests). |
 | P25 | Update internal docs — agent workspace concept | `~/works/openagents-web/internal_frontend/docs/202602-agent-workspace` | Medium | Update the agent-workspace internal doc to reflect latest concept: token-only join, `openagents start` flow, workspace CLI commands, agent registry, layered architecture, repo restructure plan. |
+| P26 | `openagents logs` — view daemon and agent logs | `cli.py` | Medium | `openagents logs` shows last 50 lines of `~/.openagents/daemon.log`. `openagents logs -f` tails live. `openagents logs <agent>` filters by agent name. Detect headless (no browser) and show workspace URL more prominently during `start`. |
 
 ## Context
 

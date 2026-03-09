@@ -10,8 +10,14 @@ import re
 from typing import Dict, Any, Optional
 import time
 
-import grpc
-from grpc import aio
+try:
+    import grpc
+    from grpc import aio
+except ImportError:
+    raise ImportError(
+        "grpcio is required for gRPC transport. "
+        "Install with: pip install openagents[sdk]"
+    )
 from openagents.config.globals import (
     SYSTEM_EVENT_HEARTBEAT,
     SYSTEM_EVENT_REGISTER_AGENT,
