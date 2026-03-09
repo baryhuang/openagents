@@ -4562,6 +4562,80 @@ def workspace_list():
     console.print(table)
 
 
+@workspace_app.command("members")
+def workspace_members(
+    workspace_id: str = typer.Argument(
+        ..., help="Workspace ID or slug",
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token", "-t", help="Workspace token for auth",
+    ),
+):
+    """List members (agents) in a workspace."""
+    import asyncio
+    from openagents.workspace_client import WorkspaceClient
+    from openagents.daemon_config import load_config
+
+    # Try to find token from config if not provided
+    if not token:
+        cfg = load_config()
+        for net in cfg.networks:
+            if net.slug == workspace_id or net.id == workspace_id:
+                token = net.token
+                break
+
+    endpoint = "https://workspace-endpoint.openagents.org"
+    client = WorkspaceClient(endpoint=endpoint)
+
+    async def _fetch():
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["X-Workspace-Token"] = token
+            async with session.get(
+                f"{endpoint}/v1/discover",
+                params={"network": workspace_id},
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                return await resp.json()
+
+    try:
+        data = asyncio.run(_fetch())
+    except Exception as e:
+        console.print(f"[red]Failed to fetch members: {e}[/red]")
+        raise typer.Exit(1)
+
+    if data.get("code") and data["code"] != 200:
+        console.print(f"[red]{data.get('message', 'Error')}[/red]")
+        raise typer.Exit(1)
+
+    agents = data.get("data", {}).get("agents", [])
+    if not agents:
+        console.print("[dim]No agents in this workspace.[/dim]")
+        return
+
+    table = Table(box=box.SIMPLE)
+    table.add_column("Agent", style="cyan")
+    table.add_column("Role")
+    table.add_column("Type", style="dim")
+    table.add_column("Status")
+
+    for agent in agents:
+        name = agent.get("address", "").replace("openagents:", "")
+        status = agent.get("status", "unknown")
+        status_style = "[green]online[/green]" if status == "online" else f"[dim]{status}[/dim]"
+        table.add_row(
+            name,
+            agent.get("role", ""),
+            agent.get("agent_type", "") or "",
+            status_style,
+        )
+
+    console.print(table)
+
+
 def _resolve_or_create_network(
     join_id: Optional[str],
     token: Optional[str],

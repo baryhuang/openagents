@@ -37,6 +37,9 @@
 | 29 | Local agent process management — subprocess launch via `get_launch_command()` | `daemon.py`, `plugin_registry.py` | Done |
 | 30 | Individual agent stop via file-based command (`daemon.cmd`) | `daemon.py`, `daemon_config.py`, `cli.py` | Done |
 | 31 | Hot reload — SIGHUP re-reads config, starts/stops agents as needed | `daemon.py`, `cli.py` | Done |
+| 32 | Workspace token rotation — `POST /v1/workspaces/{id}/rotate-token` | `workspaces.py`, `test_workspaces.py` | Done |
+| 33 | Workspace member removal — `DELETE /v1/workspaces/{id}/members/{name}` | `workspaces.py`, `test_workspaces.py` | Done |
+| 34 | CLI `workspace members` — list agents in a workspace via discover API | `cli.py` | Done |
 
 ## Pending
 
@@ -54,8 +57,7 @@
 | P14 | Windows installer (`install.ps1`) | `install.ps1` (new) | Medium | PowerShell equivalent of `install.sh` for native Windows (not WSL). |
 | P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
-| P17 | Workspace token rotation/revocation | workspace backend | Medium | Currently tokens never expire. Need `POST /v1/workspaces/{id}/rotate-token` endpoint. |
-| P18 | Workspace member list / invite management | workspace backend, `cli.py` | Medium | `openagents workspace members`, `openagents workspace invite`. |
+| P22 | `openagents update` — self-update + agent runtime check | `cli.py`, `plugin_registry.py` | High | `openagents update` runs `pip install --upgrade openagents`, checks agent runtime versions (npm/pip), offers to update them. Shows current vs latest version. Restarts daemon if running. |
 
 ## Context
 
@@ -152,56 +154,5 @@ No specific code context needed — these are new work:
 - **P15 (Homebrew):** Formula file, publish to tap.
 - **P16 (Standalone binary):** PyInstaller/Nuitka CI pipeline.
 
----
 
-### P17: Workspace Token Rotation
-
-**Current state:** `workspace/backend/app/models.py:74-91` — `Workspace.password_hash` stores the token as plaintext (not actually hashed):
-```python
-password_hash = Column(Text, nullable=True)  # stores raw token
-```
-
-Token validation in `workspaces.py:51-63`:
-```python
-if token and token == workspace.password_hash:  # direct string comparison
-    return True
-```
-
-Token generated as `secrets.token_urlsafe(32)` in `workspaces.py:154`.
-
-**What's needed:** New endpoint `POST /v1/workspaces/{id}/rotate-token` that:
-1. Requires owner auth (Firebase bearer token)
-2. Generates new `secrets.token_urlsafe(32)`
-3. Updates `password_hash`
-4. Returns new token
-5. Old token immediately stops working
-
-Also consider: token expiry timestamps, multiple active tokens for rotation windows.
-
----
-
-### P18: Workspace Member Management
-
-**Current state:** `workspace/backend/app/models.py:93-109` — `WorkspaceMember` model:
-```python
-class WorkspaceMember(Base):
-    __tablename__ = "workspace_members"
-    workspace_id = Column(UUID, ForeignKey("workspaces.id"), nullable=False)
-    agent_name = Column(Text, nullable=False)
-    role = Column(Text, default="member")       # master | member | observer
-    agent_type = Column(Text, nullable=True)
-    status = Column(Text, default="offline")     # online | offline
-    last_heartbeat = Column(DateTime, nullable=True)
-    joined_at = Column(DateTime, default=_now)
-    # PK: (workspace_id, agent_name)
-```
-
-Members are already queryable via `GET /v1/discover` (returns agents list) and `GET /v1/workspaces/{id}` (returns members in workspace detail).
-
-**What's needed:**
-- CLI: `openagents workspace members` — list agents in a workspace
-- CLI: `openagents workspace invite` — generate a shareable join token/link
-- Backend: `POST /v1/workspaces/{id}/invite` — create invitation record
-- Backend: `DELETE /v1/workspaces/{id}/members/{agent_name}` — remove a member
-- Model: `Invitation` model already exists (referenced in Workspace.invitations relationship) but may need implementation.
 
