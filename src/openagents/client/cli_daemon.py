@@ -497,7 +497,7 @@ def _start_daemon():
     console.print(table)
 
     daemonize()
-    manager = DaemonManager(cfg, config_path=config)
+    manager = DaemonManager(cfg)
     try:
         asyncio.run(manager.start())
     except KeyboardInterrupt:
