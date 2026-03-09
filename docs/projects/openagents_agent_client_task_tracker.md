@@ -1,6 +1,6 @@
 # OpenAgents Agent Client — Task Tracker
 
-**Last updated:** 2026-03-09
+**Last updated:** 2026-03-10
 
 ## Completed
 
@@ -40,76 +40,27 @@
 | 32 | Workspace token rotation — `POST /v1/workspaces/{id}/rotate-token` | `workspaces.py`, `test_workspaces.py` | Done |
 | 33 | Workspace member removal — `DELETE /v1/workspaces/{id}/members/{name}` | `workspaces.py`, `test_workspaces.py` | Done |
 | 34 | CLI `workspace members` — list agents in a workspace via discover API | `cli.py` | Done |
+| 35 | BaseAdapter extraction — common poll/heartbeat/dispatch/control logic | `adapters/base.py`, `adapters/claude.py`, `adapters/openclaw.py`, `adapters/codex.py` | Done |
+| 36 | Network manifest — `GET /.well-known/openagents.json` | `workspace/backend/app/main.py`, `test_network.py` | Done |
+| 37 | Workspace auto-open browser — `--no-browser` flag on `start` | `cli.py` | Done |
+| 38 | `openagents update` — self-update + agent runtime check | `cli.py` | Done |
 
 ## Pending
 
 | # | Task | Files | Priority | Notes |
 |---|------|-------|----------|-------|
-| P4 | Connector extraction | `connector/` (new) | High | Extract shared connectivity logic (auth, discovery, reconnect, transport negotiation) from adapters into a shared connector layer. Adapters become thin I/O translators. |
-| P5 | Network manifest | workspace backend, SDK networks | Medium | Implement `/.well-known/openagents.json` on hosted workspace and SDK networks. Formalize in ONM spec. |
 | P6 | `yaml-agent` plugin type | `plugin_registry.py` | Medium | Convert `openagents agents start <folder>` into a plugin type so YAML-defined agents are managed by daemon. |
 | P7 | `openagents[sdk]` package split | `pyproject.toml` | Low | Move heavy deps (grpcio, cryptography, framework bridges) to optional extra. Base package stays lightweight. |
 | P8 | `network start` refactor | `cli.py` | Low | Separate network launching (Layer 3) from agent launching. Currently `network start` also launches agents. |
 | P9 | Community plugins | `openagents-aider/`, etc. | Low | Publish `openagents-aider`, `openagents-goose` as pip-installable plugin packages. |
-| P10 | Plugin marketplace / catalog API | `plugin_registry.py` | Low | Serve curated catalog from `openagents.org/plugins` instead of hardcoding in `_KNOWN_AGENTS`. |
+| P10 | Agent registry API + client | `openagents-web/backend`, `plugin_registry.py` | High | Remote agent catalog on `endpoint.openagents.org`. New `agent_registry` DB table + `GET/POST /v1/agent-registry` endpoints. SDK fetches catalog with 24h cache + offline fallback. Replaces hardcoded `_KNOWN_AGENTS`. Enables `openagents search/install` without upgrading openagents. |
 | P11 | Remote agents via SSH tunnel | `daemon.py` | Low | Support agents running on remote servers, connected via SSH tunnel. |
-| P12 | Workspace auto-open browser | `cli.py` | Low | When `openagents start` creates/joins workspace, auto-open browser. Currently implemented but needs testing across platforms. |
 | P14 | Windows installer (`install.ps1`) | `install.ps1` (new) | Medium | PowerShell equivalent of `install.sh` for native Windows (not WSL). |
 | P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
-| P22 | `openagents update` — self-update + agent runtime check | `cli.py`, `plugin_registry.py` | High | `openagents update` runs `pip install --upgrade openagents`, checks agent runtime versions (npm/pip), offers to update them. Shows current vs latest version. Restarts daemon if running. |
+| P23 | Repository restructure — layered architecture | `src/openagents/` | High | Split flat `src/openagents/` into `client/`, `sdk/`, keep `core/` for ONM primitives, keep `adapters/`. Split 6K-line `cli.py` into domain files. Enables clean `openagents[sdk]` package split (P7). Two phases: (1) create `client/` + split CLI, (2) create `sdk/` + guard heavy imports. |
 
 ## Context
-
-### P4: Connector Extraction
-
-**Current state:** All 3 adapters (`adapters/claude.py`, `adapters/openclaw.py`, `adapters/codex.py`) independently implement:
-- Polling: `await self.client.poll_pending()` (adaptive 2s-15s)
-- Control polling: `await self.client.poll_control()` for mode changes
-- Heartbeat: every 30s via `await self.client.heartbeat()`
-- Event skipping on startup: `_skip_existing_events()`
-- Channel join/rejoin logic
-- Multi-channel task tracking
-
-All use `WorkspaceClient` (`workspace_client.py`) as the HTTP abstraction. No raw WebSocket — all HTTP polling.
-
-**ClaudeAdapter structure** (`adapters/claude.py:26-60`):
-```python
-class ClaudeAdapter:
-    def __init__(self, workspace_id, channel_name, token, agent_name, endpoint, disabled_modules=None):
-        self.client = WorkspaceClient(endpoint=endpoint)
-        ...
-    async def run(self):
-        self._running = True
-        await self._skip_existing_events()
-        heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-        await self._poll_loop()
-```
-
-**What's needed:** Extract common poll loop, heartbeat, channel management, event skipping into a `Connector` class. Adapters become thin translators: `Connector` delivers events, adapter calls the agent runtime, adapter sends response back through `Connector`.
-
----
-
-### P5: Network Manifest
-
-**Current state:** No `/.well-known/openagents.json` endpoint exists anywhere. The `GET /v1/profile` endpoint in `workspace/backend/app/routers/network.py:348-380` returns similar metadata (id, slug, name, capabilities, agents_online) but is not at the well-known path.
-
-**A2A tests** reference `/.well-known/agent.json` (different spec — A2A agent cards, not ONM network manifest).
-
-**What's needed:** New endpoint in workspace backend at `GET /.well-known/openagents.json` returning:
-```json
-{
-  "onm_version": "1.0",
-  "network_id": "...",
-  "name": "...",
-  "transports": [{"type": "http", "url": "..."}],
-  "auth": {"methods": ["token"]},
-  "capabilities": ["channels", "files", "events"]
-}
-```
-Also add to SDK network (`openagents network start`). Formalize in ONM spec doc at `docs/openagents_network_model.md`.
-
----
 
 ### P6: `yaml-agent` Plugin Type
 
@@ -148,11 +99,182 @@ This replaces the separate `openagents agents start <folder>` command.
 
 No specific code context needed — these are new work:
 - **P9 (Community plugins):** Create template repo for `openagents-<name>` packages with `AgentPlugin` subclass + `pyproject.toml` entry_points.
-- **P10 (Catalog API):** Replace hardcoded `_KNOWN_AGENTS` list in `plugin_registry.py:351-384` with API call to `openagents.org/api/plugins`.
+- **P10 (Agent Registry):** See dedicated section below.
 - **P11 (SSH tunnel):** New feature in `daemon.py` — launch SSH tunnel before connecting adapter.
 - **P14 (Windows installer):** PowerShell version of `install.sh` at repo root.
 - **P15 (Homebrew):** Formula file, publish to tap.
 - **P16 (Standalone binary):** PyInstaller/Nuitka CI pipeline.
 
+---
+
+### P10: Agent Registry API + Client
+
+**Problem:** `plugin_registry.py:371-404` hardcodes `_KNOWN_AGENTS` (4 agents). Adding a new agent requires releasing a new openagents version. Users must `openagents update` before they can discover/install new agents. This doesn't scale — like requiring a pip upgrade to see new PyPI packages.
+
+**Backend (~/works/openagents-web):**
+
+New model in `backend/app/models.py`:
+```python
+class AgentRegistryEntry(Base):
+    __tablename__ = "agent_registry"
+    name = Column(Text, primary_key=True)           # "aider"
+    label = Column(Text, nullable=False)             # "Aider"
+    description = Column(Text)                       # "AI pair programming..."
+    install_command = Column(Text)                    # "pip install aider-chat"
+    check_command = Column(Text)                      # "aider --version"
+    homepage = Column(Text)                           # "https://aider.chat"
+    tags = Column(ARRAY(Text), default=[])            # ["coding", "open-source"]
+    adapter_package = Column(Text)                    # "openagents-aider" (pip plugin)
+    latest_version = Column(Text)                     # "0.82.0"
+    tier = Column(Text, default="community")          # builtin | official | community
+    status = Column(Text, default="active")           # active | deprecated
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+```
+
+New router `backend/app/routers/agent_registry.py`:
+```
+GET    /v1/agent-registry             — list all active agents (public, no auth)
+GET    /v1/agent-registry/{name}      — single agent detail (public)
+POST   /v1/agent-registry             — add agent (admin, API key auth)
+PATCH  /v1/agent-registry/{name}      — update agent (admin)
+DELETE /v1/agent-registry/{name}      — deprecate agent (admin)
+```
+
+Register in `main.py`: `app.include_router(agent_registry.router)`
+
+**SDK client (~/works/openagents, plugin_registry.py):**
+
+Replace `_KNOWN_AGENTS` with remote fetch + 24h cache + offline fallback:
+```python
+REGISTRY_URL = "https://endpoint.openagents.org/v1/agent-registry"
+CACHE_PATH = Path.home() / ".openagents" / "agent_catalog.json"
+CACHE_TTL = 86400  # 24 hours
+
+def _fetch_remote_catalog() -> list[PluginInfo]:
+    if CACHE_PATH.exists() and (time.time() - CACHE_PATH.stat().st_mtime) < CACHE_TTL:
+        return _parse_cached(CACHE_PATH)
+    try:
+        resp = requests.get(REGISTRY_URL, timeout=5)
+        data = resp.json()["data"]
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CACHE_PATH.write_text(json.dumps(data))
+        return [PluginInfo(**a) for a in data]
+    except Exception:
+        if CACHE_PATH.exists():
+            return _parse_cached(CACHE_PATH)
+        return _KNOWN_AGENTS  # bundled fallback, never removed
+```
+
+**Impact on other commands:**
+- `openagents search` — queries remote catalog, finds agents without upgrading
+- `openagents install <name>` — looks up install_command from registry
+- `openagents update` (P22) — checks latest_version against installed version
+
+**Seed data:** Migrate current `_KNOWN_AGENTS` (aider, goose, cline, swebench) + built-ins (claude, openclaw, codex) into the DB table.
+
+---
+
+### P23: Repository Restructure — Layered Architecture
+
+**Problem:** `src/openagents/` is a flat directory mixing three products: the lightweight CLI client (Layer 1+2), the heavy SDK (Layer 3), and shared ONM primitives. `cli.py` is 6,154 lines handling everything. This makes the `openagents[sdk]` package split (P7) difficult and the codebase hard to navigate.
+
+**Current structure (flat):**
+```
+src/openagents/
+├── cli.py                  ← 6,154 lines, ALL commands mixed together
+├── daemon.py               ← client (Layer 1)
+├── daemon_config.py        ← client (Layer 1)
+├── plugin_registry.py      ← client (Layer 1)
+├── agent_setup.py          ← client (Layer 1+2)
+├── workspace_client.py     ← client (Layer 2)
+├── connect.py              ← client (Layer 2)
+├── tunnel.py               ← client (Layer 2)
+├── mcp_server.py           ← SDK feature
+├── adapters/               ← client (Layer 2)
+├── core/                   ← MIXED: onm_*.py (shared) + network.py, client.py, etc. (SDK)
+├── agents/                 ← SDK: framework bridges
+├── mods/                   ← SDK: network modules
+├── models/                 ← SDK: data models
+├── launchers/              ← SDK: network launcher
+├── studio/                 ← bundled web UI
+└── ...
+```
+
+**Target structure:**
+```
+src/openagents/
+├── client/                          ← Layer 1+2: lightweight CLI client
+│   ├── cli.py                       ← main app + start/connect/bare scan
+│   ├── cli_daemon.py                ← up/down/status/autostart
+│   ├── cli_agents.py                ← install/search/update/agents
+│   ├── cli_workspace.py             ← workspace create/join/list/members
+│   ├── daemon.py
+│   ├── daemon_config.py
+│   ├── plugin_registry.py
+│   ├── agent_setup.py
+│   └── workspace_client.py
+│
+├── adapters/                        ← Layer 2: connectivity (unchanged)
+│   ├── claude.py, codex.py, openclaw.py
+│   ├── connector.py                 ← (future P4)
+│   └── utils.py
+│
+├── core/                            ← ONM primitives only (shared)
+│   ├── onm_addressing.py
+│   ├── onm_events.py
+│   ├── onm_mods.py
+│   └── onm_pipeline.py
+│
+├── sdk/                             ← Layer 3: heavy SDK (optional install)
+│   ├── network.py                   ← from core/network.py
+│   ├── client.py                    ← from core/client.py
+│   ├── agent_manager.py             ← from core/agent_manager.py
+│   ├── workspace.py                 ← from core/workspace.py
+│   ├── event_gateway.py, topology.py, system_commands.py, ...
+│   ├── transports/                  ← from core/transports/
+│   └── connectors/                  ← from core/connectors/
+│
+├── agents/                          ← SDK: framework bridges (unchanged)
+├── mods/                            ← SDK: network modules (unchanged)
+├── models/                          ← SDK: data models (unchanged)
+└── studio/                          ← bundled web UI (unchanged)
+```
+
+**Phase 1 — `client/` extraction + CLI split (do first):**
+1. Create `src/openagents/client/` directory
+2. Move `daemon.py`, `daemon_config.py`, `plugin_registry.py`, `agent_setup.py`, `workspace_client.py`, `connect.py` into `client/`
+3. Split `cli.py` (6,154 lines) into domain files sharing `app = typer.Typer()` and `console = Console()`
+4. Update all internal imports
+5. Keep backward-compat re-exports in old locations (temporary)
+
+**Phase 2 — `sdk/` extraction (do with P7):**
+1. Create `src/openagents/sdk/` directory
+2. Move heavy files from `core/` into `sdk/` (keep only `onm_*.py` in `core/`)
+3. Guard all `sdk/` imports with try/except for `openagents[sdk]` optional install
+4. Update `pyproject.toml` extras
+
+**CLI split detail — how to share the Typer app:**
+
+`client/cli.py` (main):
+```python
+app = typer.Typer()
+console = Console()
+
+# Import and register sub-modules
+from openagents.client.cli_daemon import daemon_commands
+from openagents.client.cli_agents import agents_commands
+from openagents.client.cli_workspace import workspace_app
+
+app.add_typer(workspace_app, name="workspace")
+# daemon_commands(app) registers up/down/status directly on app
+# agents_commands(app) registers install/search/update directly on app
+```
+
+Each sub-module gets `app` passed in or registers via `typer.Typer()` + `add_typer()`.
+
+**Files affected:** All imports from `openagents.cli`, `openagents.daemon`, `openagents.plugin_registry`, etc. throughout `tests/`, `workspace/`, `examples/`. Mechanical find-and-replace.
+
+**Risk:** Import paths change. Mitigate with re-exports in old locations during transition period.
 
 

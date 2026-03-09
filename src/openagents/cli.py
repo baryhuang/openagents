@@ -3949,6 +3949,9 @@ def daemon_start_agent(
     role: str = typer.Option(
         "worker", "--role", "-r", help="Agent role (master/worker)",
     ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Don't open browser after workspace setup",
+    ),
 ):
     """Start an agent — creates it if it doesn't exist yet."""
     from openagents.daemon_config import (
@@ -4047,15 +4050,16 @@ def daemon_start_agent(
                 add_network_to_config(net_entry)
                 connect_agent_to_network(name, net_entry.slug or net_entry.id)
                 # Open browser
-                import webbrowser
-                frontend_url = "https://workspace-endpoint.openagents.org".replace(
-                    "workspace-endpoint", "workspace"
-                )
-                ws_url = f"{frontend_url}/{net_entry.slug}?token={net_entry.token}"
-                try:
-                    webbrowser.open(ws_url)
-                except Exception:
-                    pass
+                if not no_browser:
+                    import webbrowser
+                    frontend_url = "https://workspace-endpoint.openagents.org".replace(
+                        "workspace-endpoint", "workspace"
+                    )
+                    ws_url = f"{frontend_url}/{net_entry.slug}?token={net_entry.token}"
+                    try:
+                        webbrowser.open(ws_url)
+                    except Exception:
+                        pass
 
         elif choice == "2":
             # Join with token
@@ -4092,15 +4096,16 @@ def daemon_start_agent(
                         f"  [green]Joined workspace:[/green] [bold]{ws_name}[/bold]"
                     )
                     # Open browser
-                    import webbrowser
-                    frontend_url = "https://workspace-endpoint.openagents.org".replace(
-                        "workspace-endpoint", "workspace"
-                    )
-                    ws_url = f"{frontend_url}/{slug}?token={ws_token.strip()}"
-                    try:
-                        webbrowser.open(ws_url)
-                    except Exception:
-                        pass
+                    if not no_browser:
+                        import webbrowser
+                        frontend_url = "https://workspace-endpoint.openagents.org".replace(
+                            "workspace-endpoint", "workspace"
+                        )
+                        ws_url = f"{frontend_url}/{slug}?token={ws_token.strip()}"
+                        try:
+                            webbrowser.open(ws_url)
+                        except Exception:
+                            pass
                 except Exception as e:
                     console.print(f"  [red]Failed to join: {e}[/red]")
 
@@ -4888,6 +4893,87 @@ def search_agents(
 
     console.print(table)
     console.print(f"\n[dim]Install with: openagents install <name>[/dim]")
+
+
+@app.command("update")
+def self_update(
+    check_only: bool = typer.Option(
+        False, "--check", help="Only check for updates, don't install",
+    ),
+):
+    """Update openagents and check agent runtime versions."""
+    import subprocess as _sp
+
+    from openagents.plugin_registry import registry
+
+    console.print("[bold]Checking for updates...[/bold]\n")
+
+    # Check current openagents version
+    try:
+        from importlib.metadata import version as get_version
+        current = get_version("openagents")
+    except Exception:
+        current = "unknown"
+
+    # Check PyPI for latest version
+    latest = None
+    try:
+        import json as _json
+        result = _sp.run(
+            [sys.executable, "-m", "pip", "index", "versions", "openagents"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0 and "versions:" in result.stdout.lower():
+            # Parse "openagents (X.Y.Z)" from output
+            for line in result.stdout.splitlines():
+                if "LATEST:" in line.upper() or "openagents" in line.lower():
+                    import re as _re
+                    m = _re.search(r'\(([0-9][0-9.]*)\)', line)
+                    if m:
+                        latest = m.group(1)
+                        break
+    except Exception:
+        pass
+
+    console.print(f"  openagents: [cyan]{current}[/cyan]", end="")
+    if latest and latest != current:
+        console.print(f" → [green]{latest}[/green] available")
+    else:
+        console.print(" [dim](up to date)[/dim]")
+
+    # Check agent runtimes
+    console.print()
+    for plugin in registry.list_plugins():
+        if not plugin.is_installed():
+            continue
+        path = plugin.which() or ""
+        console.print(f"  {plugin.name}: [green]installed[/green] [dim]{path}[/dim]")
+
+    if check_only:
+        return
+
+    # Upgrade openagents
+    if latest and latest != current:
+        console.print(f"\n[bold]Upgrading openagents {current} → {latest}...[/bold]")
+        result = _sp.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "openagents"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0:
+            console.print("[green]openagents updated successfully.[/green]")
+        else:
+            console.print(f"[red]Update failed:[/red] {result.stderr[:200]}")
+            raise typer.Exit(1)
+
+        # Restart daemon if running
+        from openagents.daemon import read_daemon_pid, stop_daemon
+        pid = read_daemon_pid()
+        if pid:
+            console.print("Restarting daemon...")
+            stop_daemon()
+            _start_daemon()
+    else:
+        console.print("\n[dim]Already up to date.[/dim]")
 
 
 @app.command("autostart")

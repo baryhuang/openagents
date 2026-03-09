@@ -283,6 +283,29 @@ class TestDiscover:
         assert resp.status_code == 404
 
 
+class TestNetworkManifest:
+    """GET /.well-known/openagents.json — ONM network manifest."""
+
+    def test_manifest_returns_onm_metadata(self, client):
+        """Manifest returns ONM version, transports, auth, capabilities."""
+        resp = client.get("/.well-known/openagents.json")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["onm_version"] == "1.0"
+        assert "transports" in data
+        assert len(data["transports"]) >= 1
+        assert data["transports"][0]["type"] == "http"
+        assert "auth" in data
+        assert "token" in data["auth"]["methods"]
+        assert "capabilities" in data
+        assert "channels" in data["capabilities"]
+
+    def test_manifest_no_auth_required(self, client):
+        """Manifest is publicly accessible (no token needed)."""
+        resp = client.get("/.well-known/openagents.json")
+        assert resp.status_code == 200
+
+
 class TestNetworkProfile:
     """GET /v1/profile — network profile metadata."""
 
