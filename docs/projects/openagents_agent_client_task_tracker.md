@@ -60,6 +60,8 @@
 | P15 | Homebrew formula | `Formula/openagents.rb` | Medium | `brew install openagents` for macOS/Linux. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
 | P23 | Repository restructure — layered architecture | `src/openagents/` | High | Split flat `src/openagents/` into `client/`, `sdk/`, keep `core/` for ONM primitives, keep `adapters/`. Split 6K-line `cli.py` into domain files. Enables clean `openagents[sdk]` package split (P7). Two phases: (1) create `client/` + split CLI, (2) create `sdk/` + guard heavy imports. |
+| P24 | Package + test split (`openagents` vs `openagents[sdk]`) | `pyproject.toml`, `conftest.py` | High | **Depends on P23.** Move grpcio/cryptography/pynacl/mcp/openai/jinja2/prometheus/structlog to `[sdk]` optional extra. Add pytest markers (`client`/`sdk`) with auto-marking by directory in conftest. Guard SDK imports with try/except. Split CI into fast client-tests (base install, `pytest -m client`) and full sdk-tests (`pip install .[sdk]`, `pytest -m sdk`). |
+| P25 | Update internal docs — agent workspace concept | `~/works/openagents-web/internal_frontend/docs/202602-agent-workspace` | Medium | Update the agent-workspace internal doc to reflect latest concept: token-only join, `openagents start` flow, workspace CLI commands, agent registry, layered architecture, repo restructure plan. |
 
 ## Context
 
