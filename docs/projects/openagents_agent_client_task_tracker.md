@@ -52,6 +52,7 @@
 | 44 | Windows installer — `install.ps1` for native PowerShell | `install.ps1` | Done |
 | 45 | Homebrew formula template for `brew install openagents` | `Formula/openagents.rb` | Done |
 | 46 | Agent registry API — model, CRUD endpoints, 15 tests | `openagents-web: models.py, agent_registry.py, test_agent_registry.py` | Done |
+| 47 | Repository restructure — layered architecture (3 phases) | `src/openagents/client/`, `src/openagents/sdk/`, `src/openagents/core/` | Done |
 
 ## Pending
 
@@ -62,8 +63,7 @@
 | P10 | Agent registry API — seed data + deployment | `openagents-web/backend` | Medium | Seed built-in + known agents into DB. Deploy to `endpoint.openagents.org`. |
 | P11 | Remote agents via SSH tunnel | `daemon.py` | Low | Support agents running on remote servers, connected via SSH tunnel. |
 | P16 | Standalone binary (PyInstaller/Nuitka) | CI pipeline | Low | Zero-dependency binary for each platform. |
-| P23 | Repository restructure — layered architecture | `src/openagents/` | High | **Phase 1 (CLI split) DONE.** **Phase 2 (client/ extraction) DONE** — 16 files moved to `client/`, backward-compat shims at old paths. Remaining: Phase 3 `sdk/` extraction (move `core/` non-ONM files to `sdk/`). |
-| P24 | Package + test split (`openagents` vs `openagents[sdk]`) | `pyproject.toml`, `conftest.py` | High | **DONE** — pyproject.toml split, import guards, pytest markers. Remaining: CI pipeline split (fast client-tests vs full sdk-tests). |
+| P24 | Package + test split — CI pipeline | `pyproject.toml`, `conftest.py` | High | pyproject.toml split + import guards + pytest markers DONE. Remaining: CI pipeline split (fast client-tests vs full sdk-tests). |
 | P25 | Update internal docs — agent workspace concept | `~/works/openagents-web/internal_frontend/docs/202602-agent-workspace` | Medium | Update the agent-workspace internal doc to reflect latest concept: token-only join, `openagents start` flow, workspace CLI commands, agent registry, layered architecture, repo restructure plan. |
 
 ## Context
