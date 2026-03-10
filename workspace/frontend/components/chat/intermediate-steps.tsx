@@ -146,7 +146,10 @@ function getStepIcon(parsed: ParsedStep) {
 
 function StepItem({ message }: { message: WorkspaceMessage }) {
   const [expanded, setExpanded] = useState(false);
-  const parsed = parseStepContent(message.content);
+  // Messages with messageType 'thinking' are already typed — parse as thinking directly
+  const parsed = message.messageType === 'thinking'
+    ? { type: 'thinking' as const, text: message.content }
+    : parseStepContent(message.content);
   const Icon = getStepIcon(parsed);
   const hasDetail = parsed.type === 'tool_call' && !!parsed.args;
   const isThinkingWithContent = parsed.type === 'thinking' && !!parsed.text && parsed.text !== 'thinking...' && parsed.text.toLowerCase() !== 'thinking';
@@ -241,10 +244,9 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
 
 function ActivityIndicator() {
   return (
-    <div className="flex items-center gap-1 py-1 pl-0.5">
-      <span className="size-1.5 rounded-full bg-blue-400/70" style={{ animation: 'step-dot 1.4s ease-in-out infinite' }} />
-      <span className="size-1.5 rounded-full bg-blue-400/70" style={{ animation: 'step-dot 1.4s ease-in-out 0.2s infinite' }} />
-      <span className="size-1.5 rounded-full bg-blue-400/70" style={{ animation: 'step-dot 1.4s ease-in-out 0.4s infinite' }} />
+    <div className="py-1 pl-0.5">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/typing-indicator.gif" alt="" width={32} height={16} className="opacity-80" />
     </div>
   );
 }

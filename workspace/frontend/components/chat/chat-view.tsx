@@ -70,7 +70,7 @@ export function ChatView() {
     if (!currentSessionId) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg) {
-      const isStatus = lastMsg.messageType === 'status';
+      const isStatus = lastMsg.messageType === 'status' || lastMsg.messageType === 'thinking';
       updateLastMessage(currentSessionId, lastMsg.senderName, lastMsg.content, isStatus);
     } else {
       updateLastMessage(currentSessionId, '', '');
@@ -91,7 +91,7 @@ export function ChatView() {
       return;
     }
     const lastMsg = messages[messages.length - 1];
-    const isAgentWorking = lastMsg.senderType === 'agent' && lastMsg.messageType === 'status';
+    const isAgentWorking = lastMsg.senderType === 'agent' && (lastMsg.messageType === 'status' || lastMsg.messageType === 'thinking');
     setSessionActive(currentSessionId, isAgentWorking);
   }, [currentSessionId, messages, setSessionActive]);
 
@@ -139,7 +139,7 @@ export function ChatView() {
     [currentSessionId, forceRefresh]
   );
 
-  const hasStatusMessages = messages.some((m) => m.messageType === 'status');
+  const hasStatusMessages = messages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
 
   if (!currentSessionId) {
     return (

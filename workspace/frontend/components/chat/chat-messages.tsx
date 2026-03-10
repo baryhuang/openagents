@@ -26,7 +26,7 @@ function groupMessages(messages: WorkspaceMessage[]): MessageGroup[] {
   };
 
   messages.forEach((msg) => {
-    if (msg.messageType === 'status') {
+    if (msg.messageType === 'status' || msg.messageType === 'thinking') {
       currentSteps.push(msg);
     } else {
       flushSteps();
@@ -61,23 +61,27 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
 
   // Filter: skip empty status messages; when toggle is off, only show status messages after the last chat message
   const filteredMessages = useMemo(() => {
-    const nonEmpty = messages.filter((msg) => msg.messageType !== 'status' || msg.content.trim());
+    const isStep = (msg: WorkspaceMessage) => msg.messageType === 'status' || msg.messageType === 'thinking';
+    const nonEmpty = messages.filter((msg) => !isStep(msg) || msg.content.trim());
     if (showAllSteps) return nonEmpty;
 
     let lastChatIndex = -1;
     for (let i = nonEmpty.length - 1; i >= 0; i--) {
-      if (nonEmpty[i].messageType !== 'status') {
+      if (!isStep(nonEmpty[i])) {
         lastChatIndex = i;
         break;
       }
     }
 
-    // Only keep the very last status message (most recent step)
+    // Keep: all non-step messages, all thinking messages (they persist),
+    // and only the last status message from trailing steps
     const trailing = nonEmpty.filter((msg, index) => {
-      if (msg.messageType !== 'status') return true;
+      if (!isStep(msg)) return true;
+      // Always keep thinking messages — they provide reasoning context
+      if (msg.messageType === 'thinking') return true;
       return index > lastChatIndex;
     });
-    // Find the last status message and keep only that one
+    // Find the last status-only message and keep only that one
     let lastStatusIndex = -1;
     for (let i = trailing.length - 1; i >= 0; i--) {
       if (trailing[i].messageType === 'status') {

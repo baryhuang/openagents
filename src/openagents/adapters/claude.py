@@ -346,18 +346,22 @@ class ClaudeAdapter(BaseAdapter):
                         if block_type == "text":
                             text = block.get("text", "")
                             response_text.append(text)
-                            # Stream all intermediate text as thinking status.
-                            # If the agent later calls workspace_send_message,
-                            # these become visible as indented thinking steps.
-                            # If not, the fallback path posts response_text as
-                            # the final chat message.
+                            # Post thinking as a chat message so it persists
+                            # in conversation history (status messages get
+                            # replaced/folded, losing intermediate reasoning).
                             if text.strip():
                                 thinking = text.strip()
                                 if len(thinking) > 500:
                                     thinking = thinking[:500] + "..."
-                                await self._send_status(
-                                    msg_channel,
-                                    f"**Thinking:**\n{thinking}",
+                                await self.client.send_message(
+                                    workspace_id=self.workspace_id,
+                                    channel_name=msg_channel,
+                                    token=self.token,
+                                    content=thinking,
+                                    sender_type="agent",
+                                    sender_name=self.agent_name,
+                                    message_type="thinking",
+                                    metadata={"agent_mode": self._mode},
                                 )
                         elif block_type == "tool_use":
                             tool_name = block.get("name", "")
