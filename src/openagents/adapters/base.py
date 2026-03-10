@@ -260,6 +260,10 @@ class BaseAdapter(ABC):
             await self._handle_message(msg)
         except Exception as e:
             logger.exception(f"Error in channel worker for {channel}: {e}")
+            try:
+                await self._send_error(channel, f"Agent error: {e}")
+            except Exception:
+                pass
 
         while True:
             queue = self._channel_queues.get(channel, [])
@@ -270,6 +274,10 @@ class BaseAdapter(ABC):
                 await self._handle_message(next_msg)
             except Exception as e:
                 logger.exception(f"Error processing queued message in {channel}: {e}")
+                try:
+                    await self._send_error(channel, f"Agent error: {e}")
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Auto-title helper

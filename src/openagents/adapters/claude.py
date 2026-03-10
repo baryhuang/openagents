@@ -48,14 +48,24 @@ class ClaudeAdapter(BaseAdapter):
             await self._stop_current_process()
 
     async def _stop_process(self, proc: asyncio.subprocess.Process):
-        """Kill a single Claude subprocess."""
+        """Kill a single Claude subprocess and its children."""
         if proc and proc.returncode is None:
             try:
-                proc.terminate()
+                # Try to kill the entire process group (catches child
+                # processes like Playwright MCP servers that may hold
+                # stdout open after the main process exits).
+                import signal
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                except (ProcessLookupError, PermissionError, OSError):
+                    proc.terminate()
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=5)
                 except asyncio.TimeoutError:
-                    proc.kill()
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        proc.kill()
                     await proc.wait()
             except ProcessLookupError:
                 pass
@@ -274,6 +284,7 @@ class ClaudeAdapter(BaseAdapter):
                 stderr=asyncio.subprocess.PIPE,
                 env=clean_env,
                 limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64KB too small for large tool outputs)
+                start_new_session=True,  # own process group so killpg reaches children
             )
             self._current_process = process
             self._channel_processes[msg_channel] = process
@@ -281,6 +292,7 @@ class ClaudeAdapter(BaseAdapter):
             used_send_tool = False
             response_text = []
             idle_notified = False
+            consecutive_timeouts = 0
 
             # Read stream-json output line by line
             while True:
@@ -288,7 +300,13 @@ class ClaudeAdapter(BaseAdapter):
                     line = await asyncio.wait_for(
                         process.stdout.readline(), timeout=15.0,
                     )
+                    consecutive_timeouts = 0
                 except asyncio.TimeoutError:
+                    consecutive_timeouts += 1
+                    # Check if process has already exited
+                    if process.returncode is not None:
+                        logger.info(f"Process exited (rc={process.returncode}) but stdout not closed — breaking")
+                        break
                     # Long pause — likely compaction or rate-limiting
                     if not idle_notified:
                         idle_notified = True
@@ -296,6 +314,12 @@ class ClaudeAdapter(BaseAdapter):
                             msg_channel,
                             "Compacting conversation...",
                         )
+                    # Safety: if we've been timing out for >5 minutes with no
+                    # output, the process is likely hung. Kill it.
+                    if consecutive_timeouts > 20:  # 20 * 15s = 5 minutes
+                        logger.warning(f"Process unresponsive for {consecutive_timeouts * 15}s — killing")
+                        await self._stop_process(process)
+                        break
                     continue
                 if not line:
                     break
@@ -394,3 +418,11 @@ class ClaudeAdapter(BaseAdapter):
         except Exception as e:
             logger.exception(f"Error handling message: {e}")
             await self._send_error(msg_channel, f"Error processing message: {e}")
+        finally:
+            # Always clean up process tracking so the channel is no longer
+            # considered busy.  Without this, if the subprocess exits
+            # unexpectedly (crash, OOM, pipe error) the UI shows the thread
+            # as stuck because no terminal event is ever posted.
+            self._channel_processes.pop(msg_channel, None)
+            if self._current_process is not None and self._current_process.returncode is not None:
+                self._current_process = None
