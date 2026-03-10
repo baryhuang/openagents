@@ -245,9 +245,8 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
 function ActivityIndicator() {
   return (
     <div className="py-1.5">
-      <div className="h-0.5 w-full max-w-[120px] rounded-full overflow-hidden bg-zinc-200/50 dark:bg-zinc-700/50">
-        <div className="h-full w-full rounded-full animate-[gradient-pulse_2s_ease-in-out_infinite] bg-[length:200%_100%] bg-gradient-to-r from-transparent via-blue-400 to-transparent dark:via-blue-500" />
-      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/gradient-bar.gif" alt="" width={120} height={4} className="rounded-full opacity-90" />
     </div>
   );
 }

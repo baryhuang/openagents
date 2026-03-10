@@ -151,13 +151,6 @@
   animation: shimmer 2.5s ease-in-out infinite;
 }
 
-/** Agent activity pulsing gradient bar **/
-@keyframes gradient-pulse {
-  0% { background-position: 200% 0; opacity: 0.4; }
-  50% { background-position: 0% 0; opacity: 1; }
-  100% { background-position: -200% 0; opacity: 0.4; }
-}
-
 /** Global Styles **/
 @layer base {
   * {
