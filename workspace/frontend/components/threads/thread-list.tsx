@@ -237,7 +237,7 @@ export function ThreadList() {
                 }}
                 className={cn(
                   'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-all relative group cursor-pointer',
-                  isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+                  isSelected ? 'bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-300 dark:ring-zinc-600' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
                   'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50',
                   isActive && 'thread-wip',
                   isCompleted && !isSelected && 'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200/60 dark:ring-amber-700/40 animate-[glow_2s_ease-in-out_infinite]'
@@ -384,7 +384,7 @@ export function ThreadList() {
                         }}
                         className={cn(
                           'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group cursor-pointer',
-                          isSelected ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+                          isSelected ? 'bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-300 dark:ring-zinc-600' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
                           'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50'
                         )}
                       >

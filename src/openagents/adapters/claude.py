@@ -178,8 +178,15 @@ class ClaudeAdapter(BaseAdapter):
             cmd.append("--dangerously-skip-permissions")
             allowed = mcp_tools + mcp_write_tools + ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
 
+        system_prompt += (
+            "\nIMPORTANT: Never use AskUserQuestion. "
+            "To ask the user a question, use workspace_send_message. "
+            "AskUserQuestion blocks the subprocess and will hang the thread.\n"
+        )
+
         cmd.extend(["--append-system-prompt", system_prompt])
         cmd.extend(["--allowedTools"] + allowed)
+        cmd.extend(["--disallowedTools", "AskUserQuestion"])
 
         # Resume existing conversation for context continuity
         session_id = self._channel_sessions.get(channel_name)
@@ -346,10 +353,11 @@ class ClaudeAdapter(BaseAdapter):
                         if block_type == "text":
                             text = block.get("text", "")
                             response_text.append(text)
-                            # Post thinking as a chat message so it persists
-                            # in conversation history (status messages get
-                            # replaced/folded, losing intermediate reasoning).
-                            if text.strip():
+                            # Post thinking as a persistent message so users
+                            # can follow agent reasoning. Skip if the agent
+                            # already sent its final response — late thinking
+                            # after workspace_send_message is just wrap-up.
+                            if text.strip() and not used_send_tool:
                                 thinking = text.strip()
                                 if len(thinking) > 500:
                                     thinking = thinking[:500] + "..."
