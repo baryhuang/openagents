@@ -14,6 +14,7 @@ import {
   Clock,
   Users,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
@@ -21,7 +22,7 @@ import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 // ── Content Parsing ──
 
 interface ParsedStep {
-  type: 'thinking' | 'tool_call' | 'status';
+  type: 'thinking' | 'tool_call' | 'status' | 'compacting';
   tool?: string;
   toolDisplay?: string;
   args?: string;
@@ -30,9 +31,15 @@ interface ParsedStep {
 }
 
 function parseStepContent(content: string): ParsedStep {
-  // Thinking
+  // Thinking placeholder
   if (content === 'thinking...' || content.toLowerCase() === 'thinking') {
     return { type: 'thinking', text: content };
+  }
+
+  // Claude adapter: **Thinking:**\n{content}
+  const thinkingMatch = content.match(/^\*\*Thinking:\*\*\n([\s\S]+)$/);
+  if (thinkingMatch) {
+    return { type: 'thinking', text: thinkingMatch[1].trim() };
   }
 
   // Claude adapter: **Using tool:** `ToolName`\n```\n{args}\n```
@@ -67,6 +74,11 @@ function parseStepContent(content: string): ParsedStep {
       toolDisplay: 'Edit',
       summary: editMatch[1],
     };
+  }
+
+  // Compaction / context management
+  if (/compact/i.test(content)) {
+    return { type: 'compacting', text: content };
   }
 
   // General status
@@ -125,6 +137,7 @@ const TOOL_ICONS: Record<string, typeof Wrench> = {
 
 function getStepIcon(parsed: ParsedStep) {
   if (parsed.type === 'thinking') return Brain;
+  if (parsed.type === 'compacting') return RefreshCw;
   if (parsed.type === 'status') return Activity;
   return TOOL_ICONS[parsed.toolDisplay || ''] || Wrench;
 }
@@ -136,6 +149,22 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
   const parsed = parseStepContent(message.content);
   const Icon = getStepIcon(parsed);
   const hasDetail = parsed.type === 'tool_call' && !!parsed.args;
+  const isThinkingWithContent = parsed.type === 'thinking' && !!parsed.text && parsed.text !== 'thinking...' && parsed.text.toLowerCase() !== 'thinking';
+
+  // Thinking with content renders directly inline (not behind a click)
+  if (isThinkingWithContent) {
+    return (
+      <div className="py-0.5">
+        <div className="flex items-start gap-2 text-xs text-muted-foreground">
+          <Icon className="size-3.5 shrink-0 mt-0.5 text-amber-500" />
+          <span className="italic text-[11px]">thinking</span>
+        </div>
+        <div className="text-xs leading-relaxed text-foreground/60 ml-[22px] mt-0.5 mb-1 whitespace-pre-wrap">
+          {parsed.text}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -155,6 +184,7 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
           className={cn(
             'size-3.5 shrink-0',
             parsed.type === 'thinking' && 'text-amber-500 animate-pulse',
+            parsed.type === 'compacting' && 'text-violet-500 animate-spin',
             parsed.type === 'tool_call' && 'text-blue-500',
             parsed.type === 'status' && 'text-emerald-500'
           )}
@@ -162,6 +192,10 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
 
         {parsed.type === 'thinking' && (
           <span className="italic animate-pulse">thinking...</span>
+        )}
+
+        {parsed.type === 'compacting' && (
+          <span className="italic text-violet-500/80 animate-pulse">{parsed.text}</span>
         )}
 
         {parsed.type === 'tool_call' && (
@@ -203,12 +237,27 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
 
 // ── Intermediate Steps Group ──
 
+// ── Activity Indicator ──
+
+function ActivityIndicator() {
+  return (
+    <div className="flex items-center gap-1 py-1 pl-0.5">
+      <span className="size-1.5 rounded-full bg-blue-400/70" style={{ animation: 'step-dot 1.4s ease-in-out infinite' }} />
+      <span className="size-1.5 rounded-full bg-blue-400/70" style={{ animation: 'step-dot 1.4s ease-in-out 0.2s infinite' }} />
+      <span className="size-1.5 rounded-full bg-blue-400/70" style={{ animation: 'step-dot 1.4s ease-in-out 0.4s infinite' }} />
+    </div>
+  );
+}
+
+// ── Intermediate Steps Group ──
+
 interface IntermediateStepsProps {
   steps: WorkspaceMessage[];
   agents?: WorkspaceAgent[];
+  isActive?: boolean;
 }
 
-export function IntermediateSteps({ steps, agents }: IntermediateStepsProps) {
+export function IntermediateSteps({ steps, agents, isActive = false }: IntermediateStepsProps) {
   const agentNames = agents?.map((a) => a.agentName) ?? [];
   if (steps.length === 0) return null;
 
@@ -249,6 +298,7 @@ export function IntermediateSteps({ steps, agents }: IntermediateStepsProps) {
             ))}
           </div>
         ))}
+        {isActive && <ActivityIndicator />}
       </div>
     </div>
   );

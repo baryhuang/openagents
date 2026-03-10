@@ -280,12 +280,26 @@ class ClaudeAdapter(BaseAdapter):
 
             used_send_tool = False
             response_text = []
+            idle_notified = False
 
             # Read stream-json output line by line
             while True:
-                line = await process.stdout.readline()
+                try:
+                    line = await asyncio.wait_for(
+                        process.stdout.readline(), timeout=15.0,
+                    )
+                except asyncio.TimeoutError:
+                    # Long pause — likely compaction or rate-limiting
+                    if not idle_notified:
+                        idle_notified = True
+                        await self._send_status(
+                            msg_channel,
+                            "Compacting conversation...",
+                        )
+                    continue
                 if not line:
                     break
+                idle_notified = False
                 line = line.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
@@ -301,10 +315,26 @@ class ClaudeAdapter(BaseAdapter):
                 if event_type == "assistant":
                     # Process content blocks from assistant message
                     message_data = event.get("message", {})
-                    for block in message_data.get("content", []):
+                    blocks = message_data.get("content", [])
+
+                    for block in blocks:
                         block_type = block.get("type")
                         if block_type == "text":
-                            response_text.append(block.get("text", ""))
+                            text = block.get("text", "")
+                            response_text.append(text)
+                            # Stream all intermediate text as thinking status.
+                            # If the agent later calls workspace_send_message,
+                            # these become visible as indented thinking steps.
+                            # If not, the fallback path posts response_text as
+                            # the final chat message.
+                            if text.strip():
+                                thinking = text.strip()
+                                if len(thinking) > 500:
+                                    thinking = thinking[:500] + "..."
+                                await self._send_status(
+                                    msg_channel,
+                                    f"**Thinking:**\n{thinking}",
+                                )
                         elif block_type == "tool_use":
                             tool_name = block.get("name", "")
                             if "workspace_send_message" in tool_name:
@@ -326,14 +356,21 @@ class ClaudeAdapter(BaseAdapter):
                         logger.warning(f"Claude error: {event.get('result', '')[:200]}")
 
                 elif event_type == "system":
-                    logger.debug(f"CLI init: session={event.get('session_id')}")
+                    subtype = event.get("subtype", "")
+                    message = event.get("message", "")
+                    logger.debug(f"CLI system event: subtype={subtype} session={event.get('session_id')} message={str(message)[:200]}")
+                    # Surface compaction / context management events to the user
+                    if subtype in ("compact", "auto_compact", "context_pruning") or \
+                       "compact" in str(message).lower() or "compact" in subtype.lower():
+                        status_text = str(message) if message else "Compacting conversation..."
+                        await self._send_status(msg_channel, status_text)
 
                 elif event_type == "rate_limit_event":
                     info = event.get("rate_limit_info", {})
                     logger.debug(f"Rate limit status: {info.get('status')}")
 
                 else:
-                    logger.debug(f"Skipping event type: {event_type}")
+                    logger.info(f"Unhandled event type: {event_type} — keys: {list(event.keys())}")
 
             await process.wait()
             self._current_process = None

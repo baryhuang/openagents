@@ -132,7 +132,7 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
         ref={containerRef}
         className={cn('flex flex-col h-full overflow-y-auto space-y-1', className)}
       >
-        {groups.map((group) => {
+        {groups.map((group, gi) => {
           if (group.type === 'chat') {
             return (
               <ChatMessage
@@ -142,11 +142,13 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
               />
             );
           }
+          const isTrailing = gi === groups.length - 1;
           return (
             <IntermediateSteps
               key={`steps-${group.messages[0].messageId}`}
               steps={group.messages}
               agents={agents}
+              isActive={isTrailing}
             />
           );
         })}
