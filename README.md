@@ -45,7 +45,7 @@ Created openclaw (openclaw)
 
   1 Create a new workspace (free)
   2 Join with a token
-  3 Skip,run locally only
+  3 Skip — run locally only
 
   Choice [3]:
 ```
