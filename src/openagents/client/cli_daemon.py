@@ -34,7 +34,7 @@ def daemon_up(
         False, "--foreground", "-f", help="Run in foreground (don't daemonize)",
     ),
 ):
-    """Start the OpenAgents daemon — run all configured agents."""
+    """🚀 Start the OpenAgents daemon — run all configured agents."""
     import asyncio
     from openagents.client.daemon_config import load_config, get_agent_network
     from openagents.client.daemon import DaemonManager, daemonize, read_daemon_pid
@@ -42,31 +42,44 @@ def daemon_up(
     # Check if already running
     existing_pid = read_daemon_pid()
     if existing_pid:
-        console.print(f"[yellow]Daemon already running (PID {existing_pid})[/yellow]")
-        console.print("Run [bold]openagents down[/bold] first, or [bold]openagents status[/bold] to check.")
+        console.print(Panel(
+            f"[yellow]Daemon already running[/yellow] (PID {existing_pid})\n\n"
+            "Run [bold]openagents down[/bold] first, or [bold]openagents status[/bold] to check.",
+            title="[yellow]Already Running[/yellow]",
+            border_style="yellow",
+        ))
         raise typer.Exit(1)
 
     cfg = load_config(config)
     if not cfg.agents:
-        console.print("[yellow]No agents configured.[/yellow]")
-        console.print("Run [bold]openagents start claude[/bold] to set up your first agent.")
+        console.print(Panel(
+            "[yellow]No agents configured.[/yellow]\n\n"
+            "Get started: [bold]openagents start openclaw[/bold]",
+            title="[yellow]No Agents[/yellow]",
+            border_style="yellow",
+        ))
         raise typer.Exit(1)
 
     # Print summary
     network_count = len(set(a.network for a in cfg.agents if a.network))
     local_count = sum(1 for a in cfg.agents if not a.network)
-    console.print(f"\nStarting [bold]{len(cfg.agents)}[/bold] agent(s)...\n")
 
-    table = Table(box=box.SIMPLE)
+    table = Table(
+        title=f"Starting {len(cfg.agents)} agent(s)",
+        box=box.ROUNDED,
+        title_style="bold",
+    )
     table.add_column("Agent", style="cyan")
     table.add_column("Type")
     table.add_column("Role")
     table.add_column("Network", style="dim")
     for a in cfg.agents:
         net = get_agent_network(a, cfg)
-        net_label = net.slug if net else "(local)"
+        net_label = net.slug if net else "[dim](local)[/dim]"
         table.add_row(a.name, a.type, a.role, net_label)
+    console.print()
     console.print(table)
+    console.print()
 
     if not foreground:
         daemonize()
@@ -82,25 +95,25 @@ def daemon_up(
 
 @app.command("down")
 def daemon_down():
-    """Stop the OpenAgents daemon."""
+    """⏹ Stop the OpenAgents daemon."""
     from openagents.client.daemon import stop_daemon, read_daemon_pid
 
     pid = read_daemon_pid()
     if pid is None:
-        console.print("[dim]No daemon is running.[/dim]")
+        console.print("  [dim]No daemon is running.[/dim]")
         raise typer.Exit(0)
 
-    console.print(f"Stopping daemon (PID {pid})...")
+    console.print(f"  Stopping daemon (PID {pid})...")
     if stop_daemon():
-        console.print("[green]Daemon stopped.[/green]")
+        console.print("  [green]✓ Daemon stopped.[/green]")
     else:
-        console.print("[red]Failed to stop daemon.[/red]")
+        console.print("  [red]✗ Failed to stop daemon.[/red]")
         raise typer.Exit(1)
 
 
 @app.command("status")
 def daemon_status():
-    """Show status of the OpenAgents daemon and managed agents."""
+    """📋 Show status of the OpenAgents daemon and managed agents."""
     from openagents.client.daemon import read_daemon_pid
     from openagents.client.daemon_config import read_status, load_config
 
@@ -108,53 +121,63 @@ def daemon_status():
     status_data = read_status()
 
     if pid is None:
-        console.print("[dim]Daemon is not running.[/dim]")
         cfg = load_config()
         if cfg.agents:
-            console.print(f"\nConfig: {len(cfg.agents)} agent(s)")
-            console.print("Run [bold]openagents up[/bold] to start.")
+            console.print(Panel(
+                f"[dim]Daemon is not running.[/dim]\n\n"
+                f"  {len(cfg.agents)} agent(s) configured\n\n"
+                "Start with: [bold]openagents up[/bold]",
+                title="[dim]Daemon Stopped[/dim]",
+                border_style="dim",
+            ))
         else:
-            console.print("Run [bold]openagents start claude[/bold] to set up your first agent.")
+            console.print(Panel(
+                "[dim]Daemon is not running. No agents configured.[/dim]\n\n"
+                "Get started: [bold]openagents start openclaw[/bold]",
+                title="[dim]Daemon Stopped[/dim]",
+                border_style="dim",
+            ))
         return
 
-    console.print(f"[green]Daemon running[/green] (PID {pid})")
+    console.print(f"\n  [green]●[/green] Daemon running (PID {pid})")
 
     if not status_data or "agents" not in status_data:
-        console.print("[dim]Waiting for status...[/dim]")
+        console.print("  [dim]Waiting for status...[/dim]")
         return
 
     updated = status_data.get("updated_at", "")
     if updated:
-        console.print(f"[dim]Last updated: {updated}[/dim]\n")
+        console.print(f"  [dim]Last updated: {updated}[/dim]")
 
-    table = Table(box=box.SIMPLE)
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
     table.add_column("Agent", style="cyan")
     table.add_column("Type")
     table.add_column("Network", style="dim")
     table.add_column("State")
-    table.add_column("Restarts")
+    table.add_column("Restarts", justify="center")
     table.add_column("Error", style="dim", max_width=40)
 
     for name, info in status_data["agents"].items():
         state = info.get("state", "unknown")
         state_style = {
-            "online": "[green]online[/green]",
-            "running": "[green]running[/green]",
-            "starting": "[yellow]starting[/yellow]",
-            "reconnecting": "[yellow]reconnecting[/yellow]",
-            "stopped": "[dim]stopped[/dim]",
-            "error": "[red]error[/red]",
+            "online": "[green]● online[/green]",
+            "running": "[green]● running[/green]",
+            "starting": "[yellow]◐ starting[/yellow]",
+            "reconnecting": "[yellow]◐ reconnecting[/yellow]",
+            "stopped": "[dim]○ stopped[/dim]",
+            "error": "[red]✗ error[/red]",
         }.get(state, state)
 
         table.add_row(
             name,
             info.get("type", ""),
-            info.get("network", info.get("workspace", "")),
+            info.get("network", info.get("workspace", "")) or "[dim](local)[/dim]",
             state_style,
             str(info.get("restarts", 0)),
             info.get("last_error", "") or "",
         )
 
+    console.print()
     console.print(table)
 
 
@@ -243,7 +266,9 @@ def daemon_start_agent(
         False, "--no-browser", help="Don't open browser after workspace setup",
     ),
 ):
-    """Start an agent — creates it if it doesn't exist yet."""
+    """🚀 Start an agent — creates it if it doesn't exist yet."""
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
     from openagents.client.daemon_config import (
         load_config, AgentEntry, add_agent_to_config, find_agent_in_config,
         get_agent_network,
@@ -254,22 +279,31 @@ def daemon_start_agent(
     # Validate agent type
     plugin = registry.get(agent_type)
     if plugin is None:
-        console.print(f"[red]Unknown agent type: {agent_type}[/red]")
-        console.print(f"Available types: {', '.join(registry.list_names())}")
+        console.print(Panel(
+            f"[red]Unknown agent type:[/red] [bold]{agent_type}[/bold]\n\n"
+            f"[bold cyan]Available types:[/bold cyan] {', '.join(registry.list_names())}\n\n"
+            f"Search for more: [bold]openagents search {agent_type}[/bold]",
+            title="[red]Agent Not Found[/red]",
+            border_style="red",
+        ))
         raise typer.Exit(1)
 
     if not plugin.is_installed():
-        console.print(f"[yellow]{plugin.label} is not installed.[/yellow]")
-        console.print(f"Install with: [bold]openagents install {agent_type}[/bold]")
+        console.print(Panel(
+            f"[yellow]{plugin.label} is not installed.[/yellow]\n\n"
+            f"Install with: [bold]openagents install {agent_type}[/bold]",
+            title="[yellow]Not Installed[/yellow]",
+            border_style="yellow",
+        ))
         raise typer.Exit(1)
 
     # Check readiness (credentials, config)
     ready, message = plugin.check_ready()
     if ready:
-        console.print(f"[green]{plugin.label}[/green] — {message}")
+        console.print(f"  [green]✓[/green] {plugin.label} — {message}")
     else:
-        console.print(f"[yellow]{plugin.label}[/yellow] — {message}")
-        if not Confirm.ask("Continue anyway?", default=False):
+        console.print(f"  [yellow]![/yellow] {plugin.label} — {message}")
+        if not Confirm.ask("  Continue anyway?", default=False):
             raise typer.Exit(0)
 
     # Default name = agent type (e.g. "claude")
@@ -279,10 +313,10 @@ def daemon_start_agent(
     # Idempotent: if agent already exists, just ensure daemon is running
     existing = find_agent_in_config(name)
     if existing:
-        console.print(f"[dim]Agent '{name}' already configured.[/dim]")
+        console.print(f"  [dim]Agent '{name}' already configured.[/dim]")
         pid = read_daemon_pid()
         if pid:
-            console.print(f"[green]Daemon running[/green] (PID {pid})")
+            console.print(f"  [green]✓[/green] Daemon running (PID {pid})")
             return
         # Daemon not running — start it
         _start_daemon()
@@ -296,9 +330,9 @@ def daemon_start_agent(
         path=path,
     )
 
-    console.print(f"\n[green]Created[/green] [cyan]{name}[/cyan] ({agent_type})")
+    console.print(f"\n  [green]✓[/green] Created [cyan]{name}[/cyan] ({agent_type})")
     if path:
-        console.print(f"  Working dir: {path}")
+        console.print(f"    Working dir: {path}")
 
     # Check if there's already a workspace configured
     cfg = load_config()
@@ -477,31 +511,31 @@ def _start_daemon():
 
     pid = read_daemon_pid()
     if pid:
-        console.print(f"[green]Daemon already running[/green] (PID {pid})")
+        console.print(f"  [green]✓[/green] Daemon already running (PID {pid})")
         return
 
     cfg = load_config()
     if not cfg.agents:
-        console.print("[dim]No agents configured.[/dim]")
+        console.print("  [dim]No agents configured.[/dim]")
         return
 
-    console.print("\nStarting daemon...\n")
-
-    table = Table(box=box.SIMPLE)
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
     table.add_column("Agent", style="cyan")
     table.add_column("Type")
     table.add_column("Network", style="dim")
     for a in cfg.agents:
         net = get_agent_network(a, cfg)
-        table.add_row(a.name, a.type, net.slug if net else "(local)")
+        table.add_row(a.name, a.type, net.slug if net else "[dim](local)[/dim]")
+    console.print()
     console.print(table)
+    console.print()
 
     daemonize()
     manager = DaemonManager(cfg)
     try:
         asyncio.run(manager.start())
     except KeyboardInterrupt:
-        console.print("\n[yellow]Daemon stopped.[/yellow]")
+        console.print("\n  [yellow]Daemon stopped.[/yellow]")
 
 
 @app.command("connect")
@@ -733,23 +767,37 @@ def workspace_create(
         envvar="OA_ENDPOINT",
     ),
 ):
-    """Create a new workspace and get a token."""
+    """🌐 Create a new workspace and get a token."""
     import asyncio
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
     from openagents.client.workspace_client import WorkspaceClient, generate_agent_name
     from openagents.client.daemon_config import (
         NetworkEntry, add_network_to_config, load_config,
     )
 
-    ws_name = name or Prompt.ask("Workspace name", default="my-workspace")
+    ws_name = name or Prompt.ask("  Workspace name", default="my-workspace")
     agent_name = generate_agent_name("cli")
 
     client = WorkspaceClient(endpoint=endpoint)
 
-    try:
-        ws = asyncio.run(client.create_workspace(agent_name, ws_name))
-    except Exception as e:
-        console.print(f"[red]Failed to create workspace: {e}[/red]")
-        raise typer.Exit(1)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Creating workspace...", total=None)
+        try:
+            ws = asyncio.run(client.create_workspace(agent_name, ws_name))
+            progress.update(task, description="[green]✓ Workspace created[/green]")
+        except Exception as e:
+            progress.update(task, description="[red]✗ Failed[/red]")
+            console.print(Panel(
+                f"[red]Failed to create workspace:[/red] {e}",
+                title="[red]Error[/red]",
+                border_style="red",
+            ))
+            raise typer.Exit(1)
 
     # Save to config
     net_entry = NetworkEntry(
@@ -761,15 +809,18 @@ def workspace_create(
     )
     add_network_to_config(net_entry)
 
-    console.print(f"\n[green]Workspace created![/green]\n")
-    console.print(f"  Name:  [bold]{ws.name}[/bold]")
-    console.print(f"  Slug:  {ws.slug}")
-    console.print(f"  Token: [bold]{ws.token}[/bold]")
-    console.print(f"  URL:   [link={ws.url}]{ws.url}[/link]")
-    console.print(f"\n  Share this token to invite others:")
-    console.print(f"    [bold]openagents workspace join {ws.token}[/bold]")
-    console.print(f"\n  Connect an agent:")
-    console.print(f"    [bold]openagents start claude[/bold]")
+    console.print(Panel(
+        f"[bold]{ws.name}[/bold]\n\n"
+        f"  Slug   [dim]{ws.slug}[/dim]\n"
+        f"  Token  [bold]{ws.token}[/bold]\n"
+        f"  URL    [link={ws.url}]{ws.url}[/link]\n\n"
+        f"Share this token to invite others:\n"
+        f"  [bold]openagents workspace join {ws.token}[/bold]\n\n"
+        f"Connect an agent:\n"
+        f"  [bold]openagents start openclaw[/bold]",
+        title="[green]✓ Workspace Created[/green]",
+        border_style="green",
+    ))
 
 
 @workspace_app.command("join")
@@ -780,8 +831,10 @@ def workspace_join(
         envvar="OA_ENDPOINT",
     ),
 ):
-    """Join an existing workspace using a token."""
+    """🔗 Join an existing workspace using a token."""
     import asyncio
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
     from openagents.client.workspace_client import WorkspaceClient
     from openagents.client.daemon_config import (
         NetworkEntry, add_network_to_config, find_network_in_config,
@@ -789,12 +842,25 @@ def workspace_join(
 
     client = WorkspaceClient(endpoint=endpoint)
 
-    # Resolve token to workspace info
-    try:
-        info = asyncio.run(client.resolve_token(token))
-    except Exception as e:
-        console.print(f"[red]Invalid token: {e}[/red]")
-        raise typer.Exit(1)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Resolving token...", total=None)
+
+        # Resolve token to workspace info
+        try:
+            info = asyncio.run(client.resolve_token(token))
+            progress.update(task, description="[green]✓ Token resolved[/green]")
+        except Exception as e:
+            progress.update(task, description="[red]✗ Failed[/red]")
+            console.print(Panel(
+                f"[red]Invalid token:[/red] {e}",
+                title="[red]Error[/red]",
+                border_style="red",
+            ))
+            raise typer.Exit(1)
 
     ws_id = info["workspace_id"]
     slug = info.get("slug", ws_id)
@@ -803,7 +869,7 @@ def workspace_join(
     # Check if already in config
     existing = find_network_in_config(slug) or find_network_in_config(ws_id)
     if existing:
-        console.print(f"[dim]Already joined workspace '{existing.name or existing.slug}'.[/dim]")
+        console.print(f"  [dim]Already joined workspace '{existing.name or existing.slug}'.[/dim]")
         return
 
     # Save to config
@@ -819,29 +885,42 @@ def workspace_join(
     frontend_url = endpoint.replace("workspace-endpoint", "workspace").replace("/v1", "")
     ws_url = f"{frontend_url}/{slug}?token={token}"
 
-    console.print(f"\n[green]Joined workspace![/green]\n")
-    console.print(f"  Name:  [bold]{name}[/bold]")
-    console.print(f"  URL:   [link={ws_url}]{ws_url}[/link]")
-    console.print(f"\n  Connect an agent:")
-    console.print(f"    [bold]openagents start claude[/bold]")
+    console.print(Panel(
+        f"[bold]{name}[/bold]\n\n"
+        f"  URL  [link={ws_url}]{ws_url}[/link]\n\n"
+        f"Connect an agent:\n"
+        f"  [bold]openagents start openclaw[/bold]",
+        title="[green]✓ Joined Workspace[/green]",
+        border_style="green",
+    ))
 
 
 @workspace_app.command("list")
 def workspace_list():
-    """List configured workspaces."""
+    """📋 List configured workspaces."""
     from openagents.client.daemon_config import load_config
 
     cfg = load_config()
     if not cfg.networks:
-        console.print("[dim]No workspaces configured.[/dim]")
-        console.print("Create one: [bold]openagents workspace create[/bold]")
-        console.print("Or join:    [bold]openagents workspace join <token>[/bold]")
+        console.print(Panel(
+            "[dim]No workspaces configured.[/dim]\n\n"
+            "Create one:  [bold]openagents workspace create[/bold]\n"
+            "Or join:     [bold]openagents workspace join <token>[/bold]",
+            title="[dim]No Workspaces[/dim]",
+            border_style="dim",
+        ))
         return
 
-    table = Table(box=box.SIMPLE)
+    table = Table(
+        title="Workspaces",
+        box=box.ROUNDED,
+        title_style="bold",
+        show_header=True,
+        header_style="bold",
+    )
     table.add_column("Name", style="cyan")
     table.add_column("Slug")
-    table.add_column("Agents", style="dim")
+    table.add_column("Agents", justify="center")
 
     for net in cfg.networks:
         agent_count = sum(
@@ -851,9 +930,10 @@ def workspace_list():
         table.add_row(
             net.name or net.slug,
             net.slug,
-            str(agent_count) if agent_count else "-",
+            str(agent_count) if agent_count else "[dim]-[/dim]",
         )
 
+    console.print()
     console.print(table)
 
 
@@ -866,8 +946,10 @@ def workspace_members(
         None, "--token", "-t", help="Workspace token for auth",
     ),
 ):
-    """List members (agents) in a workspace."""
+    """👥 List members (agents) in a workspace."""
     import asyncio
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
     from openagents.client.workspace_client import WorkspaceClient
     from openagents.client.daemon_config import load_config
 
@@ -896,22 +978,40 @@ def workspace_members(
             ) as resp:
                 return await resp.json()
 
-    try:
-        data = asyncio.run(_fetch())
-    except Exception as e:
-        console.print(f"[red]Failed to fetch members: {e}[/red]")
-        raise typer.Exit(1)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Fetching members...", total=None)
+        try:
+            data = asyncio.run(_fetch())
+            progress.update(task, description="[green]✓ Done[/green]")
+        except Exception as e:
+            progress.update(task, description="[red]✗ Failed[/red]")
+            console.print(Panel(
+                f"[red]Failed to fetch members:[/red] {e}",
+                title="[red]Error[/red]",
+                border_style="red",
+            ))
+            raise typer.Exit(1)
 
     if data.get("code") and data["code"] != 200:
-        console.print(f"[red]{data.get('message', 'Error')}[/red]")
+        console.print(f"  [red]{data.get('message', 'Error')}[/red]")
         raise typer.Exit(1)
 
     agents = data.get("data", {}).get("agents", [])
     if not agents:
-        console.print("[dim]No agents in this workspace.[/dim]")
+        console.print("  [dim]No agents in this workspace.[/dim]")
         return
 
-    table = Table(box=box.SIMPLE)
+    table = Table(
+        title=f"Members — {workspace_id}",
+        box=box.ROUNDED,
+        title_style="bold",
+        show_header=True,
+        header_style="bold",
+    )
     table.add_column("Agent", style="cyan")
     table.add_column("Role")
     table.add_column("Type", style="dim")
@@ -920,7 +1020,7 @@ def workspace_members(
     for agent in agents:
         name = agent.get("address", "").replace("openagents:", "")
         status = agent.get("status", "unknown")
-        status_style = "[green]online[/green]" if status == "online" else f"[dim]{status}[/dim]"
+        status_style = "[green]● online[/green]" if status == "online" else f"[dim]○ {status}[/dim]"
         table.add_row(
             name,
             agent.get("role", ""),
@@ -928,6 +1028,7 @@ def workspace_members(
             status_style,
         )
 
+    console.print()
     console.print(table)
 
 

@@ -20,32 +20,38 @@ from openagents.client.cli_shared import app, console
 def daemon_remove(
     agent_name: str = typer.Argument(..., help="Name of the agent to remove"),
 ):
-    """Remove an agent from the daemon config."""
+    """🗑 Remove an agent from the daemon config."""
     from openagents.client.daemon_config import remove_agent_from_config, find_agent_in_config
 
     agent = find_agent_in_config(agent_name)
     if agent is None:
-        console.print(f"[red]Agent '{agent_name}' not found in config.[/red]")
+        console.print(f"  [red]Agent '{agent_name}' not found in config.[/red]")
         raise typer.Exit(1)
 
     net_info = f" → {agent.network}" if agent.network else " (local)"
     if not Confirm.ask(
-        f"Remove [cyan]{agent_name}[/cyan] ({agent.type}{net_info})?"
+        f"  Remove [cyan]{agent_name}[/cyan] ({agent.type}{net_info})?"
     ):
         raise typer.Exit(0)
 
     remove_agent_from_config(agent_name)
-    console.print(f"[green]Removed[/green] {agent_name}")
+    console.print(f"  [green]✓ Removed[/green] {agent_name}")
 
 
 @app.command("runtimes")
 def list_runtimes():
-    """List installed and available agent runtimes."""
+    """🔧 List installed and available agent runtimes."""
     from openagents.client.agent_setup import detect_runtimes
 
     runtimes = detect_runtimes()
 
-    table = Table(title="Agent Runtimes", box=box.SIMPLE)
+    table = Table(
+        title="Agent Runtimes",
+        box=box.ROUNDED,
+        title_style="bold",
+        show_header=True,
+        header_style="bold",
+    )
     table.add_column("Type", style="cyan")
     table.add_column("Name")
     table.add_column("Status")
@@ -57,7 +63,7 @@ def list_runtimes():
             table.add_row(
                 name,
                 info["label"],
-                "[green]installed[/green]",
+                "[green]● installed[/green]",
                 info["path"] or "",
                 "",
             )
@@ -65,28 +71,29 @@ def list_runtimes():
             table.add_row(
                 name,
                 info["label"],
-                "[dim]not installed[/dim]",
+                "[dim]○ not installed[/dim]",
                 "",
                 info["install"],
             )
 
+    console.print()
     console.print(table)
 
     # Also show configured agents
     from openagents.client.daemon_config import load_config
     cfg = load_config()
     if cfg.agents:
-        console.print(f"\n[dim]{len(cfg.agents)} agent(s) configured in daemon.yaml[/dim]")
+        console.print(f"\n  [dim]{len(cfg.agents)} agent(s) configured in daemon.yaml[/dim]")
         for a in cfg.agents:
-            net_label = a.network or "(local)"
-            console.print(f"  [cyan]{a.name}[/cyan] ({a.type}, {a.role}) → {net_label}")
+            net_label = a.network or "[dim](local)[/dim]"
+            console.print(f"    [cyan]{a.name}[/cyan] ({a.type}, {a.role}) → {net_label}")
 
 
 @app.command("install")
 def install_agent(
     agent_type: str = typer.Argument(..., help="Agent type to install (e.g. claude, aider, codex)"),
 ):
-    """Install an agent runtime on this machine."""
+    """📦 Install an agent runtime on this machine."""
     import subprocess
     import sys as _sys
     from openagents.client.plugin_registry import registry
@@ -94,21 +101,24 @@ def install_agent(
     catalog = registry.get_catalog()
     info = catalog.get(agent_type)
     if info is None:
-        console.print(f"[red]Unknown agent type: {agent_type}[/red]")
-        console.print(f"Run [cyan]openagents search[/cyan] to see available agents.")
+        console.print(Panel(
+            f"[red]Unknown agent type:[/red] [bold]{agent_type}[/bold]\n\n"
+            f"Run [bold]openagents search[/bold] to see available agents.",
+            title="[red]Not Found[/red]",
+            border_style="red",
+        ))
         raise typer.Exit(1)
 
     # Check if already installed
     plugin = registry.get(agent_type)
     if plugin and plugin.is_installed():
-        console.print(f"[green]{info.label}[/green] is already installed.")
         path = plugin.which()
-        if path:
-            console.print(f"  Location: {path}")
+        loc = f"\n  Location: [dim]{path}[/dim]" if path else ""
+        console.print(f"  [green]✓[/green] {info.label} is already installed.{loc}")
         raise typer.Exit(0)
 
     cmd = info.install_command
-    console.print(f"Installing [cyan]{info.label}[/cyan]...")
+    console.print(f"\n  Installing [cyan]{info.label}[/cyan]")
     console.print(f"  Command: [dim]{cmd}[/dim]\n")
 
     # Determine how to run the install command
@@ -150,25 +160,34 @@ def install_agent(
     try:
         result = subprocess.run(run_args, check=False)
         if result.returncode == 0:
-            console.print(f"\n[green]Successfully installed {info.label}[/green]")
             # Verify installation
             plugin = registry.get(agent_type)
             if plugin and plugin.is_installed():
                 path = plugin.which()
-                if path:
-                    console.print(f"  Location: {path}")
-                console.print(f"\nNext: [bold]openagents start {agent_type}[/bold]")
+                loc = f"\n  Location: [dim]{path}[/dim]" if path else ""
+                console.print(Panel(
+                    f"[green]Successfully installed {info.label}[/green]{loc}\n\n"
+                    f"Next: [bold]openagents start {agent_type}[/bold]",
+                    title="[green]✓ Installed[/green]",
+                    border_style="green",
+                ))
             else:
-                console.print(
-                    "[yellow]Installed but not detected in PATH.[/yellow]\n"
-                    "You may need to restart your terminal."
-                )
+                console.print(Panel(
+                    f"[yellow]Installed but not detected in PATH.[/yellow]\n\n"
+                    "You may need to restart your terminal.",
+                    title="[yellow]Warning[/yellow]",
+                    border_style="yellow",
+                ))
         else:
-            console.print(f"\n[red]Installation failed (exit code {result.returncode})[/red]")
+            console.print(f"\n  [red]✗ Installation failed (exit code {result.returncode})[/red]")
             raise typer.Exit(1)
     except FileNotFoundError:
-        console.print(f"[red]Command not found: {run_args[0]}[/red]")
-        console.print(f"Install manually: {cmd}")
+        console.print(Panel(
+            f"[red]Command not found:[/red] {run_args[0]}\n\n"
+            f"Install manually: {cmd}",
+            title="[red]Error[/red]",
+            border_style="red",
+        ))
         raise typer.Exit(1)
 
 
@@ -176,7 +195,7 @@ def install_agent(
 def search_agents(
     query: str = typer.Argument("", help="Search query (empty = list all)"),
 ):
-    """Search available agent types."""
+    """🔍 Search available agent types."""
     from openagents.client.plugin_registry import registry
 
     if query:
@@ -185,10 +204,16 @@ def search_agents(
         results = list(registry.get_catalog().values())
 
     if not results:
-        console.print(f"[yellow]No agents found matching '{query}'[/yellow]")
+        console.print(f"  [yellow]No agents found matching '{query}'[/yellow]")
         raise typer.Exit(0)
 
-    table = Table(title="Available Agents", box=box.SIMPLE)
+    table = Table(
+        title="Available Agents" if not query else f"Results for '{query}'",
+        box=box.ROUNDED,
+        title_style="bold",
+        show_header=True,
+        header_style="bold",
+    )
     table.add_column("Name", style="cyan")
     table.add_column("Label")
     table.add_column("Status")
@@ -198,11 +223,11 @@ def search_agents(
     for info in results:
         plugin = registry.get(info.name)
         if plugin and plugin.is_installed():
-            status = "[green]installed[/green]"
+            status = "[green]● installed[/green]"
         elif info.builtin:
-            status = "[yellow]not installed[/yellow]"
+            status = "[yellow]○ not installed[/yellow]"
         else:
-            status = "[dim]available[/dim]"
+            status = "[dim]○ available[/dim]"
 
         table.add_row(
             info.name,
@@ -212,8 +237,9 @@ def search_agents(
             info.description or "",
         )
 
+    console.print()
     console.print(table)
-    console.print(f"\n[dim]Install with: openagents install <name>[/dim]")
+    console.print(f"\n  [dim]Install with:[/dim] [bold]openagents install <name>[/bold]")
 
 
 @app.command("update")
@@ -222,86 +248,106 @@ def self_update(
         False, "--check", help="Only check for updates, don't install",
     ),
 ):
-    """Update openagents and check agent runtime versions."""
+    """🔄 Update openagents and check agent runtime versions."""
     import subprocess as _sp
+    from rich.progress import Progress, SpinnerColumn, TextColumn
 
     from openagents.client.plugin_registry import registry
 
-    console.print("[bold]Checking for updates...[/bold]\n")
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Checking for updates...", total=None)
 
-    # Check current openagents version
-    try:
-        from importlib.metadata import version as get_version
-        current = get_version("openagents")
-    except Exception:
-        current = "unknown"
+        # Check current openagents version
+        try:
+            from importlib.metadata import version as get_version
+            current = get_version("openagents")
+        except Exception:
+            current = "unknown"
 
-    # Check PyPI for latest version
-    latest = None
-    try:
-        import json as _json
-        result = _sp.run(
-            [sys.executable, "-m", "pip", "index", "versions", "openagents"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode == 0 and "versions:" in result.stdout.lower():
-            # Parse "openagents (X.Y.Z)" from output
-            for line in result.stdout.splitlines():
-                if "LATEST:" in line.upper() or "openagents" in line.lower():
-                    import re as _re
-                    m = _re.search(r'\(([0-9][0-9.]*)\)', line)
-                    if m:
-                        latest = m.group(1)
-                        break
-    except Exception:
-        pass
+        # Check PyPI for latest version
+        latest = None
+        try:
+            import json as _json
+            result = _sp.run(
+                [sys.executable, "-m", "pip", "index", "versions", "openagents"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 and "versions:" in result.stdout.lower():
+                for line in result.stdout.splitlines():
+                    if "LATEST:" in line.upper() or "openagents" in line.lower():
+                        import re as _re
+                        m = _re.search(r'\(([0-9][0-9.]*)\)', line)
+                        if m:
+                            latest = m.group(1)
+                            break
+        except Exception:
+            pass
 
-    console.print(f"  openagents: [cyan]{current}[/cyan]", end="")
+        progress.update(task, description="[green]✓ Check complete[/green]")
+
+    # Build version table
+    table = Table(
+        title="Version Status",
+        box=box.ROUNDED,
+        title_style="bold",
+        show_header=True,
+        header_style="bold",
+    )
+    table.add_column("Component", style="cyan")
+    table.add_column("Version")
+    table.add_column("Status")
+    table.add_column("Location", style="dim")
+
     if latest and latest != current:
-        console.print(f" → [green]{latest}[/green] available")
+        table.add_row("openagents", current, f"[yellow]→ {latest} available[/yellow]", "")
     else:
-        console.print(" [dim](up to date)[/dim]")
+        table.add_row("openagents", current, "[green]● up to date[/green]", "")
 
-    # Check agent runtimes
-    console.print()
     for plugin in registry.list_plugins():
         if not plugin.is_installed():
             continue
         path = plugin.which() or ""
-        console.print(f"  {plugin.name}: [green]installed[/green] [dim]{path}[/dim]")
+        table.add_row(plugin.name, "", "[green]● installed[/green]", path)
+
+    console.print()
+    console.print(table)
 
     if check_only:
         return
 
     # Upgrade openagents
     if latest and latest != current:
-        console.print(f"\n[bold]Upgrading openagents {current} → {latest}...[/bold]")
+        console.print(f"\n  Upgrading openagents {current} → {latest}...")
         result = _sp.run(
             [sys.executable, "-m", "pip", "install", "--upgrade", "openagents"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode == 0:
-            console.print("[green]openagents updated successfully.[/green]")
+            console.print("  [green]✓ openagents updated successfully.[/green]")
         else:
-            console.print(f"[red]Update failed:[/red] {result.stderr[:200]}")
+            console.print(f"  [red]✗ Update failed:[/red] {result.stderr[:200]}")
             raise typer.Exit(1)
 
         # Restart daemon if running
         from openagents.client.daemon import read_daemon_pid, stop_daemon
         pid = read_daemon_pid()
         if pid:
-            console.print("Restarting daemon...")
+            console.print("  Restarting daemon...")
             stop_daemon()
             _start_daemon()
     else:
-        console.print("\n[dim]Already up to date.[/dim]")
+        console.print("\n  [dim]Already up to date.[/dim]")
 
 
 @app.command("autostart")
 def init_autostart(
     remove: bool = typer.Option(False, "--remove", help="Remove auto-start configuration"),
 ):
-    """Set up OpenAgents daemon to auto-start on login."""
+    """⚙️ Set up OpenAgents daemon to auto-start on login."""
     import sys as _sys
 
     IS_WINDOWS = _sys.platform == "win32"
@@ -354,11 +400,15 @@ WantedBy=default.target
     os.system("systemctl --user daemon-reload")
     os.system("systemctl --user enable openagents.service")
     os.system("systemctl --user start openagents.service")
-    console.print("[green]Installed and started systemd user service.[/green]")
-    console.print("[dim]  Status: systemctl --user status openagents[/dim]")
-    console.print("[dim]  Logs:   journalctl --user -u openagents -f[/dim]")
-    console.print("[dim]  Stop:   systemctl --user stop openagents[/dim]")
-    console.print("[dim]  Remove: openagents init --remove[/dim]")
+    console.print(Panel(
+        "[green]Installed and started systemd user service.[/green]\n\n"
+        "  Status  [dim]systemctl --user status openagents[/dim]\n"
+        "  Logs    [dim]journalctl --user -u openagents -f[/dim]\n"
+        "  Stop    [dim]systemctl --user stop openagents[/dim]\n"
+        "  Remove  [dim]openagents autostart --remove[/dim]",
+        title="[green]✓ Auto-Start Enabled[/green]",
+        border_style="green",
+    ))
 
 
 def _init_launchd(remove: bool):
@@ -409,10 +459,14 @@ def _init_launchd(remove: bool):
 """
     plist_file.write_text(plist_content)
     os.system(f"launchctl load {plist_file}")
-    console.print("[green]Installed and loaded launchd agent.[/green]")
-    console.print(f"[dim]  Logs:   tail -f {log_path}[/dim]")
-    console.print("[dim]  Stop:   launchctl unload ~/Library/LaunchAgents/org.openagents.daemon.plist[/dim]")
-    console.print("[dim]  Remove: openagents init --remove[/dim]")
+    console.print(Panel(
+        "[green]Installed and loaded launchd agent.[/green]\n\n"
+        f"  Logs    [dim]tail -f {log_path}[/dim]\n"
+        "  Stop    [dim]launchctl unload ~/Library/LaunchAgents/org.openagents.daemon.plist[/dim]\n"
+        "  Remove  [dim]openagents autostart --remove[/dim]",
+        title="[green]✓ Auto-Start Enabled[/green]",
+        border_style="green",
+    ))
 
 
 def _init_windows(remove: bool):
@@ -436,11 +490,20 @@ def _init_windows(remove: bool):
     cmd = f'schtasks /Create /TN "{task_name}" /TR "\"{openagents_bin}\" up --foreground" /SC ONLOGON /RL HIGHEST /F'
     ret = os.system(cmd)
     if ret == 0:
-        console.print("[green]Created scheduled task for auto-start on login.[/green]")
-        console.print(f"[dim]  Check:  schtasks /Query /TN \"{task_name}\"[/dim]")
-        console.print(f"[dim]  Remove: openagents init --remove[/dim]")
+        console.print(Panel(
+            "[green]Created scheduled task for auto-start on login.[/green]\n\n"
+            f"  Check   [dim]schtasks /Query /TN \"{task_name}\"[/dim]\n"
+            "  Remove  [dim]openagents autostart --remove[/dim]",
+            title="[green]✓ Auto-Start Enabled[/green]",
+            border_style="green",
+        ))
     else:
-        console.print("[red]Failed to create scheduled task. Try running as Administrator.[/red]")
+        console.print(Panel(
+            "[red]Failed to create scheduled task.[/red]\n\n"
+            "Try running as Administrator.",
+            title="[red]Error[/red]",
+            border_style="red",
+        ))
         raise typer.Exit(1)
 
 
