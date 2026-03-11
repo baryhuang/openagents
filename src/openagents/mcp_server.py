@@ -3,11 +3,13 @@ MCP server exposing workspace tools for agent CLIs.
 
 Run as: openagents mcp-server --workspace <id> --token <token>
 
-Exposes 4 tools:
-- workspace_send_message: Post message to workspace chat
+Exposes tools:
 - workspace_get_history: Read recent messages
 - workspace_get_agents: List agents in workspace
 - workspace_status: Post status update
+
+Note: Agent responses are posted automatically by the adapter from
+assistant text blocks — no explicit "send message" tool is needed.
 """
 
 import asyncio
@@ -94,30 +96,6 @@ def create_mcp_server(
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
         all_tools = [
-            types.Tool(
-                name="workspace_send_message",
-                description=(
-                    "Post a message to the workspace chat. "
-                    "You MUST use this tool to communicate — generating text alone is not seen by anyone. "
-                    "Use @agent-name in your message to delegate work to another agent. "
-                    "You can attach files by passing their file_ids (from workspace_write_file or workspace_list_files)."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "content": {
-                            "type": "string",
-                            "description": "Message text to post. Use @agent-name to mention and delegate to other agents.",
-                        },
-                        "file_ids": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Optional list of file IDs to attach to the message. Files must already exist in workspace storage.",
-                        },
-                    },
-                    "required": ["content"],
-                },
-            ),
             types.Tool(
                 name="workspace_get_history",
                 description="Read recent messages in the current workspace channel.",
@@ -361,38 +339,7 @@ def create_mcp_server(
                          f"This agent was connected with --disable-{module}.",
                 )]
 
-            if name == "workspace_send_message":
-                content = arguments.get("content", "")
-                file_ids = arguments.get("file_ids") or []
-
-                # Build attachment metadata from file_ids
-                attachments = None
-                if file_ids:
-                    attachments = []
-                    for fid in file_ids:
-                        info = await client.get_file_info(token=token, file_id=fid)
-                        attachments.append({
-                            "fileId": fid,
-                            "filename": info.get("filename", fid),
-                            "contentType": info.get("content_type", "application/octet-stream"),
-                            "url": f"{endpoint}/v1/files/{fid}",
-                        })
-
-                result = await client.send_message(
-                    workspace_id=workspace_id,
-                    channel_name=channel_name,
-                    token=token,
-                    content=content,
-                    sender_type="agent",
-                    sender_name=agent_name,
-                    attachments=attachments,
-                )
-                return [types.TextContent(
-                    type="text",
-                    text=f"Message sent (id: {result.get('messageId', 'unknown')})",
-                )]
-
-            elif name == "workspace_get_history":
+            if name == "workspace_get_history":
                 limit = arguments.get("limit", 20)
                 messages = await client.poll_messages(
                     workspace_id=workspace_id,

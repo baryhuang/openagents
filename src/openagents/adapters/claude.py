@@ -300,8 +300,12 @@ class ClaudeAdapter(BaseAdapter):
             self._current_process = process
             self._channel_processes[msg_channel] = process
 
-            used_send_tool = False
-            response_text = []
+            # last_response_text holds the text from the most recent
+            # assistant turn.  Earlier turns are intermediate reasoning
+            # (already streamed as "thinking"); the last one is the
+            # final answer we post as "chat" when the process exits.
+            last_response_text: list[str] = []
+            has_tool_use_since_last_text = False
             idle_notified = False
             consecutive_timeouts = 0
 
@@ -348,20 +352,34 @@ class ClaudeAdapter(BaseAdapter):
                 event_type = event.get("type")
 
                 if event_type == "assistant":
-                    # Process content blocks from assistant message
+                    # Process content blocks from assistant message.
+                    # Each assistant event is one turn.  Text blocks
+                    # are streamed as "thinking"; tool_use blocks as
+                    # "status".  We track the latest text so we can
+                    # post it as the final "chat" response on exit.
                     message_data = event.get("message", {})
                     blocks = message_data.get("content", [])
+
+                    turn_has_tool = any(b.get("type") == "tool_use" for b in blocks)
 
                     for block in blocks:
                         block_type = block.get("type")
                         if block_type == "text":
                             text = block.get("text", "")
-                            response_text.append(text)
-                            # Post thinking as a persistent message so users
-                            # can follow agent reasoning. Skip if the agent
-                            # already sent its final response — late thinking
-                            # after workspace_send_message is just wrap-up.
-                            if text.strip() and not used_send_tool:
+                            if text.strip():
+                                # If there was a tool call since the last
+                                # text, this is a new reasoning segment —
+                                # reset the response buffer.
+                                if has_tool_use_since_last_text:
+                                    last_response_text = []
+                                    has_tool_use_since_last_text = False
+                                last_response_text.append(text.strip())
+
+                                # Post as "thinking" so users see
+                                # intermediate reasoning in real-time.
+                                # Skip if this turn also has tool_use
+                                # (it's a plan, not the final answer)
+                                # — but still post it as thinking.
                                 thinking = text.strip()
                                 if len(thinking) > 500:
                                     thinking = thinking[:500] + "..."
@@ -376,18 +394,13 @@ class ClaudeAdapter(BaseAdapter):
                                     metadata={"agent_mode": self._mode},
                                 )
                         elif block_type == "tool_use":
+                            has_tool_use_since_last_text = True
                             tool_name = block.get("name", "")
-                            if "workspace_send_message" in tool_name:
-                                used_send_tool = True
-                            else:
-                                # Always stream tool use as status so users
-                                # can follow progress even after the agent
-                                # posted its initial plan message.
-                                tool_input = str(block.get("input", ""))[:200]
-                                await self._send_status(
-                                    msg_channel,
-                                    f"**Using tool:** `{tool_name}`\n```\n{tool_input}\n```",
-                                )
+                            tool_input = str(block.get("input", ""))[:200]
+                            await self._send_status(
+                                msg_channel,
+                                f"**Using tool:** `{tool_name}`\n```\n{tool_input}\n```",
+                            )
 
                 elif event_type == "result":
                     # Save session_id per channel for conversation continuity
@@ -426,13 +439,13 @@ class ClaudeAdapter(BaseAdapter):
                 if stderr_text:
                     logger.warning(f"CLI stderr: {stderr_text[:300]}")
 
-            # Fallback: if Claude didn't use workspace_send_message,
-            # post the text response directly
-            if not used_send_tool and response_text:
-                full_response = "\n".join(response_text).strip()
+            # Post the final response.  last_response_text holds text
+            # from the last assistant turn (after all tool calls).
+            if last_response_text:
+                full_response = "\n".join(last_response_text).strip()
                 if full_response:
                     await self._send_response(msg_channel, full_response)
-            elif not used_send_tool and not response_text:
+            else:
                 await self._send_response(msg_channel, "No response generated. Please try again.")
 
         except Exception as e:
