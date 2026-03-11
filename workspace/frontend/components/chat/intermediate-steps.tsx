@@ -198,7 +198,7 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
         )}
 
         {parsed.type === 'compacting' && (
-          <span className="italic text-violet-500/80 animate-pulse">{parsed.text}</span>
+          <span className="italic text-violet-500/80 animate-pulse">Vibing ...</span>
         )}
 
         {parsed.type === 'tool_call' && (
@@ -240,13 +240,13 @@ function StepItem({ message }: { message: WorkspaceMessage }) {
 
 // ── Intermediate Steps Group ──
 
-// ── Activity Indicator: Pulsing Gradient Bar ──
+// ── Activity Indicator: Breathing Dots ──
 
 function ActivityIndicator() {
   return (
     <div className="py-1.5">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/gradient-bar.gif" alt="" width={120} height={4} className="rounded-full opacity-90" />
+      <img src="/breathing-dots.gif" alt="" width={44} height={14} className="opacity-90" />
     </div>
   );
 }

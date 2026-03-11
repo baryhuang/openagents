@@ -29,6 +29,7 @@ from app.models import (
     Channel,
     ChannelMember,
     Workspace,
+    WorkspaceCollaborator,
     WorkspaceMember,
 )
 from app.response import ResponseCode, json_response, success_response
@@ -49,7 +50,7 @@ def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
 
 
 def _verify_workspace_access(workspace, token: Optional[str], authorization: Optional[str]) -> bool:
-    """Check if the caller has access to a workspace via token or bearer auth."""
+    """Check if the caller has access to a workspace via token, bearer owner, or collaborator."""
     if not workspace.password_hash:
         return True
     if token and token == workspace.password_hash:
@@ -58,8 +59,14 @@ def _verify_workspace_access(workspace, token: Optional[str], authorization: Opt
     if bearer:
         from app.firebase_auth import verify_firebase_token
         email = verify_firebase_token(bearer)
-        if email and workspace.creator_email and email == workspace.creator_email:
-            return True
+        if email:
+            email_lower = email.lower()
+            # Owner check
+            if workspace.creator_email and email_lower == workspace.creator_email.lower():
+                return True
+            # Collaborator check (loaded via selectin)
+            if any(c.email == email_lower for c in (workspace.collaborators or [])):
+                return True
     return False
 
 
@@ -83,6 +90,10 @@ class WorkspaceUpdateRequest(BaseModel):
     name: Optional[str] = None
     settings: Optional[dict] = None
     status: Optional[str] = None
+
+class CollaboratorAddRequest(BaseModel):
+    email: str
+    role: str = Field(default="editor", pattern=r"^(editor|viewer)$")
 
 
 # ---------------------------------------------------------------------------
@@ -524,3 +535,130 @@ async def delete_workspace(
     db.commit()
 
     return success_response({"workspaceId": str(workspace.id), "status": "deleted"})
+
+
+# ---------------------------------------------------------------------------
+# Collaborator management (email-based sharing)
+# ---------------------------------------------------------------------------
+
+def _format_collaborator(c: WorkspaceCollaborator) -> dict:
+    return {
+        "email": c.email,
+        "role": c.role,
+        "addedBy": c.added_by,
+        "addedAt": c.added_at.isoformat() if c.added_at else None,
+    }
+
+
+@router.get("/{workspace_id}/collaborators")
+async def list_collaborators(
+    workspace_id: str,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """List email-based collaborators for a workspace."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    collabs = [_format_collaborator(c) for c in (workspace.collaborators or [])]
+    return success_response({
+        "collaborators": collabs,
+        "owner": workspace.creator_email,
+    })
+
+
+@router.post("/{workspace_id}/collaborators")
+async def add_collaborator(
+    workspace_id: str,
+    body: CollaboratorAddRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Add an email-based collaborator to a workspace."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        return json_response(ResponseCode.BAD_REQUEST, "Invalid email address")
+
+    # Can't add the owner as a collaborator
+    if workspace.creator_email and email == workspace.creator_email.lower():
+        return json_response(ResponseCode.CONFLICT, "This email is already the workspace owner")
+
+    # Determine who is adding (from bearer token if available)
+    added_by = None
+    bearer = _extract_bearer(authorization)
+    if bearer:
+        from app.firebase_auth import verify_firebase_token
+        added_by = verify_firebase_token(bearer)
+
+    # Upsert: update role if already exists
+    existing = db.execute(
+        select(WorkspaceCollaborator).where(
+            WorkspaceCollaborator.workspace_id == workspace.id,
+            WorkspaceCollaborator.email == email,
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        existing.role = body.role
+        db.commit()
+        db.refresh(existing)
+        return success_response(_format_collaborator(existing))
+
+    collab = WorkspaceCollaborator(
+        workspace_id=workspace.id,
+        email=email,
+        role=body.role,
+        added_by=added_by,
+    )
+    db.add(collab)
+    db.commit()
+    db.refresh(collab)
+    return success_response(_format_collaborator(collab))
+
+
+@router.delete("/{workspace_id}/collaborators/{email}")
+async def remove_collaborator(
+    workspace_id: str,
+    email: str,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Remove an email-based collaborator from a workspace."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    email_lower = email.strip().lower()
+    collab = db.execute(
+        select(WorkspaceCollaborator).where(
+            WorkspaceCollaborator.workspace_id == workspace.id,
+            WorkspaceCollaborator.email == email_lower,
+        )
+    ).scalar_one_or_none()
+
+    if not collab:
+        return json_response(ResponseCode.NOT_FOUND, "Collaborator not found")
+
+    db.delete(collab)
+    db.commit()
+    return success_response({"email": email_lower, "removed": True})

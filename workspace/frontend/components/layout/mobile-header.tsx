@@ -9,7 +9,8 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Menu, Bot, MessageSquare, FileText, Globe, Plus } from 'lucide-react';
+import { Menu, MessageSquare, FileText, Globe, Plus } from 'lucide-react';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { SidebarContent } from './sidebar-content';
 import { useLayout, type ViewMode } from './layout-context';
@@ -72,8 +73,9 @@ export function MobileHeader() {
               </SheetContent>
             </Sheet>
 
-            <div className="flex items-center p-[6px] rounded-[60px] bg-gradient-to-r from-primary to-purple-600 dark:from-purple-950 dark:to-purple-800 shadow-sm shrink-0">
-              <Bot className="size-3.5 text-white" />
+            <div className="size-7 shrink-0">
+              <Image src="/logo-black.png" alt="OpenAgents" width={28} height={28} className="size-full object-contain dark:hidden" />
+              <Image src="/logo-white.png" alt="OpenAgents" width={28} height={28} className="size-full object-contain hidden dark:block" />
             </div>
 
             <span className="text-sm font-medium truncate">

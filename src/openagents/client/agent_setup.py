@@ -5,6 +5,8 @@ Used by both `openagents connect` (single agent) and `openagents up` (daemon).
 """
 
 import logging
+import os
+import socket
 from typing import Optional
 
 from openagents.client.plugin_registry import registry
@@ -102,6 +104,8 @@ async def setup_agent(
             network=workspace_id,
             token=token,
             agent_type=agent_type,
+            server_host=socket.gethostname(),
+            working_dir=os.getcwd(),
         )
         logger.info(f"Joined workspace {workspace_id}")
     except Exception as e:

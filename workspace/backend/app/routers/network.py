@@ -48,6 +48,8 @@ class JoinRequest(BaseModel):
     token: str                         # workspace token
     network: Optional[str] = None      # workspace ID or slug
     agent_type: Optional[str] = None   # "claude", "openclaw", etc.
+    server_host: Optional[str] = None  # hostname/IP where agent runs
+    working_dir: Optional[str] = None  # working directory on the server
 
 class LeaveRequest(BaseModel):
     agent_name: str
@@ -98,7 +100,7 @@ def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
 
 
 def _verify_workspace_access(workspace, token: Optional[str], authorization: Optional[str]) -> bool:
-    """Check if the caller has access to a workspace via token or bearer auth."""
+    """Check if the caller has access to a workspace via token, bearer owner, or collaborator."""
     if not workspace.password_hash:
         return True
     if token and token == workspace.password_hash:
@@ -107,8 +109,14 @@ def _verify_workspace_access(workspace, token: Optional[str], authorization: Opt
     if bearer:
         from app.firebase_auth import verify_firebase_token
         email = verify_firebase_token(bearer)
-        if email and workspace.creator_email and email == workspace.creator_email:
-            return True
+        if email:
+            email_lower = email.lower()
+            # Owner check
+            if workspace.creator_email and email_lower == workspace.creator_email.lower():
+                return True
+            # Collaborator check (loaded via selectin)
+            if any(c.email == email_lower for c in (workspace.collaborators or [])):
+                return True
     return False
 
 
@@ -155,6 +163,10 @@ async def join_network(
     payload = {"agent_name": body.agent_name}
     if body.agent_type:
         payload["agent_type"] = body.agent_type
+    if body.server_host:
+        payload["server_host"] = body.server_host
+    if body.working_dir:
+        payload["working_dir"] = body.working_dir
 
     event = Event(
         type="network.agent.join",
@@ -335,6 +347,8 @@ async def discover(
             "role": m.role,
             "status": status,
             "agent_type": m.agent_type,
+            "server_host": m.server_host,
+            "working_dir": m.working_dir,
         })
 
     channels_rows = db.execute(

@@ -14,6 +14,8 @@ export interface WorkspaceAgent {
   agentName: string;
   role: string;
   agentType: string | null;
+  serverHost: string | null;
+  workingDir: string | null;
   status: string;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
@@ -43,6 +45,13 @@ export interface WorkspaceMessage {
   messageType: string;
   metadata: Record<string, unknown>;
   createdAt: string | null;
+}
+
+export interface WorkspaceCollaborator {
+  email: string;
+  role: 'editor' | 'viewer';
+  addedBy: string | null;
+  addedAt: string | null;
 }
 
 export interface WorkspaceInvitation {
@@ -105,6 +114,8 @@ export interface NetworkAgent {
   role: string;
   status: string;
   agent_type: string | null;
+  server_host: string | null;
+  working_dir: string | null;
 }
 
 export interface NetworkChannel {
@@ -197,6 +208,8 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
     agentName: agent.address.replace(/^openagents:/, ''),
     role: agent.role,
     agentType: agent.agent_type || null,
+    serverHost: agent.server_host || null,
+    workingDir: agent.working_dir || null,
     status: agent.status,
     lastHeartbeatAt: null,
     joinedAt: null,

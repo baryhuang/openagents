@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     PrimaryKeyConstraint,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -88,6 +89,7 @@ class Workspace(Base):
     members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")
     channels = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")
     invitations = relationship("Invitation", back_populates="workspace", cascade="all, delete-orphan")
+    collaborators = relationship("WorkspaceCollaborator", back_populates="workspace", cascade="all, delete-orphan", lazy="selectin")
 
 
 class WorkspaceMember(Base):
@@ -98,6 +100,8 @@ class WorkspaceMember(Base):
     agent_name = Column(Text, nullable=False)
     role = Column(Text, default="member")           # master | member | observer
     agent_type = Column(Text, nullable=True)          # "claude", "openclaw", etc.
+    server_host = Column(Text, nullable=True)          # hostname/IP where agent runs
+    working_dir = Column(Text, nullable=True)          # working directory on the server
     status = Column(Text, default="offline")         # online | offline
     last_heartbeat = Column(DateTime(timezone=True), nullable=True)
     joined_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
@@ -156,6 +160,26 @@ class Invitation(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     workspace = relationship("Workspace", back_populates="invitations")
+
+
+class WorkspaceCollaborator(Base):
+    """Email-based workspace access (human collaborators)."""
+    __tablename__ = "workspace_collaborators"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()"))
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    email = Column(Text, nullable=False)                # normalized lowercase
+    role = Column(Text, default="editor")               # editor | viewer
+    added_by = Column(Text, nullable=True)              # email of who added
+    added_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    workspace = relationship("Workspace", back_populates="collaborators")
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "email", name="uq_collaborator_workspace_email"),
+        Index("idx_collaborators_workspace", "workspace_id"),
+        Index("idx_collaborators_email", "email"),
+    )
 
 
 # ---------------------------------------------------------------------------

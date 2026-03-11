@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Plus, MessageSquare, FileText, Globe, PlusSquare, UserPlus,
   Settings, Copy, Check, Clock, CheckCircle, XCircle,
-  LogIn, LogOut, Shield, Moon, Sun,
+  LogIn, LogOut, Shield, Moon, Sun, KeyRound, Share2, X, Crown,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { workspaceApi } from '@/lib/api';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
-import type { WorkspaceInvitation } from '@/lib/types';
+import type { WorkspaceCollaborator, WorkspaceInvitation } from '@/lib/types';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 import { NewThreadDialog } from '@/components/threads/new-thread-dialog';
 
@@ -68,7 +68,7 @@ function NavButton({
 
 export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
-  const { agents, sessions, files, browserTabs, createSession, workspace, refreshWorkspace } = useWorkspace();
+  const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -76,11 +76,24 @@ export function SidebarContent() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [newThreadOpen, setNewThreadOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
   const isDark = mounted && theme === 'dark';
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
+
+  const handleCopyToken = () => {
+    if (!token) {
+      toast.error('No management token available');
+      return;
+    }
+    navigator.clipboard.writeText(token);
+    setTokenCopied(true);
+    toast.success('Management token copied');
+    setTimeout(() => setTokenCopied(false), 2000);
+  };
 
   const handleNewThread = () => {
     if (agents.length >= 2) {
@@ -261,7 +274,15 @@ export function SidebarContent() {
             </p>
             <div className="space-y-0.5">
               <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
+              <NavButton icon={<Share2 className="size-[15px]" />} label="Share" onClick={() => setShareOpen(true)} />
               <NavButton icon={<UserPlus className="size-[15px]" />} label="Invite" onClick={() => setInviteOpen(true)} />
+              {token && (
+                <NavButton
+                  icon={tokenCopied ? <Check className="size-[15px]" /> : <KeyRound className="size-[15px]" />}
+                  label={tokenCopied ? 'Copied!' : 'Copy Token'}
+                  onClick={handleCopyToken}
+                />
+              )}
               <NavButton icon={<Settings className="size-[15px]" />} label="Settings" onClick={() => setSettingsOpen(true)} />
             </div>
           </div>
@@ -308,6 +329,9 @@ export function SidebarContent() {
       {/* Settings Dialog */}
       <SettingsDialogPortal open={settingsOpen} onOpenChange={setSettingsOpen} workspace={workspace} refreshWorkspace={refreshWorkspace} />
 
+      {/* Share Dialog */}
+      <ShareDialogPortal open={shareOpen} onOpenChange={setShareOpen} />
+
       {/* Invitation Dialog */}
       <InvitationDialogPortal open={inviteOpen} onOpenChange={setInviteOpen} />
 
@@ -323,6 +347,136 @@ export function SidebarContent() {
         }}
       />
     </>
+  );
+}
+
+// ── Share Dialog (email-based collaborators) ──
+
+function ShareDialogPortal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'editor' | 'viewer'>('editor');
+  const [adding, setAdding] = useState(false);
+  const [collaborators, setCollaborators] = useState<WorkspaceCollaborator[]>([]);
+  const [owner, setOwner] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadCollaborators = async () => {
+    setLoading(true);
+    try {
+      const data = await workspaceApi.listCollaborators();
+      setCollaborators(data.collaborators);
+      setOwner(data.owner);
+    } catch { /* */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { if (open) loadCollaborators(); }, [open]);
+
+  const handleAdd = async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes('@')) return;
+    setAdding(true);
+    try {
+      await workspaceApi.addCollaborator(trimmed, role);
+      toast.success(`Shared with ${trimmed}`);
+      setEmail('');
+      loadCollaborators();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to add collaborator');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (emailToRemove: string) => {
+    try {
+      await workspaceApi.removeCollaborator(emailToRemove);
+      setCollaborators((prev) => prev.filter((c) => c.email !== emailToRemove));
+      toast.success(`Removed ${emailToRemove}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to remove');
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Share Workspace</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-4">
+          <p className="text-xs text-muted-foreground">
+            Add people by email. They can access this workspace by signing in — no token needed.
+          </p>
+
+          {/* Add collaborator form */}
+          <div className="space-y-2">
+            <Label>Email address</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="colleague@example.com"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+                className="flex-1"
+              />
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')}
+                className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="editor">Editor</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <Button onClick={handleAdd} disabled={adding || !email.trim()}>
+                {adding ? 'Adding...' : 'Add'}
+              </Button>
+            </div>
+          </div>
+
+          {/* People with access */}
+          <div className="space-y-2">
+            <Label variant="secondary">People with access</Label>
+            <div className="space-y-1.5 max-h-60 overflow-y-auto">
+              {/* Owner */}
+              {owner && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/30">
+                  <Crown className="size-3.5 text-amber-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{owner}</p>
+                    <p className="text-xs text-muted-foreground">Owner</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Collaborators */}
+              {loading && collaborators.length === 0 && (
+                <p className="text-xs text-muted-foreground px-3 py-2">Loading...</p>
+              )}
+              {collaborators.map((c) => (
+                <div key={c.email} className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/30">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{c.email}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{c.role}</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0"
+                    onClick={() => handleRemove(c.email)}
+                    title="Remove access"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
+              ))}
+
+              {!loading && !owner && collaborators.length === 0 && (
+                <p className="text-xs text-muted-foreground px-3 py-2">No one has been added yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

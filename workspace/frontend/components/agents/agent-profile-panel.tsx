@@ -19,10 +19,15 @@ export function AgentProfilePanel() {
   const color = getAgentColor(agent.agentName, agentNames);
   const isOnline = agent.status === 'online';
 
+  // Capitalize agent type for display (e.g. "claude" → "Claude")
+  const displayType = agent.agentType
+    ? agent.agentType.charAt(0).toUpperCase() + agent.agentType.slice(1)
+    : 'Unknown';
+
   const infoItems = [
-    { icon: <Monitor className="size-3.5" />, label: 'Type', value: agent.agentName.split('-')[0] || 'agent' },
-    { icon: <Globe className="size-3.5" />, label: 'Server', value: 'openagents.org' },
-    { icon: <Folder className="size-3.5" />, label: 'Folder', value: `/agents/${agent.agentName}` },
+    { icon: <Monitor className="size-3.5" />, label: 'Type', value: displayType },
+    { icon: <Globe className="size-3.5" />, label: 'Server', value: agent.serverHost || '—' },
+    { icon: <Folder className="size-3.5" />, label: 'Folder', value: agent.workingDir || '—' },
     { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
   ];
 

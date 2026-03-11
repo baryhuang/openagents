@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import Image from 'next/image';
 import { PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLayout } from './layout-context';
@@ -39,8 +40,9 @@ export function SidebarHeader() {
 
   return (
     <div className="flex items-center gap-2.5 shrink-0 px-3.5 py-4">
-      <div className="size-8 rounded-full bg-zinc-800 dark:bg-zinc-200 flex items-center justify-center text-white dark:text-zinc-800 text-xs font-bold shrink-0">
-        {(workspace?.name || 'W')[0].toUpperCase()}
+      <div className="size-8 shrink-0">
+        <Image src="/logo-black.png" alt="OpenAgents" width={32} height={32} className="size-full object-contain dark:hidden" />
+        <Image src="/logo-white.png" alt="OpenAgents" width={32} height={32} className="size-full object-contain hidden dark:block" />
       </div>
       <div className="flex-1 min-w-0">
         {editing ? (
@@ -65,7 +67,7 @@ export function SidebarHeader() {
             {workspace?.name || 'Workspace'}
           </p>
         )}
-        <p className="text-xs text-muted-foreground truncate">workspace.openagents.org</p>
+        <p className="text-xs text-muted-foreground truncate font-mono">{workspace?.slug || ''}</p>
       </div>
     </div>
   );

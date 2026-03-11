@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -407,6 +408,8 @@ def daemon_start_agent(
                         network=None,
                         token=ws_token.strip(),
                         agent_type=agent_type,
+                        server_host=socket.gethostname(),
+                        working_dir=os.getcwd(),
                     ))
 
                     net_entry = NetworkEntry(
@@ -615,6 +618,8 @@ def daemon_connect_agent(
                     network=None,
                     token=token,
                     agent_type=agent.type,
+                    server_host=socket.gethostname(),
+                    working_dir=os.getcwd(),
                 ))
 
                 net_entry = NetworkEntry(
@@ -1054,6 +1059,8 @@ def _resolve_or_create_network(
                 network=join_id,
                 token=token,
                 agent_type=agent_type,
+                server_host=socket.gethostname(),
+                working_dir=os.getcwd(),
             )
             ws_id = result.get("network_id", join_id)
             return NetworkEntry(

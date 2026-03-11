@@ -216,6 +216,8 @@ class WorkspaceClient:
     async def join_network(
         self, agent_name: str, network: Optional[str], token: str,
         agent_type: str | None = None,
+        server_host: str | None = None,
+        working_dir: str | None = None,
     ) -> dict:
         """Join an existing workspace via POST /v1/join."""
         import aiohttp
@@ -227,6 +229,10 @@ class WorkspaceClient:
             body["network"] = network
         if agent_type:
             body["agent_type"] = agent_type
+        if server_host:
+            body["server_host"] = server_host
+        if working_dir:
+            body["working_dir"] = working_dir
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.endpoint}/v1/join",

@@ -70,8 +70,8 @@ export function ChatView() {
     if (!currentSessionId) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg) {
-      const isStatus = lastMsg.messageType === 'status' || lastMsg.messageType === 'thinking';
-      updateLastMessage(currentSessionId, lastMsg.senderName, lastMsg.content, isStatus);
+      const isWorking = lastMsg.messageType === 'status' || lastMsg.messageType === 'thinking';
+      updateLastMessage(currentSessionId, lastMsg.senderName, lastMsg.content, isWorking);
     } else {
       updateLastMessage(currentSessionId, '', '');
     }

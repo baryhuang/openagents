@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import socket
 import sys
 import webbrowser
 from pathlib import Path
@@ -145,6 +146,8 @@ def connect_claude(
                         network=join,
                         token=ws_token,
                         agent_type="claude",
+                        server_host=socket.gethostname(),
+                        working_dir=os.getcwd(),
                     )
                     ws_id = join_result.get("network_id", join)
                     console.print(
@@ -433,6 +436,8 @@ def connect_openclaw(
                         network=join,
                         token=token,
                         agent_type="openclaw",
+                        server_host=socket.gethostname(),
+                        working_dir=os.getcwd(),
                     )
                     ws_id = join_result.get("network_id", join)
                     console.print(f"[green]Joined workspace:[/green] {ws_id}")

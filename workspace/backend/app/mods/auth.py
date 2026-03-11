@@ -45,13 +45,20 @@ class AuthMod(GuardMod):
                 event.network = str(workspace.id)
                 return event
 
-            # Path 2: Firebase bearer token for workspace owner
+            # Path 2: Firebase bearer token for workspace owner or collaborator
             if bearer_token:
                 from app.firebase_auth import verify_firebase_token
                 email = verify_firebase_token(bearer_token)
-                if email and workspace.creator_email and email == workspace.creator_email:
-                    event.network = str(workspace.id)
-                    return event
+                if email:
+                    email_lower = email.lower()
+                    # Owner check
+                    if workspace.creator_email and email_lower == workspace.creator_email.lower():
+                        event.network = str(workspace.id)
+                        return event
+                    # Collaborator check (loaded via selectin)
+                    if any(c.email == email_lower for c in (workspace.collaborators or [])):
+                        event.network = str(workspace.id)
+                        return event
 
             # Neither auth path succeeded
             logger.warning("auth: invalid credentials for workspace %s", workspace.id)

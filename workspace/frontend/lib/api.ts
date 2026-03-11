@@ -8,6 +8,7 @@ import type {
   ONMEvent,
   Workspace,
   WorkspaceAgent,
+  WorkspaceCollaborator,
   WorkspaceFile,
   WorkspaceInvitation,
   WorkspaceSession,
@@ -338,6 +339,8 @@ class WorkspaceApi {
       agentName: a.address.replace(/^openagents:/, ''),
       role: a.role,
       agentType: a.agent_type || null,
+      serverHost: a.server_host || null,
+      workingDir: a.working_dir || null,
       status: a.status,
       lastHeartbeatAt: null,
       joinedAt: null,
@@ -365,6 +368,32 @@ class WorkspaceApi {
 
   async listInvitations(_status?: string): Promise<WorkspaceInvitation[]> {
     return []; // Return empty list — invitations not yet migrated
+  }
+
+  // ---------------------------------------------------------------------------
+  // Collaborators (email-based sharing)
+  // ---------------------------------------------------------------------------
+
+  /** List email-based collaborators for this workspace. */
+  async listCollaborators(): Promise<{ collaborators: WorkspaceCollaborator[]; owner: string | null }> {
+    return this.request<{ collaborators: WorkspaceCollaborator[]; owner: string | null }>(
+      `/v1/workspaces/${this.workspaceId}/collaborators`
+    );
+  }
+
+  /** Add an email-based collaborator. */
+  async addCollaborator(email: string, role: string = 'editor'): Promise<WorkspaceCollaborator> {
+    return this.request<WorkspaceCollaborator>(`/v1/workspaces/${this.workspaceId}/collaborators`, {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    });
+  }
+
+  /** Remove an email-based collaborator. */
+  async removeCollaborator(email: string): Promise<void> {
+    await this.request<unknown>(`/v1/workspaces/${this.workspaceId}/collaborators/${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+    });
   }
 
   // ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ interface LastMessageInfo {
 
 interface WorkspaceContextValue {
   workspace: Workspace | null;
+  token: string;
   agents: WorkspaceAgent[];
   sessions: WorkspaceSession[];
   files: WorkspaceFile[];
@@ -247,7 +248,7 @@ export function WorkspaceProvider({
               const payload = pick.payload as Record<string, string>;
               const sender = pick.source.replace(/^(openagents:|human:)/, '');
               const content = payload?.content || '';
-              const isStatus = payload?.message_type === 'status';
+              const isStatus = payload?.message_type === 'status' || payload?.message_type === 'thinking';
               return { sessionId: ch.sessionId, senderName: sender, content, isStatus };
             } catch { /* ignore */ }
             return null;
@@ -411,7 +412,7 @@ export function WorkspaceProvider({
               if (pick) {
                 const sender = pick.source.replace(/^(openagents:|human:)/, '');
                 const content = payload?.content || '';
-                const isStatus = payload?.message_type === 'status';
+                const isStatus = payload?.message_type === 'status' || payload?.message_type === 'thinking';
                 return { sessionId: s.sessionId, senderName: sender, content, isStatus };
               }
             } catch { /* ignore */ }
@@ -525,6 +526,7 @@ export function WorkspaceProvider({
     <WorkspaceContext.Provider
       value={{
         workspace,
+        token,
         agents,
         sessions,
         files,

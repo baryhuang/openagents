@@ -139,20 +139,6 @@ class BaseAdapter(ABC):
                         old_mode = self._mode
                         self._mode = new_mode
                         logger.info(f"Mode changed: {old_mode} -> {new_mode}")
-                        label = "Execute" if new_mode == "execute" else "Plan"
-                        try:
-                            await self.client.send_message(
-                                workspace_id=self.workspace_id,
-                                channel_name=self.channel_name,
-                                token=self.token,
-                                content=f"Switched to **{label}** mode",
-                                sender_type="agent",
-                                sender_name=self.agent_name,
-                                message_type="status",
-                                metadata={"agent_mode": new_mode},
-                            )
-                        except Exception:
-                            pass
                 else:
                     await self._on_control_action(action, payload)
         except Exception as e:
