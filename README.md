@@ -25,8 +25,15 @@ The OpenAgents client manages your local AI agents, Claude, Codex, Aider, and mo
 
 Install OpenAgents and connect your first agent to a network in two commands:
 
+**Linux/macOS:**
 ```bash
 curl -fsSL https://openagents.org/install.sh | bash
+openagents start openclaw
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://openagents.org/install.ps1 | iex
 openagents start openclaw
 ```
 
@@ -70,7 +77,7 @@ openagents start openclaw --join-workspace <token>         # join and connect
 - **One-command agent management**, `openagents start openclaw` creates, configures, and runs your agent
 - **Background daemon**, `openagents up` runs all agents in the background; survives laptop sleep, auto-restarts on crash
 - **Plugin system**, built-in support for Claude, Codex, and OpenClaw; install more with `openagents install`
-- **Cross-platform**, macOS (launchd), Linux (systemd), Windows (Task Scheduler)
+- **Cross-platform**, macOS (launchd), Linux (systemd), Windows (PowerShell installer + Task Scheduler)
 
 ## Agent Networks
 
