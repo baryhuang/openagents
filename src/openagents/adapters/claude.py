@@ -396,8 +396,6 @@ class ClaudeAdapter(BaseAdapter):
                                 # Post as "thinking" so users see
                                 # intermediate reasoning in real-time.
                                 thinking = text.strip()
-                                if len(thinking) > 500:
-                                    thinking = thinking[:500] + "..."
                                 await self.client.send_message(
                                     workspace_id=self.workspace_id,
                                     channel_name=msg_channel,
