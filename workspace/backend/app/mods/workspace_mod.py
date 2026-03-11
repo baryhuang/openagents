@@ -325,6 +325,16 @@ def _extract_mentions(content: str, known_agents: List[str]) -> List[str]:
     return [m for m in raw_mentions if m in known_set]
 
 
+def _extract_leading_mention(content: str, known_agents: List[str]) -> Optional[str]:
+    """Return the agent name if the message starts with @agent-name, else None."""
+    if not content or not known_agents:
+        return None
+    m = re.match(r"^\s*@([\w-]+)", content)
+    if m and m.group(1) in set(known_agents):
+        return m.group(1)
+    return None
+
+
 _DEFAULT_TITLES = {"New Thread", "Session 1", None, ""}
 
 
@@ -347,10 +357,13 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     """
     workspace.message.posted → route messages to the right agents.
 
-    Routing rules:
-    - Human messages → channel master (or all participants if no master)
-    - Any message with @mentions → mentioned agents only
-    - Agent messages without mentions → no targeting (visible in UI only)
+    Routing rules (human messages):
+    - Starts with @agent-name → route to that agent only
+    - No leading @mention → channel master (or all participants if no master)
+
+    Routing rules (agent messages):
+    - Any @mentions in body → route to mentioned agents
+    - No mentions → no targeting (visible in UI only)
     """
     from app.models import Channel, WorkspaceMember
 
@@ -397,9 +410,11 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     # Auto-name channel from first human message if title is default/empty
     _auto_title_channel(channel, content, db)
 
-    # If user explicitly @mentions agents, route to them
-    if mentions:
-        event.metadata["target_agents"] = mentions
+    # If message starts with @agent-name, route directly to that agent.
+    # Other @mentions in the body are just references, not routing targets.
+    leading = _extract_leading_mention(content, known_agents)
+    if leading:
+        event.metadata["target_agents"] = [leading]
     elif channel.master_agent:
         # Default: route to channel master
         event.metadata["target_agents"] = [channel.master_agent]
