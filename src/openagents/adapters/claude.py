@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import shutil
+from pathlib import Path
 from typing import Optional
 
 from openagents.adapters.base import BaseAdapter
@@ -41,6 +42,30 @@ class ClaudeAdapter(BaseAdapter):
         self._channel_sessions: dict[str, str] = {}  # channel_name → Claude CLI session_id
         self._current_process: Optional[asyncio.subprocess.Process] = None
         self._channel_processes: dict[str, asyncio.subprocess.Process] = {}  # channel → subprocess
+        self._sessions_file = (
+            Path.home() / ".openagents" / "sessions"
+            / f"{workspace_id}_{agent_name}.json"
+        )
+        self._load_sessions()
+
+    def _load_sessions(self):
+        """Load persisted channel→session_id mapping from disk."""
+        try:
+            if self._sessions_file.exists():
+                data = json.loads(self._sessions_file.read_text())
+                if isinstance(data, dict):
+                    self._channel_sessions.update(data)
+                    logger.info(f"Loaded {len(data)} session(s) from {self._sessions_file.name}")
+        except Exception:
+            logger.debug("Could not load sessions file, starting fresh")
+
+    def _save_sessions(self):
+        """Persist channel→session_id mapping to disk."""
+        try:
+            self._sessions_file.parent.mkdir(parents=True, exist_ok=True)
+            self._sessions_file.write_text(json.dumps(self._channel_sessions))
+        except Exception:
+            logger.debug("Could not save sessions file")
 
     async def _on_control_action(self, action: Optional[str], payload: dict):
         """Handle stop control action."""
@@ -248,6 +273,7 @@ class ClaudeAdapter(BaseAdapter):
                     source_session = self._channel_sessions.get(resume_from)
                     if source_session:
                         self._channel_sessions[msg_channel] = source_session
+                        self._save_sessions()
                         logger.info(f"Resuming channel {msg_channel} from {resume_from} (session {source_session})")
 
                 # Auto-title
@@ -298,6 +324,7 @@ class ClaudeAdapter(BaseAdapter):
             # final answer we post as "chat" when the process exits.
             last_response_text: list[str] = []
             has_tool_use_since_last_text = False
+            posted_thinking = False
             idle_notified = False
             consecutive_timeouts = 0
 
@@ -352,8 +379,6 @@ class ClaudeAdapter(BaseAdapter):
                     message_data = event.get("message", {})
                     blocks = message_data.get("content", [])
 
-                    turn_has_tool = any(b.get("type") == "tool_use" for b in blocks)
-
                     for block in blocks:
                         block_type = block.get("type")
                         if block_type == "text":
@@ -366,29 +391,26 @@ class ClaudeAdapter(BaseAdapter):
                                     last_response_text = []
                                     has_tool_use_since_last_text = False
                                 last_response_text.append(text.strip())
+                                posted_thinking = True
 
                                 # Post as "thinking" so users see
                                 # intermediate reasoning in real-time.
-                                # Only post if this turn also has tool
-                                # calls — a text-only turn is the final
-                                # answer, which will be posted as "chat"
-                                # when the process exits.
-                                if turn_has_tool:
-                                    thinking = text.strip()
-                                    if len(thinking) > 500:
-                                        thinking = thinking[:500] + "..."
-                                    await self.client.send_message(
-                                        workspace_id=self.workspace_id,
-                                        channel_name=msg_channel,
-                                        token=self.token,
-                                        content=thinking,
-                                        sender_type="agent",
-                                        sender_name=self.agent_name,
-                                        message_type="thinking",
-                                        metadata={"agent_mode": self._mode},
-                                    )
+                                thinking = text.strip()
+                                if len(thinking) > 500:
+                                    thinking = thinking[:500] + "..."
+                                await self.client.send_message(
+                                    workspace_id=self.workspace_id,
+                                    channel_name=msg_channel,
+                                    token=self.token,
+                                    content=thinking,
+                                    sender_type="agent",
+                                    sender_name=self.agent_name,
+                                    message_type="thinking",
+                                    metadata={"agent_mode": self._mode},
+                                )
                         elif block_type == "tool_use":
                             has_tool_use_since_last_text = True
+                            posted_thinking = False
                             tool_name = block.get("name", "")
                             tool_input = str(block.get("input", ""))[:200]
                             await self._send_status(
@@ -401,6 +423,7 @@ class ClaudeAdapter(BaseAdapter):
                     session_id = event.get("session_id")
                     if session_id:
                         self._channel_sessions[msg_channel] = session_id
+                        self._save_sessions()
                     if event.get("is_error"):
                         logger.warning(f"Claude error: {event.get('result', '')[:200]}")
 
@@ -435,11 +458,15 @@ class ClaudeAdapter(BaseAdapter):
 
             # Post the final response.  last_response_text holds text
             # from the last assistant turn (after all tool calls).
+            # If posted_thinking is True, the last text was already
+            # streamed as "thinking" and no tool call followed — so
+            # it IS the final answer.  Post it as "chat" so the UI
+            # renders it as a proper response bubble.
             if last_response_text:
                 full_response = "\n".join(last_response_text).strip()
                 if full_response:
                     await self._send_response(msg_channel, full_response)
-            else:
+            elif not posted_thinking:
                 await self._send_response(msg_channel, "No response generated. Please try again.")
 
         except Exception as e:
