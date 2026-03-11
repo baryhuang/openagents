@@ -134,7 +134,9 @@ export function ChatView() {
         senderType: 'user',
         content: content || (files.length > 0 ? files.map((f) => f.file.name).join(', ') : ''),
         messageType: 'chat',
-        timestamp: new Date().toISOString(),
+        mentions: [],
+        targetAgents: null,
+        createdAt: new Date().toISOString(),
         metadata: {},
       };
 
@@ -145,7 +147,9 @@ export function ChatView() {
         senderType: 'agent',
         content: 'thinking...',
         messageType: 'thinking',
-        timestamp: new Date().toISOString(),
+        mentions: [],
+        targetAgents: null,
+        createdAt: new Date().toISOString(),
         metadata: {},
       };
 
