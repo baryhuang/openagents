@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Plus, MessageSquare, FileText, Globe, PlusSquare, UserPlus,
-  Settings, Copy, Check, Clock, CheckCircle, XCircle,
+  Plus, MessageSquare, FileText, Globe, PlusSquare,
+  Settings, Copy, Check,
   LogIn, LogOut, Shield, Moon, Sun, KeyRound, Share2, X, Crown,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { workspaceApi } from '@/lib/api';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
-import type { WorkspaceCollaborator, WorkspaceInvitation } from '@/lib/types';
+import type { WorkspaceCollaborator } from '@/lib/types';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 import { NewThreadDialog } from '@/components/threads/new-thread-dialog';
 
@@ -73,7 +73,6 @@ export function SidebarContent() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [newThreadOpen, setNewThreadOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -275,7 +274,6 @@ export function SidebarContent() {
             <div className="space-y-0.5">
               <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
               <NavButton icon={<Share2 className="size-[15px]" />} label="Share" onClick={() => setShareOpen(true)} />
-              <NavButton icon={<UserPlus className="size-[15px]" />} label="Invite" onClick={() => setInviteOpen(true)} />
               {token && (
                 <NavButton
                   icon={tokenCopied ? <Check className="size-[15px]" /> : <KeyRound className="size-[15px]" />}
@@ -332,8 +330,6 @@ export function SidebarContent() {
       {/* Share Dialog */}
       <ShareDialogPortal open={shareOpen} onOpenChange={setShareOpen} />
 
-      {/* Invitation Dialog */}
-      <InvitationDialogPortal open={inviteOpen} onOpenChange={setInviteOpen} />
 
       {/* New Thread Dialog (agent picker) */}
       <NewThreadDialog
@@ -553,88 +549,3 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   );
 }
 
-// ── Controlled Invitation Dialog ──
-
-function InvitationDialogPortal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [agentName, setAgentName] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([]);
-  const { copyToClipboard } = useCopyToClipboard();
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
-
-  const loadInvitations = async () => {
-    try { const list = await workspaceApi.listInvitations(); setInvitations(list); } catch { /* */ }
-  };
-
-  useEffect(() => { if (open) loadInvitations(); }, [open]);
-
-  const handleCreate = async () => {
-    if (!agentName.trim()) return;
-    setCreating(true);
-    try {
-      await workspaceApi.createInvitation(agentName.trim());
-      toast.success(`Invitation sent to ${agentName.trim()}`);
-      setAgentName('');
-      loadInvitations();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create invitation');
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleCopyToken = (token: string) => {
-    copyToClipboard(token);
-    setCopiedToken(token);
-    setTimeout(() => setCopiedToken(null), 2000);
-  };
-
-  const statusIcon = (status: string) => {
-    switch (status) {
-      case 'pending': return <Clock className="size-3.5 text-amber-500" />;
-      case 'accepted': return <CheckCircle className="size-3.5 text-green-500" />;
-      case 'rejected': return <XCircle className="size-3.5 text-red-500" />;
-      case 'expired': return <Clock className="size-3.5 text-zinc-400" />;
-      default: return null;
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Invite Agent</DialogTitle></DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>Agent Name</Label>
-            <div className="flex items-center gap-2">
-              <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="e.g. claude-abc123" onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }} />
-              <Button onClick={handleCreate} disabled={creating || !agentName.trim()}>{creating ? 'Inviting...' : 'Invite'}</Button>
-            </div>
-            <p className="text-xs text-muted-foreground">The agent must be registered on the platform.</p>
-          </div>
-          {invitations.length > 0 && (
-            <div className="space-y-2">
-              <Label variant="secondary">Invitations</Label>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {invitations.map((inv) => (
-                  <div key={inv.invitationId} className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/30">
-                    {statusIcon(inv.status)}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{inv.targetAgentName}</p>
-                      <p className="text-xs text-muted-foreground">{inv.status} {inv.createdAt && `· ${timeAgo(inv.createdAt)}`}</p>
-                    </div>
-                    {inv.status === 'pending' && (
-                      <Button variant="ghost" size="icon" className="size-7" onClick={() => handleCopyToken(inv.inviteToken)} title="Copy invite token">
-                        {copiedToken === inv.inviteToken ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
