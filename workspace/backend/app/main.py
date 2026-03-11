@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Auto-create tables for SQLite (dev mode) — production uses Alembic.
+    from app.database import engine, Base, _is_sqlite
+    if _is_sqlite:
+        from app import models  # noqa: F401 — ensure all models are registered
+        Base.metadata.create_all(bind=engine)
+        logger.info("SQLite: auto-created tables")
     yield
     # Shutdown: close Playwright browser
     from app.browser import BrowserManager

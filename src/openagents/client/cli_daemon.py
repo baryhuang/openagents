@@ -19,6 +19,20 @@ from rich import box
 
 from openagents.client.cli_shared import app, console
 
+DEFAULT_ENDPOINT = os.environ.get(
+    "OA_ENDPOINT", "https://workspace-endpoint.openagents.org"
+)
+
+
+def _endpoint_to_frontend(endpoint: str) -> str:
+    """Convert a backend endpoint URL to the corresponding frontend URL."""
+    if "localhost" in endpoint or "127.0.0.1" in endpoint:
+        # Dev mode: backend on 8340, frontend on 3001
+        import re
+        return re.sub(r":\d+", ":3001", endpoint)
+    return endpoint.replace("workspace-endpoint", "workspace").replace("/v1", "")
+
+
 workspace_app = typer.Typer(
     name="workspace",
     help="Workspace management \u2014 create, join, and list workspaces",
@@ -272,6 +286,10 @@ def daemon_start_agent(
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Don't open browser after workspace setup",
     ),
+    endpoint: str = typer.Option(
+        DEFAULT_ENDPOINT, "--endpoint", envvar="OA_ENDPOINT",
+        help="Workspace backend endpoint URL",
+    ),
 ):
     """🚀 Start an agent — creates it if it doesn't exist yet."""
     from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -354,7 +372,7 @@ def daemon_start_agent(
         add_agent_to_config(agent_entry)
         net_entry = _resolve_or_create_network(
             join_id=None, token=None,
-            endpoint="https://workspace-endpoint.openagents.org",
+            endpoint=endpoint,
             agent_name=name, agent_type=agent_type,
             workspace_name=create_workspace,
         )
@@ -365,9 +383,7 @@ def daemon_start_agent(
             add_network_to_config(net_entry)
             connect_agent_to_network(name, net_entry.slug or net_entry.id)
             if not no_browser:
-                frontend_url = "https://workspace-endpoint.openagents.org".replace(
-                    "workspace-endpoint", "workspace"
-                )
+                frontend_url = _endpoint_to_frontend(endpoint)
                 ws_url = f"{frontend_url}/{net_entry.slug}?token={net_entry.token}"
                 try:
                     webbrowser.open(ws_url)
@@ -382,7 +398,7 @@ def daemon_start_agent(
         from openagents.client.daemon_config import (
             NetworkEntry, add_network_to_config, connect_agent_to_network,
         )
-        client = WorkspaceClient(endpoint="https://workspace-endpoint.openagents.org")
+        client = WorkspaceClient(endpoint=endpoint)
         try:
             info = asyncio.run(client.resolve_token(join_workspace.strip()))
             ws_id = info["workspace_id"]
@@ -401,7 +417,7 @@ def daemon_start_agent(
             net_entry = NetworkEntry(
                 id=ws_id, slug=slug, name=ws_name,
                 token=join_workspace.strip(),
-                endpoint="https://workspace-endpoint.openagents.org",
+                endpoint=endpoint,
             )
             add_network_to_config(net_entry)
             connect_agent_to_network(name, slug or ws_id)
@@ -409,9 +425,7 @@ def daemon_start_agent(
                 f"  [green]Joined workspace:[/green] [bold]{ws_name}[/bold]"
             )
             if not no_browser:
-                frontend_url = "https://workspace-endpoint.openagents.org".replace(
-                    "workspace-endpoint", "workspace"
-                )
+                frontend_url = _endpoint_to_frontend(endpoint)
                 ws_url = f"{frontend_url}/{slug}?token={join_workspace.strip()}"
                 try:
                     webbrowser.open(ws_url)
@@ -447,7 +461,7 @@ def daemon_start_agent(
             ws_name = Prompt.ask("  Workspace name", default=f"{name}'s workspace")
             net_entry = _resolve_or_create_network(
                 join_id=None, token=None,
-                endpoint="https://workspace-endpoint.openagents.org",
+                endpoint=endpoint,
                 agent_name=name, agent_type=agent_type,
                 workspace_name=ws_name,
             )
@@ -458,9 +472,7 @@ def daemon_start_agent(
                 add_network_to_config(net_entry)
                 connect_agent_to_network(name, net_entry.slug or net_entry.id)
                 if not no_browser:
-                    frontend_url = "https://workspace-endpoint.openagents.org".replace(
-                        "workspace-endpoint", "workspace"
-                    )
+                    frontend_url = _endpoint_to_frontend(endpoint)
                     ws_url = f"{frontend_url}/{net_entry.slug}?token={net_entry.token}"
                     try:
                         webbrowser.open(ws_url)
@@ -476,7 +488,7 @@ def daemon_start_agent(
                 from openagents.client.daemon_config import (
                     NetworkEntry, add_network_to_config, connect_agent_to_network,
                 )
-                client = WorkspaceClient(endpoint="https://workspace-endpoint.openagents.org")
+                client = WorkspaceClient(endpoint=endpoint)
                 try:
                     info = asyncio.run(client.resolve_token(ws_token.strip()))
                     ws_id = info["workspace_id"]
@@ -495,7 +507,7 @@ def daemon_start_agent(
                     net_entry = NetworkEntry(
                         id=ws_id, slug=slug, name=ws_name,
                         token=ws_token.strip(),
-                        endpoint="https://workspace-endpoint.openagents.org",
+                        endpoint=endpoint,
                     )
                     add_network_to_config(net_entry)
                     connect_agent_to_network(name, slug or ws_id)
@@ -503,9 +515,7 @@ def daemon_start_agent(
                         f"  [green]Joined workspace:[/green] [bold]{ws_name}[/bold]"
                     )
                     if not no_browser:
-                        frontend_url = "https://workspace-endpoint.openagents.org".replace(
-                            "workspace-endpoint", "workspace"
-                        )
+                        frontend_url = _endpoint_to_frontend(endpoint)
                         ws_url = f"{frontend_url}/{slug}?token={ws_token.strip()}"
                         try:
                             webbrowser.open(ws_url)
@@ -632,7 +642,7 @@ def daemon_connect_agent(
         None, "--role", "-r", help="Agent role in the network",
     ),
     endpoint: str = typer.Option(
-        "https://workspace-endpoint.openagents.org", "--endpoint",
+        DEFAULT_ENDPOINT, "--endpoint",
         envvar="OA_ENDPOINT",
     ),
 ):
@@ -774,7 +784,7 @@ def daemon_add(
         "worker", "--role", "-r", help="Agent role (master/worker)",
     ),
     endpoint: str = typer.Option(
-        "https://workspace-endpoint.openagents.org", "--endpoint",
+        DEFAULT_ENDPOINT, "--endpoint",
         envvar="OA_ENDPOINT",
     ),
 ):
@@ -846,7 +856,7 @@ def workspace_create(
         None, "--name", "-n", help="Workspace name",
     ),
     endpoint: str = typer.Option(
-        "https://workspace-endpoint.openagents.org", "--endpoint",
+        DEFAULT_ENDPOINT, "--endpoint",
         envvar="OA_ENDPOINT",
     ),
 ):
@@ -910,7 +920,7 @@ def workspace_create(
 def workspace_join(
     token: str = typer.Argument(..., help="Workspace token"),
     endpoint: str = typer.Option(
-        "https://workspace-endpoint.openagents.org", "--endpoint",
+        DEFAULT_ENDPOINT, "--endpoint",
         envvar="OA_ENDPOINT",
     ),
 ):
@@ -1044,7 +1054,7 @@ def workspace_members(
                 token = net.token
                 break
 
-    endpoint = "https://workspace-endpoint.openagents.org"
+    endpoint = DEFAULT_ENDPOINT
     client = WorkspaceClient(endpoint=endpoint)
 
     async def _fetch():

@@ -18,6 +18,13 @@ from app.config import config
 _is_serverless = os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
 _is_sqlite = config.DATABASE_URL.startswith("sqlite")
 
+# Register PostgreSQL type compilers for SQLite so JSONB/UUID columns work.
+if _is_sqlite:
+    from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
+    if not hasattr(SQLiteTypeCompiler, "_orig_visit_JSONB"):
+        SQLiteTypeCompiler.visit_JSONB = lambda self, type_, **kw: "JSON"
+        SQLiteTypeCompiler.visit_UUID = lambda self, type_, **kw: "TEXT"
+
 _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite

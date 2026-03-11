@@ -431,3 +431,117 @@ async def network_profile(
         ],
         "agents_online": online_count,
     })
+
+
+# ── Agent catalog (supported client types) ──────────────────────────────
+
+# Static catalog mirroring the SDK plugin_registry.  Kept in sync manually;
+# the source of truth is src/openagents/client/plugin_registry.py.
+
+_AGENT_CATALOG = [
+    {
+        "name": "claude",
+        "label": "Claude Code",
+        "description": "Anthropic's Claude Code CLI",
+        "install_command": "curl -fsSL https://claude.ai/install.sh | bash",
+        "homepage": "https://claude.ai",
+        "tags": ["coding", "anthropic", "cli"],
+        "builtin": True,
+    },
+    {
+        "name": "codex",
+        "label": "OpenAI Codex CLI",
+        "description": "OpenAI's Codex CLI agent for the terminal",
+        "install_command": "npm install -g @openai/codex",
+        "homepage": "https://github.com/openai/codex",
+        "tags": ["coding", "openai", "cli"],
+        "builtin": True,
+    },
+    {
+        "name": "gemini",
+        "label": "Gemini CLI",
+        "description": "Google's open-source AI agent for the command line",
+        "install_command": "npm install -g @google/gemini-cli",
+        "homepage": "https://github.com/google-gemini/gemini-cli",
+        "tags": ["coding", "google", "open-source", "cli"],
+        "builtin": False,
+    },
+    {
+        "name": "openclaw",
+        "label": "OpenClaw",
+        "description": "Open-source agent client powered by Anthropic",
+        "install_command": "npm install -g openclaw@latest",
+        "homepage": "https://github.com/qwibitai/openclaw",
+        "tags": ["coding", "open-source", "cli"],
+        "builtin": True,
+    },
+    {
+        "name": "amp",
+        "label": "Amp (Sourcegraph)",
+        "description": "Sourcegraph's AI coding agent for CLI and VS Code",
+        "install_command": "curl -fsSL https://ampcode.com/install.sh | bash",
+        "homepage": "https://ampcode.com",
+        "tags": ["coding", "sourcegraph", "cli", "vscode"],
+        "builtin": False,
+    },
+    {
+        "name": "aider",
+        "label": "Aider",
+        "description": "AI pair programming in your terminal",
+        "install_command": "pip install aider-chat",
+        "homepage": "https://aider.chat",
+        "tags": ["coding", "pair-programming", "open-source"],
+        "builtin": False,
+    },
+    {
+        "name": "goose",
+        "label": "Goose",
+        "description": "An open-source AI developer agent by Block",
+        "install_command": "pip install goose-ai",
+        "homepage": "https://github.com/block/goose",
+        "tags": ["coding", "developer", "open-source"],
+        "builtin": False,
+    },
+    {
+        "name": "cline",
+        "label": "Cline",
+        "description": "Autonomous coding agent for VS Code",
+        "install_command": "npm install -g cline",
+        "homepage": "https://github.com/cline/cline",
+        "tags": ["coding", "vscode", "autonomous"],
+        "builtin": False,
+    },
+    {
+        "name": "copilot",
+        "label": "GitHub Copilot CLI",
+        "description": "GitHub Copilot coding agent for the terminal",
+        "install_command": "npm install -g @github/copilot",
+        "homepage": "https://github.com/features/copilot",
+        "tags": ["coding", "github", "cli"],
+        "builtin": False,
+    },
+    {
+        "name": "opencode",
+        "label": "OpenCode",
+        "description": "Open-source terminal-native AI coding agent",
+        "install_command": "npm install -g opencode-ai@latest",
+        "homepage": "https://opencode.ai",
+        "tags": ["coding", "open-source", "cli", "terminal"],
+        "builtin": False,
+    },
+    {
+        "name": "nanoclaw",
+        "label": "NanoClaw",
+        "description": "Lightweight containerized coding agent built on Claude Agent SDK",
+        "install_command": "docker pull qwibitai/nanoclaw",
+        "homepage": "https://github.com/qwibitai/nanoclaw",
+        "tags": ["coding", "container", "lightweight", "open-source"],
+        "builtin": False,
+    },
+]
+
+
+@router.get("/agent-catalog")
+async def agent_catalog():
+    """Return the catalog of supported agent client types."""
+    return success_response(_AGENT_CATALOG)

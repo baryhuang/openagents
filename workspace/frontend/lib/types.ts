@@ -90,6 +90,20 @@ export interface BrowserTab {
 }
 
 // ---------------------------------------------------------------------------
+// Agent catalog (supported client types)
+// ---------------------------------------------------------------------------
+
+export interface AgentCatalogEntry {
+  name: string;
+  label: string;
+  description: string;
+  install_command: string;
+  homepage: string;
+  tags: string[];
+  builtin: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // ONM Event types (event-native API)
 // ---------------------------------------------------------------------------
 

@@ -1,4 +1,5 @@
 import type {
+  AgentCatalogEntry,
   ApiResponse,
   BrowserTab,
   EventPollResponse,
@@ -345,6 +346,11 @@ class WorkspaceApi {
       lastHeartbeatAt: null,
       joinedAt: null,
     }));
+  }
+
+  /** Fetch the catalog of supported agent client types. */
+  async getAgentCatalog(): Promise<AgentCatalogEntry[]> {
+    return this.request<AgentCatalogEntry[]>('/v1/agent-catalog');
   }
 
   async updateAgentRole(_agentName: string, _role: string): Promise<WorkspaceAgent> {
