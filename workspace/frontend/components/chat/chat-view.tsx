@@ -361,7 +361,7 @@ export function ChatView() {
         )}
 
         {/* Input */}
-        <div className="px-3 lg:px-4 py-2 lg:py-3 border-t">
+        <div className="px-3 lg:px-4 py-2 lg:py-3">
           <div className="max-w-3xl mx-auto w-full">
             <ChatInput
               onSend={handleSend}

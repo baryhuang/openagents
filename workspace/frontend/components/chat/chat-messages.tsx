@@ -73,13 +73,18 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
       }
     }
 
+    // Check if the very last message is a step (agent still working)
+    const lastIsStep = nonEmpty.length > 0 && isStep(nonEmpty[nonEmpty.length - 1]);
+
     // Keep: all non-step messages, all thinking messages (they persist),
-    // and only the last status message from trailing steps
+    // and trailing status only if agent is still actively working
     const trailing = nonEmpty.filter((msg, index) => {
       if (!isStep(msg)) return true;
       // Always keep thinking messages — they provide reasoning context
       if (msg.messageType === 'thinking') return true;
-      return index > lastChatIndex;
+      // Only keep trailing status if agent is still working
+      // (last message is a step, meaning no chat response yet)
+      return lastIsStep && index > lastChatIndex;
     });
     // Find the last status-only message and keep only that one
     let lastStatusIndex = -1;
