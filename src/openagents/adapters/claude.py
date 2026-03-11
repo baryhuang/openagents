@@ -105,17 +105,14 @@ class ClaudeAdapter(BaseAdapter):
         system_prompt = (
             f"\nYou are agent '{self.agent_name}' connected to an "
             f"OpenAgents workspace.\n"
-            f"You MUST use the workspace_send_message MCP tool to "
-            f"communicate your responses.\n"
-            f"Text you generate is NOT visible to anyone unless you "
-            f"call workspace_send_message.\n"
+            f"Your text responses are automatically posted to the "
+            f"workspace chat — just write your answer naturally.\n"
             f"Use workspace_get_history to read previous messages.\n"
             f"Use workspace_get_agents to see other agents.\n"
             f"\n## Multi-Agent Delegation\n"
             f"To delegate work to another agent, @mention them in "
-            f"your message. Example: workspace_send_message(content="
-            f"'@agent-b Please review the tests'). Only @mentioned "
-            f"agents will receive the message.\n"
+            f"your response. Only @mentioned agents will receive "
+            f"the message.\n"
             f"IMPORTANT: Do NOT @mention an agent just to say thanks "
             f"or acknowledge — that wakes them up for nothing. Only "
             f"@mention when you need them to do work. When the task "
@@ -134,7 +131,6 @@ class ClaudeAdapter(BaseAdapter):
         # Mode-dependent permission and tool flags
         _pfx = "mcp__openagents-workspace__"
         mcp_tools = [
-            f"{_pfx}workspace_send_message",
             f"{_pfx}workspace_get_history",
             f"{_pfx}workspace_get_agents",
             f"{_pfx}workspace_status",
@@ -171,8 +167,7 @@ class ClaudeAdapter(BaseAdapter):
             allowed = mcp_tools + ["Read", "Glob", "Grep"]
             system_prompt += (
                 "\nYou are in PLAN mode. Only read, analyze, and propose "
-                "changes. Do not make edits. Share your plan via "
-                "workspace_send_message.\n"
+                "changes. Do not make edits.\n"
             )
         else:
             cmd.append("--dangerously-skip-permissions")
@@ -180,12 +175,9 @@ class ClaudeAdapter(BaseAdapter):
 
         system_prompt += (
             "\nIMPORTANT: Never use AskUserQuestion. "
-            "To ask the user a question, use workspace_send_message. "
-            "AskUserQuestion blocks the subprocess and will hang the thread.\n"
-            "\nIMPORTANT: workspace_send_message MUST be your LAST tool call. "
-            "Do NOT call workspace_status, ExitPlanMode, TodoWrite, or any other "
-            "tool after workspace_send_message — the user sees those as trailing "
-            "actions after your response.\n"
+            "AskUserQuestion blocks the subprocess and will hang the thread. "
+            "If you need to ask the user something, just write the question "
+            "as your text response.\n"
         )
 
         cmd.extend(["--append-system-prompt", system_prompt])
@@ -377,22 +369,24 @@ class ClaudeAdapter(BaseAdapter):
 
                                 # Post as "thinking" so users see
                                 # intermediate reasoning in real-time.
-                                # Skip if this turn also has tool_use
-                                # (it's a plan, not the final answer)
-                                # — but still post it as thinking.
-                                thinking = text.strip()
-                                if len(thinking) > 500:
-                                    thinking = thinking[:500] + "..."
-                                await self.client.send_message(
-                                    workspace_id=self.workspace_id,
-                                    channel_name=msg_channel,
-                                    token=self.token,
-                                    content=thinking,
-                                    sender_type="agent",
-                                    sender_name=self.agent_name,
-                                    message_type="thinking",
-                                    metadata={"agent_mode": self._mode},
-                                )
+                                # Only post if this turn also has tool
+                                # calls — a text-only turn is the final
+                                # answer, which will be posted as "chat"
+                                # when the process exits.
+                                if turn_has_tool:
+                                    thinking = text.strip()
+                                    if len(thinking) > 500:
+                                        thinking = thinking[:500] + "..."
+                                    await self.client.send_message(
+                                        workspace_id=self.workspace_id,
+                                        channel_name=msg_channel,
+                                        token=self.token,
+                                        content=thinking,
+                                        sender_type="agent",
+                                        sender_name=self.agent_name,
+                                        message_type="thinking",
+                                        metadata={"agent_mode": self._mode},
+                                    )
                         elif block_type == "tool_use":
                             has_tool_use_since_last_text = True
                             tool_name = block.get("name", "")
