@@ -62,7 +62,28 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
   // Filter: skip empty status messages; when toggle is off, only show status messages after the last chat message
   const filteredMessages = useMemo(() => {
     const isStep = (msg: WorkspaceMessage) => msg.messageType === 'status' || msg.messageType === 'thinking';
-    const nonEmpty = messages.filter((msg) => !isStep(msg) || msg.content.trim());
+
+    // Deduplicate: if a chat message follows thinking from the same agent
+    // with matching content, hide the thinking (it was the final answer
+    // streamed early as "thinking" before being posted as "chat").
+    const deduped = messages.filter((msg, i) => {
+      if (msg.messageType !== 'thinking') return true;
+      // Look ahead for a chat message from the same agent
+      for (let j = i + 1; j < messages.length; j++) {
+        const next = messages[j];
+        if (next.senderName !== msg.senderName) continue;
+        if (next.messageType === 'status' || next.messageType === 'thinking') continue;
+        // Found a chat message from the same agent — check content overlap.
+        // Thinking is truncated to 500 chars + "...", so check if chat
+        // starts with the thinking text (minus trailing "...").
+        const thinkText = msg.content.replace(/\.\.\.$/,'').trim();
+        if (thinkText && next.content.startsWith(thinkText)) return false;
+        break;
+      }
+      return true;
+    });
+
+    const nonEmpty = deduped.filter((msg) => !isStep(msg) || msg.content.trim());
     if (showAllSteps) return nonEmpty;
 
     let lastChatIndex = -1;
