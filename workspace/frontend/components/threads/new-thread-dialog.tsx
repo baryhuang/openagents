@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Crown, History } from 'lucide-react';
+import { History, Check, Star } from 'lucide-react';
 import type { WorkspaceAgent, WorkspaceSession } from '@/lib/types';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 
@@ -32,8 +32,8 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
-      setSelected(new Set(agentNames));
-      setMaster(defaultMaster);
+      setSelected(new Set());
+      setMaster('');
       setResumeFrom('');
     }
   }, [open]);
@@ -42,11 +42,20 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(name)) {
-        // Can't deselect the master
-        if (name === master) return prev;
-        next.delete(name);
+        if (name === master) {
+          // Deselecting the lead — pick another selected agent as lead, or clear
+          next.delete(name);
+          const remaining = Array.from(next);
+          setMaster(remaining.length > 0 ? remaining[0] : '');
+        } else {
+          next.delete(name);
+        }
       } else {
         next.add(name);
+        // First agent selected becomes the lead automatically
+        if (next.size === 1 || !master) {
+          setMaster(name);
+        }
       }
       return next;
     });
@@ -79,15 +88,20 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
     (a) => selected.has(a.agentName) && /claude/i.test(a.agentName)
   );
 
+  const multipleAgents = agents.length > 1;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogTitle>New Thread</DialogTitle>
         <DialogDescription className="text-sm text-muted-foreground">
-          Select agents to include and choose a master agent.
+          {multipleAgents
+            ? 'Pick which agents join this conversation.'
+            : 'Start a new conversation with your agent.'}
         </DialogDescription>
 
-        <div className="mt-3 space-y-1">
+        {/* Agent list */}
+        <div className="mt-3 space-y-1.5">
           {agents.map((agent) => {
             const color = getAgentColor(agent.agentName, agentNames);
             const isSelected = selected.has(agent.agentName);
@@ -98,16 +112,26 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
               <div
                 key={agent.agentName}
                 className={cn(
-                  'flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors',
+                  'flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all border',
                   isSelected
-                    ? 'bg-zinc-100 dark:bg-zinc-800'
-                    : 'opacity-50 hover:opacity-75'
+                    ? 'bg-zinc-50 dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700'
+                    : 'border-transparent opacity-50 hover:opacity-75 hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
                 )}
                 onClick={() => toggleAgent(agent.agentName)}
               >
+                {/* Checkbox */}
+                <div className={cn(
+                  'size-4 rounded shrink-0 flex items-center justify-center border transition-colors',
+                  isSelected
+                    ? 'bg-blue-500 border-blue-500 text-white'
+                    : 'border-zinc-300 dark:border-zinc-600'
+                )}>
+                  {isSelected && <Check className="size-3" strokeWidth={3} />}
+                </div>
+
                 {/* Avatar */}
                 <div className={cn(
-                  'size-8 rounded-lg shrink-0 flex items-center justify-center text-white text-xs font-bold',
+                  'size-7 rounded-md shrink-0 flex items-center justify-center text-white text-[11px] font-bold',
                   color.initials
                 )}>
                   {getAgentInitials(agent.agentName)}
@@ -118,24 +142,24 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-medium truncate">{agent.agentName}</span>
                     {!isOnline && (
-                      <span className="text-[10px] text-muted-foreground">offline</span>
+                      <span className="text-[10px] text-muted-foreground/60">offline</span>
                     )}
                   </div>
                 </div>
 
-                {/* Master badge / set-as-master button */}
-                {isSelected && (
+                {/* Lead badge / set-as-lead button — only show when multiple agents */}
+                {multipleAgents && isSelected && (
                   isMaster ? (
-                    <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-semibold shrink-0">
-                      <Crown className="size-3" />
-                      master
+                    <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-medium shrink-0">
+                      <Star className="size-3 fill-current" />
+                      lead
                     </span>
                   ) : (
                     <button
                       onClick={(e) => { e.stopPropagation(); setAsMaster(agent.agentName); }}
-                      className="text-[10px] px-1.5 py-0.5 rounded text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
+                      className="text-[11px] px-2 py-0.5 rounded-full text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
                     >
-                      set master
+                      set lead
                     </button>
                   )
                 )}
@@ -143,6 +167,13 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
             );
           })}
         </div>
+
+        {/* Lead explanation — only when multiple agents are selected */}
+        {multipleAgents && selected.size > 1 && (
+          <p className="text-[11px] text-muted-foreground/70 mt-2 px-1">
+            The <Star className="size-2.5 inline fill-amber-500 text-amber-500 -mt-px" /> lead agent coordinates the others and responds to your messages first.
+          </p>
+        )}
 
         {/* Resume from past session — show when there are resumable sessions */}
         {hasClaudeAgent && resumableSessions.length > 0 && (
@@ -171,7 +202,7 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
             Cancel
           </Button>
           <Button size="sm" onClick={handleCreate} disabled={selected.size === 0}>
-            {resumeFrom ? 'Resume Thread' : 'Create Thread'}
+            {resumeFrom ? 'Resume Thread' : 'Start Thread'}
           </Button>
         </div>
       </DialogContent>

@@ -182,6 +182,10 @@ class ClaudeAdapter(BaseAdapter):
             "\nIMPORTANT: Never use AskUserQuestion. "
             "To ask the user a question, use workspace_send_message. "
             "AskUserQuestion blocks the subprocess and will hang the thread.\n"
+            "\nIMPORTANT: workspace_send_message MUST be your LAST tool call. "
+            "Do NOT call workspace_status, ExitPlanMode, TodoWrite, or any other "
+            "tool after workspace_send_message — the user sees those as trailing "
+            "actions after your response.\n"
         )
 
         cmd.extend(["--append-system-prompt", system_prompt])

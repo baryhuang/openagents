@@ -21,6 +21,7 @@ from typing import Optional
 import typer
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
 from rich import box
 
 # -- Shared state (re-export for backward compatibility) ----------------------

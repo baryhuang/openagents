@@ -133,7 +133,11 @@ class ClaudePlugin(AgentPlugin):
         binary = shutil.which("claude")
         if not binary:
             return None
-        return [binary, "--name", agent_name]
+        return [
+            binary,
+            "--append-system-prompt",
+            f"Your agent name is '{agent_name}'.",
+        ]
 
     def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
         from openagents.adapters.claude import ClaudeAdapter
