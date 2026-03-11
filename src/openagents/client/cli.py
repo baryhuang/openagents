@@ -168,6 +168,12 @@ def init_workspace_cmd(
             raise typer.Exit(1)
 
 
+@app.command("list")
+def list_agents_cmd():
+    """List locally installed agents and their setup status"""
+    _show_agent_scan()
+
+
 # =============================================================================
 # Callbacks
 # =============================================================================
@@ -234,10 +240,6 @@ def main(
     # Show banner for studio command
     if not no_banner and len(sys.argv) > 1 and sys.argv[1] == 'studio':
         show_banner()
-
-    # No subcommand -> scan machine and show agent status
-    if ctx.invoked_subcommand is None:
-        _show_agent_scan()
 
 
 def _show_agent_scan():

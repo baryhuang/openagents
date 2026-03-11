@@ -379,9 +379,10 @@ class ClaudeAdapter(BaseAdapter):
                             tool_name = block.get("name", "")
                             if "workspace_send_message" in tool_name:
                                 used_send_tool = True
-                            elif not used_send_tool:
-                                # Stream intermediate tool use as status
-                                # (skip after final response to avoid stray actions)
+                            else:
+                                # Always stream tool use as status so users
+                                # can follow progress even after the agent
+                                # posted its initial plan message.
                                 tool_input = str(block.get("input", ""))[:200]
                                 await self._send_status(
                                     msg_channel,
@@ -400,8 +401,8 @@ class ClaudeAdapter(BaseAdapter):
                     subtype = event.get("subtype", "")
                     message = event.get("message", "")
                     logger.debug(f"CLI system event: subtype={subtype} session={event.get('session_id')} message={str(message)[:200]}")
-                    # Surface compaction events (skip after final response)
-                    if not used_send_tool and (
+                    # Surface compaction events
+                    if (
                         subtype in ("compact", "auto_compact", "context_pruning") or
                         "compact" in str(message).lower() or "compact" in subtype.lower()
                     ):

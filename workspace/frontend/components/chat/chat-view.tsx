@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { ChatMessages } from './chat-messages';
 import { ChatInput, type PendingFile } from './chat-input';
 import { EmptyState } from './empty-state';
@@ -25,6 +25,9 @@ export function ChatView() {
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // Optimistic message state for instant feedback
+  const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
+
   // Per-thread message drafts
   const draftsRef = useRef<Record<string, string>>({});
   const [currentDraft, setCurrentDraft] = useState('');
@@ -39,7 +42,16 @@ export function ChatView() {
     // Restore draft for new session
     setCurrentDraft(currentSessionId ? (draftsRef.current[currentSessionId] ?? '') : '');
     prevSessionIdRef.current = currentSessionId;
+    // Clear optimistic messages when switching sessions
+    setOptimisticMessages([]);
   }, [currentSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear optimistic messages once real messages arrive
+  useEffect(() => {
+    if (messages.length > 0 && optimisticMessages.length > 0) {
+      setOptimisticMessages([]);
+    }
+  }, [messages.length, optimisticMessages.length]);
 
   const handleDraftChange = useCallback((draft: string) => {
     setCurrentDraft(draft);
@@ -50,6 +62,9 @@ export function ChatView() {
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   const agentNames = agents.map((a) => a.agentName);
+
+  // Merge real messages with optimistic messages for display
+  const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
 
   const startEditingTitle = () => {
     setTitleDraft(currentSession?.title || '');
@@ -68,14 +83,14 @@ export function ChatView() {
   // Update last message cache for thread list preview
   useEffect(() => {
     if (!currentSessionId) return;
-    const lastMsg = messages[messages.length - 1];
+    const lastMsg = displayMessages[displayMessages.length - 1];
     if (lastMsg) {
       const isWorking = lastMsg.messageType === 'status' || lastMsg.messageType === 'thinking';
       updateLastMessage(currentSessionId, lastMsg.senderName, lastMsg.content, isWorking);
     } else {
       updateLastMessage(currentSessionId, '', '');
     }
-  }, [currentSessionId, messages, updateLastMessage]);
+  }, [currentSessionId, displayMessages, updateLastMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track whether the agent is actively working in this session
   const prevActiveSessionRef = useRef<string | null>(null);
@@ -86,29 +101,57 @@ export function ChatView() {
     }
     prevActiveSessionRef.current = currentSessionId;
 
-    if (!currentSessionId || messages.length === 0) {
+    if (!currentSessionId || displayMessages.length === 0) {
       if (currentSessionId) setSessionActive(currentSessionId, false);
       return;
     }
-    const lastMsg = messages[messages.length - 1];
+    const lastMsg = displayMessages[displayMessages.length - 1];
     const isAgentWorking = lastMsg.senderType === 'agent' && (lastMsg.messageType === 'status' || lastMsg.messageType === 'thinking');
     setSessionActive(currentSessionId, isAgentWorking);
-  }, [currentSessionId, messages, setSessionActive]);
+  }, [currentSessionId, displayMessages, setSessionActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Extract agent mode from status message metadata
   useEffect(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg: WorkspaceMessage = messages[i];
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const msg: WorkspaceMessage = displayMessages[i];
       if (msg.senderType === 'agent' && msg.metadata?.agent_mode) {
         updateAgentMode(msg.senderName, msg.metadata.agent_mode as string);
         break;
       }
     }
-  }, [messages, updateAgentMode]);
+  }, [displayMessages, updateAgentMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = useCallback(
     async (content: string, mentions: string[] = [], files: PendingFile[] = []) => {
       if (!currentSessionId) return;
+
+      // Create optimistic messages for instant feedback
+      const timestamp = Date.now();
+      const userOptimisticMsg: WorkspaceMessage = {
+        messageId: `optimistic-user-${timestamp}`,
+        sessionId: currentSessionId,
+        senderName: 'You',
+        senderType: 'user',
+        content: content || (files.length > 0 ? files.map((f) => f.file.name).join(', ') : ''),
+        messageType: 'chat',
+        timestamp: new Date().toISOString(),
+        metadata: {},
+      };
+
+      const loadingOptimisticMsg: WorkspaceMessage = {
+        messageId: `optimistic-loading-${timestamp}`,
+        sessionId: currentSessionId,
+        senderName: agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || 'Agent',
+        senderType: 'agent',
+        content: 'thinking...',
+        messageType: 'thinking',
+        timestamp: new Date().toISOString(),
+        metadata: {},
+      };
+
+      // Add optimistic messages immediately
+      setOptimisticMessages([userOptimisticMsg, loadingOptimisticMsg]);
+
       try {
         // Upload files first, then send message with attachment metadata
         let attachments: { fileId: string; filename: string; contentType: string; url: string }[] | undefined;
@@ -134,12 +177,14 @@ export function ChatView() {
         forceRefresh();
       } catch {
         // Error is visible via missing message
+        // Remove optimistic messages on error
+        setOptimisticMessages([]);
       }
     },
-    [currentSessionId, forceRefresh]
+    [currentSessionId, forceRefresh, agents]
   );
 
-  const hasStatusMessages = messages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
+  const hasStatusMessages = displayMessages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
 
   if (!currentSessionId) {
     return (
@@ -349,11 +394,11 @@ export function ChatView() {
           <div className="flex items-center justify-center flex-1">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : displayMessages.length === 0 ? (
           <EmptyState />
         ) : (
           <ChatMessages
-            messages={messages}
+            messages={displayMessages}
             agents={agents}
             showAllSteps={showAllSteps}
             className="flex-1 overflow-y-auto px-3 lg:px-5 py-3"
