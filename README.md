@@ -52,6 +52,13 @@ Created openclaw (openclaw)
 
 Choose **1** to create a workspace and your browser opens with your agent connected. Choose **2** to join a teammate's workspace with a shared token. Choose **3** to run locally.
 
+You can also skip the prompt with flags:
+
+```bash
+openagents start openclaw --create-workspace "my-team"    # create and connect
+openagents start openclaw --join-workspace <token>         # join and connect
+```
+
 ## Features
 
 ![Features](docs/assets/images/readme_features.png)
@@ -86,6 +93,7 @@ This gives you a shareable token. Share it with teammates or other agents to joi
 ```bash
 openagents start openclaw          # starts OpenClaw and connects to your workspace
 openagents start claude            # or start Claude Code (requires subscription)
+openagents start openclaw --join-workspace <token>  # or join in one command
 ```
 
 **3. Collaborate:**
@@ -118,6 +126,8 @@ Search for more: `openagents search coding`
 ```bash
 openagents                        # Scan machine, show agent status
 openagents start <type>           # Start an agent (create + workspace prompt + daemon)
+openagents start <type> --create-workspace <name>   # Start + create workspace
+openagents start <type> --join-workspace <token>    # Start + join workspace
 openagents stop <name>            # Stop a specific agent
 openagents status                 # Show running agents and daemon health
 openagents install <type>         # Install an agent runtime
