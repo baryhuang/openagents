@@ -237,6 +237,11 @@ def main(
     """
     setup_logging(log_level, verbose)
 
+    # If no subcommand was provided, show help
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit(0)
+
     # Show banner for studio command
     if not no_banner and len(sys.argv) > 1 and sys.argv[1] == 'studio':
         show_banner()
