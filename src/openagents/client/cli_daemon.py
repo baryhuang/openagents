@@ -263,6 +263,12 @@ def daemon_start_agent(
     role: str = typer.Option(
         "worker", "--role", "-r", help="Agent role (master/worker)",
     ),
+    create_workspace: Optional[str] = typer.Option(
+        None, "--create-workspace", help="Create a workspace with the given name and connect the agent",
+    ),
+    join_workspace: Optional[str] = typer.Option(
+        None, "--join-workspace", help="Join an existing workspace using a token and connect the agent",
+    ),
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Don't open browser after workspace setup",
     ),
@@ -335,10 +341,87 @@ def daemon_start_agent(
     if path:
         console.print(f"    Working dir: {path}")
 
-    # Check if there's already a workspace configured
+    # Determine workspace setup mode:
+    # --create-workspace or --join-workspace flags skip the interactive prompt
     cfg = load_config()
-    if cfg.networks:
-        # Auto-connect to first workspace
+
+    if create_workspace and join_workspace:
+        console.print("[red]Cannot use --create-workspace and --join-workspace together.[/red]")
+        raise typer.Exit(1)
+
+    if create_workspace:
+        # Flag mode: create workspace non-interactively
+        add_agent_to_config(agent_entry)
+        net_entry = _resolve_or_create_network(
+            join_id=None, token=None,
+            endpoint="https://workspace-endpoint.openagents.org",
+            agent_name=name, agent_type=agent_type,
+            workspace_name=create_workspace,
+        )
+        if net_entry:
+            from openagents.client.daemon_config import (
+                add_network_to_config, connect_agent_to_network,
+            )
+            add_network_to_config(net_entry)
+            connect_agent_to_network(name, net_entry.slug or net_entry.id)
+            if not no_browser:
+                frontend_url = "https://workspace-endpoint.openagents.org".replace(
+                    "workspace-endpoint", "workspace"
+                )
+                ws_url = f"{frontend_url}/{net_entry.slug}?token={net_entry.token}"
+                try:
+                    webbrowser.open(ws_url)
+                except Exception:
+                    pass
+
+    elif join_workspace:
+        # Flag mode: join workspace non-interactively
+        add_agent_to_config(agent_entry)
+        import asyncio
+        from openagents.client.workspace_client import WorkspaceClient
+        from openagents.client.daemon_config import (
+            NetworkEntry, add_network_to_config, connect_agent_to_network,
+        )
+        client = WorkspaceClient(endpoint="https://workspace-endpoint.openagents.org")
+        try:
+            info = asyncio.run(client.resolve_token(join_workspace.strip()))
+            ws_id = info["workspace_id"]
+            slug = info.get("slug", ws_id)
+            ws_name = info.get("name", slug)
+
+            asyncio.run(client.join_network(
+                agent_name=name,
+                network=None,
+                token=join_workspace.strip(),
+                agent_type=agent_type,
+                server_host=socket.gethostname(),
+                working_dir=os.getcwd(),
+            ))
+
+            net_entry = NetworkEntry(
+                id=ws_id, slug=slug, name=ws_name,
+                token=join_workspace.strip(),
+                endpoint="https://workspace-endpoint.openagents.org",
+            )
+            add_network_to_config(net_entry)
+            connect_agent_to_network(name, slug or ws_id)
+            console.print(
+                f"  [green]Joined workspace:[/green] [bold]{ws_name}[/bold]"
+            )
+            if not no_browser:
+                frontend_url = "https://workspace-endpoint.openagents.org".replace(
+                    "workspace-endpoint", "workspace"
+                )
+                ws_url = f"{frontend_url}/{slug}?token={join_workspace.strip()}"
+                try:
+                    webbrowser.open(ws_url)
+                except Exception:
+                    pass
+        except Exception as e:
+            console.print(f"  [red]Failed to join: {e}[/red]")
+
+    elif cfg.networks:
+        # Auto-connect to first workspace already in config
         net = cfg.networks[0]
         agent_entry.network = net.slug or net.id
         add_agent_to_config(agent_entry)
@@ -346,7 +429,7 @@ def daemon_start_agent(
             f"  Connected to workspace: [bold]{net.name or net.slug}[/bold]"
         )
     else:
-        # No workspace — prompt user
+        # No workspace and no flags — interactive prompt
         add_agent_to_config(agent_entry)
         console.print()
         choice = Prompt.ask(
@@ -374,9 +457,7 @@ def daemon_start_agent(
                 )
                 add_network_to_config(net_entry)
                 connect_agent_to_network(name, net_entry.slug or net_entry.id)
-                # Open browser
                 if not no_browser:
-                    import webbrowser
                     frontend_url = "https://workspace-endpoint.openagents.org".replace(
                         "workspace-endpoint", "workspace"
                     )
@@ -402,7 +483,6 @@ def daemon_start_agent(
                     slug = info.get("slug", ws_id)
                     ws_name = info.get("name", slug)
 
-                    # Join the workspace
                     asyncio.run(client.join_network(
                         agent_name=name,
                         network=None,
@@ -422,9 +502,7 @@ def daemon_start_agent(
                     console.print(
                         f"  [green]Joined workspace:[/green] [bold]{ws_name}[/bold]"
                     )
-                    # Open browser
                     if not no_browser:
-                        import webbrowser
                         frontend_url = "https://workspace-endpoint.openagents.org".replace(
                             "workspace-endpoint", "workspace"
                         )
