@@ -45,14 +45,26 @@ class OpenClawAdapter(BaseAdapter):
     ):
         super().__init__(workspace_id, channel_name, token, agent_name, endpoint)
 
-        # OpenClaw connection
+        # Check for direct LLM API mode (bypasses OpenClaw gateway)
+        import os
+        self._direct_api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
+        self._direct_base_url = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
+        self._direct_model = os.environ.get("OPENCLAW_MODEL", "")
+        self._direct_mode = bool(self._direct_api_key and self._direct_base_url)
+
+        if self._direct_mode:
+            self.openclaw_url = f"{self._direct_base_url}/chat/completions"
+            logger.info(f"Direct LLM mode: {self._direct_base_url} model={self._direct_model or 'default'}")
+        else:
+            # OpenClaw gateway connection
+            self.openclaw_url = (
+                f"http://{openclaw_host}:{openclaw_port}/v1/chat/completions"
+            )
+
         self.openclaw_host = openclaw_host
         self.openclaw_port = openclaw_port
         self.openclaw_token = openclaw_token
         self.openclaw_agent_id = openclaw_agent_id
-        self.openclaw_url = (
-            f"http://{openclaw_host}:{openclaw_port}/v1/chat/completions"
-        )
 
         # Conversation history for multi-turn context
         self._conversation_history: list[dict] = []
@@ -175,14 +187,20 @@ class OpenClawAdapter(BaseAdapter):
             await self._send_error(msg_channel, f"Error processing message: {e}")
 
     async def _stream_completion(self, messages: list[dict]) -> str:
-        """Call OpenClaw /v1/chat/completions with streaming and return response."""
+        """Call LLM API (direct or via OpenClaw gateway) with streaming."""
         headers = {"Content-Type": "application/json"}
-        if self.openclaw_token:
-            headers["Authorization"] = f"Bearer {self.openclaw_token}"
-        headers["x-openclaw-agent-id"] = self.openclaw_agent_id
+
+        if self._direct_mode:
+            headers["Authorization"] = f"Bearer {self._direct_api_key}"
+            model = self._direct_model or "gpt-4o"
+        else:
+            if self.openclaw_token:
+                headers["Authorization"] = f"Bearer {self.openclaw_token}"
+            headers["x-openclaw-agent-id"] = self.openclaw_agent_id
+            model = f"openclaw:{self.openclaw_agent_id}"
 
         payload = {
-            "model": f"openclaw:{self.openclaw_agent_id}",
+            "model": model,
             "messages": messages,
             "stream": True,
             "user": f"openagents-ws-{self.workspace_id}",
