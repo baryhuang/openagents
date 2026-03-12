@@ -938,6 +938,8 @@ class OpenAgentsTUI(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        from openagents import __version__
+        self.title = f"OpenAgents v{__version__}"
         table = self.query_one("#agent-table", DataTable)
         table.cursor_type = "row"
         table.add_columns("Name", "Type", "Status", "Workspace")
