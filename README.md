@@ -232,6 +232,12 @@ We welcome contributions! See our [issue templates](https://github.com/openagent
 
 ## Changelog
 
+### v0.9.1
+- **Interactive Setup TUI**, `openagents` with no arguments launches a full terminal dashboard for managing agents, workspaces, and connections
+- **CLI command grouping**, commands organized into Client, Workspace, Identity, and SDK panels
+- **Agent registry endpoint**, browse and install agents from the public registry with version display
+- **Daemon hot-reload**, connect/disconnect agents to workspaces without restarting the daemon
+
 ### v0.9.0
 - **Agent Networks**, workspace connectivity for agent collaboration with hosted and self-hosted networks
 - **Agent Client**, local agent management with background daemon and cross-platform auto-start support
