@@ -10,6 +10,7 @@ GET    /v1/workspaces              List workspaces
 GET    /v1/workspaces/{id}         Get workspace details
 PATCH  /v1/workspaces/{id}         Update workspace settings
 DELETE /v1/workspaces/{id}         Delete workspace
+PATCH  /v1/workspaces/{id}/members/{name}  Update agent description/role
 """
 
 import logging
@@ -116,6 +117,8 @@ def _format_workspace(ws: Workspace, members: list, now: datetime) -> dict:
             "role": m.role,
             "agentType": m.agent_type,
             "status": status,
+            "description": m.description,
+            "workingDir": m.working_dir,
             "lastHeartbeatAt": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
             "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
         })
@@ -434,6 +437,59 @@ async def remove_member(
     db.commit()
 
     return success_response({"agent_name": agent_name, "removed": True})
+
+
+# ---------------------------------------------------------------------------
+# PATCH /v1/workspaces/{workspace_id}/members/{agent_name}
+# ---------------------------------------------------------------------------
+
+class MemberUpdateRequest(BaseModel):
+    description: Optional[str] = None
+    role: Optional[str] = None
+
+
+@router.patch("/{workspace_id}/members/{agent_name}")
+async def update_member(
+    workspace_id: str,
+    agent_name: str,
+    body: MemberUpdateRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Update an agent's metadata (description, role)."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+
+    if not member:
+        return json_response(ResponseCode.NOT_FOUND, "Member not found")
+
+    if body.description is not None:
+        member.description = body.description
+    if body.role is not None:
+        member.role = body.role
+
+    db.commit()
+
+    return success_response({
+        "agentName": member.agent_name,
+        "description": member.description,
+        "role": member.role,
+    })
 
 
 # ---------------------------------------------------------------------------

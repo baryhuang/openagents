@@ -362,9 +362,14 @@ def create_mcp_server(
                     return [types.TextContent(type="text", text="No agents in workspace.")]
                 lines = []
                 for a in agents:
-                    lines.append(
-                        f"- {a['agentName']} (role: {a['role']}, status: {a['status']})"
-                    )
+                    parts = [f"- {a['agentName']} (type: {a.get('agentType', '?')}, role: {a['role']}, status: {a['status']})"]
+                    desc = a.get("description")
+                    if desc:
+                        parts.append(f"  Description: {desc}")
+                    wd = a.get("workingDir")
+                    if wd:
+                        parts.append(f"  Working dir: {wd}")
+                    lines.append("\n".join(parts))
                 return [types.TextContent(type="text", text="\n".join(lines))]
 
             elif name == "workspace_status":

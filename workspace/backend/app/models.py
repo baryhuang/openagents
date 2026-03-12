@@ -102,6 +102,7 @@ class WorkspaceMember(Base):
     agent_type = Column(Text, nullable=True)          # "claude", "openclaw", etc.
     server_host = Column(Text, nullable=True)          # hostname/IP where agent runs
     working_dir = Column(Text, nullable=True)          # working directory on the server
+    description = Column(Text, nullable=True)           # user-provided description of agent's role/capabilities
     status = Column(Text, default="offline")         # online | offline
     last_heartbeat = Column(DateTime(timezone=True), nullable=True)
     joined_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))

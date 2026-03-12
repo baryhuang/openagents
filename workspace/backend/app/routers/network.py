@@ -349,6 +349,7 @@ async def discover(
             "agent_type": m.agent_type,
             "server_host": m.server_host,
             "working_dir": m.working_dir,
+            "description": m.description,
         })
 
     channels_rows = db.execute(

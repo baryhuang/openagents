@@ -96,6 +96,13 @@ class WorkspaceApi {
     });
   }
 
+  async updateMember(agentName: string, updates: { description?: string; role?: string }): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
   async updateChannel(channelName: string, updates: { title?: string; status?: string; starred?: boolean }): Promise<unknown> {
     return this.request(`/v1/workspaces/${this.workspaceId}/channels/${channelName}`, {
       method: 'PATCH',
@@ -342,6 +349,7 @@ class WorkspaceApi {
       agentType: a.agent_type || null,
       serverHost: a.server_host || null,
       workingDir: a.working_dir || null,
+      description: a.description || null,
       status: a.status,
       lastHeartbeatAt: null,
       joinedAt: null,

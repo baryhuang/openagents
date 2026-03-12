@@ -16,6 +16,7 @@ export interface WorkspaceAgent {
   agentType: string | null;
   serverHost: string | null;
   workingDir: string | null;
+  description: string | null;
   status: string;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
@@ -130,6 +131,7 @@ export interface NetworkAgent {
   agent_type: string | null;
   server_host: string | null;
   working_dir: string | null;
+  description: string | null;
 }
 
 export interface NetworkChannel {
@@ -224,6 +226,7 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
     agentType: agent.agent_type || null,
     serverHost: agent.server_host || null,
     workingDir: agent.working_dir || null,
+    description: agent.description || null,
     status: agent.status,
     lastHeartbeatAt: null,
     joinedAt: null,
