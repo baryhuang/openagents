@@ -153,7 +153,7 @@ if $PYTHON -c "import openagents" 2>/dev/null; then
 fi
 
 # Determine pip flags
-PIP_FLAGS="--quiet"
+PIP_FLAGS="--quiet --no-cache-dir"
 if [ -z "${VIRTUAL_ENV:-}" ]; then
     # Not in a venv — use --user to avoid permission issues
     PIP_FLAGS="$PIP_FLAGS --user"
@@ -164,7 +164,7 @@ if $PIP install $PIP_FLAGS --upgrade openagents 2>/dev/null; then
     installed=true
 elif $PIP install $PIP_FLAGS --upgrade --break-system-packages openagents 2>/dev/null; then
     installed=true
-elif $PYTHON -m pip install --quiet --upgrade openagents 2>/dev/null; then
+elif $PYTHON -m pip install --quiet --no-cache-dir --upgrade openagents 2>/dev/null; then
     installed=true
 fi
 
