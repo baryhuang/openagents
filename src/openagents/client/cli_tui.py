@@ -195,6 +195,9 @@ class InstallAgentScreen(Screen[dict | None]):
         self.query_one("#install-status", Static).update(f" {msg}")
         self.query_one("#install-spinner", LoadingIndicator).display = True
 
+    def _update_progress(self, msg: str) -> None:
+        self.query_one("#install-status", Static).update(f" {msg}")
+
     def _hide_progress(self, msg: str = "") -> None:
         self.query_one("#install-status", Static).update(f" {msg}" if msg else "")
         self.query_one("#install-spinner", LoadingIndicator).display = False
@@ -211,6 +214,7 @@ class InstallAgentScreen(Screen[dict | None]):
 
     @work(thread=True)
     def _do_install_inline(self, item: dict) -> None:
+        import platform as _platform
         from openagents.client.plugin_registry import registry
 
         catalog = registry.get_catalog()
@@ -220,17 +224,37 @@ class InstallAgentScreen(Screen[dict | None]):
             self._installing = False
             return
 
+        is_windows = _platform.system() == "Windows"
+        os_name = _platform.system()
+
+        # Auto-install dependencies (nodejs, git, etc.)
+        for dep in info.requires:
+            if not self._ensure_dep(dep, is_windows, os_name, item["name"]):
+                self._installing = False
+                return
+
         cmd = info.install_command
+
+        # Refresh PATH one more time before running (deps may have added new paths)
+        if is_windows:
+            from openagents.client.cli_packages import _refresh_path_windows
+            _refresh_path_windows()
+
+        self.app.call_from_thread(self._update_progress, f"Running: {cmd}")
+
+        # Use npm.cmd on Windows for npm commands
+        if is_windows and cmd.startswith("npm "):
+            cmd = "npm.cmd " + cmd[4:]
+
         try:
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=300,
+                cmd, shell=True, capture_output=True, text=True, timeout=600,
             )
             if result.returncode == 0:
                 self.app.call_from_thread(
                     self._hide_progress,
                     f"[green]✓ Installed {item['name']}[/green]  —  Press [bold]n[/bold] on the main screen to create an agent",
                 )
-                # Dismiss after a moment with result so main screen knows
                 self.app.call_from_thread(self._finish_install, item)
             else:
                 err = result.stderr.strip()[:200] if result.stderr else "unknown error"
@@ -239,6 +263,45 @@ class InstallAgentScreen(Screen[dict | None]):
         except Exception as e:
             self.app.call_from_thread(self._hide_progress, f"[red]✗ Install error:[/red] {e}")
             self._installing = False
+
+    def _ensure_dep(self, dep: str, is_windows: bool, os_name: str, agent_name: str) -> bool:
+        """Check and auto-install a dependency. Returns True on success."""
+        import shutil
+        from openagents.client.cli_packages import (
+            _install_nodejs, _install_git, _refresh_path_windows,
+        )
+
+        dep_map = {
+            "nodejs": ("npm", "Node.js", _install_nodejs),
+            "git": ("git", "Git", _install_git),
+        }
+        check_bin, label, installer = dep_map.get(dep, (dep, dep, None))
+
+        if shutil.which(check_bin):
+            return True
+
+        self.app.call_from_thread(self._update_progress, f"Installing {label}...")
+
+        if installer is None:
+            self.app.call_from_thread(self._hide_progress, f"[red]✗ Missing dependency: {dep}[/red]")
+            return False
+
+        if not installer(is_windows, os_name):
+            self.app.call_from_thread(self._hide_progress, f"[red]✗ Could not install {label}[/red]")
+            return False
+
+        if is_windows:
+            _refresh_path_windows()
+
+        if not shutil.which(check_bin):
+            self.app.call_from_thread(
+                self._hide_progress,
+                f"[yellow]{label} installed but not on PATH. Restart terminal and retry.[/yellow]",
+            )
+            return False
+
+        self.app.call_from_thread(self._update_progress, f"{label} installed")
+        return True
 
     def _finish_install(self, item: dict) -> None:
         self._installing = False
@@ -413,6 +476,37 @@ class TokenInputScreen(ModalScreen[str | None]):
         self.dismiss(event.value.strip() or None)
 
     def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class WorkspaceUrlScreen(ModalScreen[None]):
+    """Modal showing the workspace URL for the user to copy."""
+
+    CSS = """
+    #modal-dialog {
+        width: 95%;
+        height: auto;
+        max-height: 10;
+    }
+    """
+
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("enter", "close", "Close")]
+
+    def __init__(self, url: str, opened: bool = False) -> None:
+        super().__init__()
+        self._url = url
+        self._opened = opened
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Label("[bold]Workspace URL[/bold]", id="modal-title")
+            yield Static(self._url)
+            if self._opened:
+                yield Label("[dim]Opened in browser. Press Escape to close.[/dim]")
+            else:
+                yield Label("[dim]Select and copy the URL. Press Escape to close.[/dim]")
+
+    def action_close(self) -> None:
         self.dismiss(None)
 
 
@@ -711,8 +805,8 @@ class OpenAgentsTUI(App):
         Binding("c", "connect_agent", "Connect"),
         Binding("d", "disconnect_agent", "Disconnect"),
         Binding("delete", "remove_agent", "Remove"),
-        Binding("u", "daemon_up", "Daemon Up"),
-        Binding("D", "daemon_down", "Daemon Down"),
+        Binding("w", "open_workspace", "Open Workspace"),
+        Binding("u", "daemon_toggle", "Daemon"),
         Binding("r", "refresh", "Refresh"),
         Binding("q", "quit", "Quit"),
     ]
@@ -728,6 +822,7 @@ class OpenAgentsTUI(App):
         contextual = {
             "new_agent", "configure_agent", "start_agent", "stop_agent",
             "connect_agent", "disconnect_agent", "remove_agent",
+            "open_workspace",
         }
         if action not in contextual:
             return True
@@ -757,6 +852,8 @@ class OpenAgentsTUI(App):
         if action == "connect_agent":
             return not has_workspace
         if action == "disconnect_agent":
+            return has_workspace
+        if action == "open_workspace":
             return has_workspace
         if action == "remove_agent":
             return True
@@ -898,6 +995,39 @@ class OpenAgentsTUI(App):
     def action_refresh(self) -> None:
         self._refresh_table()
         self._log("[green]✓[/green] Refreshed")
+
+    # -- Open Workspace --
+
+    def action_open_workspace(self) -> None:
+        agent = self._selected_agent()
+        if not agent or not agent.get("workspace"):
+            self._log("[yellow]No workspace to open[/yellow]")
+            return
+        from openagents.client.daemon_config import load_config, get_agent_network
+        cfg = load_config()
+        agent_entry = None
+        for a in cfg.agents:
+            if a.name == agent["name"]:
+                agent_entry = a
+                break
+        if not agent_entry:
+            self._log("[yellow]Agent not found in config[/yellow]")
+            return
+        net = get_agent_network(agent_entry, cfg)
+        if not net:
+            self._log("[yellow]No network config found[/yellow]")
+            return
+        url = self._workspace_url(net)
+        # Try opening in browser; show URL in a copyable modal either way
+        opened = False
+        try:
+            import webbrowser
+            opened = webbrowser.open(url)
+        except Exception:
+            pass
+        if opened:
+            self._log(f"[green]✓[/green] Opened workspace in browser")
+        self.push_screen(WorkspaceUrlScreen(url, opened=opened))
 
     # -- Install --
 
@@ -1207,6 +1337,15 @@ class OpenAgentsTUI(App):
         self._refresh_table()
 
     # -- Daemon up/down --
+
+    def action_daemon_toggle(self) -> None:
+        """Start daemon if not running, stop it if running."""
+        from openagents.client.daemon import read_daemon_pid
+        pid = read_daemon_pid()
+        if pid:
+            self.action_daemon_down()
+        else:
+            self.action_daemon_up()
 
     def action_daemon_up(self) -> None:
         self._log("Starting daemon…")
