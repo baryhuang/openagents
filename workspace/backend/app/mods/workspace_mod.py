@@ -373,6 +373,12 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     workspace = ctx.extra["workspace"]
     payload = event.payload or {}
     content = payload.get("content", "")
+    message_type = payload.get("message_type", "chat")
+
+    # "thinking" and "status" messages are intermediate agent output —
+    # they should NOT trigger other agents via @mentions.
+    if message_type in ("thinking", "status"):
+        return event
 
     # Parse @mentions from message content
     known_agents = [
