@@ -1,0 +1,9 @@
+name: nanoclaw
+label: NanoClaw
+description: Lightweight containerized coding agent built on Claude Agent SDK
+homepage: https://github.com/qwibitai/nanoclaw
+tags: [coding, container, lightweight, open-source]
+
+install:
+  command: "docker pull qwibitai/nanoclaw"
+  binary: nanoclaw

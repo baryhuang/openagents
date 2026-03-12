@@ -1,0 +1,9 @@
+name: gemini
+label: Gemini CLI
+description: Google's open-source AI agent for the command line
+homepage: https://github.com/google-gemini/gemini-cli
+tags: [coding, google, open-source, cli]
+
+install:
+  command: "npm install -g @google/gemini-cli"
+  binary: gemini

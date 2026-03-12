@@ -1,0 +1,9 @@
+name: goose
+label: Goose
+description: An open-source AI developer agent
+homepage: https://github.com/block/goose
+tags: [coding, developer, open-source]
+
+install:
+  command: "pip install goose-ai"
+  binary: goose

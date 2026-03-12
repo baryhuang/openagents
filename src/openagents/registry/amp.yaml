@@ -1,0 +1,9 @@
+name: amp
+label: Amp (Sourcegraph)
+description: Sourcegraph's AI coding agent for CLI and VS Code
+homepage: https://ampcode.com
+tags: [coding, sourcegraph, cli, vscode]
+
+install:
+  command: "curl -fsSL https://ampcode.com/install.sh | bash"
+  binary: amp

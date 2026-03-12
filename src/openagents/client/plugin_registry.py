@@ -1,8 +1,8 @@
 """
 Plugin registry for agent types.
 
-Provides a pluggable system for agent adapters. Built-in agents (claude,
-openclaw, codex) are registered by default. Third-party agents can register
+Provides a pluggable system for agent adapters. Agent definitions are loaded
+from YAML files in ``openagents/registry/``. Third-party agents can register
 via Python entry_points under the group ``openagents.plugins``.
 
 Usage::
@@ -22,7 +22,6 @@ import json
 import logging
 import os
 import shutil
-import sys
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -103,7 +102,6 @@ class AgentPlugin(ABC):
                 capture_output=True, text=True, timeout=5,
             )
             output = (result.stdout or result.stderr or "").strip()
-            # Return just the first line, stripped of common prefixes
             return output.split("\n")[0].strip() if output else None
         except Exception:
             return None
@@ -128,194 +126,6 @@ class AgentPlugin(ABC):
     def health_check(self) -> bool:
         """Optional deeper health check beyond is_installed()."""
         return self.is_installed()
-
-
-# ---------------------------------------------------------------------------
-# Built-in plugins
-# ---------------------------------------------------------------------------
-
-class ClaudePlugin(AgentPlugin):
-    name = "claude"
-    label = "Claude Code CLI"
-    install_command = "curl -fsSL https://claude.ai/install.sh | bash"
-
-    def is_installed(self) -> bool:
-        return shutil.which("claude") is not None
-
-    def which(self) -> Optional[str]:
-        return shutil.which("claude")
-
-    def check_ready(self) -> tuple[bool, str]:
-        if not self.is_installed():
-            return False, "Not installed. Run: openagents install claude"
-        # Check for Claude credentials
-        # Claude Code stores OAuth at ~/.claude/.credentials.json
-        # or can use ANTHROPIC_API_KEY env var
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            return True, "Ready (API key set)"
-        creds_path = Path.home() / ".claude" / ".credentials.json"
-        if creds_path.exists():
-            try:
-                creds = json.loads(creds_path.read_text())
-                if creds.get("claudeAiOauth"):
-                    return True, "Ready (logged in)"
-            except Exception:
-                pass
-        return False, "Not logged in. Run: claude login"
-
-    def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
-        binary = shutil.which("claude")
-        if not binary:
-            return None
-        return [
-            binary,
-            "--append-system-prompt",
-            f"Your agent name is '{agent_name}'.",
-        ]
-
-    def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
-        from openagents.adapters.claude import ClaudeAdapter
-        opts = options or {}
-        disabled_modules: set = set()
-        if opts.get("disable_files"):
-            disabled_modules.add("files")
-        if opts.get("disable_browser"):
-            disabled_modules.add("browser")
-        return ClaudeAdapter(
-            workspace_id=workspace_id,
-            channel_name=channel_name,
-            token=token,
-            agent_name=agent_name,
-            endpoint=endpoint,
-            disabled_modules=disabled_modules or None,
-        )
-
-
-class OpenClawPlugin(AgentPlugin):
-    name = "openclaw"
-    label = "OpenClaw"
-    install_command = "npm install -g openclaw@latest"
-
-    def is_installed(self) -> bool:
-        return shutil.which("openclaw") is not None
-
-    def which(self) -> Optional[str]:
-        return shutil.which("openclaw")
-
-    def required_env_vars(self) -> list[dict]:
-        return [
-            {
-                "name": "LLM_API_KEY",
-                "description": "API key",
-                "required": True,
-                "password": True,
-            },
-            {
-                "name": "LLM_BASE_URL",
-                "description": "API base URL (OpenAI-compatible endpoint)",
-                "required": False,
-                "password": False,
-                "default": "https://api.openai.com/v1",
-                "placeholder": "https://api.openai.com/v1",
-            },
-            {
-                "name": "LLM_MODEL",
-                "description": "Model name",
-                "required": False,
-                "password": False,
-                "placeholder": "gpt-4o, claude-sonnet-4-20250514, deepseek-chat, etc.",
-            },
-        ]
-
-    def resolve_env(self, saved: dict) -> dict:
-        """Map LLM_* config fields to env vars OpenClaw reads."""
-        env = {}
-        api_key = saved.get("LLM_API_KEY", "")
-        base_url = saved.get("LLM_BASE_URL", "")
-        model = saved.get("LLM_MODEL", "")
-
-        if api_key:
-            # If base_url looks like Anthropic, set ANTHROPIC_API_KEY
-            # Otherwise default to OpenAI-compatible
-            if "anthropic" in base_url.lower() or (not base_url and "ant-" in api_key):
-                env["ANTHROPIC_API_KEY"] = api_key
-            else:
-                env["OPENAI_API_KEY"] = api_key
-            if base_url:
-                env["OPENAI_BASE_URL"] = base_url
-        if model:
-            env["OPENCLAW_MODEL"] = model
-        return env
-
-    def check_ready(self) -> tuple[bool, str]:
-        if not self.is_installed():
-            return False, "Not installed. Run: openagents install openclaw"
-        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"):
-            return True, "Ready (API key set)"
-        from openagents.client.daemon_config import load_agent_env
-        saved = load_agent_env("openclaw")
-        if saved.get("LLM_API_KEY"):
-            model = saved.get("LLM_MODEL", "default")
-            return True, f"Ready ({model})"
-        return False, "Not configured — press e to configure"
-
-    def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
-        from openagents.adapters.openclaw import OpenClawAdapter
-        opts = options or {}
-        return OpenClawAdapter(
-            workspace_id=workspace_id,
-            channel_name=channel_name,
-            token=token,
-            agent_name=agent_name,
-            endpoint=endpoint,
-            openclaw_host=opts.get("openclaw_host", "127.0.0.1"),
-            openclaw_port=opts.get("openclaw_port", 18789),
-            openclaw_token=opts.get("openclaw_token"),
-            openclaw_agent_id=opts.get("openclaw_agent_id", "main"),
-        )
-
-
-class CodexPlugin(AgentPlugin):
-    name = "codex"
-    label = "OpenAI Codex CLI"
-    install_command = "npm install -g @openai/codex"
-
-    def is_installed(self) -> bool:
-        return shutil.which("codex") is not None
-
-    def which(self) -> Optional[str]:
-        return shutil.which("codex")
-
-    def required_env_vars(self) -> list[dict]:
-        return [
-            {"name": "OPENAI_API_KEY", "description": "OpenAI API key", "required": True},
-        ]
-
-    def check_ready(self) -> tuple[bool, str]:
-        if not self.is_installed():
-            return False, "Not installed. Run: openagents install codex"
-        if os.environ.get("OPENAI_API_KEY"):
-            return True, "Ready (API key set)"
-        from openagents.client.daemon_config import load_agent_env
-        if load_agent_env("codex").get("OPENAI_API_KEY"):
-            return True, "Ready (API key configured)"
-        return False, "No API key — press e to configure"
-
-    def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
-        binary = shutil.which("codex")
-        if not binary:
-            return None
-        return [binary]
-
-    def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
-        from openagents.adapters.codex import CodexAdapter
-        return CodexAdapter(
-            workspace_id=workspace_id,
-            channel_name=channel_name,
-            token=token,
-            agent_name=agent_name,
-            endpoint=endpoint,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -345,11 +155,7 @@ CACHE_TTL = 86400  # 24 hours
 
 
 def _fetch_remote_catalog() -> list[PluginInfo]:
-    """Fetch agent catalog from remote registry with 24h cache + offline fallback.
-
-    Returns remote entries on success, cached entries if offline, empty list on cold start.
-    """
-    # Check cache first
+    """Fetch agent catalog from remote registry with 24h cache + offline fallback."""
     if CACHE_PATH.exists():
         try:
             age = time.time() - CACHE_PATH.stat().st_mtime
@@ -358,7 +164,6 @@ def _fetch_remote_catalog() -> list[PluginInfo]:
         except Exception:
             pass
 
-    # Try remote fetch
     try:
         import requests
         resp = requests.get(REGISTRY_URL, timeout=5)
@@ -372,14 +177,13 @@ def _fetch_remote_catalog() -> list[PluginInfo]:
     except Exception as e:
         logger.debug(f"Remote catalog fetch failed: {e}")
 
-    # Offline fallback: use stale cache if available
     if CACHE_PATH.exists():
         try:
             return _parse_cached()
         except Exception:
             pass
 
-    return []  # No cache, no remote — caller will use bundled _KNOWN_AGENTS
+    return []
 
 
 def _parse_cached() -> list[PluginInfo]:
@@ -451,10 +255,7 @@ class PluginRegistry:
         return results
 
     def scan_agents(self) -> list[dict]:
-        """Scan machine for all known agents with readiness status.
-
-        Returns list of dicts with: name, label, installed, ready, message, path.
-        """
+        """Scan machine for all known agents with readiness status."""
         self._ensure_entry_points()
         results = []
         for name, plugin in self._plugins.items():
@@ -502,7 +303,6 @@ class PluginRegistry:
         self._loaded_entry_points = True
         try:
             eps = importlib.metadata.entry_points()
-            # Python 3.12+ returns a SelectableGroups, 3.9+ has .select()
             if hasattr(eps, "select"):
                 group = eps.select(group="openagents.plugins")
             else:
@@ -531,7 +331,6 @@ class PluginRegistry:
                     self._catalog[info.name] = info
                     logger.debug(f"Added remote catalog entry: {info.name}")
                 elif info.name and info.name in self._catalog:
-                    # Update description/homepage/tags from remote if local is sparse
                     existing = self._catalog[info.name]
                     if not existing.description and info.description:
                         existing.description = info.description
@@ -544,99 +343,39 @@ class PluginRegistry:
 
 
 # ---------------------------------------------------------------------------
-# Global registry with built-in plugins pre-registered
+# Load agent definitions from YAML registry files
+# ---------------------------------------------------------------------------
+
+def _load_from_yaml_registry(reg: PluginRegistry) -> None:
+    """Load all YAML definitions from openagents/registry/ into the registry."""
+    from openagents.registry.loader import load_registry_yamls, _make_plugin_from_yaml
+
+    for data in load_registry_yamls():
+        name = data["name"]
+        install = data.get("install", {})
+        is_builtin = data.get("builtin", False)
+
+        # Create catalog entry for every YAML file
+        info = PluginInfo(
+            name=name,
+            label=data.get("label", name),
+            install_command=install.get("command", ""),
+            description=data.get("description", ""),
+            homepage=data.get("homepage", ""),
+            tags=data.get("tags", []),
+            builtin=is_builtin,
+        )
+        reg.add_catalog_entry(info)
+
+        # Create full plugin for builtin agents (those with adapter config)
+        plugin = _make_plugin_from_yaml(data)
+        if plugin:
+            reg.register(plugin, builtin=is_builtin)
+
+
+# ---------------------------------------------------------------------------
+# Global registry — loaded from YAML files
 # ---------------------------------------------------------------------------
 
 registry = PluginRegistry()
-registry.register(ClaudePlugin(), builtin=True)
-registry.register(OpenClawPlugin(), builtin=True)
-registry.register(CodexPlugin(), builtin=True)
-
-
-# Known agents catalog (available for `openagents search` even if not installed)
-_KNOWN_AGENTS = [
-    PluginInfo(
-        name="aider",
-        label="Aider",
-        install_command="pip install aider-chat",
-        description="AI pair programming in your terminal",
-        homepage="https://aider.chat",
-        tags=["coding", "pair-programming", "open-source"],
-    ),
-    PluginInfo(
-        name="goose",
-        label="Goose",
-        install_command="pip install goose-ai",
-        description="An open-source AI developer agent",
-        homepage="https://github.com/block/goose",
-        tags=["coding", "developer", "open-source"],
-    ),
-    PluginInfo(
-        name="cline",
-        label="Cline",
-        install_command="npm install -g cline",
-        description="Autonomous coding agent for VS Code",
-        homepage="https://github.com/cline/cline",
-        tags=["coding", "vscode", "autonomous"],
-    ),
-    PluginInfo(
-        name="swebench",
-        label="SWE-bench Agent",
-        install_command="pip install swe-agent",
-        description="Language model agent for software engineering tasks",
-        homepage="https://swe-agent.com",
-        tags=["coding", "benchmarks", "research"],
-    ),
-    PluginInfo(
-        name="gemini",
-        label="Gemini CLI",
-        install_command="npm install -g @google/gemini-cli",
-        description="Google's open-source AI agent for the command line",
-        homepage="https://github.com/google-gemini/gemini-cli",
-        tags=["coding", "google", "open-source", "cli"],
-    ),
-    PluginInfo(
-        name="copilot",
-        label="GitHub Copilot CLI",
-        install_command="npm install -g @github/copilot",
-        description="GitHub Copilot coding agent for the terminal",
-        homepage="https://github.com/features/copilot",
-        tags=["coding", "github", "cli"],
-    ),
-    PluginInfo(
-        name="amp",
-        label="Amp (Sourcegraph)",
-        install_command="curl -fsSL https://ampcode.com/install.sh | bash",
-        description="Sourcegraph's AI coding agent for CLI and VS Code",
-        homepage="https://ampcode.com",
-        tags=["coding", "sourcegraph", "cli", "vscode"],
-    ),
-    PluginInfo(
-        name="opencode",
-        label="OpenCode",
-        install_command="npm install -g opencode-ai@latest",
-        description="Open-source terminal-native AI coding agent",
-        homepage="https://opencode.ai",
-        tags=["coding", "open-source", "cli", "terminal"],
-    ),
-    PluginInfo(
-        name="nanoclaw",
-        label="NanoClaw",
-        install_command="docker pull qwibitai/nanoclaw",
-        description="Lightweight containerized coding agent built on Claude Agent SDK",
-        homepage="https://github.com/qwibitai/nanoclaw",
-        tags=["coding", "container", "lightweight", "open-source"],
-    ),
-]
-
-for _info in _KNOWN_AGENTS:
-    registry.add_catalog_entry(_info)
-
-# Also add built-in agents to catalog
-for _p in [ClaudePlugin(), OpenClawPlugin(), CodexPlugin()]:
-    registry.add_catalog_entry(PluginInfo(
-        name=_p.name,
-        label=_p.label,
-        install_command=_p.install_command,
-        builtin=True,
-    ))
+_load_from_yaml_registry(registry)

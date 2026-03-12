@@ -138,6 +138,7 @@ where = ["src"]
 openagents = [
     "protocols/*/protocol_manifest.json",
     "configs/*.yaml",
+    "registry/*.yaml",
     "templates/**/*",
     "templates/default_network/**/*",
     "templates/default_network/agents/*",

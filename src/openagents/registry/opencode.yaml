@@ -1,0 +1,9 @@
+name: opencode
+label: OpenCode
+description: Open-source terminal-native AI coding agent
+homepage: https://opencode.ai
+tags: [coding, open-source, cli, terminal]
+
+install:
+  command: "npm install -g opencode-ai@latest"
+  binary: opencode

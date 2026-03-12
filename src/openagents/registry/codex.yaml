@@ -1,0 +1,28 @@
+name: codex
+label: OpenAI Codex CLI
+description: OpenAI's coding agent for the terminal
+homepage: https://github.com/openai/codex
+tags: [coding, openai, cli]
+builtin: true
+
+install:
+  command: "npm install -g @openai/codex"
+  binary: codex
+
+adapter:
+  module: openagents.adapters.codex
+  class: CodexAdapter
+
+launch:
+  args: []
+
+env_config:
+  - name: OPENAI_API_KEY
+    description: OpenAI API key
+    required: true
+    password: true
+
+check_ready:
+  env_vars: [OPENAI_API_KEY]
+  saved_env_key: OPENAI_API_KEY
+  not_ready_message: "No API key — press e to configure"

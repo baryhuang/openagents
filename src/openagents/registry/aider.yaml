@@ -1,0 +1,9 @@
+name: aider
+label: Aider
+description: AI pair programming in your terminal
+homepage: https://aider.chat
+tags: [coding, pair-programming, open-source]
+
+install:
+  command: "pip install aider-chat"
+  binary: aider

@@ -1,0 +1,9 @@
+name: swebench
+label: SWE-bench Agent
+description: Language model agent for software engineering tasks
+homepage: https://swe-agent.com
+tags: [coding, benchmarks, research]
+
+install:
+  command: "pip install swe-agent"
+  binary: swe-agent
