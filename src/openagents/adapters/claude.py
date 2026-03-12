@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -121,7 +122,11 @@ class ClaudeAdapter(BaseAdapter):
 
     def _build_claude_cmd(self, prompt: str, channel_name: str) -> list[str]:
         """Build the claude CLI command for a specific channel."""
-        claude_bin = shutil.which("claude")
+        # On Windows, prefer .cmd/.exe wrappers over bare npm bash shims
+        if platform.system() == "Windows":
+            claude_bin = shutil.which("claude.cmd") or shutil.which("claude.exe") or shutil.which("claude")
+        else:
+            claude_bin = shutil.which("claude")
         if not claude_bin:
             raise FileNotFoundError(
                 "claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash"

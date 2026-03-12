@@ -17,6 +17,7 @@ framing (LSP-style). The adapter posts responses directly instead.
 import asyncio
 import json
 import logging
+import platform
 import shutil
 from typing import Optional
 
@@ -42,7 +43,11 @@ class CodexAdapter(BaseAdapter):
 
     def _build_codex_cmd(self, prompt: str) -> list[str]:
         """Build the codex CLI command."""
-        codex_bin = shutil.which("codex")
+        # On Windows, prefer .cmd/.exe wrappers over bare npm bash shims
+        if platform.system() == "Windows":
+            codex_bin = shutil.which("codex.cmd") or shutil.which("codex.exe") or shutil.which("codex")
+        else:
+            codex_bin = shutil.which("codex")
         if not codex_bin:
             raise FileNotFoundError(
                 "codex CLI not found. Install with: "
