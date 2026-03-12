@@ -378,6 +378,7 @@ def daemon_start_agent(
             endpoint=endpoint,
             agent_name=name, agent_type=agent_type,
             workspace_name=create_workspace,
+            working_dir=agent_entry.path,
         )
         if net_entry:
             from openagents.client.daemon_config import (
@@ -414,7 +415,7 @@ def daemon_start_agent(
                 token=join_workspace.strip(),
                 agent_type=agent_type,
                 server_host=socket.gethostname(),
-                working_dir=os.getcwd(),
+                working_dir=agent_entry.path or os.getcwd(),
             ))
 
             net_entry = NetworkEntry(
@@ -480,6 +481,7 @@ def daemon_start_agent(
                 endpoint=endpoint,
                 agent_name=name, agent_type=agent_type,
                 workspace_name=ws_name,
+                working_dir=agent_entry.path,
             )
             if net_entry:
                 from openagents.client.daemon_config import (
@@ -517,7 +519,7 @@ def daemon_start_agent(
                         token=ws_token.strip(),
                         agent_type=agent_type,
                         server_host=socket.gethostname(),
-                        working_dir=os.getcwd(),
+                        working_dir=agent_entry.path or os.getcwd(),
                     ))
 
                     net_entry = NetworkEntry(
@@ -715,6 +717,7 @@ def daemon_connect_agent(
             # Have both network ID and token — join directly
             net_entry = _resolve_or_create_network(
                 network, token, endpoint, agent_name, agent.type,
+                working_dir=agent.path,
             )
         else:
             # Token-only: resolve workspace from token
@@ -734,7 +737,7 @@ def daemon_connect_agent(
                     token=token,
                     agent_type=agent.type,
                     server_host=socket.gethostname(),
-                    working_dir=os.getcwd(),
+                    working_dir=agent.path or os.getcwd(),
                 ))
 
                 net_entry = NetworkEntry(
@@ -1178,6 +1181,7 @@ def _resolve_or_create_network(
     agent_name: str,
     agent_type: str,
     workspace_name: Optional[str] = None,
+    working_dir: Optional[str] = None,
 ) -> Optional["NetworkEntry"]:
     """Join or create a network, returning a NetworkEntry."""
     import asyncio
@@ -1194,7 +1198,7 @@ def _resolve_or_create_network(
                 token=token,
                 agent_type=agent_type,
                 server_host=socket.gethostname(),
-                working_dir=os.getcwd(),
+                working_dir=working_dir or os.getcwd(),
             )
             ws_id = result.get("network_id", join_id)
             return NetworkEntry(

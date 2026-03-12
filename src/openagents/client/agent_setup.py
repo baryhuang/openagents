@@ -45,6 +45,7 @@ async def setup_agent(
     role: str = "worker",
     options: Optional[dict] = None,
     quiet: bool = False,
+    working_dir: Optional[str] = None,
 ) -> object:
     """Register agent, join workspace channels, create and return adapter.
 
@@ -105,7 +106,7 @@ async def setup_agent(
             token=token,
             agent_type=agent_type,
             server_host=socket.gethostname(),
-            working_dir=os.getcwd(),
+            working_dir=working_dir or os.getcwd(),
         )
         logger.info(f"Joined workspace {workspace_id}")
     except Exception as e:

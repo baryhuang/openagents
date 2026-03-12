@@ -227,6 +227,7 @@ class DaemonManager:
                     role=agent_cfg.role,
                     options=agent_cfg.options,
                     quiet=True,
+                    working_dir=agent_cfg.path,
                 )
 
                 status.state = "online"
