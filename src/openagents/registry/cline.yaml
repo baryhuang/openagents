@@ -1,9 +1,11 @@
 name: cline
 label: Cline
-description: Autonomous coding agent for VS Code
+description: Autonomous coding agent (VS Code extension)
 homepage: https://github.com/cline/cline
 tags: [coding, vscode, autonomous]
 
 install:
-  command: "npm install -g cline"
-  binary: cline
+  binary: code
+  macos: "code --install-extension saoudrizwan.claude-dev"
+  linux: "code --install-extension saoudrizwan.claude-dev"
+  windows: "code --install-extension saoudrizwan.claude-dev"

@@ -356,10 +356,11 @@ def _load_from_yaml_registry(reg: PluginRegistry) -> None:
         is_builtin = data.get("builtin", False)
 
         # Create catalog entry for every YAML file
+        from openagents.registry.loader import get_install_command
         info = PluginInfo(
             name=name,
             label=data.get("label", name),
-            install_command=install.get("command", ""),
+            install_command=get_install_command(install),
             description=data.get("description", ""),
             homepage=data.get("homepage", ""),
             tags=data.get("tags", []),

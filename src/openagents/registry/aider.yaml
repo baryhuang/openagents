@@ -5,5 +5,7 @@ homepage: https://aider.chat
 tags: [coding, pair-programming, open-source]
 
 install:
-  command: "pip install aider-chat"
   binary: aider
+  macos: "curl -LsSf https://aider.chat/install.sh | sh"
+  linux: "curl -LsSf https://aider.chat/install.sh | sh"
+  windows: "powershell -c \"irm https://aider.chat/install.ps1 | iex\""

@@ -5,5 +5,7 @@ homepage: https://github.com/google-gemini/gemini-cli
 tags: [coding, google, open-source, cli]
 
 install:
-  command: "npm install -g @google/gemini-cli"
   binary: gemini
+  macos: "npm install -g @google/gemini-cli"
+  linux: "npm install -g @google/gemini-cli"
+  windows: "npm install -g @google/gemini-cli"

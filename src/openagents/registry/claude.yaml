@@ -6,8 +6,10 @@ tags: [coding, cli, anthropic]
 builtin: true
 
 install:
-  command: "curl -fsSL https://claude.ai/install.sh | bash"
   binary: claude
+  macos: "curl -fsSL https://claude.ai/install.sh | bash"
+  linux: "curl -fsSL https://claude.ai/install.sh | bash"
+  windows: "powershell -c \"irm https://claude.ai/install.ps1 | iex\""
 
 adapter:
   module: openagents.adapters.claude
@@ -19,7 +21,6 @@ launch:
     - "Your agent name is '{agent_name}'."
 
 check_ready:
-  # Claude checks OAuth creds or ANTHROPIC_API_KEY env var
   env_vars: [ANTHROPIC_API_KEY]
   creds_file: "~/.claude/.credentials.json"
   creds_key: claudeAiOauth

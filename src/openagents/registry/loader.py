@@ -11,11 +11,33 @@ import importlib
 import json
 import logging
 import os
+import platform
 import shutil
+import sys
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def get_current_platform() -> str:
+    """Return the current platform key: 'macos', 'linux', or 'windows'."""
+    system = platform.system().lower()
+    if system == "darwin":
+        return "macos"
+    if system == "windows":
+        return "windows"
+    return "linux"
+
+
+def get_install_command(install_cfg: dict) -> str:
+    """Resolve the install command for the current platform.
+
+    Checks for platform-specific keys (macos, linux, windows) first,
+    then falls back to the generic 'command' key.
+    """
+    plat = get_current_platform()
+    return install_cfg.get(plat, install_cfg.get("command", ""))
 
 # Directory containing the YAML files (same dir as this module)
 REGISTRY_DIR = Path(__file__).parent
@@ -185,7 +207,7 @@ def _make_plugin_from_yaml(data: dict):
     class YamlPlugin(AgentPlugin):
         name = data["name"]
         label = data.get("label", data["name"])
-        install_command = install.get("command", "")
+        install_command = get_install_command(install)
 
         def is_installed(self) -> bool:
             return shutil.which(binary) is not None

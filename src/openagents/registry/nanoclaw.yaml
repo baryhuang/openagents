@@ -5,5 +5,7 @@ homepage: https://github.com/qwibitai/nanoclaw
 tags: [coding, container, lightweight, open-source]
 
 install:
-  command: "docker pull qwibitai/nanoclaw"
   binary: nanoclaw
+  macos: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
+  linux: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
+  windows: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"

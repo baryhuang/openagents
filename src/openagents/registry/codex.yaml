@@ -6,8 +6,10 @@ tags: [coding, openai, cli]
 builtin: true
 
 install:
-  command: "npm install -g @openai/codex"
   binary: codex
+  macos: "npm install -g @openai/codex"
+  linux: "npm install -g @openai/codex"
+  windows: "npm install -g @openai/codex"
 
 adapter:
   module: openagents.adapters.codex
