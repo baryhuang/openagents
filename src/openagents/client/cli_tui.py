@@ -1283,13 +1283,57 @@ class OpenAgentsTUI(App):
             self._log("[yellow]Select an agent to remove[/yellow]")
             return
         name = agent["name"]
-        from openagents.client.daemon_config import remove_agent_from_config
+        self._log(f"Removing [cyan]{name}[/cyan]…")
+        self._do_remove(name)
 
+    @work(thread=True)
+    def _do_remove(self, name: str) -> None:
+        import time
+        from openagents.client.daemon_config import (
+            disconnect_agent_from_network,
+            load_config,
+            remove_agent_from_config,
+        )
+
+        # Check if agent is connected to a workspace — disconnect first
+        cfg = load_config()
+        agent_cfg = next((a for a in cfg.agents if a.name == name), None)
+        if agent_cfg and agent_cfg.network:
+            self.app.call_from_thread(
+                self._log, f"Disconnecting [cyan]{name}[/cyan] from workspace…"
+            )
+            disconnect_agent_from_network(name)
+            self._signal_daemon_reload()
+
+        # Stop the agent if daemon is running
+        from openagents.client.daemon import read_daemon_pid
+
+        pid = read_daemon_pid()
+        if pid:
+            self.app.call_from_thread(self._log, f"Stopping [cyan]{name}[/cyan]…")
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "openagents.client.cli", "stop", name],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if result.returncode == 0:
+                    self.app.call_from_thread(
+                        self._log, f"[green]✓[/green] Stopped [cyan]{name}[/cyan]"
+                    )
+                    time.sleep(1)
+            except Exception:
+                pass
+
+        # Remove from config
         if remove_agent_from_config(name):
-            self._log(f"[green]✓[/green] Removed [cyan]{name}[/cyan] from config")
+            self.app.call_from_thread(
+                self._log, f"[green]✓[/green] Removed [cyan]{name}[/cyan] from config"
+            )
         else:
-            self._log(f"[red]✗ Agent '{name}' not found in config[/red]")
-        self._refresh_table()
+            self.app.call_from_thread(
+                self._log, f"[red]✗ Agent '{name}' not found in config[/red]"
+            )
+        self.app.call_from_thread(self._refresh_table)
 
     # -- Connect --
 
