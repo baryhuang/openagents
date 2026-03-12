@@ -7,9 +7,10 @@ builtin: true
 
 install:
   binary: claude
-  macos: "curl -fsSL https://claude.ai/install.sh | bash"
-  linux: "curl -fsSL https://claude.ai/install.sh | bash"
-  windows: "powershell -c \"irm https://claude.ai/install.ps1 | iex\""
+  requires: [nodejs, git]
+  macos: "npm install -g @anthropic-ai/claude-code"
+  linux: "npm install -g @anthropic-ai/claude-code"
+  windows: "npm install -g @anthropic-ai/claude-code"
 
 adapter:
   module: openagents.adapters.claude
