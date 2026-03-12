@@ -174,6 +174,13 @@ def list_agents_cmd():
     _show_agent_scan()
 
 
+@app.command("setup", rich_help_panel="Client")
+def setup_cmd():
+    """🖥  Interactive setup dashboard — manage agents, workspaces, and connections"""
+    from openagents.client.cli_tui import launch_tui
+    launch_tui()
+
+
 # =============================================================================
 # Callbacks
 # =============================================================================
@@ -237,9 +244,10 @@ def main(
     """
     setup_logging(log_level, verbose)
 
-    # If no subcommand was provided, show help
+    # If no subcommand was provided, launch interactive TUI
     if ctx.invoked_subcommand is None:
-        console.print(ctx.get_help())
+        from openagents.client.cli_tui import launch_tui
+        launch_tui()
         raise typer.Exit(0)
 
     # Show banner for studio command
