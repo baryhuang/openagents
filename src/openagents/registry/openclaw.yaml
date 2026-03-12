@@ -7,7 +7,7 @@ builtin: true
 
 install:
   binary: openclaw
-  requires: [nodejs, git]
+  requires: ["nodejs>=22", git]
   macos: "npm install -g openclaw@latest"
   linux: "npm install -g openclaw@latest"
   windows: "npm install -g openclaw@latest"

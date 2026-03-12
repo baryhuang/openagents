@@ -270,21 +270,45 @@ class InstallAgentScreen(Screen[dict | None]):
         import shutil
         from openagents.client.cli_packages import (
             _install_nodejs, _install_git, _refresh_path_windows,
+            _parse_dep, _get_node_major_version,
         )
+
+        dep_name, min_version = _parse_dep(dep)
 
         dep_map = {
             "nodejs": ("npm", "Node.js", _install_nodejs),
             "git": ("git", "Git", _install_git),
         }
-        check_bin, label, installer = dep_map.get(dep, (dep, dep, None))
+        check_bin, label, installer = dep_map.get(dep_name, (dep_name, dep_name, None))
 
         if shutil.which(check_bin):
+            # Check version constraint for nodejs
+            if dep_name == "nodejs" and min_version is not None:
+                current = _get_node_major_version()
+                if current is not None and current < min_version:
+                    self.app.call_from_thread(
+                        self._update_progress,
+                        f"Upgrading {label} (v{current} → v{min_version}+)...",
+                    )
+                    if not installer(is_windows, os_name):
+                        self.app.call_from_thread(
+                            self._hide_progress,
+                            f"[red]✗ Could not upgrade {label} to v{min_version}+[/red]",
+                        )
+                        return False
+                    new_ver = _get_node_major_version()
+                    if new_ver is not None and new_ver < min_version:
+                        self.app.call_from_thread(
+                            self._hide_progress,
+                            f"[yellow]{label} v{new_ver} still below v{min_version}+. Upgrade manually.[/yellow]",
+                        )
+                        return False
             return True
 
         self.app.call_from_thread(self._update_progress, f"Installing {label}...")
 
         if installer is None:
-            self.app.call_from_thread(self._hide_progress, f"[red]✗ Missing dependency: {dep}[/red]")
+            self.app.call_from_thread(self._hide_progress, f"[red]✗ Missing dependency: {dep_name}[/red]")
             return False
 
         if not installer(is_windows, os_name):

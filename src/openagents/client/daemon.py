@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -341,13 +342,26 @@ class DaemonManager:
                 logger.info(f"{agent_cfg.name} launching: {' '.join(cmd)}"
                             + (f" (cwd={cwd})" if cwd else ""))
 
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    cwd=cwd,
-                    env=agent_env,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                )
+                # On Windows, .cmd wrappers can't be launched via exec —
+                # they need a shell.  Use create_subprocess_shell for .cmd.
+                import platform as _plat
+                if _plat.system() == "Windows" and cmd[0].lower().endswith(".cmd"):
+                    shell_cmd = subprocess.list2cmdline(cmd)
+                    proc = await asyncio.create_subprocess_shell(
+                        shell_cmd,
+                        cwd=cwd,
+                        env=agent_env,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
+                else:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        cwd=cwd,
+                        env=agent_env,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
 
                 status.state = "running"
                 status.started_at = datetime.now(timezone.utc).isoformat()

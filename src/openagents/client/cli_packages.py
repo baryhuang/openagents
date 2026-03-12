@@ -87,9 +87,16 @@ def _install_nodejs(is_windows: bool, os_name: str) -> bool:
     elif os_name == "Darwin":
         # macOS — try brew first, then official installer
         if shutil.which("brew"):
-            console.print("  Installing Node.js via Homebrew...")
+            console.print(f"  Installing Node.js v{_NODE_VERSION.split('.')[0]} via Homebrew...")
             try:
-                subprocess.run(["brew", "install", "node"], check=True, timeout=300)
+                # Use node@22 formula for specific major version
+                major = _NODE_VERSION.split(".")[0]
+                subprocess.run(["brew", "install", f"node@{major}"], check=True, timeout=300)
+                # Link it so `node` and `npm` are on PATH
+                subprocess.run(
+                    ["brew", "link", "--overwrite", f"node@{major}"],
+                    check=False, timeout=30,
+                )
                 return True
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 pass
@@ -147,24 +154,77 @@ def _install_nodejs(is_windows: bool, os_name: str) -> bool:
             return False
 
 
+def _parse_dep(dep: str) -> tuple[str, int | None]:
+    """Parse 'nodejs>=22' into ('nodejs', 22). Returns (dep, None) if no version."""
+    import re
+    m = re.match(r'^([a-zA-Z0-9_]+)>=(\d+)$', dep)
+    if m:
+        return m.group(1), int(m.group(2))
+    return dep, None
+
+
+def _get_node_major_version() -> int | None:
+    """Get the installed Node.js major version, or None if not installed."""
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return None
+    try:
+        result = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            # Output is like "v20.19.3"
+            import re
+            m = re.match(r'v(\d+)', result.stdout.strip())
+            if m:
+                return int(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
 def _ensure_dependency(dep: str, is_windows: bool, os_name: str, agent_type: str) -> bool:
     """Check if a dependency is available, auto-install if missing. Returns True on success."""
     import shutil
+
+    dep_name, min_version = _parse_dep(dep)
 
     dep_checks = {
         "nodejs": ("npm", "Node.js", _install_nodejs),
         "git": ("git", "Git", _install_git),
     }
 
-    check_binary, label, installer = dep_checks.get(dep, (dep, dep, None))
+    check_binary, label, installer = dep_checks.get(dep_name, (dep_name, dep_name, None))
 
     if shutil.which(check_binary) is not None:
-        return True  # already installed
+        # Check version constraint for nodejs
+        if dep_name == "nodejs" and min_version is not None:
+            current = _get_node_major_version()
+            if current is not None and current < min_version:
+                console.print(
+                    f"  [yellow]{label} v{current} found but v{min_version}+ is required — upgrading...[/yellow]"
+                )
+                if not _install_nodejs(is_windows, os_name):
+                    console.print(f"\n  [red]Could not upgrade {label} automatically.[/red]")
+                    console.print(f"  Please upgrade to Node.js v{min_version}+, then retry:")
+                    console.print(f"  [bold]openagents install {agent_type}[/bold]")
+                    return False
+                # Re-check version after upgrade
+                new_version = _get_node_major_version()
+                if new_version is not None and new_version < min_version:
+                    console.print(
+                        f"\n  [yellow]{label} upgraded to v{new_version} but v{min_version}+ is required.[/yellow]"
+                    )
+                    console.print(f"  Please upgrade manually (e.g. nvm install {min_version}), then retry:")
+                    console.print(f"  [bold]openagents install {agent_type}[/bold]")
+                    return False
+                console.print(f"  [green]✓[/green] {label} upgraded to v{new_version}\n")
+                return True
+        return True  # already installed (and version OK)
 
     console.print(f"  [yellow]{label} not found — installing...[/yellow]")
 
     if installer is None:
-        console.print(f"  [red]No auto-installer for '{dep}'.[/red]")
+        console.print(f"  [red]No auto-installer for '{dep_name}'.[/red]")
         console.print(f"  Please install {label} manually, then retry:")
         console.print(f"  [bold]openagents install {agent_type}[/bold]")
         return False

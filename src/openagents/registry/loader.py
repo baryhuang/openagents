@@ -212,9 +212,23 @@ def _make_plugin_from_yaml(data: dict):
         def _which_binary(self) -> Optional[str]:
             """Find the binary, preferring .cmd/.exe on Windows."""
             if platform.system() == "Windows":
+                # On Windows, npm-installed packages create .cmd wrappers.
+                # The bare name may resolve to a non-executable shell script,
+                # so prefer .cmd/.exe and only fall back to bare name with
+                # validation that it's actually executable by Windows.
                 path = shutil.which(binary + ".cmd") or shutil.which(binary + ".exe")
                 if path:
                     return path
+                # Bare name fallback — shutil.which checks PATHEXT,
+                # so if it returns something it should be executable
+                bare = shutil.which(binary)
+                if bare:
+                    # Validate it has a Windows-executable extension
+                    ext = Path(bare).suffix.lower()
+                    win_exts = {e.lower() for e in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")}
+                    if ext in win_exts:
+                        return bare
+                return None
             return shutil.which(binary)
 
         def is_installed(self) -> bool:
@@ -275,6 +289,26 @@ def _make_plugin_from_yaml(data: dict):
                             return True, "Ready (logged in)"
                     except Exception:
                         pass
+            # Check macOS Keychain
+            keychain_svc = check_cfg.get("keychain_service")
+            if keychain_svc and platform.system() == "Darwin":
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ["security", "find-generic-password",
+                         "-s", keychain_svc, "-w"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        creds_key = check_cfg.get("creds_key")
+                        if creds_key:
+                            creds = json.loads(result.stdout.strip())
+                            if creds.get(creds_key):
+                                return True, "Ready (logged in)"
+                        else:
+                            return True, "Ready (logged in)"
+                except Exception:
+                    pass
             msg = check_cfg.get("not_ready_message", "Not ready")
             return False, msg
 

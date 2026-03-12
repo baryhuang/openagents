@@ -97,12 +97,23 @@ class AgentPlugin(ABC):
             return None
         try:
             import subprocess
+            import platform as _plat
+            # On Windows, use shell=True if binary is a .cmd wrapper,
+            # since .cmd files can't be exec'd directly without a shell.
+            use_shell = (
+                _plat.system() == "Windows"
+                and binary.lower().endswith(".cmd")
+            )
             result = subprocess.run(
                 [binary, "--version"],
                 capture_output=True, text=True, timeout=5,
+                shell=use_shell,
             )
             output = (result.stdout or result.stderr or "").strip()
             return output.split("\n")[0].strip() if output else None
+        except (OSError, subprocess.TimeoutExpired):
+            # OSError includes [WinError 193] for non-Win32 executables
+            return None
         except Exception:
             return None
 

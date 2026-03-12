@@ -414,6 +414,12 @@ class ClaudeAdapter(BaseAdapter):
                         elif block_type == "tool_use":
                             has_tool_use_since_last_text = True
                             posted_thinking = False
+                            # Clear stale text — it was already posted as
+                            # "thinking".  Without this, if the process
+                            # exits after a tool_use with no final text
+                            # turn, the pre-tool text would be re-posted
+                            # as the final "chat" response.
+                            last_response_text = []
                             tool_name = block.get("name", "")
                             tool_input = str(block.get("input", ""))[:200]
                             await self._send_status(
