@@ -196,7 +196,7 @@ class InstallAgentScreen(Screen[dict | None]):
         catalog = registry.get_catalog()
         info = catalog.get(item["name"])
         if not info:
-            self.call_from_thread(self._hide_progress, f"[red]✗ Unknown agent: {item['name']}[/red]")
+            self.app.call_from_thread(self._hide_progress, f"[red]✗ Unknown agent: {item['name']}[/red]")
             self._installing = False
             return
 
@@ -206,18 +206,18 @@ class InstallAgentScreen(Screen[dict | None]):
                 cmd, shell=True, capture_output=True, text=True, timeout=300,
             )
             if result.returncode == 0:
-                self.call_from_thread(
+                self.app.call_from_thread(
                     self._hide_progress,
                     f"[green]✓ Installed {item['name']}[/green]  —  Press [bold]n[/bold] on the main screen to create an agent",
                 )
                 # Dismiss after a moment with result so main screen knows
-                self.call_from_thread(self._finish_install, item)
+                self.app.call_from_thread(self._finish_install, item)
             else:
                 err = result.stderr.strip()[:200] if result.stderr else "unknown error"
-                self.call_from_thread(self._hide_progress, f"[red]✗ Install failed:[/red] {err}")
+                self.app.call_from_thread(self._hide_progress, f"[red]✗ Install failed:[/red] {err}")
                 self._installing = False
         except Exception as e:
-            self.call_from_thread(self._hide_progress, f"[red]✗ Install error:[/red] {e}")
+            self.app.call_from_thread(self._hide_progress, f"[red]✗ Install error:[/red] {e}")
             self._installing = False
 
     def _finish_install(self, item: dict) -> None:
@@ -592,7 +592,7 @@ class ConfigureAgentScreen(Screen[bool]):
         except Exception as e:
             result = f"[red]Error[/red]: {e}"
 
-        self.call_from_thread(self._show_test_result, result)
+        self.app.call_from_thread(self._show_test_result, result)
 
     def _show_test_result(self, result: str) -> None:
         try:
@@ -951,15 +951,15 @@ class OpenAgentsTUI(App):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            self.call_from_thread(
+            self.app.call_from_thread(
                 self._log,
                 f"[green]✓[/green] Added [cyan]{name}[/cyan] and started daemon",
             )
         except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Failed to start daemon:[/red] {e}")
+            self.app.call_from_thread(self._log, f"[red]✗ Failed to start daemon:[/red] {e}")
         import time
         time.sleep(2)
-        self.call_from_thread(self._refresh_table)
+        self.app.call_from_thread(self._refresh_table)
 
     @work(thread=True)
     def _do_restart(self, name: str) -> None:
@@ -970,15 +970,15 @@ class OpenAgentsTUI(App):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            self.call_from_thread(
+            self.app.call_from_thread(
                 self._log,
                 f"[green]✓[/green] Restarting [cyan]{name}[/cyan] via daemon",
             )
         except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Failed to restart:[/red] {e}")
+            self.app.call_from_thread(self._log, f"[red]✗ Failed to restart:[/red] {e}")
         import time
         time.sleep(2)
-        self.call_from_thread(self._refresh_table)
+        self.app.call_from_thread(self._refresh_table)
 
     # -- Stop --
 
@@ -999,15 +999,15 @@ class OpenAgentsTUI(App):
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode == 0:
-                self.call_from_thread(self._log, f"[green]✓[/green] Stopped [cyan]{name}[/cyan]")
+                self.app.call_from_thread(self._log, f"[green]✓[/green] Stopped [cyan]{name}[/cyan]")
             else:
                 err = result.stderr.strip()[:200] if result.stderr else result.stdout.strip()[:200]
-                self.call_from_thread(self._log, f"[red]✗ Stop failed:[/red] {err}")
+                self.app.call_from_thread(self._log, f"[red]✗ Stop failed:[/red] {err}")
         except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Stop error:[/red] {e}")
+            self.app.call_from_thread(self._log, f"[red]✗ Stop error:[/red] {e}")
         import time
         time.sleep(1)
-        self.call_from_thread(self._refresh_table)
+        self.app.call_from_thread(self._refresh_table)
 
     # -- Remove --
 
@@ -1096,20 +1096,20 @@ class OpenAgentsTUI(App):
                     connect_agent_to_network(agent_name, last_net.slug or last_net.id)
                     self._signal_daemon_reload()
                     url = self._workspace_url(last_net)
-                    self.call_from_thread(
+                    self.app.call_from_thread(
                         self._log,
                         f"[green]✓[/green] Created & connected → {url}",
                     )
                 else:
-                    self.call_from_thread(
+                    self.app.call_from_thread(
                         self._log, "[green]✓[/green] Workspace created"
                     )
             else:
                 err = (result.stderr or result.stdout).strip()[:200]
-                self.call_from_thread(self._log, f"[red]✗ Create failed:[/red] {err}")
+                self.app.call_from_thread(self._log, f"[red]✗ Create failed:[/red] {err}")
         except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Error:[/red] {e}")
-        self.call_from_thread(self._refresh_table)
+            self.app.call_from_thread(self._log, f"[red]✗ Error:[/red] {e}")
+        self.app.call_from_thread(self._refresh_table)
 
     def _on_join_token(self, agent_name: str, token: str | None) -> None:
         if not token:
@@ -1139,21 +1139,21 @@ class OpenAgentsTUI(App):
                     connect_agent_to_network(agent_name, last_net.slug or last_net.id)
                     self._signal_daemon_reload()
                     url = self._workspace_url(last_net)
-                    self.call_from_thread(
+                    self.app.call_from_thread(
                         self._log,
                         f"[green]✓[/green] Joined & connected [cyan]{agent_name}[/cyan] → {url}",
                     )
                 else:
-                    self.call_from_thread(
+                    self.app.call_from_thread(
                         self._log,
                         f"[green]✓[/green] Joined & connected [cyan]{agent_name}[/cyan]",
                     )
             else:
                 err = (result.stderr or result.stdout).strip()[:200]
-                self.call_from_thread(self._log, f"[red]✗ Join failed:[/red] {err}")
+                self.app.call_from_thread(self._log, f"[red]✗ Join failed:[/red] {err}")
         except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Error:[/red] {e}")
-        self.call_from_thread(self._refresh_table)
+            self.app.call_from_thread(self._log, f"[red]✗ Error:[/red] {e}")
+        self.app.call_from_thread(self._refresh_table)
 
     # -- Disconnect --
 
@@ -1186,12 +1186,12 @@ class OpenAgentsTUI(App):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            self.call_from_thread(self._log, "[green]✓[/green] Daemon starting…")
+            self.app.call_from_thread(self._log, "[green]✓[/green] Daemon starting…")
         except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Failed:[/red] {e}")
+            self.app.call_from_thread(self._log, f"[red]✗ Failed:[/red] {e}")
         import time
         time.sleep(3)
-        self.call_from_thread(self._refresh_table)
+        self.app.call_from_thread(self._refresh_table)
 
     def action_daemon_down(self) -> None:
         self._log("Stopping daemon…")
@@ -1205,15 +1205,15 @@ class OpenAgentsTUI(App):
                 capture_output=True, text=True, timeout=15,
             )
             if result.returncode == 0:
-                self.call_from_thread(self._log, "[green]✓[/green] Daemon stopped")
+                self.app.call_from_thread(self._log, "[green]✓[/green] Daemon stopped")
             else:
                 err = (result.stderr or result.stdout).strip()[:200]
-                self.call_from_thread(self._log, f"[yellow]⚠ {err}[/yellow]")
+                self.app.call_from_thread(self._log, f"[yellow]⚠ {err}[/yellow]")
         except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Error:[/red] {e}")
+            self.app.call_from_thread(self._log, f"[red]✗ Error:[/red] {e}")
         import time
         time.sleep(1)
-        self.call_from_thread(self._refresh_table)
+        self.app.call_from_thread(self._refresh_table)
 
 
 # ── Entry point ─────────────────────────────────────────────────────────────
