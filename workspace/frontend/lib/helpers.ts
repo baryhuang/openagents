@@ -49,6 +49,19 @@ export function formatDate(input: Date | string | number): string {
   });
 }
 
+// ── Agent freshness ──
+
+/** Threshold in ms — offline agents older than this are hidden from sidebar. */
+const STALE_AGENT_THRESHOLD = 60 * 60 * 1000; // 1 hour
+
+/** Returns true if agent should be visible in sidebar (online or recently seen). */
+export function isRecentAgent(agent: { status: string; lastHeartbeatAt: string | null }): boolean {
+  if (agent.status === 'online') return true;
+  if (!agent.lastHeartbeatAt) return false;
+  const elapsed = Date.now() - new Date(agent.lastHeartbeatAt).getTime();
+  return elapsed < STALE_AGENT_THRESHOLD;
+}
+
 // ── Multi-agent visual differentiation ──
 
 const AGENT_COLORS = [

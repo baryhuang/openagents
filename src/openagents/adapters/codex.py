@@ -89,6 +89,10 @@ class CodexAdapter(BaseAdapter):
             return
 
         try:
+            # On Windows, .cmd files need cmd.exe to interpret them
+            if platform.system() == "Windows" and cmd[0].lower().endswith(".cmd"):
+                cmd = ["cmd.exe", "/c"] + cmd
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,

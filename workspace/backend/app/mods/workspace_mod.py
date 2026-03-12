@@ -437,6 +437,16 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
             p.agent_name for p in (channel.participants or [])
         ]
 
+    # Auto-add targeted agents as channel participants so they can poll
+    # for messages on this channel.
+    from app.models import ChannelMember
+    existing = {p.agent_name for p in (channel.participants or [])}
+    for agent_name in event.metadata.get("target_agents", []):
+        if agent_name not in existing:
+            db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
+            existing.add(agent_name)
+    db.flush()
+
     return event
 
 

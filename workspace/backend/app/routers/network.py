@@ -355,6 +355,8 @@ async def discover(
             "server_host": m.server_host,
             "working_dir": m.working_dir,
             "description": m.description,
+            "last_heartbeat_at": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
+            "joined_at": m.joined_at.isoformat() if m.joined_at else None,
         })
 
     channels_rows = db.execute(

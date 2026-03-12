@@ -312,13 +312,19 @@ class ClaudeAdapter(BaseAdapter):
         }
 
         try:
+            # On Windows, .cmd files need cmd.exe to interpret them, and
+            # start_new_session (setsid) is POSIX-only.
+            is_windows = platform.system() == "Windows"
+            if is_windows and cmd[0].lower().endswith(".cmd"):
+                cmd = ["cmd.exe", "/c"] + cmd
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=clean_env,
                 limit=10 * 1024 * 1024,  # 10 MB line buffer (default 64KB too small for large tool outputs)
-                start_new_session=True,  # own process group so killpg reaches children
+                start_new_session=not is_windows,  # setsid is POSIX-only
             )
             self._current_process = process
             self._channel_processes[msg_channel] = process

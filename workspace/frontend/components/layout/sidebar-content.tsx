@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, MessageSquare, FileText, Globe, PlusSquare,
   Settings, Copy, Check, Bot,
@@ -22,7 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useLayout, type ViewMode } from './layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
-import { getAgentColor, getAgentInitials, timeAgo } from '@/lib/helpers';
+import { getAgentColor, getAgentInitials, isRecentAgent, timeAgo } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import { workspaceApi } from '@/lib/api';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
@@ -104,6 +104,8 @@ export function SidebarContent() {
     }
   };
 
+  // Filter sidebar to only show online + recently-seen agents
+  const recentAgents = useMemo(() => agents.filter(isRecentAgent), [agents]);
   const onlineCount = agents.filter((a) => a.status === 'online').length;
   const agentNames = agents.map((a) => a.agentName);
 
@@ -142,7 +144,7 @@ export function SidebarContent() {
         </div>
 
         <div className="flex-1 flex flex-col items-center py-3 gap-2">
-          {agents.map((agent) => {
+          {recentAgents.map((agent) => {
             const color = getAgentColor(agent.agentName, agentNames);
             return (
               <Tooltip key={agent.agentName}>
@@ -230,10 +232,10 @@ export function SidebarContent() {
           {/* Agents */}
           <div className="px-2.5">
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5">
-              Agents ({onlineCount}/{agents.length})
+              Agents ({onlineCount}/{recentAgents.length})
             </p>
             <div className="space-y-0.5">
-              {agents.map((agent) => {
+              {recentAgents.map((agent) => {
                 const color = getAgentColor(agent.agentName, agentNames);
                 return (
                   <button
