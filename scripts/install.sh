@@ -213,5 +213,5 @@ echo ""
 if command -v openagents >/dev/null 2>&1; then
     step "Launching OpenAgents..."
     echo ""
-    exec openagents
+    exec openagents </dev/tty
 fi
