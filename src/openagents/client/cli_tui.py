@@ -10,7 +10,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     DataTable,
     Footer,
@@ -65,30 +65,36 @@ def _load_agent_rows() -> list[dict]:
                 "type": s["name"],
                 "state": "not configured",
                 "workspace": "",
-                "path": s["path"] or "",
+                "path": "",
                 "configured": False,
             })
 
     return rows
 
 
-def _load_installable() -> list[dict]:
-    """Return catalog entries that are NOT already installed."""
+def _load_catalog() -> list[dict]:
+    """Return all catalog entries with installed flag and version."""
     from openagents.client.plugin_registry import registry
 
     scan = {a["name"]: a for a in registry.scan_agents()}
     catalog = registry.get_catalog()
+    plugins = registry._plugins
 
     results = []
     for name, info in catalog.items():
         already = scan.get(name, {})
-        if not already.get("installed", False):
-            results.append({
-                "name": info.name,
-                "label": info.label,
-                "description": info.description,
-                "install_command": info.install_command,
-            })
+        installed = already.get("installed", False)
+        version = ""
+        if installed and name in plugins:
+            version = plugins[name].get_version() or ""
+        results.append({
+            "name": info.name,
+            "label": info.label,
+            "description": info.description,
+            "install_command": info.install_command,
+            "installed": installed,
+            "version": version,
+        })
     return results
 
 
@@ -114,29 +120,50 @@ def _state_text(state: str) -> str:
 # ── Modal Screens ───────────────────────────────────────────────────────────
 
 
-class InstallAgentScreen(ModalScreen[str | None]):
-    """Pick an agent type to install."""
+class InstallAgentScreen(Screen[dict | None]):
+    """Full-screen table to pick an agent runtime to install or update."""
 
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        Binding("escape", "cancel", "Back"),
+    ]
 
     def __init__(self) -> None:
         super().__init__()
-        self._items = _load_installable()
+        self._items = _load_catalog()
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="modal-dialog"):
-            yield Label("[bold]Install Agent Runtime[/bold]", id="modal-title")
-            if not self._items:
-                yield Label("[dim]All known runtimes are already installed.[/dim]")
-            else:
-                ol = OptionList(id="install-list")
-                for item in self._items:
-                    desc = f" — {item['description']}" if item["description"] else ""
-                    ol.add_option(Option(f"{item['label']}{desc}", id=item["name"]))
-                yield ol
+        yield Header(icon="🌀")
+        with Vertical():
+            yield Label(" [bold]Install Agent Runtime[/bold]  —  Enter to install, or update an installed runtime\n")
+            table = DataTable(id="install-table", cursor_type="row")
+            table.add_columns("Name", "Label", "Version", "Status", "Description")
+            for item in self._items:
+                if item["installed"]:
+                    table.add_row(
+                        f"[dim]{item['name']}[/dim]",
+                        f"[dim]{item['label']}[/dim]",
+                        f"[dim]{item['version']}[/dim]",
+                        "[green]installed[/green]",
+                        f"[dim]{item['description'] or ''}[/dim]",
+                    )
+                else:
+                    table.add_row(
+                        item["name"],
+                        item["label"],
+                        "",
+                        "[yellow]not installed[/yellow]",
+                        item["description"] or "",
+                    )
+            yield table
+        yield Footer()
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(str(event.option.id))
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if not self._items:
+            return
+        row_idx = event.cursor_row
+        item = self._items[row_idx]
+        action = "update" if item["installed"] else "install"
+        self.dismiss({"name": item["name"], "action": action})
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -207,36 +234,60 @@ class SelectAgentTypeScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class ConnectWorkspaceScreen(ModalScreen[dict | None]):
-    """Choose how to connect: existing workspace, create, or join with token."""
+class ConnectWorkspaceScreen(Screen[dict | None]):
+    """Full-screen table to pick a workspace to connect an agent to."""
 
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        Binding("escape", "cancel", "Back"),
+    ]
+
+    # Special row IDs for create / join actions
+    _ACTION_CREATE = "__create__"
+    _ACTION_TOKEN = "__token__"
 
     def __init__(self, agent_name: str) -> None:
         super().__init__()
         self.agent_name = agent_name
+        self._row_actions: list[str] = []  # parallel to table rows
 
     def compose(self) -> ComposeResult:
         from openagents.client.daemon_config import load_config
 
         cfg = load_config()
 
-        with Vertical(id="modal-dialog"):
+        yield Header(icon="🌀")
+        with Vertical():
             yield Label(
-                f"[bold]Connect '{self.agent_name}' to Workspace[/bold]",
-                id="modal-title",
+                f" [bold]Connect '{self.agent_name}' to Workspace[/bold]"
+                f"  —  Select a workspace and press Enter\n"
             )
-            ol = OptionList(id="connect-list")
-            for net in cfg.networks:
-                label = net.name or net.slug or net.id
-                ol.add_option(Option(f"  {label}", id=f"existing:{net.slug or net.id}"))
-            ol.add_option(Option("  ✚ Create new workspace", id="create"))
-            ol.add_option(Option("  🔑 Join with token", id="token"))
-            yield ol
+            table = DataTable(id="connect-table", cursor_type="row")
+            table.add_columns("Workspace", "URL")
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        option_id = str(event.option.id)
-        self.dismiss({"action": option_id, "agent": self.agent_name})
+            for net in cfg.networks:
+                name_part = net.name or net.slug or net.id
+                is_local = "localhost" in net.endpoint or "127.0.0.1" in net.endpoint
+                slug = net.slug or net.id
+                if is_local:
+                    url = f"{net.endpoint}/{slug}"
+                else:
+                    url = f"https://workspace.openagents.org/{slug}"
+                table.add_row(name_part, url)
+                self._row_actions.append(f"existing:{slug}")
+
+            # Action rows
+            table.add_row("[bold]✚ Create new workspace[/bold]", "")
+            self._row_actions.append(self._ACTION_CREATE)
+            table.add_row("[bold]🔑 Join with token[/bold]", "")
+            self._row_actions.append(self._ACTION_TOKEN)
+
+            yield table
+        yield Footer()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        row_idx = event.cursor_row
+        action = self._row_actions[row_idx]
+        self.dismiss({"action": action, "agent": self.agent_name})
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -345,7 +396,7 @@ class OpenAgentsTUI(App):
         Binding("i", "install", "Install"),
         Binding("s", "start_agent", "Start"),
         Binding("x", "stop_agent", "Stop"),
-        Binding("c", "connect_agent", "Connect"),
+        Binding("c", "connect_agent", "Connect to Workspace"),
         Binding("d", "disconnect_agent", "Disconnect"),
         Binding("delete", "remove_agent", "Remove"),
         Binding("u", "daemon_up", "Daemon Up"),
@@ -355,7 +406,7 @@ class OpenAgentsTUI(App):
     ]
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Header(icon="🌀")
         with Vertical(id="main-layout"):
             with Vertical(id="agent-panel"):
                 yield Label("[bold]Agents[/bold]")
@@ -409,6 +460,31 @@ class OpenAgentsTUI(App):
         except Exception:
             pass  # widget not ready or markup error
 
+    @staticmethod
+    def _workspace_url(net) -> str:
+        """Build the full workspace URL with token for display."""
+        slug = net.slug or net.id
+        is_local = "localhost" in net.endpoint or "127.0.0.1" in net.endpoint
+        if is_local:
+            base = f"{net.endpoint}/{slug}"
+        else:
+            base = f"https://workspace.openagents.org/{slug}"
+        if net.token:
+            return f"{base}?token={net.token}"
+        return base
+
+    @staticmethod
+    def _signal_daemon_reload():
+        """Send SIGHUP to the running daemon so it reloads config."""
+        from openagents.client.daemon import read_daemon_pid
+        pid = read_daemon_pid()
+        if pid:
+            try:
+                import signal
+                os.kill(pid, signal.SIGHUP)
+            except (ProcessLookupError, PermissionError):
+                pass
+
     def _selected_agent(self) -> dict | None:
         table = self.query_one("#agent-table", DataTable)
         if table.row_count == 0:
@@ -440,10 +516,13 @@ class OpenAgentsTUI(App):
     def action_install(self) -> None:
         self.push_screen(InstallAgentScreen(), callback=self._on_install_picked)
 
-    def _on_install_picked(self, agent_name: str | None) -> None:
-        if not agent_name:
+    def _on_install_picked(self, result: dict | None) -> None:
+        if not result:
             return
-        self._log(f"Installing [cyan]{agent_name}[/cyan]…")
+        agent_name = result["name"]
+        action = result["action"]  # "install" or "update"
+        verb = "Updating" if action == "update" else "Installing"
+        self._log(f"{verb} [cyan]{agent_name}[/cyan]…")
         self._do_install(agent_name)
 
     @work(thread=True)
@@ -587,19 +666,23 @@ class OpenAgentsTUI(App):
 
         if action.startswith("existing:"):
             slug = action.split(":", 1)[1]
-            from openagents.client.daemon_config import connect_agent_to_network
+            from openagents.client.daemon_config import connect_agent_to_network, load_config
 
             connect_agent_to_network(agent_name, slug)
-            self._log(f"[green]✓[/green] Connected [cyan]{agent_name}[/cyan] → {slug}")
+            self._signal_daemon_reload()
+            cfg = load_config()
+            net = next((n for n in cfg.networks if (n.slug or n.id) == slug), None)
+            url = self._workspace_url(net) if net else slug
+            self._log(f"[green]✓[/green] Connected [cyan]{agent_name}[/cyan] → {url}")
             self._refresh_table()
 
-        elif action == "create":
+        elif action == ConnectWorkspaceScreen._ACTION_CREATE:
             self.push_screen(
                 TextInputScreen("Workspace name", default=f"{agent_name}'s workspace"),
                 callback=lambda name: self._on_create_workspace(agent_name, name),
             )
 
-        elif action == "token":
+        elif action == ConnectWorkspaceScreen._ACTION_TOKEN:
             self.push_screen(
                 TokenInputScreen(),
                 callback=lambda token: self._on_join_token(agent_name, token),
@@ -632,7 +715,8 @@ class OpenAgentsTUI(App):
                 if cfg.networks:
                     last_net = cfg.networks[-1]
                     connect_agent_to_network(agent_name, last_net.slug or last_net.id)
-                    url = f"https://workspace.openagents.org/{last_net.slug}"
+                    self._signal_daemon_reload()
+                    url = self._workspace_url(last_net)
                     self.call_from_thread(
                         self._log,
                         f"[green]✓[/green] Created & connected → {url}",
@@ -674,10 +758,17 @@ class OpenAgentsTUI(App):
                 if cfg.networks:
                     last_net = cfg.networks[-1]
                     connect_agent_to_network(agent_name, last_net.slug or last_net.id)
-                self.call_from_thread(
-                    self._log,
-                    f"[green]✓[/green] Joined & connected [cyan]{agent_name}[/cyan]",
-                )
+                    self._signal_daemon_reload()
+                    url = self._workspace_url(last_net)
+                    self.call_from_thread(
+                        self._log,
+                        f"[green]✓[/green] Joined & connected [cyan]{agent_name}[/cyan] → {url}",
+                    )
+                else:
+                    self.call_from_thread(
+                        self._log,
+                        f"[green]✓[/green] Joined & connected [cyan]{agent_name}[/cyan]",
+                    )
             else:
                 err = (result.stderr or result.stdout).strip()[:200]
                 self.call_from_thread(self._log, f"[red]✗ Join failed:[/red] {err}")
@@ -696,6 +787,7 @@ class OpenAgentsTUI(App):
         from openagents.client.daemon_config import disconnect_agent_from_network
 
         if disconnect_agent_from_network(name):
+            self._signal_daemon_reload()
             self._log(f"[green]✓[/green] Disconnected [cyan]{name}[/cyan]")
         else:
             self._log(f"[red]✗ Agent '{name}' not found[/red]")

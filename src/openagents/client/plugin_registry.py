@@ -91,6 +91,23 @@ class AgentPlugin(ABC):
         """
         return None
 
+    def get_version(self) -> Optional[str]:
+        """Return the installed version string, or None if unavailable."""
+        binary = self.which()
+        if not binary or not self.is_installed():
+            return None
+        try:
+            import subprocess
+            result = subprocess.run(
+                [binary, "--version"],
+                capture_output=True, text=True, timeout=5,
+            )
+            output = (result.stdout or result.stderr or "").strip()
+            # Return just the first line, stripped of common prefixes
+            return output.split("\n")[0].strip() if output else None
+        except Exception:
+            return None
+
     def health_check(self) -> bool:
         """Optional deeper health check beyond is_installed()."""
         return self.is_installed()
