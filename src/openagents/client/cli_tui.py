@@ -1019,10 +1019,18 @@ class OpenAgentsTUI(App):
 
     @staticmethod
     def _signal_daemon_reload():
-        """Send SIGHUP to the running daemon so it reloads config."""
+        """Signal the running daemon to reload config."""
         from openagents.client.daemon import read_daemon_pid
         pid = read_daemon_pid()
-        if pid:
+        if not pid:
+            return
+        if sys.platform == "win32":
+            from openagents.client.daemon_config import CMD_PATH
+            try:
+                CMD_PATH.write_text("reload\n")
+            except OSError:
+                pass
+        else:
             try:
                 import signal
                 os.kill(pid, signal.SIGHUP)

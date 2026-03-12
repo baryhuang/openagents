@@ -1164,10 +1164,19 @@ def workspace_members(
 
 
 def _signal_daemon_reload():
-    """Send SIGHUP to the running daemon so it reloads config immediately."""
+    """Signal the running daemon to reload config immediately."""
     from openagents.client.daemon import read_daemon_pid
     pid = read_daemon_pid()
-    if pid:
+    if not pid:
+        return
+    # On Unix, send SIGHUP. On Windows, write a reload command file.
+    if sys.platform == "win32":
+        from openagents.client.daemon_config import CMD_PATH
+        try:
+            CMD_PATH.write_text("reload\n")
+        except OSError:
+            pass
+    else:
         try:
             import signal
             os.kill(pid, signal.SIGHUP)
