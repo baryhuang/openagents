@@ -86,7 +86,7 @@ class TestJoinNetwork:
         resp = client.get("/v1/events", params={
             "network": workspace["id"],
             "type": "network.agent.join",
-        })
+        }, headers={"X-Workspace-Token": workspace["token"]})
         events = resp.json()["data"]["events"]
         assert len(events) >= 1
         join_event = events[-1]
@@ -164,7 +164,8 @@ class TestJoinTokenOnly:
         assert data["agent_name"] == "claude-bot"
 
         # Verify agent appears in discover with correct type
-        disc = client.get("/v1/discover", params={"network": workspace["id"]})
+        disc = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
         agents = disc.json()["data"]["agents"]
         claude_agents = [a for a in agents if a["address"] == "openagents:claude-bot"]
         assert len(claude_agents) == 1
@@ -244,7 +245,8 @@ class TestDiscover:
     def test_discover_agents(self, client, workspace):
         """Discover shows workspace agents."""
         # The workspace fixture already has agent-alpha as master
-        resp = client.get("/v1/discover", params={"network": workspace["id"]})
+        resp = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         data = resp.json()["data"]
         agents = data["agents"]
@@ -254,7 +256,8 @@ class TestDiscover:
 
     def test_discover_channels(self, client, workspace):
         """Discover shows workspace channels."""
-        resp = client.get("/v1/discover", params={"network": workspace["id"]})
+        resp = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
         data = resp.json()["data"]
         channels = data["channels"]
         assert len(channels) >= 1
@@ -272,7 +275,8 @@ class TestDiscover:
             "network": workspace["id"],
         })
 
-        resp = client.get("/v1/discover", params={"network": workspace["id"]})
+        resp = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
         agents = resp.json()["data"]["agents"]
         names = [a["address"] for a in agents]
         assert "openagents:agent-beta" in names
@@ -311,7 +315,8 @@ class TestNetworkProfile:
 
     def test_profile_returns_metadata(self, client, workspace):
         """Profile returns workspace metadata and capabilities."""
-        resp = client.get("/v1/profile", params={"network": workspace["id"]})
+        resp = client.get("/v1/profile", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["id"] == workspace["id"]

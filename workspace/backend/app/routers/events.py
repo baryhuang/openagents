@@ -18,7 +18,7 @@ from app.database import get_db
 from app.models import Channel, ChannelMember, EventRecord, Workspace
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
-from app.routers.network import _workspace_filter
+from app.routers.network import _verify_workspace_access, _workspace_filter
 from openagents.core.onm_events import Event
 from openagents.core.onm_mods import EventRejected, PipelineContext
 
@@ -131,6 +131,8 @@ async def poll_events(
     sort: Optional[str] = Query(None, description="Sort order: 'asc' (default) or 'desc'"),
     limit: int = Query(50, ge=1, le=200, description="Max events to return"),
     db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
 ):
     """
     Poll events from the network.
@@ -145,6 +147,9 @@ async def poll_events(
 
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
     query = select(EventRecord).where(EventRecord.network_id == workspace.id)
 

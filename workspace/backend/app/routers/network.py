@@ -321,11 +321,16 @@ async def resolve_token(
 async def discover(
     network: str = Query(..., description="Network (workspace) ID"),
     db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
 ):
     """Discover agents, channels, and resources in a network."""
     workspace = _resolve_workspace(db, network)
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
     now = datetime.now(timezone.utc)
 
@@ -403,11 +408,16 @@ async def discover(
 async def network_profile(
     network: str = Query(..., description="Network (workspace) ID"),
     db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
 ):
     """Return the network profile (metadata, transports, capabilities)."""
     workspace = _resolve_workspace(db, network)
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
     online_count = len(db.execute(
         select(WorkspaceMember).where(

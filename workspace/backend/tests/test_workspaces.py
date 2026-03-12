@@ -40,8 +40,10 @@ class TestCreateWorkspace:
             "agent_name": "agent-alpha",
             "creator_email": "user@example.com",
         })
-        ws_id = resp.json()["data"]["workspaceId"]
-        detail = client.get(f"/v1/workspaces/{ws_id}")
+        data = resp.json()["data"]
+        ws_id = data["workspaceId"]
+        detail = client.get(f"/v1/workspaces/{ws_id}",
+                            headers={"X-Workspace-Token": data["token"]})
         assert detail.json()["data"]["creatorEmail"] == "user@example.com"
 
 
@@ -50,7 +52,8 @@ class TestGetWorkspace:
 
     def test_get_workspace_by_id(self, client, workspace):
         """Fetch workspace by ID."""
-        resp = client.get(f"/v1/workspaces/{workspace['id']}")
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["workspaceId"] == workspace["id"]
@@ -58,13 +61,15 @@ class TestGetWorkspace:
 
     def test_get_workspace_by_slug(self, client, workspace):
         """Fetch workspace by slug."""
-        resp = client.get(f"/v1/workspaces/{workspace['slug']}")
+        resp = client.get(f"/v1/workspaces/{workspace['slug']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         assert resp.json()["data"]["workspaceId"] == workspace["id"]
 
     def test_get_workspace_includes_agents(self, client, workspace):
         """Workspace detail includes agent list."""
-        resp = client.get(f"/v1/workspaces/{workspace['id']}")
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
         agents = resp.json()["data"]["agents"]
         assert len(agents) >= 1
         assert agents[0]["agentName"] == "agent-alpha"
@@ -83,7 +88,7 @@ class TestUpdateWorkspace:
         """Update workspace name."""
         resp = client.patch(f"/v1/workspaces/{workspace['id']}", json={
             "name": "Updated Name",
-        })
+        }, headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         assert resp.json()["data"]["name"] == "Updated Name"
 
@@ -91,7 +96,7 @@ class TestUpdateWorkspace:
         """Update workspace settings."""
         resp = client.patch(f"/v1/workspaces/{workspace['id']}", json={
             "settings": {"theme": "dark"},
-        })
+        }, headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         assert resp.json()["data"]["settings"]["theme"] == "dark"
 
@@ -225,7 +230,8 @@ class TestRemoveMember:
         assert resp.json()["data"]["removed"] is True
 
         # Verify agent no longer in discover
-        disc = client.get("/v1/discover", params={"network": workspace["id"]})
+        disc = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
         names = [a["address"] for a in disc.json()["data"]["agents"]]
         assert "openagents:agent-to-remove" not in names
 

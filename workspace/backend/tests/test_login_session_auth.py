@@ -461,7 +461,8 @@ class TestSessionLifecycle:
         assert resp.json()["data"]["status"] == "online"
 
         # 2. Verify visible in discover
-        disc = client.get("/v1/discover", params={"network": network})
+        disc = client.get("/v1/discover", params={"network": network},
+                          headers={"X-Workspace-Token": token})
         addresses = [a["address"] for a in disc.json()["data"]["agents"]]
         assert f"openagents:{agent}" in addresses
 
@@ -497,7 +498,8 @@ class TestSessionLifecycle:
             assert resp.status_code == 200
 
         # All agents visible in discover
-        disc = client.get("/v1/discover", params={"network": workspace["id"]})
+        disc = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
         agents = disc.json()["data"]["agents"]
         # 5 new agents + 1 master (agent-alpha)
         assert len(agents) == 6
@@ -513,7 +515,7 @@ class TestSessionLifecycle:
         resp = client.get("/v1/events", params={
             "network": workspace["id"],
             "type": "network.agent.join",
-        })
+        }, headers={"X-Workspace-Token": workspace["token"]})
         events = resp.json()["data"]["events"]
         sources = [e["source"] for e in events]
         assert "openagents:agent-evented" in sources
@@ -533,7 +535,7 @@ class TestSessionLifecycle:
         resp = client.get("/v1/events", params={
             "network": workspace["id"],
             "type": "network.agent.leave",
-        })
+        }, headers={"X-Workspace-Token": workspace["token"]})
         events = resp.json()["data"]["events"]
         sources = [e["source"] for e in events]
         assert "openagents:agent-leaver" in sources
@@ -553,7 +555,7 @@ class TestSessionLifecycle:
         resp = client.get("/v1/events", params={
             "network": workspace["id"],
             "type": "network.ping",
-        })
+        }, headers={"X-Workspace-Token": workspace["token"]})
         events = resp.json()["data"]["events"]
         sources = [e["source"] for e in events]
         assert "openagents:agent-pinger" in sources

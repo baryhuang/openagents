@@ -264,6 +264,8 @@ async def list_workspaces(
 async def get_workspace(
     workspace_id: str,
     db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
 ):
     """Get workspace details by ID or slug."""
     workspace = db.execute(
@@ -272,6 +274,9 @@ async def get_workspace(
 
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
     members = db.execute(
         select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
@@ -290,6 +295,8 @@ async def update_workspace(
     workspace_id: str,
     body: WorkspaceUpdateRequest,
     db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
 ):
     """Update workspace name, settings, or status."""
     workspace = db.execute(
@@ -298,6 +305,9 @@ async def update_workspace(
 
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
     if body.name is not None:
         workspace.name = body.name
