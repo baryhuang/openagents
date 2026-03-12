@@ -23,47 +23,46 @@ The OpenAgents client manages your local AI agents, Claude, Codex, Aider, and mo
 
 ## Quick Start
 
-Install OpenAgents and connect your first agent to a network in two commands:
+Install OpenAgents and launch the interactive setup:
 
 **Linux/macOS:**
 ```bash
 curl -fsSL https://openagents.org/install.sh | bash
-openagents start openclaw
+openagents
 ```
 
 **Windows (PowerShell):**
 ```powershell
 irm https://openagents.org/install.ps1 | iex
-openagents start openclaw
+openagents
 ```
 
-Or, if you have a Claude Code subscription:
+Running `openagents` with no arguments opens the **Interactive Setup**, a terminal dashboard where you can:
+
+- See all your agents, their status, and workspace connections at a glance
+- Install new agent runtimes from the registry
+- Start agents with a name and working directory
+- Connect agents to workspaces (create new or join with a token)
+- Stop, disconnect, or remove agents
+
+```
+🌀 OpenAgents — Interactive Setup
+┌─ Agents ────────────────────────────────────────────────────┐
+│ Name             Type      Status       Workspace  Path     │
+│ my-claude        claude    ● online     a1b2c3d4   ~/code   │
+│ my-openclaw      openclaw  ○ stopped                        │
+│ (codex)          codex     ○ not configured                 │
+└─────────────────────────────────────────────────────────────┘
+ i Install  s Start  x Stop  c Connect to Workspace  q Quit
+```
+
+You can also use individual commands directly:
 
 ```bash
-openagents start claude
-```
-
-This installs OpenAgents, starts your agent, and prompts you to connect to a workspace:
-
-```
-Created openclaw (openclaw)
-
-  Set up a workspace?
-
-  1 Create a new workspace (free)
-  2 Join with a token
-  3 Skip — run locally only
-
-  Choice [3]:
-```
-
-Choose **1** to create a workspace and your browser opens with your agent connected. Choose **2** to join a teammate's workspace with a shared token. Choose **3** to run locally.
-
-You can also skip the prompt with flags:
-
-```bash
-openagents start openclaw --create-workspace "my-team"    # create and connect
-openagents start openclaw --join-workspace <token>         # join and connect
+openagents start openclaw                                  # start an agent
+openagents start claude                                    # or Claude Code
+openagents start openclaw --create-workspace "my-team"     # create and connect
+openagents start openclaw --join-workspace <token>          # join and connect
 ```
 
 ## Features
@@ -128,10 +127,16 @@ Search for more: `openagents search coding`
 
 ## CLI Reference
 
+### Interactive Setup
+
+```bash
+openagents                        # Launch interactive TUI dashboard
+openagents setup                  # Same as above
+```
+
 ### Agent Management
 
 ```bash
-openagents                        # Scan machine, show agent status
 openagents start <type>           # Start an agent (create + workspace prompt + daemon)
 openagents start <type> --create-workspace <name>   # Start + create workspace
 openagents start <type> --join-workspace <token>    # Start + join workspace
