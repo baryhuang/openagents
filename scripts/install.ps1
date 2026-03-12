@@ -116,35 +116,21 @@ if (Get-Command openagents -ErrorAction SilentlyContinue) {
     Write-Warn "You may need to restart your terminal"
 }
 
-Write-Step "Detecting local AI agents..."
-
-$agentCount = 0
-
-if (Get-Command claude -ErrorAction SilentlyContinue) {
-    Write-Ok "Claude Code"
-    $agentCount++
-} else {
-    Write-Host "  Claude Code - not installed" -ForegroundColor DarkGray
-}
-
-if (Get-Command aider -ErrorAction SilentlyContinue) {
-    Write-Ok "Aider"
-    $agentCount++
-} else {
-    Write-Host "  Aider - not installed" -ForegroundColor DarkGray
-}
-
 Write-Host ""
 Write-Host "  Installation complete!" -ForegroundColor Green
 Write-Host ""
-
-if ($agentCount -gt 0) {
-    Write-Host "  Quick start:"
-    Write-Host "    openagents start claude    Start a Claude agent" -ForegroundColor White
-    Write-Host "    openagents                 Show all agents" -ForegroundColor White
-} else {
-    Write-Host "  Next steps:"
-    Write-Host "    1. Install Claude Code from https://claude.ai"
-    Write-Host "    2. Run: openagents start claude"
-}
+Write-Host "  Run " -NoNewline
+Write-Host "openagents" -ForegroundColor White -NoNewline
+Write-Host " to:"
+Write-Host "    - Install AI agents (Claude, OpenClaw, Codex, Aider, ...)"
+Write-Host "    - Manage and configure agents"
+Write-Host "    - Connect agents to OpenAgents Workspaces"
 Write-Host ""
+
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+if (Get-Command openagents -ErrorAction SilentlyContinue) {
+    Write-Step "Launching OpenAgents..."
+    Write-Host ""
+    & openagents
+}

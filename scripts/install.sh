@@ -199,137 +199,19 @@ else
 fi
 
 # =========================================================================
-# Step 3: Detect local AI agents
-# =========================================================================
-step "Detecting local AI agents..."
-
-agent_count=0
-
-# Claude Code
-if command -v claude >/dev/null 2>&1; then
-    claude_ver=$(claude --version 2>/dev/null | head -1 || echo "unknown")
-    ok "Claude Code ($claude_ver)"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}Claude Code — not installed${RESET}"
-fi
-
-# OpenClaw
-if command -v openclaw >/dev/null 2>&1; then
-    openclaw_ver=$(openclaw --version 2>/dev/null | head -1 || echo "unknown")
-    ok "OpenClaw ($openclaw_ver)"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}OpenClaw — not installed${RESET}"
-fi
-
-# OpenAI Codex
-if command -v codex >/dev/null 2>&1; then
-    ok "OpenAI Codex CLI"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}OpenAI Codex — not installed${RESET}"
-fi
-
-# Aider
-if command -v aider >/dev/null 2>&1; then
-    ok "Aider"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}Aider — not installed${RESET}"
-fi
-
-# Goose
-if command -v goose >/dev/null 2>&1; then
-    ok "Goose"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}Goose — not installed${RESET}"
-fi
-
-# Gemini CLI
-if command -v gemini >/dev/null 2>&1; then
-    ok "Gemini CLI"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}Gemini CLI — not installed${RESET}"
-fi
-
-# GitHub Copilot CLI
-if command -v copilot >/dev/null 2>&1; then
-    ok "GitHub Copilot CLI"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}GitHub Copilot CLI — not installed${RESET}"
-fi
-
-# Amp (Sourcegraph)
-if command -v amp >/dev/null 2>&1; then
-    ok "Amp (Sourcegraph)"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}Amp — not installed${RESET}"
-fi
-
-# OpenCode
-if command -v opencode >/dev/null 2>&1; then
-    ok "OpenCode"
-    agent_count=$((agent_count + 1))
-else
-    echo "  ${DIM}OpenCode — not installed${RESET}"
-fi
-
-if [ "$agent_count" -eq 0 ]; then
-    echo ""
-    warn "No AI agents found. Install one to get started:"
-    echo ""
-    echo "  ${BOLD}Claude Code${RESET}  (recommended)"
-    echo "    curl -fsSL https://claude.ai/install.sh | bash"
-    echo ""
-    echo "  ${BOLD}OpenClaw${RESET}"
-    echo "    curl -fsSL https://openclaw.ai/install.sh | bash"
-    echo ""
-    echo "  ${BOLD}Gemini CLI${RESET}"
-    echo "    npm install -g @google/gemini-cli"
-    echo ""
-    echo "  ${BOLD}OpenAI Codex${RESET}"
-    echo "    npm install -g @openai/codex"
-    echo ""
-fi
-
-# =========================================================================
-# Step 4: Run scan (if CLI is available)
-# =========================================================================
-if command -v openagents >/dev/null 2>&1; then
-    step "Running agent scan..."
-    echo ""
-    openagents 2>/dev/null || true
-fi
-
-# =========================================================================
-# Done
+# Done — launch interactive setup
 # =========================================================================
 echo ""
 echo "${BOLD}${GREEN}  Installation complete!${RESET}"
 echo ""
+echo "  Run ${BOLD}openagents${RESET} to:"
+echo "    - Install AI agents (Claude, OpenClaw, Codex, Aider, ...)"
+echo "    - Manage and configure agents"
+echo "    - Connect agents to OpenAgents Workspaces"
+echo ""
 
-if [ "$agent_count" -gt 0 ]; then
-    echo "  Quick start:"
+if command -v openagents >/dev/null 2>&1; then
+    step "Launching OpenAgents..."
     echo ""
-    if command -v claude >/dev/null 2>&1; then
-        echo "    ${BOLD}openagents start claude${RESET}    Start a Claude agent"
-    elif command -v codex >/dev/null 2>&1; then
-        echo "    ${BOLD}openagents start codex${RESET}    Start a Codex agent"
-    fi
-    echo "    ${BOLD}openagents${RESET}                Show all agents & status"
-    echo ""
-else
-    echo "  Next steps:"
-    echo ""
-    echo "    1. Install an AI agent (e.g. Claude Code):"
-    echo "       ${BOLD}openagents install claude${RESET}"
-    echo ""
-    echo "    2. Start it:"
-    echo "       ${BOLD}openagents start claude${RESET}"
-    echo ""
+    exec openagents
 fi
