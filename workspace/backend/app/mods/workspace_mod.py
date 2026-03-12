@@ -363,7 +363,9 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
 
     Routing rules (agent messages):
     - Any @mentions in body → route to mentioned agents
-    - No mentions → no targeting (visible in UI only)
+    - No mentions and sender is NOT channel master → route to channel master
+      (so the master can review the member's response and decide next steps)
+    - No mentions and sender IS channel master → no targeting (visible in UI only)
     """
     from app.models import Channel, WorkspaceMember
 
@@ -382,27 +384,32 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     ]
     mentions = _extract_mentions(content, known_agents)
 
-    # Agent messages: route to mentioned agents only
+    # Resolve channel (needed for both agent and human message routing)
+    channel = None
+    if event.target.startswith("channel/"):
+        channel_name = event.target[len("channel/"):]
+        channel = db.execute(
+            select(Channel).where(
+                Channel.workspace_id == workspace.id,
+                Channel.name == channel_name,
+            )
+        ).scalar_one_or_none()
+
+    # Agent messages: route to mentioned agents, or back to master
     if event.source.startswith("openagents:"):
         if mentions:
             event.metadata["target_agents"] = mentions
+        elif channel and channel.master_agent:
+            # No mentions — route back to channel master so it can review,
+            # unless the sender IS the master (avoid self-trigger loop).
+            sender = event.source[len("openagents:"):]
+            if sender != channel.master_agent:
+                event.metadata["target_agents"] = [channel.master_agent]
         return event
 
     # Human messages → route to channel master
     if not event.source.startswith("human:"):
         return event
-
-    # Extract channel from target
-    if not event.target.startswith("channel/"):
-        return event
-
-    channel_name = event.target[len("channel/"):]
-    channel = db.execute(
-        select(Channel).where(
-            Channel.workspace_id == workspace.id,
-            Channel.name == channel_name,
-        )
-    ).scalar_one_or_none()
 
     if not channel:
         return event
