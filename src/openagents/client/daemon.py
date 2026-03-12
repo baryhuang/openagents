@@ -146,18 +146,31 @@ class DaemonManager:
         old_names = {a.name for a in self.config.agents}
         new_names = {a.name for a in new_config.agents}
 
+        old_agent_map = {a.name: a for a in self.config.agents}
+        new_agent_map = {a.name: a for a in new_config.agents}
+
         # Stop removed agents
         for name in old_names - new_names:
             self._stop_agent(name)
             logger.info(f"Reload: stopped removed agent '{name}'")
 
         # Start new agents
-        new_agent_map = {a.name: a for a in new_config.agents}
         for name in new_names - old_names:
             agent_cfg = new_agent_map[name]
             net = get_agent_network(agent_cfg, new_config)
             self._launch_agent(agent_cfg, net)
             logger.info(f"Reload: started new agent '{name}'")
+
+        # Restart agents whose network changed
+        for name in old_names & new_names:
+            old_net = old_agent_map[name].network
+            new_net = new_agent_map[name].network
+            if old_net != new_net:
+                self._stop_agent(name)
+                agent_cfg = new_agent_map[name]
+                net = get_agent_network(agent_cfg, new_config)
+                self._launch_agent(agent_cfg, net)
+                logger.info(f"Reload: reconnected '{name}' ({old_net} → {new_net})")
 
         self.config = new_config
         self._write_status()

@@ -757,11 +757,14 @@ def daemon_connect_agent(
 
     # Connect
     connect_agent_to_network(agent_name, net_entry.slug or net_entry.id)
+
+    # Signal daemon to reload config immediately
+    _signal_daemon_reload()
+
     console.print(
         f"\n[green]Connected[/green] [cyan]{agent_name}[/cyan] ({agent.type}) "
         f"→ [bold]{net_entry.name or net_entry.slug}[/bold]"
     )
-    console.print("Run [bold]openagents up[/bold] to start.")
 
 
 @app.command("disconnect", rich_help_panel="Workspace")
@@ -784,6 +787,10 @@ def daemon_disconnect_agent(
 
     old_network = agent.network
     disconnect_agent_from_network(agent_name)
+
+    # Signal daemon to reload config immediately
+    _signal_daemon_reload()
+
     console.print(
         f"[green]Disconnected[/green] [cyan]{agent_name}[/cyan] from {old_network}. "
         f"Agent will run locally."
@@ -1150,6 +1157,18 @@ def workspace_members(
 
     console.print()
     console.print(table)
+
+
+def _signal_daemon_reload():
+    """Send SIGHUP to the running daemon so it reloads config immediately."""
+    from openagents.client.daemon import read_daemon_pid
+    pid = read_daemon_pid()
+    if pid:
+        try:
+            import signal
+            os.kill(pid, signal.SIGHUP)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def _resolve_or_create_network(
