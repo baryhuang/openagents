@@ -722,7 +722,7 @@ def connect_codex(
         console.print("\n[yellow]Disconnected.[/yellow]")
 
 
-@app.command(name="invitations")
+@app.command(name="invitations", rich_help_panel="Workspace")
 def invitations_cmd(
     agent_type: str = typer.Argument(
         ..., help="Agent type to check invitations for (claude, codex, openclaw)",
@@ -762,7 +762,7 @@ def invitations_cmd(
     asyncio.run(_run())
 
 
-@app.command(name="join")
+@app.command(name="join", rich_help_panel="Workspace")
 def join_cmd(
     invite_token: str = typer.Argument(
         ..., help="Invitation token (inv_xxxxx)",
@@ -800,7 +800,7 @@ def join_cmd(
     asyncio.run(_run())
 
 
-@app.command(name="login")
+@app.command(name="login", rich_help_panel="Workspace")
 def login_cmd(
     api_key: str = typer.Option(
         ..., "--api-key", prompt="Enter your OpenAgents API key",
@@ -822,7 +822,7 @@ def login_cmd(
     console.print("[dim]Stored in ~/.openagents/identity.json[/dim]")
 
 
-@app.command(name="rename")
+@app.command(name="rename", rich_help_panel="Identity")
 def rename_cmd(
     new_name: str = typer.Argument(help="New agent name"),
     agent_type: str = typer.Option(
@@ -850,7 +850,7 @@ def rename_cmd(
     )
 
 
-@app.command(name="mcp-server")
+@app.command(name="mcp-server", rich_help_panel="SDK")
 def mcp_server_cmd(
     workspace_id: str = typer.Option(
         ..., "--workspace-id", help="Workspace ID"

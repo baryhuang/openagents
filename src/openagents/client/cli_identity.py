@@ -23,8 +23,8 @@ agentid_app = typer.Typer(
     help="\U0001faa2 Agent Identity verification and authentication",
     rich_markup_mode="rich",
 )
-app.add_typer(certs_app, name="certs")
-app.add_typer(agentid_app, name="agentid")
+app.add_typer(certs_app, name="certs", rich_help_panel="Identity")
+app.add_typer(agentid_app, name="agentid", rich_help_panel="Identity")
 
 @certs_app.command("generate")
 def certs_generate(

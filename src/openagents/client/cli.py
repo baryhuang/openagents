@@ -51,7 +51,7 @@ import openagents.client.cli_legacy    # noqa: F401  — connect-legacy + accoun
 # Root-level commands (studio, version, examples, init)
 # =============================================================================
 
-@app.command("studio")
+@app.command("studio", rich_help_panel="SDK")
 def studio(
     host: str = typer.Option("localhost", "--host", "-h", help="Network host address"),
     port: int = typer.Option(8700, "--port", "-p", help="Network port"),
@@ -82,7 +82,7 @@ def studio(
     studio_command(args)
 
 
-@app.command("version")
+@app.command("version", rich_help_panel="Client")
 def version():
     """Show version information"""
     try:
@@ -96,7 +96,7 @@ def version():
         console.print("[yellow]Version information not available[/yellow]")
 
 
-@app.command("examples")
+@app.command("examples", rich_help_panel="SDK")
 def show_examples():
     """Show usage examples"""
     examples_text = """
@@ -130,7 +130,7 @@ def show_examples():
     ))
 
 
-@app.command("init")
+@app.command("init", rich_help_panel="SDK")
 def init_workspace_cmd(
     path: Optional[str] = typer.Argument(None, help="Workspace directory path"),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing workspace"),
@@ -168,7 +168,7 @@ def init_workspace_cmd(
             raise typer.Exit(1)
 
 
-@app.command("list")
+@app.command("list", rich_help_panel="Client")
 def list_agents_cmd():
     """List locally installed agents and their setup status"""
     _show_agent_scan()

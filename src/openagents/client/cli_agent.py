@@ -22,8 +22,8 @@ agents_app = typer.Typer(
     help="\U0001f916\U0001f916 Bulk agent management commands",
     rich_markup_mode="rich",
 )
-app.add_typer(agent_app, name="agent")
-app.add_typer(agents_app, name="agents")
+app.add_typer(agent_app, name="agent", rich_help_panel="SDK")
+app.add_typer(agents_app, name="agents", rich_help_panel="SDK")
 
 @agent_app.command("start")
 def agent_start(

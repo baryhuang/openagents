@@ -37,7 +37,7 @@ network_app = typer.Typer(
     help="\U0001f310 Network management commands",
     rich_markup_mode="rich",
 )
-app.add_typer(network_app, name="network")
+app.add_typer(network_app, name="network", rich_help_panel="SDK")
 
 @network_app.command("start")
 def network_start(

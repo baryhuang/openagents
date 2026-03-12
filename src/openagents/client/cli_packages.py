@@ -16,7 +16,7 @@ from rich import box
 
 from openagents.client.cli_shared import app, console
 
-@app.command("remove")
+@app.command("remove", rich_help_panel="Client")
 def daemon_remove(
     agent_name: str = typer.Argument(..., help="Name of the agent to remove"),
 ):
@@ -38,7 +38,7 @@ def daemon_remove(
     console.print(f"  [green]✓ Removed[/green] {agent_name}")
 
 
-@app.command("runtimes")
+@app.command("runtimes", rich_help_panel="Client")
 def list_runtimes():
     """🔧 List installed and available agent runtimes."""
     from openagents.client.agent_setup import detect_runtimes
@@ -89,7 +89,7 @@ def list_runtimes():
             console.print(f"    [cyan]{a.name}[/cyan] ({a.type}, {a.role}) → {net_label}")
 
 
-@app.command("install")
+@app.command("install", rich_help_panel="Client")
 def install_agent(
     agent_type: str = typer.Argument(..., help="Agent type to install (e.g. claude, aider, codex)"),
 ):
@@ -191,7 +191,7 @@ def install_agent(
         raise typer.Exit(1)
 
 
-@app.command("search")
+@app.command("search", rich_help_panel="Client")
 def search_agents(
     query: str = typer.Argument("", help="Search query (empty = list all)"),
 ):
@@ -242,7 +242,7 @@ def search_agents(
     console.print(f"\n  [dim]Install with:[/dim] [bold]openagents install <name>[/bold]")
 
 
-@app.command("update")
+@app.command("update", rich_help_panel="Client")
 def self_update(
     check_only: bool = typer.Option(
         False, "--check", help="Only check for updates, don't install",
@@ -343,7 +343,7 @@ def self_update(
         console.print("\n  [dim]Already up to date.[/dim]")
 
 
-@app.command("autostart")
+@app.command("autostart", rich_help_panel="Client")
 def init_autostart(
     remove: bool = typer.Option(False, "--remove", help="Remove auto-start configuration"),
 ):

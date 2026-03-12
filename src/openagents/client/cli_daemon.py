@@ -38,9 +38,9 @@ workspace_app = typer.Typer(
     help="Workspace management \u2014 create, join, and list workspaces",
     rich_markup_mode="rich",
 )
-app.add_typer(workspace_app, name="workspace")
+app.add_typer(workspace_app, name="workspace", rich_help_panel="Workspace")
 
-@app.command("up")
+@app.command("up", rich_help_panel="Client")
 def daemon_up(
     config: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path to daemon config YAML",
@@ -109,7 +109,7 @@ def daemon_up(
         console.print("\n[yellow]Daemon stopped.[/yellow]")
 
 
-@app.command("down")
+@app.command("down", rich_help_panel="Client")
 def daemon_down():
     """⏹ Stop the OpenAgents daemon."""
     from openagents.client.daemon import stop_daemon, read_daemon_pid
@@ -127,7 +127,7 @@ def daemon_down():
         raise typer.Exit(1)
 
 
-@app.command("status")
+@app.command("status", rich_help_panel="Client")
 def daemon_status():
     """📋 Show status of the OpenAgents daemon and managed agents."""
     from openagents.client.daemon import read_daemon_pid
@@ -199,7 +199,7 @@ def daemon_status():
     console.print(table)
 
 
-@app.command("logs")
+@app.command("logs", rich_help_panel="Client")
 def daemon_logs(
     agent: Optional[str] = typer.Argument(
         None, help="Filter logs by agent name",
@@ -266,7 +266,7 @@ def daemon_logs(
             console.print(f"\n[dim]Showing last {lines} of {total} lines. Use -n to show more, -f to follow.[/dim]")
 
 
-@app.command("start")
+@app.command("start", rich_help_panel="Client")
 def daemon_start_agent(
     agent_type: str = typer.Argument(
         ..., help="Agent type (claude, openclaw, codex, etc.)",
@@ -437,29 +437,42 @@ def daemon_start_agent(
         except Exception as e:
             console.print(f"  [red]Failed to join: {e}[/red]")
 
-    elif cfg.networks:
-        # Auto-connect to first workspace already in config
-        net = cfg.networks[0]
-        agent_entry.network = net.slug or net.id
-        add_agent_to_config(agent_entry)
-        console.print(
-            f"  Connected to workspace: [bold]{net.name or net.slug}[/bold]"
-        )
     else:
-        # No workspace and no flags — interactive prompt
+        # Interactive prompt — list existing workspaces or offer create/join/skip
         add_agent_to_config(agent_entry)
         console.print()
+
+        # Build menu options
+        menu_lines = ["  Connect to a workspace?\n"]
+        valid_choices = []
+
+        # List existing workspaces as numbered options
+        if cfg.networks:
+            for i, net in enumerate(cfg.networks, 1):
+                label = net.name or net.slug or net.id
+                menu_lines.append(f"  [bold]{i}[/bold] {label} [dim]({net.slug or net.id})[/dim]")
+                valid_choices.append(str(i))
+
+        # Add create / join / skip options after existing workspaces
+        next_num = len(cfg.networks) + 1
+        create_choice = str(next_num)
+        join_choice = str(next_num + 1)
+        skip_choice = str(next_num + 2)
+
+        menu_lines.append(f"  [bold]{create_choice}[/bold] Create a new workspace")
+        menu_lines.append(f"  [bold]{join_choice}[/bold] Join with a token")
+        menu_lines.append(f"  [bold]{skip_choice}[/bold] Skip — run locally only")
+        menu_lines.append("")
+
+        valid_choices.extend([create_choice, join_choice, skip_choice])
+
         choice = Prompt.ask(
-            "  Set up a workspace?\n\n"
-            "  [bold]1[/bold] Create a new workspace (free)\n"
-            "  [bold]2[/bold] Join with a token\n"
-            "  [bold]3[/bold] Skip — run locally only\n\n"
-            "  Choice",
-            choices=["1", "2", "3"],
-            default="3",
+            "\n".join(menu_lines) + "  Choice",
+            choices=valid_choices,
+            default=skip_choice,
         )
 
-        if choice == "1":
+        if choice == create_choice:
             # Create workspace inline
             ws_name = Prompt.ask("  Workspace name", default=f"{name}'s workspace")
             net_entry = _resolve_or_create_network(
@@ -482,7 +495,7 @@ def daemon_start_agent(
                     except Exception:
                         pass
 
-        elif choice == "2":
+        elif choice == join_choice:
             # Join with token
             ws_token = Prompt.ask("  Paste workspace token")
             if ws_token.strip():
@@ -527,13 +540,23 @@ def daemon_start_agent(
                 except Exception as e:
                     console.print(f"  [red]Failed to join: {e}[/red]")
 
-        # else choice == "3": skip, run locally
+        elif choice != skip_choice and cfg.networks:
+            # User picked an existing workspace
+            idx = int(choice) - 1
+            net = cfg.networks[idx]
+            from openagents.client.daemon_config import connect_agent_to_network
+            connect_agent_to_network(name, net.slug or net.id)
+            console.print(
+                f"  Connected to workspace: [bold]{net.name or net.slug}[/bold]"
+            )
+
+        # else skip_choice: run locally, no workspace
 
     # Start daemon
     _start_daemon()
 
 
-@app.command("stop")
+@app.command("stop", rich_help_panel="Client")
 def daemon_stop_agent(
     agent_name: Optional[str] = typer.Argument(
         None, help="Agent name to stop (omit to stop all / stop daemon)",
@@ -633,7 +656,7 @@ def _start_daemon():
         console.print("\n  [yellow]Daemon stopped.[/yellow]")
 
 
-@app.command("connect")
+@app.command("connect", rich_help_panel="Workspace")
 def daemon_connect_agent(
     agent_name: str = typer.Argument(..., help="Name of the agent to connect"),
     network: Optional[str] = typer.Argument(
@@ -741,7 +764,7 @@ def daemon_connect_agent(
     console.print("Run [bold]openagents up[/bold] to start.")
 
 
-@app.command("disconnect")
+@app.command("disconnect", rich_help_panel="Workspace")
 def daemon_disconnect_agent(
     agent_name: str = typer.Argument(..., help="Name of the agent to disconnect"),
 ):
