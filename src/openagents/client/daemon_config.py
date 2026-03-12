@@ -35,6 +35,7 @@ PID_PATH = CONFIG_DIR / "daemon.pid"
 LOG_PATH = CONFIG_DIR / "daemon.log"
 STATUS_PATH = CONFIG_DIR / "daemon.status.json"
 CMD_PATH = CONFIG_DIR / "daemon.cmd"
+ENV_DIR = CONFIG_DIR / "env"
 
 DEFAULT_ENDPOINT = "https://workspace-endpoint.openagents.org"
 
@@ -52,6 +53,7 @@ class AgentEntry:
     path: Optional[str] = None  # working directory
     network: Optional[str] = None  # network slug/id — None = local-only
     options: dict = field(default_factory=dict)
+    env: dict = field(default_factory=dict)  # per-agent environment variables (e.g. API keys)
 
 
 @dataclass
@@ -135,6 +137,7 @@ def load_config(path: Optional[Path] = None) -> DaemonConfig:
             path=a.get("path"),
             network=a.get("network"),
             options=a.get("options", {}),
+            env=a.get("env", {}),
         )
         for a in raw.get("agents", [])
     ]
@@ -177,6 +180,7 @@ def save_config(config: DaemonConfig, path: Optional[Path] = None) -> None:
                 "path": a.path,
                 "network": a.network,
                 "options": a.options or None,
+                "env": a.env or None,
             }.items() if v is not None}
             for a in config.agents
         ],
@@ -338,3 +342,37 @@ def read_status() -> Optional[dict]:
         return json.loads(STATUS_PATH.read_text())
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Per-agent-type environment variables
+# ---------------------------------------------------------------------------
+
+def load_agent_env(agent_type: str) -> dict[str, str]:
+    """Load saved env vars for an agent type from ~/.openagents/env/<type>.env."""
+    env_file = ENV_DIR / f"{agent_type}.env"
+    if not env_file.exists():
+        return {}
+    env = {}
+    try:
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            env[key.strip()] = value.strip()
+    except Exception:
+        return {}
+    return env
+
+
+def save_agent_env(agent_type: str, env: dict[str, str]) -> None:
+    """Save env vars for an agent type to ~/.openagents/env/<type>.env."""
+    ENV_DIR.mkdir(parents=True, exist_ok=True)
+    env_file = ENV_DIR / f"{agent_type}.env"
+    lines = [f"{k}={v}" for k, v in env.items() if v]
+    env_file.write_text("\n".join(lines) + "\n" if lines else "")
+    try:
+        env_file.chmod(0o600)
+    except OSError:
+        pass

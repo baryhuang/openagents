@@ -108,6 +108,23 @@ class AgentPlugin(ABC):
         except Exception:
             return None
 
+    def required_env_vars(self) -> list[dict]:
+        """Return list of config fields this agent may need.
+
+        Each entry: {"name": "VAR_NAME", "description": "...", "required": bool,
+                     "password": bool, "placeholder": str}
+        """
+        return []
+
+    def resolve_env(self, saved: dict) -> dict:
+        """Translate saved config fields to actual environment variables.
+
+        Override in subclasses to map generic config names (e.g. LLM_API_KEY)
+        to the env vars the agent process actually reads.
+        Default: pass through as-is.
+        """
+        return saved
+
     def health_check(self) -> bool:
         """Optional deeper health check beyond is_installed()."""
         return self.is_installed()
@@ -185,13 +202,62 @@ class OpenClawPlugin(AgentPlugin):
     def which(self) -> Optional[str]:
         return shutil.which("openclaw")
 
+    def required_env_vars(self) -> list[dict]:
+        return [
+            {
+                "name": "LLM_API_KEY",
+                "description": "API key",
+                "required": True,
+                "password": True,
+            },
+            {
+                "name": "LLM_BASE_URL",
+                "description": "API base URL (OpenAI-compatible endpoint)",
+                "required": False,
+                "password": False,
+                "default": "https://api.openai.com/v1",
+                "placeholder": "https://api.openai.com/v1",
+            },
+            {
+                "name": "LLM_MODEL",
+                "description": "Model name",
+                "required": False,
+                "password": False,
+                "placeholder": "gpt-4o, claude-sonnet-4-20250514, deepseek-chat, etc.",
+            },
+        ]
+
+    def resolve_env(self, saved: dict) -> dict:
+        """Map LLM_* config fields to env vars OpenClaw reads."""
+        env = {}
+        api_key = saved.get("LLM_API_KEY", "")
+        base_url = saved.get("LLM_BASE_URL", "")
+        model = saved.get("LLM_MODEL", "")
+
+        if api_key:
+            # If base_url looks like Anthropic, set ANTHROPIC_API_KEY
+            # Otherwise default to OpenAI-compatible
+            if "anthropic" in base_url.lower() or (not base_url and "ant-" in api_key):
+                env["ANTHROPIC_API_KEY"] = api_key
+            else:
+                env["OPENAI_API_KEY"] = api_key
+            if base_url:
+                env["OPENAI_BASE_URL"] = base_url
+        if model:
+            env["OPENCLAW_MODEL"] = model
+        return env
+
     def check_ready(self) -> tuple[bool, str]:
         if not self.is_installed():
             return False, "Not installed. Run: openagents install openclaw"
-        # OpenClaw needs ANTHROPIC_API_KEY or its own config
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"):
             return True, "Ready (API key set)"
-        return False, "No API key. Run: export ANTHROPIC_API_KEY=sk-ant-..."
+        from openagents.client.daemon_config import load_agent_env
+        saved = load_agent_env("openclaw")
+        if saved.get("LLM_API_KEY"):
+            model = saved.get("LLM_MODEL", "default")
+            return True, f"Ready ({model})"
+        return False, "Not configured — press e to configure"
 
     def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
         from openagents.adapters.openclaw import OpenClawAdapter
@@ -209,43 +275,6 @@ class OpenClawPlugin(AgentPlugin):
         )
 
 
-class YamlAgentPlugin(AgentPlugin):
-    """Plugin for YAML-defined agents (Layer 3 SDK agents).
-
-    Agents are defined in YAML config files and launched via
-    ``openagents agent start <config.yaml>``.  The daemon manages them
-    as local subprocesses — the ``path`` field in :class:`AgentEntry`
-    should point to the YAML config file.
-    """
-
-    name = "yaml-agent"
-    label = "YAML-defined Agent"
-    install_command = "pip install openagents"
-
-    def is_installed(self) -> bool:
-        return True  # built-in
-
-    def which(self) -> Optional[str]:
-        return "built-in"
-
-    def check_ready(self) -> tuple[bool, str]:
-        return True, "Ready (built-in)"
-
-    def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
-        if not path:
-            return None
-        config_path = Path(path)
-        if not config_path.exists():
-            return None
-        return [sys.executable, "-m", "openagents", "agent", "start", str(config_path)]
-
-    def create_adapter(self, workspace_id, channel_name, token, agent_name, endpoint, options=None):
-        raise NotImplementedError(
-            "YAML agents use gRPC (Layer 3), not HTTP adapters. "
-            "Use get_launch_command() for subprocess management instead."
-        )
-
-
 class CodexPlugin(AgentPlugin):
     name = "codex"
     label = "OpenAI Codex CLI"
@@ -257,12 +286,20 @@ class CodexPlugin(AgentPlugin):
     def which(self) -> Optional[str]:
         return shutil.which("codex")
 
+    def required_env_vars(self) -> list[dict]:
+        return [
+            {"name": "OPENAI_API_KEY", "description": "OpenAI API key", "required": True},
+        ]
+
     def check_ready(self) -> tuple[bool, str]:
         if not self.is_installed():
             return False, "Not installed. Run: openagents install codex"
         if os.environ.get("OPENAI_API_KEY"):
             return True, "Ready (API key set)"
-        return False, "No API key. Run: export OPENAI_API_KEY=sk-..."
+        from openagents.client.daemon_config import load_agent_env
+        if load_agent_env("codex").get("OPENAI_API_KEY"):
+            return True, "Ready (API key configured)"
+        return False, "No API key — press e to configure"
 
     def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
         binary = shutil.which("codex")
@@ -514,7 +551,7 @@ registry = PluginRegistry()
 registry.register(ClaudePlugin(), builtin=True)
 registry.register(OpenClawPlugin(), builtin=True)
 registry.register(CodexPlugin(), builtin=True)
-registry.register(YamlAgentPlugin(), builtin=True)
+
 
 # Known agents catalog (available for `openagents search` even if not installed)
 _KNOWN_AGENTS = [
@@ -596,7 +633,7 @@ for _info in _KNOWN_AGENTS:
     registry.add_catalog_entry(_info)
 
 # Also add built-in agents to catalog
-for _p in [ClaudePlugin(), OpenClawPlugin(), CodexPlugin(), YamlAgentPlugin()]:
+for _p in [ClaudePlugin(), OpenClawPlugin(), CodexPlugin()]:
     registry.add_catalog_entry(PluginInfo(
         name=_p.name,
         label=_p.label,

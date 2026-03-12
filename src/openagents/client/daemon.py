@@ -203,6 +203,15 @@ class DaemonManager:
         status: AgentStatus,
     ):
         """Run a network-connected adapter with exponential backoff on crash."""
+        # Inject type-level + per-agent env vars into the process environment
+        from openagents.client.daemon_config import load_agent_env
+        from openagents.client.plugin_registry import registry as _reg
+        type_env = load_agent_env(agent_cfg.type)
+        _plugin = _reg.get(agent_cfg.type)
+        resolved = _plugin.resolve_env(type_env) if _plugin else type_env
+        for k, v in {**resolved, **agent_cfg.env}.items():
+            os.environ[k] = v
+
         backoff = 2
         while not self._shutting_down:
             try:
@@ -281,6 +290,15 @@ class DaemonManager:
         cwd = agent_cfg.path or None
         backoff = 2
 
+        # Merge type-level and per-agent env vars into the current environment
+        from openagents.client.daemon_config import load_agent_env
+        from openagents.client.plugin_registry import registry as _reg
+        type_env = load_agent_env(agent_cfg.type)
+        _plugin = _reg.get(agent_cfg.type)
+        resolved = _plugin.resolve_env(type_env) if _plugin else type_env
+        merged_env = {**resolved, **agent_cfg.env}
+        agent_env = {**os.environ, **merged_env} if merged_env else None
+
         while not self._shutting_down:
             try:
                 status.state = "starting"
@@ -292,6 +310,7 @@ class DaemonManager:
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=cwd,
+                    env=agent_env,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                 )

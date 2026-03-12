@@ -12,11 +12,13 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
+    Button,
     DataTable,
     Footer,
     Header,
     Input,
     Label,
+    LoadingIndicator,
     OptionList,
     Static,
 )
@@ -60,11 +62,17 @@ def _load_agent_rows() -> list[dict]:
     # Installed but not-configured runtimes
     for s in scan.values():
         if s["name"] not in seen_types and s["installed"]:
+            hint = s.get("message", "")
+            if s.get("ready"):
+                state_label = "not configured"
+            else:
+                state_label = "not configured"
+                hint = hint or "Not ready"
             rows.append({
                 "name": f"({s['name']})",
                 "type": s["name"],
-                "state": "not configured",
-                "workspace": "",
+                "state": state_label,
+                "workspace": hint,
                 "path": "",
                 "configured": False,
             })
@@ -130,11 +138,14 @@ class InstallAgentScreen(Screen[dict | None]):
     def __init__(self) -> None:
         super().__init__()
         self._items = _load_catalog()
+        self._installing = False
 
     def compose(self) -> ComposeResult:
         yield Header(icon="🌀")
         with Vertical():
             yield Label(" [bold]Install Agent Runtime[/bold]  —  Enter to install, or update an installed runtime\n")
+            yield Static("", id="install-status")
+            yield LoadingIndicator(id="install-spinner")
             table = DataTable(id="install-table", cursor_type="row")
             table.add_columns("Name", "Label", "Version", "Status", "Description")
             for item in self._items:
@@ -157,15 +168,85 @@ class InstallAgentScreen(Screen[dict | None]):
             yield table
         yield Footer()
 
+    def on_mount(self) -> None:
+        self.query_one("#install-spinner", LoadingIndicator).display = False
+
+    def _show_progress(self, msg: str) -> None:
+        self.query_one("#install-status", Static).update(f" {msg}")
+        self.query_one("#install-spinner", LoadingIndicator).display = True
+
+    def _hide_progress(self, msg: str = "") -> None:
+        self.query_one("#install-status", Static).update(f" {msg}" if msg else "")
+        self.query_one("#install-spinner", LoadingIndicator).display = False
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if not self._items:
+        if not self._items or self._installing:
             return
         row_idx = event.cursor_row
         item = self._items[row_idx]
-        action = "update" if item["installed"] else "install"
-        self.dismiss({"name": item["name"], "action": action})
+        self._installing = True
+        verb = "Updating" if item["installed"] else "Installing"
+        self._show_progress(f"{verb} [cyan]{item['name']}[/cyan]…")
+        self._do_install_inline(item)
+
+    @work(thread=True)
+    def _do_install_inline(self, item: dict) -> None:
+        from openagents.client.plugin_registry import registry
+
+        catalog = registry.get_catalog()
+        info = catalog.get(item["name"])
+        if not info:
+            self.call_from_thread(self._hide_progress, f"[red]✗ Unknown agent: {item['name']}[/red]")
+            self._installing = False
+            return
+
+        cmd = info.install_command
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=300,
+            )
+            if result.returncode == 0:
+                self.call_from_thread(
+                    self._hide_progress,
+                    f"[green]✓ Installed {item['name']}[/green]  —  Press [bold]n[/bold] on the main screen to create an agent",
+                )
+                # Dismiss after a moment with result so main screen knows
+                self.call_from_thread(self._finish_install, item)
+            else:
+                err = result.stderr.strip()[:200] if result.stderr else "unknown error"
+                self.call_from_thread(self._hide_progress, f"[red]✗ Install failed:[/red] {err}")
+                self._installing = False
+        except Exception as e:
+            self.call_from_thread(self._hide_progress, f"[red]✗ Install error:[/red] {e}")
+            self._installing = False
+
+    def _finish_install(self, item: dict) -> None:
+        self._installing = False
+        # Refresh table to show updated status
+        self._items = _load_catalog()
+        table = self.query_one("#install-table", DataTable)
+        table.clear()
+        for it in self._items:
+            if it["installed"]:
+                table.add_row(
+                    f"[dim]{it['name']}[/dim]",
+                    f"[dim]{it['label']}[/dim]",
+                    f"[dim]{it['version']}[/dim]",
+                    "[green]installed[/green]",
+                    f"[dim]{it['description'] or ''}[/dim]",
+                )
+            else:
+                table.add_row(
+                    it["name"],
+                    it["label"],
+                    "",
+                    "[yellow]not installed[/yellow]",
+                    it["description"] or "",
+                )
 
     def action_cancel(self) -> None:
+        if self._installing:
+            return  # Don't dismiss while installing
         self.dismiss(None)
 
 
@@ -338,6 +419,189 @@ class TextInputScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class ConfigureAgentScreen(Screen[bool]):
+    """Full-screen page to configure LLM provider settings for an agent type."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Back"),
+        Binding("ctrl+s", "save", "Save"),
+        Binding("ctrl+t", "test_config", "Test"),
+    ]
+
+    def __init__(self, agent_type: str) -> None:
+        super().__init__()
+        self._agent_type = agent_type
+        self._fields: list[dict] = []
+
+    def compose(self) -> ComposeResult:
+        from openagents.client.daemon_config import load_agent_env
+        from openagents.client.plugin_registry import registry
+
+        plugin = registry.get(self._agent_type)
+        self._fields = plugin.required_env_vars() if plugin else []
+        saved = load_agent_env(self._agent_type)
+        label = plugin.label if plugin else self._agent_type
+
+        yield Header(icon="🌀")
+        with VerticalScroll(id="configure-page"):
+            yield Label(f"[bold]Configure {label}[/bold]")
+            yield Label("[dim]Saved to ~/.openagents/env/[/dim]")
+            yield Label("")
+            if not self._fields:
+                yield Label("[dim]No configuration required for this agent type.[/dim]")
+            else:
+                for field in self._fields:
+                    current = saved.get(field["name"], "") or field.get("default", "")
+                    req = " [red]*[/red]" if field.get("required") else ""
+                    is_password = field.get("password", False)
+                    placeholder = field.get("placeholder", f"Enter {field['name']}…")
+
+                    yield Label(f"{field['description']}{req}")
+                    yield Input(
+                        value=current,
+                        placeholder=placeholder,
+                        password=is_password,
+                        id=f"cfg-{field['name']}",
+                    )
+                    yield Label("")
+                with Horizontal(id="configure-buttons"):
+                    yield Button("Save", variant="primary", id="btn-save")
+                    yield Button("Test", variant="default", id="btn-test")
+                yield Label("", id="test-result")
+        yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-save":
+            self._save()
+        elif event.button.id == "btn-test":
+            self._run_test()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._save()
+
+    def _gather_env(self) -> dict:
+        """Collect current field values."""
+        env = {}
+        for field in self._fields:
+            try:
+                inp = self.query_one(f"#cfg-{field['name']}", Input)
+                val = inp.value.strip()
+                if val:
+                    env[field["name"]] = val
+            except Exception:
+                pass
+        return env
+
+    def _save(self) -> None:
+        from openagents.client.daemon_config import save_agent_env
+
+        save_agent_env(self._agent_type, self._gather_env())
+        self.dismiss(True)
+
+    def action_save(self) -> None:
+        self._save()
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+    def action_test_config(self) -> None:
+        self._run_test()
+
+    def _run_test(self) -> None:
+        """Kick off async LLM test."""
+        env = self._gather_env()
+        api_key = env.get("LLM_API_KEY") or env.get("OPENAI_API_KEY") or env.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            try:
+                self.query_one("#test-result", Label).update("[red]No API key entered[/red]")
+            except Exception:
+                pass
+            return
+        try:
+            self.query_one("#test-result", Label).update("[dim]Testing...[/dim]")
+            self.query_one("#btn-test", Button).disabled = True
+        except Exception:
+            pass
+        self._do_test(env)
+
+    @work(thread=True)
+    def _do_test(self, env: dict) -> None:
+        """Test LLM inference in a background thread."""
+        import json as _json
+        from urllib.request import Request, urlopen
+        from urllib.error import URLError, HTTPError
+
+        from openagents.client.plugin_registry import registry
+
+        plugin = registry.get(self._agent_type)
+        resolved = plugin.resolve_env(env) if plugin else env
+
+        api_key = resolved.get("OPENAI_API_KEY") or resolved.get("ANTHROPIC_API_KEY", "")
+        base_url = resolved.get("OPENAI_BASE_URL", "").rstrip("/")
+        model = resolved.get("OPENCLAW_MODEL") or resolved.get("LLM_MODEL", "")
+
+        is_anthropic = "ANTHROPIC_API_KEY" in resolved and "OPENAI_API_KEY" not in resolved
+
+        try:
+            if is_anthropic:
+                url = "https://api.anthropic.com/v1/messages"
+                headers = {
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                }
+                body = _json.dumps({
+                    "model": model or "claude-sonnet-4-20250514",
+                    "max_tokens": 32,
+                    "messages": [{"role": "user", "content": "Say hi in 5 words."}],
+                }).encode()
+            else:
+                url = (base_url or "https://api.openai.com/v1") + "/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
+                body = _json.dumps({
+                    "model": model or "gpt-4o-mini",
+                    "max_tokens": 32,
+                    "messages": [{"role": "user", "content": "Say hi in 5 words."}],
+                }).encode()
+
+            req = Request(url, data=body, headers=headers, method="POST")
+            with urlopen(req, timeout=15) as resp:
+                data = _json.loads(resp.read())
+
+            # Extract response text
+            if is_anthropic:
+                text = data.get("content", [{}])[0].get("text", "")
+                used_model = data.get("model", model or "?")
+            else:
+                text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                used_model = data.get("model", model or "?")
+
+            result = f"[green]OK[/green] — model: {used_model}, response: {text[:60]}"
+        except HTTPError as e:
+            err_body = ""
+            try:
+                err_body = e.read().decode()[:200]
+            except Exception:
+                pass
+            result = f"[red]HTTP {e.code}[/red]: {err_body}"
+        except URLError as e:
+            result = f"[red]Connection error[/red]: {e.reason}"
+        except Exception as e:
+            result = f"[red]Error[/red]: {e}"
+
+        self.call_from_thread(self._show_test_result, result)
+
+    def _show_test_result(self, result: str) -> None:
+        try:
+            self.query_one("#test-result", Label).update(result)
+            self.query_one("#btn-test", Button).disabled = False
+        except Exception:
+            pass
+
+
 # ── Main TUI App ────────────────────────────────────────────────────────────
 
 
@@ -390,14 +654,41 @@ class OpenAgentsTUI(App):
     ModalScreen {
         align: center middle;
     }
+    #install-spinner {
+        height: 1;
+        margin: 0 1;
+        color: $accent;
+    }
+    #install-status {
+        height: auto;
+        margin: 0 0;
+    }
+    #configure-page {
+        padding: 1 2;
+    }
+    #configure-page > Label {
+        margin-bottom: 1;
+    }
+    #configure-buttons {
+        height: auto;
+        margin-top: 1;
+    }
+    #configure-buttons > Button {
+        margin-right: 2;
+    }
+    #test-result {
+        margin-top: 1;
+        height: auto;
+    }
     """
 
     BINDINGS = [
         Binding("i", "install", "Install"),
+        Binding("e", "configure_agent", "Configure"),
         Binding("n", "new_agent", "New Agent"),
         Binding("s", "start_agent", "Start"),
         Binding("x", "stop_agent", "Stop"),
-        Binding("c", "connect_agent", "Connect to Workspace"),
+        Binding("c", "connect_agent", "Connect"),
         Binding("d", "disconnect_agent", "Disconnect"),
         Binding("delete", "remove_agent", "Remove"),
         Binding("u", "daemon_up", "Daemon Up"),
@@ -405,6 +696,52 @@ class OpenAgentsTUI(App):
         Binding("r", "refresh", "Refresh"),
         Binding("q", "quit", "Quit"),
     ]
+
+    def _agent_has_env_vars(self, agent_type: str) -> bool:
+        """Check if an agent type has configurable env vars."""
+        from openagents.client.plugin_registry import registry
+        plugin = registry.get(agent_type)
+        return bool(plugin and plugin.required_env_vars())
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        """Dynamically show/hide per-agent actions based on the highlighted row."""
+        contextual = {
+            "new_agent", "configure_agent", "start_agent", "stop_agent",
+            "connect_agent", "disconnect_agent", "remove_agent",
+        }
+        if action not in contextual:
+            return True
+
+        agent = self._selected_agent(allow_unconfigured=True)
+        if not agent:
+            return action == "new_agent"
+
+        configured = agent.get("configured", True)
+        state = agent.get("state", "")
+        is_running = any(s in state for s in ("online", "running", "starting", "reconnecting"))
+        is_stopped = "stopped" in state or "error" in state
+        has_workspace = bool(agent.get("workspace"))
+
+        if action == "configure_agent":
+            return self._agent_has_env_vars(agent["type"])
+
+        if not configured:
+            return action in ("new_agent", "configure_agent")
+
+        if action == "new_agent":
+            return True
+        if action == "start_agent":
+            return is_stopped
+        if action == "stop_agent":
+            return is_running
+        if action == "connect_agent":
+            return not has_workspace
+        if action == "disconnect_agent":
+            return has_workspace
+        if action == "remove_agent":
+            return True
+
+        return True
 
     def compose(self) -> ComposeResult:
         yield Header(icon="🌀")
@@ -446,6 +783,11 @@ class OpenAgentsTUI(App):
                     r["path"],
                 )
 
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Refresh footer bindings when the cursor moves to a different row."""
+        if event.data_table.id == "agent-table":
+            self.refresh_bindings()
+
     def __init__(self) -> None:
         super().__init__()
         self._log_lines: list[str] = ["Ready."]
@@ -486,7 +828,7 @@ class OpenAgentsTUI(App):
             except (ProcessLookupError, PermissionError):
                 pass
 
-    def _selected_agent(self) -> dict | None:
+    def _selected_agent(self, allow_unconfigured: bool = False) -> dict | None:
         table = self.query_one("#agent-table", DataTable)
         if table.row_count == 0:
             return None
@@ -497,13 +839,24 @@ class OpenAgentsTUI(App):
             return None
         name = str(row[0])
         if name.startswith("("):
-            return None
+            if not allow_unconfigured:
+                return None
+            # Return the type for unconfigured agents
+            return {
+                "name": name,
+                "type": str(row[1]),
+                "state": "not configured",
+                "workspace": "",
+                "path": "",
+                "configured": False,
+            }
         return {
             "name": name,
             "type": str(row[1]),
             "state": str(row[2]),
             "workspace": str(row[3]),
             "path": str(row[4]),
+            "configured": True,
         }
 
     # ── Actions ─────────────────────────────────────────────────────────
@@ -518,42 +871,35 @@ class OpenAgentsTUI(App):
         self.push_screen(InstallAgentScreen(), callback=self._on_install_picked)
 
     def _on_install_picked(self, result: dict | None) -> None:
-        if not result:
+        # Install now happens inside InstallAgentScreen; just refresh on return
+        self._refresh_table()
+
+    # -- Configure --
+
+    def action_configure_agent(self) -> None:
+        agent = self._selected_agent(allow_unconfigured=True)
+        if not agent:
+            self._log("[yellow]Select an agent to configure[/yellow]")
             return
-        agent_name = result["name"]
-        action = result["action"]  # "install" or "update"
-        verb = "Updating" if action == "update" else "Installing"
-        self._log(f"{verb} [cyan]{agent_name}[/cyan]…")
-        self._do_install(agent_name)
+        self.push_screen(
+            ConfigureAgentScreen(agent["type"]),
+            callback=self._on_configure_done,
+        )
 
-    @work(thread=True)
-    def _do_install(self, agent_type: str) -> None:
-        from openagents.client.plugin_registry import registry
-
-        catalog = registry.get_catalog()
-        info = catalog.get(agent_type)
-        if not info:
-            self.call_from_thread(self._log, f"[red]✗ Unknown agent type: {agent_type}[/red]")
-            return
-
-        cmd = info.install_command
-        try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=300,
-            )
-            if result.returncode == 0:
-                self.call_from_thread(self._log, f"[green]✓[/green] Installed [cyan]{agent_type}[/cyan]")
-            else:
-                err = result.stderr.strip()[:200] if result.stderr else "unknown error"
-                self.call_from_thread(self._log, f"[red]✗ Install failed:[/red] {err}")
-        except Exception as e:
-            self.call_from_thread(self._log, f"[red]✗ Install error:[/red] {e}")
-        self.call_from_thread(self._refresh_table)
+    def _on_configure_done(self, saved: bool) -> None:
+        if saved:
+            self._log("[green]✓[/green] Configuration saved")
+        self._refresh_table()
 
     # -- Start --
 
     def action_new_agent(self) -> None:
-        """Create a new agent."""
+        """Create a new agent. If an unconfigured agent type is selected, skip type picker."""
+        agent = self._selected_agent(allow_unconfigured=True)
+        if agent and not agent.get("configured", True):
+            # Skip type selection — go straight to name/path dialog
+            self._on_type_picked(agent["type"])
+            return
         self.push_screen(SelectAgentTypeScreen(), callback=self._on_type_picked)
 
     def action_start_agent(self) -> None:
