@@ -54,16 +54,17 @@ def daemon_up(
     from openagents.client.daemon_config import load_config, get_agent_network
     from openagents.client.daemon import DaemonManager, daemonize, read_daemon_pid
 
-    # Check if already running
-    existing_pid = read_daemon_pid()
-    if existing_pid:
-        console.print(Panel(
-            f"[yellow]Daemon already running[/yellow] (PID {existing_pid})\n\n"
-            "Run [bold]openagents down[/bold] first, or [bold]openagents status[/bold] to check.",
-            title="[yellow]Already Running[/yellow]",
-            border_style="yellow",
-        ))
-        raise typer.Exit(1)
+    # Check if already running (skip in foreground mode — parent already wrote PID)
+    if not foreground:
+        existing_pid = read_daemon_pid()
+        if existing_pid:
+            console.print(Panel(
+                f"[yellow]Daemon already running[/yellow] (PID {existing_pid})\n\n"
+                "Run [bold]openagents down[/bold] first, or [bold]openagents status[/bold] to check.",
+                title="[yellow]Already Running[/yellow]",
+                border_style="yellow",
+            ))
+            raise typer.Exit(1)
 
     cfg = load_config(config)
     if not cfg.agents:

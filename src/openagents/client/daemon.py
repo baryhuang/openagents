@@ -43,6 +43,37 @@ logger = logging.getLogger(__name__)
 IS_WINDOWS = sys.platform == "win32"
 
 
+def _ensure_windows_path():
+    """On Windows, ensure common tool directories are on PATH.
+
+    Windows SSH sessions, services, and background processes often have
+    incomplete PATH variables missing directories like 'C:\\Program Files\\nodejs'.
+    This adds common locations if they exist and contain executables.
+    """
+    if not IS_WINDOWS:
+        return
+
+    current_path = os.environ.get("PATH", "")
+    path_dirs = [d.lower() for d in current_path.split(";")]
+
+    # Common directories that should be on PATH for agent runtimes
+    candidates = [
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "nodejs"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "nodejs"),
+        os.path.join(os.environ.get("APPDATA", ""), "npm"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "nodejs"),
+    ]
+
+    added = []
+    for candidate in candidates:
+        if candidate and os.path.isdir(candidate) and candidate.lower() not in path_dirs:
+            added.append(candidate)
+
+    if added:
+        os.environ["PATH"] = current_path + ";" + ";".join(added)
+        logger.debug(f"Added to PATH: {added}")
+
+
 # ---------------------------------------------------------------------------
 # Agent status tracking
 # ---------------------------------------------------------------------------
@@ -91,6 +122,8 @@ class DaemonManager:
 
     async def start(self):
         """Start all configured agents and block until shutdown."""
+        _ensure_windows_path()
+
         for agent_cfg in self.config.agents:
             net = get_agent_network(agent_cfg, self.config)
             self._launch_agent(agent_cfg, net)
@@ -507,6 +540,9 @@ def _daemonize_unix():
 def _daemonize_windows():
     """Windows: re-launch this command as a detached subprocess."""
     import shutil
+
+    # Ensure common tool directories are on PATH before spawning daemon
+    _ensure_windows_path()
 
     # Find the openagents CLI entry point
     openagents_bin = shutil.which("openagents")
