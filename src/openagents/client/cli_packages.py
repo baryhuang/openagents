@@ -94,6 +94,7 @@ def install_agent(
     agent_type: str = typer.Argument(..., help="Agent type to install (e.g. claude, aider, codex)"),
 ):
     """📦 Install an agent runtime on this machine."""
+    import shutil
     import subprocess
     import sys as _sys
     from openagents.client.plugin_registry import registry
@@ -122,43 +123,56 @@ def install_agent(
     console.print(f"  Command: [dim]{cmd}[/dim]\n")
 
     # Determine how to run the install command
+    import platform as _platform
+    is_windows = _platform.system() == "Windows"
+
     use_shell = False
-    if "| bash" in cmd or "| sh" in cmd:
+    if cmd.startswith("powershell ") or cmd.startswith("powershell.exe "):
+        # PowerShell installer (Windows)
+        run_args = ["powershell", "-ExecutionPolicy", "Bypass", "-Command", cmd.split(None, 2)[-1]]
+    elif "| bash" in cmd or "| sh" in cmd:
         # Curl-pipe-bash style installer (e.g. Claude Code native installer)
         run_args = ["bash", "-c", cmd]
-        use_shell = False
     elif cmd.startswith("pip install "):
         package = cmd.replace("pip install ", "")
         run_args = [_sys.executable, "-m", "pip", "install", package]
     elif cmd.startswith("npm install "):
         # Check if npm is available
+        npm_cmd = "npm.cmd" if is_windows else "npm"
         if shutil.which("npm") is None:
             console.print("[yellow]npm is not installed.[/yellow]")
             console.print(
                 "Install Node.js first: [bold]https://nodejs.org[/bold]\n"
                 "Or use your package manager:"
             )
-            import platform
-            if platform.system() == "Darwin":
+            if _platform.system() == "Darwin":
                 console.print("  [dim]brew install node[/dim]")
-            elif platform.system() == "Linux":
+            elif _platform.system() == "Linux":
                 console.print("  [dim]sudo apt install nodejs npm[/dim]  (Debian/Ubuntu)")
                 console.print("  [dim]sudo dnf install nodejs npm[/dim]  (Fedora)")
             console.print(f"\nThen retry: [bold]openagents install {agent_type}[/bold]")
             raise typer.Exit(1)
-        run_args = cmd.split()
+        parts = cmd.split()
+        parts[0] = npm_cmd
+        run_args = parts
     elif cmd.startswith("See "):
         console.print(f"[yellow]Manual installation required:[/yellow]")
         console.print(f"  {cmd}")
         raise typer.Exit(0)
     else:
-        run_args = cmd.split()
+        # Generic command — use shell on Windows for path resolution
+        if is_windows:
+            run_args = cmd
+            use_shell = True
+        else:
+            run_args = cmd.split()
 
-    if not Confirm.ask(f"Run `{' '.join(run_args)}`?"):
+    display_cmd = run_args if isinstance(run_args, str) else ' '.join(run_args)
+    if not Confirm.ask(f"Run `{display_cmd}`?"):
         raise typer.Exit(0)
 
     try:
-        result = subprocess.run(run_args, check=False)
+        result = subprocess.run(run_args, check=False, shell=use_shell)
         if result.returncode == 0:
             # Verify installation
             plugin = registry.get(agent_type)
