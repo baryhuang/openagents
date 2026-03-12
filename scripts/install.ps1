@@ -89,11 +89,11 @@ try {
 
 $installed = $false
 try {
-    & $PythonCmd -m pip install --quiet --upgrade openagents 2>$null
+    & $PythonCmd -m pip install --quiet --no-cache-dir --upgrade openagents 2>$null
     $installed = $true
 } catch {
     try {
-        & $PythonCmd -m pip install --quiet --user --upgrade openagents 2>$null
+        & $PythonCmd -m pip install --quiet --no-cache-dir --user --upgrade openagents 2>$null
         $installed = $true
     } catch {}
 }

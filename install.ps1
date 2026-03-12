@@ -121,13 +121,13 @@ try {
 # Install
 $installed = $false
 try {
-    & $PYTHON -m pip install --quiet --upgrade openagents 2>$null
+    & $PYTHON -m pip install --quiet --no-cache-dir --upgrade openagents 2>$null
     $installed = $true
 } catch {}
 
 if (-not $installed) {
     try {
-        & $PYTHON -m pip install --quiet --upgrade --user openagents 2>$null
+        & $PYTHON -m pip install --quiet --no-cache-dir --upgrade --user openagents 2>$null
         $installed = $true
     } catch {}
 }
