@@ -23,6 +23,7 @@ from textual.widgets import (
     Static,
 )
 from textual.widgets.option_list import Option
+from rich.text import Text
 
 
 # ── Data helpers ────────────────────────────────────────────────────────────
@@ -32,7 +33,12 @@ def _load_agent_rows() -> list[dict]:
     """Build unified agent table: one row per configured agent, merged with
     runtime scan and daemon status."""
     from openagents.client.daemon import read_daemon_pid
-    from openagents.client.daemon_config import load_config, read_status
+    from openagents.client.daemon_config import (
+        DEFAULT_ENDPOINT,
+        get_agent_network,
+        load_config,
+        read_status,
+    )
     from openagents.client.plugin_registry import registry
 
     cfg = load_config()
@@ -50,11 +56,25 @@ def _load_agent_rows() -> list[dict]:
         seen_types.add(agent.type)
         info = agent_statuses.get(agent.name, {})
         state = info.get("state", "stopped") if pid else "stopped"
+        # Build a friendly workspace display
+        workspace_display = ""
+        net = get_agent_network(agent, cfg)
+        if net:
+            slug = net.slug or net.id
+            is_local = "localhost" in net.endpoint or "127.0.0.1" in net.endpoint
+            if is_local:
+                workspace_display = f"{net.endpoint}/{slug}"
+            elif net.endpoint == DEFAULT_ENDPOINT or not net.endpoint:
+                workspace_display = f"workspace.openagents.org/{slug}"
+            else:
+                workspace_display = f"{net.endpoint}/{slug}"
+        elif agent.network:
+            workspace_display = agent.network
         rows.append({
             "name": agent.name,
             "type": agent.type,
             "state": state,
-            "workspace": agent.network or "",
+            "workspace": workspace_display,
             "path": agent.path or "",
             "configured": True,
         })
@@ -760,28 +780,36 @@ class OpenAgentsTUI(App):
     def on_mount(self) -> None:
         table = self.query_one("#agent-table", DataTable)
         table.cursor_type = "row"
-        table.add_columns("Name", "Type", "Status", "Workspace", "Path")
+        table.add_columns("Name", "Type", "Status", "Workspace")
         self._refresh_table()
         self.set_interval(5, self._refresh_table)
 
     def _refresh_table(self) -> None:
         table = self.query_one("#agent-table", DataTable)
+        # Preserve cursor position across refresh
+        saved_row = table.cursor_row if table.row_count > 0 else 0
         table.clear()
         try:
             rows = _load_agent_rows()
         except Exception:
             rows = []
         if not rows:
-            table.add_row("(no agents)", "", "", "", "")
+            table.add_row("(no agents)", "", "", "")
         else:
             for r in rows:
+                name_cell = Text(r["name"])
+                if r.get("path"):
+                    name_cell.append(f"\n{r['path']}", style="dim")
                 table.add_row(
-                    r["name"],
+                    name_cell,
                     r["type"],
                     _state_text(r["state"]),
                     r["workspace"],
-                    r["path"],
+                    height=None,
                 )
+        # Restore cursor position (clamped to valid range)
+        if table.row_count > 0:
+            table.move_cursor(row=min(saved_row, table.row_count - 1))
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         """Refresh footer bindings when the cursor moves to a different row."""
@@ -837,11 +865,17 @@ class OpenAgentsTUI(App):
             row = table.get_row_at(row_idx)
         except Exception:
             return None
-        name = str(row[0])
+        # Name cell may contain path on second line (Rich Text)
+        name_raw = row[0]
+        if hasattr(name_raw, "plain"):
+            name_lines = name_raw.plain.split("\n")
+        else:
+            name_lines = str(name_raw).split("\n")
+        name = name_lines[0]
+        path = name_lines[1] if len(name_lines) > 1 else ""
         if name.startswith("("):
             if not allow_unconfigured:
                 return None
-            # Return the type for unconfigured agents
             return {
                 "name": name,
                 "type": str(row[1]),
@@ -855,7 +889,7 @@ class OpenAgentsTUI(App):
             "type": str(row[1]),
             "state": str(row[2]),
             "workspace": str(row[3]),
-            "path": str(row[4]),
+            "path": path,
             "configured": True,
         }
 
