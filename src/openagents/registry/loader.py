@@ -209,11 +209,19 @@ def _make_plugin_from_yaml(data: dict):
         label = data.get("label", data["name"])
         install_command = get_install_command(install)
 
+        def _which_binary(self) -> Optional[str]:
+            """Find the binary, preferring .cmd/.exe on Windows."""
+            if platform.system() == "Windows":
+                path = shutil.which(binary + ".cmd") or shutil.which(binary + ".exe")
+                if path:
+                    return path
+            return shutil.which(binary)
+
         def is_installed(self) -> bool:
-            return shutil.which(binary) is not None
+            return self._which_binary() is not None
 
         def which(self) -> Optional[str]:
-            return shutil.which(binary)
+            return self._which_binary()
 
         def required_env_vars(self) -> list[dict]:
             return env_config
@@ -276,7 +284,7 @@ def _make_plugin_from_yaml(data: dict):
         def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
             if not launch_cfg:
                 return None
-            bin_path = shutil.which(binary)
+            bin_path = self._which_binary()
             if not bin_path:
                 return None
             args = []

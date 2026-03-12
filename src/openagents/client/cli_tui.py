@@ -76,6 +76,7 @@ def _load_agent_rows() -> list[dict]:
             "state": state,
             "workspace": workspace_display,
             "path": agent.path or "",
+            "last_error": info.get("last_error", ""),
             "configured": True,
         })
 
@@ -928,6 +929,7 @@ class OpenAgentsTUI(App):
             rows = _load_agent_rows()
         except Exception:
             rows = []
+        self._agent_rows = rows
         if not rows:
             table.add_row("No agents yet — press [bold]i[/bold] to install one", "", "", "")
         else:
@@ -950,6 +952,13 @@ class OpenAgentsTUI(App):
         """Refresh footer bindings when the cursor moves to a different row."""
         if event.data_table.id == "agent-table":
             self.refresh_bindings()
+            # Show error details in log for agents in error state
+            rows = getattr(self, "_agent_rows", [])
+            idx = event.cursor_row
+            if 0 <= idx < len(rows):
+                r = rows[idx]
+                if r.get("last_error") and "error" in r.get("state", ""):
+                    self._log(f"[red]Error:[/red] {r['last_error']}")
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Show context menu when Enter is pressed on an agent row."""
@@ -982,6 +991,7 @@ class OpenAgentsTUI(App):
     def __init__(self) -> None:
         super().__init__()
         self._log_lines: list[str] = ["Ready."]
+        self._agent_rows: list[dict] = []
 
     def _log(self, msg: str) -> None:
         self._log_lines.append(msg)
