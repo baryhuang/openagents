@@ -342,6 +342,7 @@ def list_runtimes():
 @app.command("install", rich_help_panel="Client")
 def install_agent(
     agent_type: str = typer.Argument(..., help="Agent type to install (e.g. claude, aider, codex)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """📦 Install an agent runtime on this machine."""
     import shutil
@@ -410,7 +411,7 @@ def install_agent(
             run_args = cmd.split()
 
     display_cmd = run_args if isinstance(run_args, str) else ' '.join(run_args)
-    if not Confirm.ask(f"Run `{display_cmd}`?"):
+    if not yes and not Confirm.ask(f"Run `{display_cmd}`?"):
         raise typer.Exit(0)
 
     try:
