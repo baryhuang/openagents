@@ -270,6 +270,9 @@ def _make_plugin_from_yaml(data: dict):
             msg = check_cfg.get("not_ready_message", "Not ready")
             return False, msg
 
+        def login_command(self) -> Optional[str]:
+            return check_cfg.get("login_command")
+
         def get_launch_command(self, agent_name: str, path: Optional[str] = None) -> Optional[list[str]]:
             if not launch_cfg:
                 return None

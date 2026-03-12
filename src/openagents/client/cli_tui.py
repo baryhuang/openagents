@@ -825,6 +825,7 @@ class OpenAgentsTUI(App):
     BINDINGS = [
         Binding("i", "install", "Install"),
         Binding("e", "configure_agent", "Configure"),
+        Binding("l", "login_agent", "Login"),
         Binding("n", "new_agent", "New Agent"),
         Binding("s", "start_agent", "Start"),
         Binding("x", "stop_agent", "Stop"),
@@ -843,11 +844,17 @@ class OpenAgentsTUI(App):
         plugin = registry.get(agent_type)
         return bool(plugin and plugin.required_env_vars())
 
+    def _agent_has_login(self, agent_type: str) -> bool:
+        """Check if an agent type has a login command."""
+        from openagents.client.plugin_registry import registry
+        plugin = registry.get(agent_type)
+        return bool(plugin and plugin.login_command())
+
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Dynamically show/hide per-agent actions based on the highlighted row."""
         contextual = {
-            "new_agent", "configure_agent", "start_agent", "stop_agent",
-            "connect_agent", "disconnect_agent", "remove_agent",
+            "new_agent", "configure_agent", "login_agent", "start_agent",
+            "stop_agent", "connect_agent", "disconnect_agent", "remove_agent",
             "open_workspace",
         }
         if action not in contextual:
@@ -865,9 +872,11 @@ class OpenAgentsTUI(App):
 
         if action == "configure_agent":
             return self._agent_has_env_vars(agent["type"])
+        if action == "login_agent":
+            return self._agent_has_login(agent["type"])
 
         if not configured:
-            return action in ("new_agent", "configure_agent")
+            return action in ("new_agent", "configure_agent", "login_agent")
 
         if action == "new_agent":
             return True
@@ -945,6 +954,7 @@ class OpenAgentsTUI(App):
             return
         # Build list of available actions for the selected agent
         all_actions = [
+            ("login_agent", "Login"),
             ("configure_agent", "Configure"),
             ("start_agent", "Start"),
             ("stop_agent", "Stop"),
@@ -1107,6 +1117,32 @@ class OpenAgentsTUI(App):
         if saved:
             self._log("[green]✓[/green] Configuration saved")
         self._refresh_table()
+
+    # -- Login --
+
+    def action_login_agent(self) -> None:
+        agent = self._selected_agent(allow_unconfigured=True)
+        if not agent:
+            self._log("[yellow]Select an agent first[/yellow]")
+            return
+        from openagents.client.plugin_registry import registry
+        plugin = registry.get(agent["type"])
+        if not plugin or not plugin.login_command():
+            self._log("[yellow]No login command for this agent type[/yellow]")
+            return
+        cmd = plugin.login_command()
+        self._log(f"Running [bold]{cmd}[/bold]…")
+        self._run_login(cmd)
+
+    @work(thread=True)
+    def _run_login(self, cmd: str) -> None:
+        with self.app.suspend():
+            result = subprocess.run(cmd, shell=True)
+        if result.returncode == 0:
+            self.app.call_from_thread(self._log, "[green]✓[/green] Login completed")
+        else:
+            self.app.call_from_thread(self._log, f"[yellow]Login exited with code {result.returncode}[/yellow]")
+        self.app.call_from_thread(self._refresh_table)
 
     # -- Start --
 

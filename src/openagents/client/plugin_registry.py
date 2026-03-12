@@ -123,6 +123,10 @@ class AgentPlugin(ABC):
         """
         return saved
 
+    def login_command(self) -> Optional[str]:
+        """Return a shell command to authenticate/login, or None if not applicable."""
+        return None
+
     def health_check(self) -> bool:
         """Optional deeper health check beyond is_installed()."""
         return self.is_installed()

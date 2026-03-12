@@ -26,3 +26,4 @@ check_ready:
   creds_file: "~/.claude/.credentials.json"
   creds_key: claudeAiOauth
   not_ready_message: "Not logged in. Run: claude login"
+  login_command: "claude login"
