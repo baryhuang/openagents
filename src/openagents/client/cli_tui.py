@@ -844,11 +844,14 @@ class OpenAgentsTUI(App):
         plugin = registry.get(agent_type)
         return bool(plugin and plugin.required_env_vars())
 
-    def _agent_has_login(self, agent_type: str) -> bool:
-        """Check if an agent type has a login command."""
+    def _agent_needs_login(self, agent_type: str) -> bool:
+        """Check if an agent type has a login command and is not yet ready."""
         from openagents.client.plugin_registry import registry
         plugin = registry.get(agent_type)
-        return bool(plugin and plugin.login_command())
+        if not plugin or not plugin.login_command():
+            return False
+        ready, _ = plugin.check_ready()
+        return not ready
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Dynamically show/hide per-agent actions based on the highlighted row."""
@@ -873,7 +876,7 @@ class OpenAgentsTUI(App):
         if action == "configure_agent":
             return self._agent_has_env_vars(agent["type"])
         if action == "login_agent":
-            return self._agent_has_login(agent["type"])
+            return self._agent_needs_login(agent["type"])
 
         if not configured:
             return action in ("new_agent", "configure_agent", "login_agent")
@@ -926,7 +929,7 @@ class OpenAgentsTUI(App):
         except Exception:
             rows = []
         if not rows:
-            table.add_row("(no agents)", "", "", "")
+            table.add_row("No agents yet — press [bold]i[/bold] to install one", "", "", "")
         else:
             for r in rows:
                 name_cell = Text(r["name"])
