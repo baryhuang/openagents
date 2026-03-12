@@ -16,6 +16,256 @@ from rich import box
 
 from openagents.client.cli_shared import app, console
 
+logger = logging.getLogger(__name__)
+
+# Node.js LTS version for auto-install
+_NODE_VERSION = "22.16.0"
+
+
+def _refresh_path_windows():
+    """Merge registry PATH entries into the current process PATH."""
+    try:
+        import winreg
+        current = os.environ.get("PATH", "")
+        current_dirs = set(d.lower().rstrip("\\") for d in current.split(";") if d)
+
+        new_dirs = []
+        for hive, subkey in [
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            (winreg.HKEY_CURRENT_USER, r"Environment"),
+        ]:
+            try:
+                val = winreg.QueryValueEx(winreg.OpenKey(hive, subkey), "Path")[0]
+                for d in val.split(";"):
+                    d = d.strip()
+                    if d and d.lower().rstrip("\\") not in current_dirs:
+                        new_dirs.append(d)
+                        current_dirs.add(d.lower().rstrip("\\"))
+            except OSError:
+                pass
+
+        if new_dirs:
+            os.environ["PATH"] = current + ";" + ";".join(new_dirs)
+    except Exception as e:
+        logger.debug(f"Failed to refresh PATH: {e}")
+
+
+def _install_nodejs(is_windows: bool, os_name: str) -> bool:
+    """Auto-install Node.js. Returns True on success."""
+    import shutil
+
+    if is_windows:
+        # Download and run the MSI installer silently
+        msi_url = f"https://nodejs.org/dist/v{_NODE_VERSION}/node-v{_NODE_VERSION}-x64.msi"
+        msi_path = os.path.join(os.environ.get("TEMP", "."), "node-installer.msi")
+        console.print(f"  Downloading Node.js v{_NODE_VERSION}...")
+        try:
+            # Use PowerShell to download ($ProgressPreference speeds up download)
+            ps_download = (
+                f"$ProgressPreference='SilentlyContinue'; "
+                f"Invoke-WebRequest -Uri '{msi_url}' -OutFile '{msi_path}' -UseBasicParsing"
+            )
+            subprocess.run(
+                ["powershell", "-Command", ps_download],
+                check=True, timeout=300,
+            )
+            console.print(f"  Installing Node.js (this may take a moment)...")
+            subprocess.run(
+                ["msiexec", "/i", msi_path, "/quiet", "/norestart"],
+                check=True, timeout=300,
+            )
+            # Clean up
+            try:
+                os.remove(msi_path)
+            except OSError:
+                pass
+            return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"Windows Node.js install failed: {e}")
+            return False
+
+    elif os_name == "Darwin":
+        # macOS — try brew first, then official installer
+        if shutil.which("brew"):
+            console.print("  Installing Node.js via Homebrew...")
+            try:
+                subprocess.run(["brew", "install", "node"], check=True, timeout=300)
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        # Fallback: official pkg installer
+        console.print(f"  Downloading Node.js v{_NODE_VERSION}...")
+        pkg_url = f"https://nodejs.org/dist/v{_NODE_VERSION}/node-v{_NODE_VERSION}.pkg"
+        pkg_path = "/tmp/node-installer.pkg"
+        try:
+            subprocess.run(["curl", "-fsSL", "-o", pkg_path, pkg_url], check=True, timeout=120)
+            console.print("  Installing Node.js (may require sudo)...")
+            subprocess.run(["sudo", "installer", "-pkg", pkg_path, "-target", "/"], check=True, timeout=60)
+            os.remove(pkg_path)
+            return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"macOS Node.js install failed: {e}")
+            return False
+
+    else:
+        # Linux — try package managers
+        if shutil.which("apt-get"):
+            console.print("  Installing Node.js via apt...")
+            try:
+                subprocess.run(["sudo", "apt-get", "update", "-qq"], check=True, timeout=60)
+                subprocess.run(
+                    ["sudo", "apt-get", "install", "-y", "-qq", "nodejs", "npm"],
+                    check=True, timeout=120,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        if shutil.which("dnf"):
+            console.print("  Installing Node.js via dnf...")
+            try:
+                subprocess.run(["sudo", "dnf", "install", "-y", "nodejs", "npm"], check=True, timeout=120)
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        if shutil.which("pacman"):
+            console.print("  Installing Node.js via pacman...")
+            try:
+                subprocess.run(["sudo", "pacman", "-Sy", "--noconfirm", "nodejs", "npm"], check=True, timeout=120)
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        # Fallback: NodeSource binary
+        console.print(f"  Downloading Node.js v{_NODE_VERSION}...")
+        try:
+            subprocess.run(
+                ["bash", "-c", "curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs"],
+                check=True, timeout=180,
+            )
+            return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"Linux Node.js install failed: {e}")
+            return False
+
+
+def _ensure_dependency(dep: str, is_windows: bool, os_name: str, agent_type: str) -> bool:
+    """Check if a dependency is available, auto-install if missing. Returns True on success."""
+    import shutil
+
+    dep_checks = {
+        "nodejs": ("npm", "Node.js", _install_nodejs),
+        "git": ("git", "Git", _install_git),
+    }
+
+    check_binary, label, installer = dep_checks.get(dep, (dep, dep, None))
+
+    if shutil.which(check_binary) is not None:
+        return True  # already installed
+
+    console.print(f"  [yellow]{label} not found — installing...[/yellow]")
+
+    if installer is None:
+        console.print(f"  [red]No auto-installer for '{dep}'.[/red]")
+        console.print(f"  Please install {label} manually, then retry:")
+        console.print(f"  [bold]openagents install {agent_type}[/bold]")
+        return False
+
+    if not installer(is_windows, os_name):
+        console.print(f"\n  [red]Could not install {label} automatically.[/red]")
+        console.print(f"  Please install manually, then retry:")
+        console.print(f"  [bold]openagents install {agent_type}[/bold]")
+        return False
+
+    # Refresh PATH on Windows after install
+    if is_windows:
+        _refresh_path_windows()
+
+    if shutil.which(check_binary) is None:
+        console.print(f"\n  [yellow]{label} installed but not yet on PATH.[/yellow]")
+        console.print(f"  Please restart your terminal, then retry:")
+        console.print(f"  [bold]openagents install {agent_type}[/bold]")
+        return False
+
+    console.print(f"  [green]✓[/green] {label} installed\n")
+    return True
+
+
+def _install_git(is_windows: bool, os_name: str) -> bool:
+    """Auto-install Git. Returns True on success."""
+    import shutil
+
+    if is_windows:
+        # Download and run Git for Windows installer silently
+        git_url = "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.2/Git-2.47.1.2-64-bit.exe"
+        console.print(f"  Downloading Git for Windows...")
+        try:
+            # Use $env:TEMP for reliable path handling; $ProgressPreference speeds up download
+            ps_download = (
+                f"$ProgressPreference='SilentlyContinue'; "
+                f"Invoke-WebRequest -Uri '{git_url}' -OutFile $env:TEMP\\git-installer.exe -UseBasicParsing"
+            )
+            subprocess.run(
+                ["powershell", "-Command", ps_download],
+                check=True, timeout=300,
+            )
+            installer_path = os.path.join(os.environ.get("TEMP", "."), "git-installer.exe")
+            console.print(f"  Installing Git (this may take a moment)...")
+            subprocess.run(
+                [installer_path, "/VERYSILENT", "/NORESTART", "/NOCANCEL", "/SP-"],
+                check=True, timeout=300,
+            )
+            try:
+                os.remove(installer_path)
+            except OSError:
+                pass
+            return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"Windows Git install failed: {e}")
+            return False
+
+    elif os_name == "Darwin":
+        # macOS — xcode-select or brew
+        if shutil.which("brew"):
+            console.print("  Installing Git via Homebrew...")
+            try:
+                subprocess.run(["brew", "install", "git"], check=True, timeout=300)
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        # xcode-select triggers Git install on macOS
+        console.print("  Installing Git via Xcode Command Line Tools...")
+        try:
+            subprocess.run(["xcode-select", "--install"], check=True, timeout=300)
+            return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+    else:
+        # Linux
+        if shutil.which("apt-get"):
+            console.print("  Installing Git via apt...")
+            try:
+                subprocess.run(["sudo", "apt-get", "update", "-qq"], check=True, timeout=60)
+                subprocess.run(["sudo", "apt-get", "install", "-y", "-qq", "git"], check=True, timeout=120)
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        if shutil.which("dnf"):
+            console.print("  Installing Git via dnf...")
+            try:
+                subprocess.run(["sudo", "dnf", "install", "-y", "git"], check=True, timeout=120)
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        if shutil.which("pacman"):
+            console.print("  Installing Git via pacman...")
+            try:
+                subprocess.run(["sudo", "pacman", "-Sy", "--noconfirm", "git"], check=True, timeout=120)
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+        return False
+
+
 @app.command("remove", rich_help_panel="Client")
 def daemon_remove(
     agent_name: str = typer.Argument(..., help="Name of the agent to remove"),
@@ -122,10 +372,16 @@ def install_agent(
     console.print(f"\n  Installing [cyan]{info.label}[/cyan]")
     console.print(f"  Command: [dim]{cmd}[/dim]\n")
 
-    # Determine how to run the install command
     import platform as _platform
     is_windows = _platform.system() == "Windows"
+    os_name = _platform.system()
 
+    # --- Auto-install dependencies declared in YAML `requires:` ---
+    for dep in info.requires:
+        if not _ensure_dependency(dep, is_windows, os_name, agent_type):
+            raise typer.Exit(1)
+
+    # Determine how to run the install command
     use_shell = False
     if cmd.startswith("powershell ") or cmd.startswith("powershell.exe "):
         # PowerShell installer (Windows)
@@ -137,21 +393,7 @@ def install_agent(
         package = cmd.replace("pip install ", "")
         run_args = [_sys.executable, "-m", "pip", "install", package]
     elif cmd.startswith("npm install "):
-        # Check if npm is available
         npm_cmd = "npm.cmd" if is_windows else "npm"
-        if shutil.which("npm") is None:
-            console.print("[yellow]npm is not installed.[/yellow]")
-            console.print(
-                "Install Node.js first: [bold]https://nodejs.org[/bold]\n"
-                "Or use your package manager:"
-            )
-            if _platform.system() == "Darwin":
-                console.print("  [dim]brew install node[/dim]")
-            elif _platform.system() == "Linux":
-                console.print("  [dim]sudo apt install nodejs npm[/dim]  (Debian/Ubuntu)")
-                console.print("  [dim]sudo dnf install nodejs npm[/dim]  (Fedora)")
-            console.print(f"\nThen retry: [bold]openagents install {agent_type}[/bold]")
-            raise typer.Exit(1)
         parts = cmd.split()
         parts[0] = npm_cmd
         run_args = parts

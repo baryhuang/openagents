@@ -7,6 +7,7 @@ builtin: true
 
 install:
   binary: codex
+  requires: [nodejs]
   macos: "npm install -g @openai/codex"
   linux: "npm install -g @openai/codex"
   windows: "npm install -g @openai/codex"

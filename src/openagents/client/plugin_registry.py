@@ -142,6 +142,7 @@ class PluginInfo:
     homepage: str = ""
     tags: list[str] = field(default_factory=list)
     builtin: bool = False
+    requires: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +366,7 @@ def _load_from_yaml_registry(reg: PluginRegistry) -> None:
             homepage=data.get("homepage", ""),
             tags=data.get("tags", []),
             builtin=is_builtin,
+            requires=install.get("requires", []),
         )
         reg.add_catalog_entry(info)
 

@@ -6,6 +6,7 @@ tags: [coding, open-source, cli, terminal]
 
 install:
   binary: opencode
+  requires: [nodejs]
   macos: "npm install -g opencode-ai@latest"
   linux: "npm install -g opencode-ai@latest"
   windows: "npm install -g opencode-ai@latest"

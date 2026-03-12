@@ -6,6 +6,7 @@ tags: [coding, container, lightweight, open-source]
 
 install:
   binary: nanoclaw
+  requires: [git]
   macos: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
   linux: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
   windows: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
