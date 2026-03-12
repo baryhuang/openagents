@@ -510,6 +510,32 @@ class WorkspaceUrlScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class AgentActionScreen(ModalScreen[str | None]):
+    """Context menu of available actions for the selected agent."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, actions: list[tuple[str, str]]) -> None:
+        """actions: list of (action_id, label) pairs."""
+        super().__init__()
+        self._actions = actions
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Label("[bold]Actions[/bold]", id="modal-title")
+            ol = OptionList(
+                *[Option(label, id=action_id) for action_id, label in self._actions],
+                id="action-list",
+            )
+            yield ol
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class TextInputScreen(ModalScreen[str | None]):
     """Generic single-line input modal."""
 
@@ -912,6 +938,33 @@ class OpenAgentsTUI(App):
         """Refresh footer bindings when the cursor moves to a different row."""
         if event.data_table.id == "agent-table":
             self.refresh_bindings()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Show context menu when Enter is pressed on an agent row."""
+        if event.data_table.id != "agent-table":
+            return
+        # Build list of available actions for the selected agent
+        all_actions = [
+            ("configure_agent", "Configure"),
+            ("start_agent", "Start"),
+            ("stop_agent", "Stop"),
+            ("open_workspace", "Open Workspace"),
+            ("connect_agent", "Connect to Workspace"),
+            ("disconnect_agent", "Disconnect from Workspace"),
+            ("remove_agent", "Remove"),
+        ]
+        available = [
+            (action_id, label)
+            for action_id, label in all_actions
+            if self.check_action(action_id, ())
+        ]
+        if not available:
+            return
+        self.push_screen(AgentActionScreen(available), callback=self._on_action_picked)
+
+    def _on_action_picked(self, action_id: str | None) -> None:
+        if action_id:
+            self.run_action(action_id)
 
     def __init__(self) -> None:
         super().__init__()
