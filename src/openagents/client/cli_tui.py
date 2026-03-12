@@ -394,13 +394,14 @@ class OpenAgentsTUI(App):
 
     BINDINGS = [
         Binding("i", "install", "Install"),
+        Binding("n", "new_agent", "New Agent"),
         Binding("s", "start_agent", "Start"),
         Binding("x", "stop_agent", "Stop"),
         Binding("c", "connect_agent", "Connect to Workspace"),
         Binding("d", "disconnect_agent", "Disconnect"),
         Binding("delete", "remove_agent", "Remove"),
         Binding("u", "daemon_up", "Daemon Up"),
-        Binding("n", "daemon_down", "Daemon Down"),
+        Binding("D", "daemon_down", "Daemon Down"),
         Binding("r", "refresh", "Refresh"),
         Binding("q", "quit", "Quit"),
     ]
@@ -551,8 +552,21 @@ class OpenAgentsTUI(App):
 
     # -- Start --
 
-    def action_start_agent(self) -> None:
+    def action_new_agent(self) -> None:
+        """Create a new agent."""
         self.push_screen(SelectAgentTypeScreen(), callback=self._on_type_picked)
+
+    def action_start_agent(self) -> None:
+        """Restart the selected stopped/error agent."""
+        agent = self._selected_agent()
+        if not agent:
+            self._log("[yellow]Select an agent to start[/yellow]")
+            return
+        if "stopped" not in agent["state"] and "error" not in agent["state"]:
+            self._log(f"[yellow]{agent['name']} is already running[/yellow]")
+            return
+        self._log(f"Starting [cyan]{agent['name']}[/cyan]…")
+        self._do_restart(agent["name"])
 
     def _on_type_picked(self, agent_type: str | None) -> None:
         if not agent_type:
@@ -597,6 +611,25 @@ class OpenAgentsTUI(App):
             )
         except Exception as e:
             self.call_from_thread(self._log, f"[red]✗ Failed to start daemon:[/red] {e}")
+        import time
+        time.sleep(2)
+        self.call_from_thread(self._refresh_table)
+
+    @work(thread=True)
+    def _do_restart(self, name: str) -> None:
+        """Restart a stopped agent by calling `openagents up`."""
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "openagents.client.cli", "up"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.call_from_thread(
+                self._log,
+                f"[green]✓[/green] Restarting [cyan]{name}[/cyan] via daemon",
+            )
+        except Exception as e:
+            self.call_from_thread(self._log, f"[red]✗ Failed to restart:[/red] {e}")
         import time
         time.sleep(2)
         self.call_from_thread(self._refresh_table)
