@@ -1,8 +1,8 @@
 # OpenAgents Installer for Windows
 # Usage: irm https://openagents.org/install.ps1 | iex
 
-$ErrorActionPreference = "Stop"
-$VERSION = "0.9.0"
+$ErrorActionPreference = "Continue"
+$VERSION = "0.9.1"
 $MIN_PYTHON_MAJOR = 3
 $MIN_PYTHON_MINOR = 10
 
@@ -12,6 +12,9 @@ function Write-Warn { Write-Host "[!] " -ForegroundColor Yellow -NoNewline; Writ
 function Write-Fail {
     Write-Host "[X] " -ForegroundColor Red -NoNewline
     Write-Host $args
+    Write-Host ""
+    Write-Host "Press any key to exit..." -ForegroundColor DarkGray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     exit 1
 }
 function Write-Step { Write-Host ""; Write-Info $args }
