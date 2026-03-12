@@ -287,7 +287,8 @@ def _show_agent_scan():
         console.print(f"[dim]{len(cfg.agents)} agent(s) configured[/dim]")
         for a in cfg.agents:
             net_label = f"-> {a.network}" if a.network else "(local)"
-            console.print(f"  [cyan]{a.name}[/cyan] ({a.type}) {net_label}")
+            path_label = f" [dim]{a.path}[/dim]" if a.path else ""
+            console.print(f"  [cyan]{a.name}[/cyan] ({a.type}) {net_label}{path_label}")
         console.print()
 
     pid = read_daemon_pid()

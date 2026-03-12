@@ -88,10 +88,11 @@ def daemon_up(
     table.add_column("Type")
     table.add_column("Role")
     table.add_column("Network", style="dim")
+    table.add_column("Path", style="dim")
     for a in cfg.agents:
         net = get_agent_network(a, cfg)
         net_label = net.slug if net else "[dim](local)[/dim]"
-        table.add_row(a.name, a.type, a.role, net_label)
+        table.add_row(a.name, a.type, a.role, net_label, a.path or "")
     console.print()
     console.print(table)
     console.print()
@@ -168,6 +169,7 @@ def daemon_status():
     table.add_column("Agent", style="cyan")
     table.add_column("Type")
     table.add_column("Network", style="dim")
+    table.add_column("Path", style="dim")
     table.add_column("State")
     table.add_column("Restarts", justify="center")
     table.add_column("Error", style="dim", max_width=40)
@@ -187,6 +189,7 @@ def daemon_status():
             name,
             info.get("type", ""),
             info.get("network", info.get("workspace", "")) or "[dim](local)[/dim]",
+            info.get("path", "") or "",
             state_style,
             str(info.get("restarts", 0)),
             info.get("last_error", "") or "",
@@ -614,9 +617,10 @@ def _start_daemon():
     table.add_column("Agent", style="cyan")
     table.add_column("Type")
     table.add_column("Network", style="dim")
+    table.add_column("Path", style="dim")
     for a in cfg.agents:
         net = get_agent_network(a, cfg)
-        table.add_row(a.name, a.type, net.slug if net else "[dim](local)[/dim]")
+        table.add_row(a.name, a.type, net.slug if net else "[dim](local)[/dim]", a.path or "")
     console.print()
     console.print(table)
     console.print()

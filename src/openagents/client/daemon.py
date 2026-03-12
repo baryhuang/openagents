@@ -52,6 +52,7 @@ class AgentStatus:
     name: str
     type: str
     network: str  # network slug or "(local)"
+    path: Optional[str] = None  # working directory
     state: str = "starting"  # starting, online, running, reconnecting, stopped, error
     started_at: Optional[str] = None
     restarts: int = 0
@@ -64,6 +65,7 @@ class AgentStatus:
             "network": self.network,
             # Keep "workspace" key for backward compat with status readers
             "workspace": self.network,
+            "path": self.path,
             "state": self.state,
             "started_at": self.started_at,
             "restarts": self.restarts,
@@ -168,6 +170,7 @@ class DaemonManager:
             name=agent_cfg.name,
             type=agent_cfg.type,
             network=network_label,
+            path=agent_cfg.path,
         )
         self.agent_status[agent_cfg.name] = status
 
