@@ -274,6 +274,9 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
 
     if not existing:
         db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
+        # Auto-promote first agent to channel master if none set
+        if not channel.master_agent:
+            channel.master_agent = agent_name
         db.flush()
 
     return event

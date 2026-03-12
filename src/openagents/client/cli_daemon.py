@@ -902,13 +902,12 @@ def workspace_create(
     import asyncio
     from rich.progress import Progress, SpinnerColumn, TextColumn
 
-    from openagents.client.workspace_client import WorkspaceClient, generate_agent_name
+    from openagents.client.workspace_client import WorkspaceClient
     from openagents.client.daemon_config import (
         NetworkEntry, add_network_to_config, load_config,
     )
 
     ws_name = name or Prompt.ask("  Workspace name", default="my-workspace")
-    agent_name = generate_agent_name("cli")
 
     client = WorkspaceClient(endpoint=endpoint)
 
@@ -919,7 +918,7 @@ def workspace_create(
     ) as progress:
         task = progress.add_task("Creating workspace...", total=None)
         try:
-            ws = asyncio.run(client.create_workspace(agent_name, ws_name))
+            ws = asyncio.run(client.create_workspace(name=ws_name))
             progress.update(task, description="[green]✓ Workspace created[/green]")
         except Exception as e:
             progress.update(task, description="[red]✗ Failed[/red]")
@@ -1227,7 +1226,7 @@ def _resolve_or_create_network(
     else:
         async def _create():
             ws = await client.create_workspace(
-                agent_name, workspace_name, agent_type=agent_type,
+                name=workspace_name,
             )
             console.print(f"[green]Network created:[/green] {ws.name}")
             console.print(f"[bold]URL:[/bold] [link={ws.url}]{ws.url}[/link]")

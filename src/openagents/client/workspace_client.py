@@ -173,15 +173,16 @@ class WorkspaceClient:
                 return data.get("data", data)
 
     async def create_workspace(
-        self, agent_name: str, name: Optional[str] = None,
+        self, agent_name: Optional[str] = None, name: Optional[str] = None,
         agent_type: str | None = None,
     ) -> WorkspaceInfo:
         """Create a workspace via POST /v1/workspaces."""
         import aiohttp
         payload: Dict[str, Any] = {
-            "agent_name": agent_name,
-            "name": name or f"{agent_name}'s workspace",
+            "name": name or (f"{agent_name}'s workspace" if agent_name else "My Workspace"),
         }
+        if agent_name:
+            payload["agent_name"] = agent_name
         if agent_type:
             payload["agent_type"] = agent_type
         async with aiohttp.ClientSession() as session:

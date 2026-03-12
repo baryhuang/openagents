@@ -77,7 +77,7 @@ def _verify_workspace_access(workspace, token: Optional[str], authorization: Opt
 
 class WorkspaceCreateRequest(BaseModel):
     name: str
-    agent_name: str                    # The creating agent (becomes master)
+    agent_name: Optional[str] = None   # Optional — if provided, becomes master member
     agent_type: Optional[str] = None   # "claude", "openclaw", etc.
     creator_email: Optional[str] = None
 
@@ -85,6 +85,7 @@ class ChannelUpdateRequest(BaseModel):
     title: Optional[str] = None
     status: Optional[str] = None
     starred: Optional[bool] = None
+    master_agent: Optional[str] = None  # Reassign channel master
     auto_title: bool = False  # When True, title update is from auto-titling (don't mark as manually set)
 
 class WorkspaceUpdateRequest(BaseModel):
@@ -180,35 +181,37 @@ async def create_workspace(
     db.add(workspace)
     db.flush()
 
-    # Add the creating agent as master member
-    member = WorkspaceMember(
-        workspace_id=workspace.id,
-        agent_name=body.agent_name,
-        role="master",
-        agent_type=body.agent_type,
-        status="online",
-        last_heartbeat=now,
-    )
-    db.add(member)
+    # Optionally add the creating agent as master member
+    if body.agent_name:
+        member = WorkspaceMember(
+            workspace_id=workspace.id,
+            agent_name=body.agent_name,
+            role="master",
+            agent_type=body.agent_type,
+            status="online",
+            last_heartbeat=now,
+        )
+        db.add(member)
 
     # Create default channel (Session 1)
     channel = Channel(
         workspace_id=workspace.id,
         name=f"session-{secrets.token_hex(4)}",
         title="Session 1",
-        created_by=body.agent_name,
-        master_agent=body.agent_name,
+        created_by=body.agent_name or body.creator_email,
+        master_agent=body.agent_name,  # None if no agent provided
         status="active",
     )
     db.add(channel)
     db.flush()
 
-    # Add master to default channel
-    participant = ChannelMember(
-        channel_id=channel.id,
-        agent_name=body.agent_name,
-    )
-    db.add(participant)
+    # Add creator as channel participant if provided
+    if body.agent_name:
+        participant = ChannelMember(
+            channel_id=channel.id,
+            agent_name=body.agent_name,
+        )
+        db.add(participant)
 
     db.commit()
     db.refresh(workspace)
@@ -574,6 +577,8 @@ async def update_channel(
         channel.status = body.status
     if body.starred is not None:
         channel.starred = body.starred
+    if body.master_agent is not None:
+        channel.master_agent = body.master_agent
 
     db.commit()
     db.refresh(channel)
