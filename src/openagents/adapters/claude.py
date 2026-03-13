@@ -16,6 +16,7 @@ import logging
 import os
 import platform
 import shutil
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -232,11 +233,24 @@ class ClaudeAdapter(BaseAdapter):
         if "browser" in self.disabled_modules:
             mcp_args.append("--disable-browser")
 
+        # Resolve absolute path to openagents binary so the MCP server
+        # subprocess works even when the CLI isn't on the default PATH
+        # (e.g. installed via pipx or virtualenv on macOS).
+        oa_bin = shutil.which("openagents")
+        if not oa_bin:
+            # Check next to the current Python interpreter (virtualenv/pipx)
+            candidate = Path(sys.executable).parent / "openagents"
+            if candidate.exists():
+                oa_bin = str(candidate)
+        if not oa_bin:
+            # Last resort: bare name and hope PATH is set
+            oa_bin = "openagents"
+
         mcp_config = {
             "mcpServers": {
                 "openagents-workspace": {
                     "type": "stdio",
-                    "command": "openagents",
+                    "command": oa_bin,
                     "args": mcp_args,
                     "env": {"OA_WORKSPACE_TOKEN": self.token},
                 },
