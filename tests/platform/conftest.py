@@ -1,7 +1,7 @@
 """
 Cross-platform agent test suite.
 
-Tests the full user journey: openagents install → binary available → binary works.
+Tests the full user journey: openagents install -> binary available -> binary works.
 
 Run:
     pytest tests/platform/ -v
@@ -26,6 +26,8 @@ import sys
 
 import pytest
 
+IS_WINDOWS = platform.system().lower() == "windows"
+
 
 def current_platform() -> str:
     """Return normalized platform name: linux, macos, or windows."""
@@ -33,6 +35,28 @@ def current_platform() -> str:
     if system == "darwin":
         return "macos"
     return system
+
+
+def run_cmd(
+    cmd: list[str], timeout: int = 180
+) -> subprocess.CompletedProcess:
+    """Run a command cross-platform, handling Windows encoding and .cmd wrappers.
+
+    On Windows:
+    - Uses shell=True so .cmd wrappers (npm global installs) resolve correctly
+    - Forces UTF-8 encoding to avoid cp1252 decode errors from Unicode output
+    """
+    kwargs: dict = {
+        "capture_output": True,
+        "text": True,
+        "timeout": timeout,
+    }
+    if IS_WINDOWS:
+        kwargs["shell"] = True
+        kwargs["encoding"] = "utf-8"
+        kwargs["errors"] = "replace"
+
+    return subprocess.run(cmd, **kwargs)
 
 
 @pytest.fixture
@@ -54,12 +78,7 @@ def openagents_version() -> str | None:
     if binary is None:
         return None
     try:
-        result = subprocess.run(
-            [binary, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = run_cmd([binary, "--version"], timeout=10)
         return result.stdout.strip() if result.returncode == 0 else None
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
@@ -81,10 +100,4 @@ def run_openagents(*args: str, timeout: int = 180) -> subprocess.CompletedProces
         else:
             binary = "openagents"  # let it fail with a clear error
 
-    cmd = [binary, *args]
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    return run_cmd([binary, *args], timeout=timeout)

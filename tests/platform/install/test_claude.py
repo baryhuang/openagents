@@ -9,12 +9,10 @@ Run:
 """
 
 import shutil
-import subprocess
 
 import pytest
 
-# Import shared helper
-from tests.platform.conftest import run_openagents
+from tests.platform.conftest import run_cmd, run_openagents
 
 
 AGENT_NAME = "claude"
@@ -56,12 +54,7 @@ class TestClaudeInstall:
         if shutil.which(BINARY_NAME) is None:
             pytest.skip(f"'{BINARY_NAME}' not on PATH")
 
-        result = subprocess.run(
-            [BINARY_NAME, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = run_cmd([BINARY_NAME, "--version"], timeout=30)
         assert result.returncode == 0, (
             f"'{BINARY_NAME} --version' failed "
             f"(exit {result.returncode}).\n"
@@ -74,12 +67,7 @@ class TestClaudeInstall:
         if shutil.which(BINARY_NAME) is None:
             pytest.skip(f"'{BINARY_NAME}' not on PATH")
 
-        result = subprocess.run(
-            [BINARY_NAME, "--help"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = run_cmd([BINARY_NAME, "--help"], timeout=30)
         assert result.returncode == 0, (
             f"'{BINARY_NAME} --help' failed "
             f"(exit {result.returncode}).\n"
@@ -96,12 +84,9 @@ class TestClaudeInstallReport:
         agent_version = None
         if binary_path:
             try:
-                r = subprocess.run(
-                    [BINARY_NAME, "--version"],
-                    capture_output=True, text=True, timeout=30,
-                )
+                r = run_cmd([BINARY_NAME, "--version"], timeout=30)
                 agent_version = r.stdout.strip() if r.returncode == 0 else None
-            except (FileNotFoundError, subprocess.TimeoutExpired):
+            except Exception:
                 pass
 
         report = {
