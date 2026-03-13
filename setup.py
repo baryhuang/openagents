@@ -25,11 +25,11 @@ def copy_studio_build():
         
         # Copy build directory
         shutil.copytree(studio_build_src, studio_build_dst)
-        print(f"✅ Copied studio build files from {studio_build_src} to {studio_build_dst}")
+        print(f"Copied studio build files from {studio_build_src} to {studio_build_dst}")
     else:
-        print(f"⚠️  Studio build directory not found at {studio_build_src}")
-        print("   The package will work, but users will need Node.js to run the studio.")
-        print("   To include the built frontend, run 'npm run build' in the studio directory first.")
+        print(f"Studio build directory not found at {studio_build_src}")
+        print("  The package will work, but users will need Node.js to run the studio.")
+        print("  To include the built frontend, run 'npm run build' in the studio directory first.")
 
 if __name__ == "__main__":
     # Copy studio build files before setup
