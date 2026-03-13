@@ -12,7 +12,7 @@ import shutil
 
 import pytest
 
-from tests.platform.conftest import run_cmd, run_openagents
+from tests.platform.conftest import run_cmd, run_openagents, safe_print
 
 
 AGENT_NAME = "claude"
@@ -96,4 +96,4 @@ class TestClaudeInstallReport:
             "agent_version": agent_version,
         }
         for k, v in report.items():
-            print(f"  {k}: {v}")
+            safe_print(f"  {k}: {v}")

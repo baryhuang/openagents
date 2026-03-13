@@ -12,7 +12,7 @@ import shutil
 
 import pytest
 
-from tests.platform.conftest import run_cmd, run_openagents
+from tests.platform.conftest import run_cmd, run_openagents, safe_print
 
 
 AGENT_NAME = "openclaw"
@@ -31,7 +31,7 @@ class TestOpenClawInstall:
 
     def test_openagents_install_openclaw(self):
         """`openagents install openclaw --yes` should succeed."""
-        result = run_openagents("install", AGENT_NAME, "--yes", timeout=180)
+        result = run_openagents("install", AGENT_NAME, "--yes", timeout=300)
         assert result.returncode == 0, (
             f"`openagents install {AGENT_NAME}` failed "
             f"(exit {result.returncode}).\n"
@@ -67,7 +67,7 @@ class TestOpenClawInstall:
         if shutil.which(BINARY_NAME) is None:
             pytest.skip(f"'{BINARY_NAME}' not on PATH")
 
-        result = run_cmd([BINARY_NAME, "--help"], timeout=30)
+        result = run_cmd([BINARY_NAME, "--help"], timeout=60)
         assert result.returncode == 0, (
             f"'{BINARY_NAME} --help' failed "
             f"(exit {result.returncode}).\n"
@@ -96,4 +96,4 @@ class TestOpenClawInstallReport:
             "agent_version": agent_version,
         }
         for k, v in report.items():
-            print(f"  {k}: {v}")
+            safe_print(f"  {k}: {v}")

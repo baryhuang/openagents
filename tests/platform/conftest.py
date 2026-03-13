@@ -101,3 +101,15 @@ def run_openagents(*args: str, timeout: int = 180) -> subprocess.CompletedProces
             binary = "openagents"  # let it fail with a clear error
 
     return run_cmd([binary, *args], timeout=timeout)
+
+
+def safe_print(text: str) -> None:
+    """Print text safely on all platforms.
+
+    On Windows with cp1252, Unicode characters (box-drawing, emoji) cause
+    UnicodeEncodeError. This replaces un-encodable chars with '?'.
+    """
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode("ascii", errors="replace").decode("ascii"))
