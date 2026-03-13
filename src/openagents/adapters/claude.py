@@ -243,6 +243,11 @@ class ClaudeAdapter(BaseAdapter):
             if candidate.exists():
                 oa_bin = str(candidate)
         if not oa_bin:
+            # Check common user install location (pip install --user)
+            user_bin = Path.home() / ".local" / "bin" / "openagents"
+            if user_bin.exists():
+                oa_bin = str(user_bin)
+        if not oa_bin:
             # Last resort: bare name and hope PATH is set
             oa_bin = "openagents"
 
