@@ -9,7 +9,7 @@ on:
         default: 'all'
 
 jobs:
-  install-claude:
+  test-claude:
     if: ${{ github.event.inputs.agents == 'all' || contains(github.event.inputs.agents, 'claude') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -37,17 +37,21 @@ jobs:
         pip install pytest pytest-html
         pip install -e .
 
-    - name: Run Claude Code install tests
-      run: pytest tests/platform/install/test_claude.py -v -s --tb=long --junitxml=reports/claude-install.xml --html=reports/claude-install.html --self-contained-html
+    - name: "Test 1: Install Claude Code"
+      run: pytest tests/platform/install/test_claude.py -v -s --tb=long --junitxml=reports/claude-install.xml
 
-    - name: Upload test report
+    - name: "Test 2: Start Claude Code"
+      if: success()
+      run: pytest tests/platform/start/test_claude.py -v -s --tb=long --junitxml=reports/claude-start.xml
+
+    - name: Upload test reports
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: claude-install-${{ matrix.os }}
+        name: claude-${{ matrix.os }}
         path: reports/
 
-  install-openclaw:
+  test-openclaw:
     if: ${{ github.event.inputs.agents == 'all' || contains(github.event.inputs.agents, 'openclaw') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -75,19 +79,23 @@ jobs:
         pip install pytest pytest-html
         pip install -e .
 
-    - name: Run OpenClaw install tests
-      run: pytest tests/platform/install/test_openclaw.py -v -s --tb=long --junitxml=reports/openclaw-install.xml --html=reports/openclaw-install.html --self-contained-html
+    - name: "Test 1: Install OpenClaw"
+      run: pytest tests/platform/install/test_openclaw.py -v -s --tb=long --junitxml=reports/openclaw-install.xml
 
-    - name: Upload test report
+    - name: "Test 2: Start OpenClaw"
+      if: success()
+      run: pytest tests/platform/start/test_openclaw.py -v -s --tb=long --junitxml=reports/openclaw-start.xml
+
+    - name: Upload test reports
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: openclaw-install-${{ matrix.os }}
+        name: openclaw-${{ matrix.os }}
         path: reports/
 
   summary:
     if: always()
-    needs: [install-claude, install-openclaw]
+    needs: [test-claude, test-openclaw]
     runs-on: ubuntu-latest
     steps:
     - name: Download all reports
@@ -99,15 +107,16 @@ jobs:
       run: |
         echo "## Platform Test Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Agent | OS | Tests | Failures | Errors |" >> $GITHUB_STEP_SUMMARY
-        echo "|-------|----|-------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Agent | Test | OS | Tests | Failures | Errors |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|------|----|-------|----------|--------|" >> $GITHUB_STEP_SUMMARY
         find all-reports/ -name "*.xml" | sort | while read f; do
           agent=$(echo "$f" | grep -oP '(claude|openclaw)')
+          test_type=$(echo "$f" | grep -oP '(install|start)')
           os=$(echo "$f" | grep -oP '(ubuntu|macos|windows)')
           tests=$(grep -oP 'tests="\K[^"]+' "$f" | head -1)
           failures=$(grep -oP 'failures="\K[^"]+' "$f" | head -1)
           errors=$(grep -oP 'errors="\K[^"]+' "$f" | head -1)
-          echo "| $agent | $os | $tests | $failures | $errors |" >> $GITHUB_STEP_SUMMARY
+          echo "| $agent | $test_type | $os | $tests | $failures | $errors |" >> $GITHUB_STEP_SUMMARY
         done
 
     - name: Upload combined reports

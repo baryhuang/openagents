@@ -38,19 +38,24 @@ def current_platform() -> str:
 
 
 def run_cmd(
-    cmd: list[str], timeout: int = 180
+    cmd: list[str], timeout: int = 180, stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a command cross-platform, handling Windows encoding and .cmd wrappers.
 
     On Windows:
     - Uses shell=True so .cmd wrappers (npm global installs) resolve correctly
     - Forces UTF-8 encoding to avoid cp1252 decode errors from Unicode output
+
+    Args:
+        stdin_text: Optional text to pipe to the command's stdin.
     """
     kwargs: dict = {
         "capture_output": True,
         "text": True,
         "timeout": timeout,
     }
+    if stdin_text is not None:
+        kwargs["input"] = stdin_text
     if IS_WINDOWS:
         kwargs["shell"] = True
         kwargs["encoding"] = "utf-8"
@@ -84,7 +89,9 @@ def openagents_version() -> str | None:
         return None
 
 
-def run_openagents(*args: str, timeout: int = 180) -> subprocess.CompletedProcess:
+def run_openagents(
+    *args: str, timeout: int = 180, stdin_text: str | None = None,
+) -> subprocess.CompletedProcess:
     """Run an openagents CLI command and return the result.
 
     Tries the `openagents` binary first, falls back to the entry point
@@ -100,7 +107,7 @@ def run_openagents(*args: str, timeout: int = 180) -> subprocess.CompletedProces
         else:
             binary = "openagents"  # let it fail with a clear error
 
-    return run_cmd([binary, *args], timeout=timeout)
+    return run_cmd([binary, *args], timeout=timeout, stdin_text=stdin_text)
 
 
 def safe_print(text: str) -> None:
