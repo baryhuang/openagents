@@ -236,20 +236,52 @@ class ClaudeAdapter(BaseAdapter):
         # Resolve absolute path to openagents binary so the MCP server
         # subprocess works even when the CLI isn't on the default PATH
         # (e.g. installed via pipx or virtualenv on macOS).
-        oa_bin = shutil.which("openagents")
+        import platform
+        is_windows = platform.system() == "Windows"
+
+        # Try to find openagents with proper extension on Windows
+        if is_windows:
+            oa_bin = shutil.which("openagents.cmd") or shutil.which("openagents.exe") or shutil.which("openagents")
+        else:
+            oa_bin = shutil.which("openagents")
+
         if not oa_bin:
             # Check next to the current Python interpreter (virtualenv/pipx)
-            candidate = Path(sys.executable).parent / "openagents"
-            if candidate.exists():
-                oa_bin = str(candidate)
+            candidates = []
+            if is_windows:
+                candidates = [
+                    Path(sys.executable).parent / "openagents.cmd",
+                    Path(sys.executable).parent / "openagents.exe",
+                    Path(sys.executable).parent / "Scripts" / "openagents.cmd",
+                    Path(sys.executable).parent / "Scripts" / "openagents.exe",
+                ]
+            else:
+                candidates = [Path(sys.executable).parent / "openagents"]
+
+            for candidate in candidates:
+                if candidate.exists():
+                    oa_bin = str(candidate)
+                    break
         if not oa_bin:
             # Check common user install location (pip install --user)
             user_bin = Path.home() / ".local" / "bin" / "openagents"
             if user_bin.exists():
                 oa_bin = str(user_bin)
         if not oa_bin:
+            # Check Homebrew location on macOS
+            homebrew_bin = Path("/opt/homebrew/bin/openagents")
+            if homebrew_bin.exists():
+                oa_bin = str(homebrew_bin)
+        if not oa_bin:
             # Last resort: bare name and hope PATH is set
+            logger.warning(
+                "Could not find openagents binary in common locations. "
+                "Using 'openagents' and hoping it's in PATH. "
+                "MCP tools may not be available."
+            )
             oa_bin = "openagents"
+        else:
+            logger.debug(f"Using openagents binary at: {oa_bin}")
 
         mcp_config = {
             "mcpServers": {
