@@ -23,6 +23,7 @@ from typing import Optional
 
 from openagents.adapters.base import BaseAdapter
 from openagents.adapters.utils import format_attachments_for_prompt
+from openagents.adapters.workspace_prompt import build_claude_system_prompt
 from openagents.workspace_client import DEFAULT_ENDPOINT
 
 logger = logging.getLogger(__name__)
@@ -136,23 +137,11 @@ class ClaudeAdapter(BaseAdapter):
                 "claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash"
             )
 
-        system_prompt = (
-            f"\nYou are agent '{self.agent_name}' connected to an "
-            f"OpenAgents workspace.\n"
-            f"Your text responses are automatically posted to the "
-            f"workspace chat — just write your answer naturally.\n"
-            f"Use workspace_get_history to read previous messages.\n"
-            f"Use workspace_get_agents to see other agents.\n"
-            f"\n## Multi-Agent Delegation\n"
-            f"To delegate work to another agent, @mention them in "
-            f"your response. Only @mentioned agents will receive "
-            f"the message.\n"
-            f"IMPORTANT: Do NOT @mention an agent just to say thanks "
-            f"or acknowledge — that wakes them up for nothing. Only "
-            f"@mention when you need them to do work. When the task "
-            f"is complete, report results to the user without "
-            f"@mentioning other agents.\n"
-            f"Use workspace_get_agents to discover available agents.\n"
+        system_prompt = "\n" + build_claude_system_prompt(
+            agent_name=self.agent_name,
+            workspace_id=self.workspace_id,
+            channel_name=channel_name,
+            mode=self._mode,
         )
 
         cmd = [
@@ -199,20 +188,9 @@ class ClaudeAdapter(BaseAdapter):
         if self._mode == "plan":
             cmd.extend(["--permission-mode", "plan"])
             allowed = mcp_tools + ["Read", "Glob", "Grep"]
-            system_prompt += (
-                "\nYou are in PLAN mode. Only read, analyze, and propose "
-                "changes. Do not make edits.\n"
-            )
         else:
             cmd.append("--dangerously-skip-permissions")
             allowed = mcp_tools + mcp_write_tools + ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
-
-        system_prompt += (
-            "\nIMPORTANT: Never use AskUserQuestion. "
-            "AskUserQuestion blocks the subprocess and will hang the thread. "
-            "If you need to ask the user something, just write the question "
-            "as your text response.\n"
-        )
 
         cmd.extend(["--append-system-prompt", system_prompt])
         cmd.extend(["--allowedTools"] + allowed)

@@ -22,6 +22,7 @@ import shutil
 from typing import Optional
 
 from openagents.adapters.base import BaseAdapter
+from openagents.adapters.workspace_prompt import build_openclaw_system_prompt
 from openagents.workspace_client import DEFAULT_ENDPOINT
 
 logger = logging.getLogger(__name__)
@@ -37,11 +38,25 @@ class CodexAdapter(BaseAdapter):
         token: str,
         agent_name: str,
         endpoint: str = DEFAULT_ENDPOINT,
+        disabled_modules: set | None = None,
     ):
         super().__init__(workspace_id, channel_name, token, agent_name, endpoint)
+        self.disabled_modules = disabled_modules or set()
         self._codex_thread_id: Optional[str] = None
 
-    def _build_codex_cmd(self, prompt: str) -> list[str]:
+    def _build_system_context(self, channel_name: str) -> str:
+        """Build workspace context to prepend to prompts."""
+        return build_openclaw_system_prompt(
+            agent_name=self.agent_name,
+            workspace_id=self.workspace_id,
+            channel_name=channel_name,
+            endpoint=self.endpoint,
+            token=self.token,
+            mode=self._mode,
+            disabled_modules=self.disabled_modules,
+        )
+
+    def _build_codex_cmd(self, prompt: str, channel_name: str) -> list[str]:
         """Build the codex CLI command."""
         # On Windows, prefer .cmd/.exe wrappers over bare npm bash shims
         if platform.system() == "Windows":
@@ -65,7 +80,11 @@ class CodexAdapter(BaseAdapter):
             "--full-auto",  # workspace-write sandbox + auto-approve
         ])
 
-        cmd.append(prompt)
+        # Prepend workspace context to the prompt so Codex knows
+        # about shared resources and how to collaborate
+        context = self._build_system_context(channel_name)
+        full_prompt = f"{context}\n\n---\n\n{prompt}"
+        cmd.append(full_prompt)
         return cmd
 
     async def _handle_message(self, msg: dict):
@@ -83,7 +102,7 @@ class CodexAdapter(BaseAdapter):
         await self._send_status(msg_channel, "thinking...")
 
         try:
-            cmd = self._build_codex_cmd(content)
+            cmd = self._build_codex_cmd(content, msg_channel)
         except FileNotFoundError as e:
             await self._send_error(msg_channel, str(e))
             return

@@ -29,6 +29,7 @@ import aiohttp
 
 from openagents.adapters.base import BaseAdapter
 from openagents.adapters.utils import format_attachments_for_prompt
+from openagents.adapters.workspace_prompt import build_openclaw_system_prompt
 from openagents.workspace_client import DEFAULT_ENDPOINT
 
 logger = logging.getLogger(__name__)
@@ -141,8 +142,10 @@ class OpenClawAdapter(BaseAdapter):
         openclaw_port: int = 18789,
         openclaw_token: Optional[str] = None,
         openclaw_agent_id: str = "main",
+        disabled_modules: set | None = None,
     ):
         super().__init__(workspace_id, channel_name, token, agent_name, endpoint)
+        self.disabled_modules = disabled_modules or set()
 
         # Check for direct LLM API mode (bypasses OpenClaw gateway)
         self._direct_api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
@@ -170,36 +173,16 @@ class OpenClawAdapter(BaseAdapter):
         self._device_identity = None if self._direct_mode else _load_openclaw_device_identity()
 
     def _build_system_prompt(self, channel_name: str) -> str:
-        """Build system prompt with workspace context."""
-        base = (
-            f"You are agent '{self.agent_name}' connected to an "
-            f"OpenAgents workspace.\n\n"
-            f"## Workspace\n"
-            f"- Workspace ID: {self.workspace_id}\n"
-            f"- Channel: {channel_name}\n"
-            f"- Mode: {self._mode}\n\n"
+        """Build system prompt with workspace context and API skills."""
+        return build_openclaw_system_prompt(
+            agent_name=self.agent_name,
+            workspace_id=self.workspace_id,
+            channel_name=channel_name,
+            endpoint=self.endpoint,
+            token=self.token,
+            mode=self._mode,
+            disabled_modules=self.disabled_modules,
         )
-        if self._mode == "plan":
-            base += (
-                "## Instructions (PLAN mode)\n"
-                "- You are in PLAN mode. Only read, analyze, and propose.\n"
-                "- Do NOT write code, make changes, or execute actions.\n"
-                "- Instead, outline your plan step by step.\n"
-                "- Describe what changes you would make and why.\n"
-                "- Ask clarifying questions if needed.\n"
-                "- When the user is satisfied, they can switch you to Execute mode.\n"
-                "- Use markdown formatting for structure.\n"
-            )
-        else:
-            base += (
-                "## Instructions (EXECUTE mode)\n"
-                "- You are responding to messages from the workspace chat.\n"
-                "- Your response will be posted to the workspace automatically.\n"
-                "- Be helpful, concise, and direct.\n"
-                "- You can write code, explain concepts, and help with tasks.\n"
-                "- Use markdown formatting for code blocks and structure.\n"
-            )
-        return base
 
     async def _get_recent_history_text(self, channel_name: str) -> str:
         """Fetch recent workspace messages and format as context."""

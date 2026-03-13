@@ -336,6 +336,12 @@ def connect_openclaw(
         "main", "--openclaw-agent-id",
         help="OpenClaw agent ID to use",
     ),
+    disable_files: bool = typer.Option(
+        False, "--disable-files", help="Disable shared file tools for this agent",
+    ),
+    disable_browser: bool = typer.Option(
+        False, "--disable-browser", help="Disable shared browser tools for this agent",
+    ),
     save: bool = typer.Option(
         False, "--save", help="Save this connection to daemon config (~/.openagents/daemon.yaml)",
     ),
@@ -540,6 +546,11 @@ def connect_openclaw(
         console.print("[dim]Press Ctrl+C to disconnect[/dim]\n")
 
         from openagents.adapters.openclaw import OpenClawAdapter
+        disabled_modules = set()
+        if disable_files:
+            disabled_modules.add("files")
+        if disable_browser:
+            disabled_modules.add("browser")
         adapter = OpenClawAdapter(
             workspace_id=ws_workspace_id,
             channel_name=ws_channel,
@@ -550,6 +561,7 @@ def connect_openclaw(
             openclaw_port=openclaw_port,
             openclaw_token=openclaw_token,
             openclaw_agent_id=openclaw_agent_id,
+            disabled_modules=disabled_modules,
         )
         await adapter.run()
 
@@ -576,6 +588,12 @@ def connect_codex(
     endpoint: str = typer.Option(
         "https://workspace-endpoint.openagents.org", "--endpoint", envvar="OA_ENDPOINT",
         help="API endpoint URL",
+    ),
+    disable_files: bool = typer.Option(
+        False, "--disable-files", help="Disable shared file tools for this agent",
+    ),
+    disable_browser: bool = typer.Option(
+        False, "--disable-browser", help="Disable shared browser tools for this agent",
     ),
     save: bool = typer.Option(
         False, "--save", help="Save this connection to daemon config (~/.openagents/daemon.yaml)",
@@ -707,12 +725,18 @@ def connect_codex(
         console.print("[dim]Press Ctrl+C to disconnect[/dim]\n")
 
         from openagents.adapters.codex import CodexAdapter
+        disabled_modules = set()
+        if disable_files:
+            disabled_modules.add("files")
+        if disable_browser:
+            disabled_modules.add("browser")
         adapter = CodexAdapter(
             workspace_id=ws.workspace_id,
             channel_name=ws.channel_name,
             token=ws.token,
             agent_name=agent_name,
             endpoint=endpoint,
+            disabled_modules=disabled_modules,
         )
         await adapter.run()
 
