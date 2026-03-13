@@ -17,6 +17,7 @@ import os
 import platform
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -81,17 +82,19 @@ class ClaudeAdapter(BaseAdapter):
                 # Try to kill the entire process group (catches child
                 # processes like Playwright MCP servers that may hold
                 # stdout open after the main process exits).
+                # os.killpg/os.getpgid are POSIX-only; fall back to
+                # proc.terminate() on Windows.
                 import signal
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                except (ProcessLookupError, PermissionError, OSError):
+                except (ProcessLookupError, PermissionError, OSError, AttributeError):
                     proc.terminate()
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=5)
                 except asyncio.TimeoutError:
                     try:
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError, OSError):
+                    except (ProcessLookupError, PermissionError, OSError, AttributeError):
                         proc.kill()
                     await proc.wait()
             except ProcessLookupError:
@@ -292,7 +295,19 @@ class ClaudeAdapter(BaseAdapter):
                 },
             },
         }
-        cmd.extend(["--mcp-config", json.dumps(mcp_config)])
+
+        # Write MCP config to a temp file instead of passing inline JSON.
+        # On Windows, cmd.exe /c mangles nested double quotes in arguments,
+        # so inline JSON via --mcp-config breaks.  A file path is safe
+        # on all platforms.
+        mcp_dir = Path.home() / ".openagents" / "mcp-configs"
+        mcp_dir.mkdir(parents=True, exist_ok=True)
+        mcp_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", dir=mcp_dir, delete=False,
+        )
+        json.dump(mcp_config, mcp_file)
+        mcp_file.close()
+        cmd.extend(["--mcp-config", mcp_file.name])
 
         return cmd
 
@@ -349,8 +364,15 @@ class ClaudeAdapter(BaseAdapter):
         # Post "thinking..." status
         await self._send_status(msg_channel, "thinking...")
 
+        mcp_config_file = None
         try:
             cmd = self._build_claude_cmd(content, msg_channel)
+            # Track the temp MCP config file for cleanup
+            try:
+                idx = cmd.index("--mcp-config")
+                mcp_config_file = cmd[idx + 1]
+            except (ValueError, IndexError):
+                pass
         except FileNotFoundError as e:
             await self._send_error(msg_channel, str(e))
             return
@@ -538,6 +560,12 @@ class ClaudeAdapter(BaseAdapter):
             logger.exception(f"Error handling message: {e}")
             await self._send_error(msg_channel, f"Error processing message: {e}")
         finally:
+            # Clean up temp MCP config file
+            if mcp_config_file:
+                try:
+                    os.unlink(mcp_config_file)
+                except OSError:
+                    pass
             # Always clean up process tracking so the channel is no longer
             # considered busy.  Without this, if the subprocess exits
             # unexpectedly (crash, OOM, pipe error) the UI shows the thread
