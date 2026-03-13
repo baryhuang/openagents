@@ -236,7 +236,6 @@ class ClaudeAdapter(BaseAdapter):
         # Resolve absolute path to openagents binary so the MCP server
         # subprocess works even when the CLI isn't on the default PATH
         # (e.g. installed via pipx or virtualenv on macOS).
-        import platform
         is_windows = platform.system() == "Windows"
 
         # Try to find openagents with proper extension on Windows
