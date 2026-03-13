@@ -401,7 +401,11 @@ class OpenClawAdapter(BaseAdapter):
                         if phase in ("end", "error"):
                             break
 
-        return full_text.strip()
+        # Strip XML tool blocks (tool_call, tool_response, etc.) from visible text
+        clean = self._XML_TOOL_RE.sub("", full_text)
+        clean = re.sub(r" +\n", "\n", clean)  # trailing spaces on lines
+        clean = re.sub(r"\n{3,}", "\n\n", clean)
+        return clean.strip()
 
     async def _ws_authenticate(self, ws) -> bool:
         """Handle WebSocket connect challenge/response. Returns True if authenticated."""
