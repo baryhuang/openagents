@@ -51,7 +51,7 @@ class TestClaudeStart:
         result = run_openagents(
             "start", AGENT_NAME, "--no-browser",
             timeout=30,
-            stdin_text="\n",  # Accept default "skip" for workspace prompt
+            stdin_text="y\n\n",  # "y" for readiness prompt, Enter for workspace skip
         )
         # Exit code 0 = success, but also accept cases where
         # the agent isn't fully "ready" (no API key) — the important
@@ -66,7 +66,7 @@ class TestClaudeStart:
     def test_daemon_running(self):
         """After start, `openagents status` should show daemon running."""
         # Start the agent first
-        run_openagents("start", AGENT_NAME, "--no-browser", timeout=30)
+        run_openagents("start", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
 
         # Give daemon a moment to spin up
         time.sleep(2)
@@ -82,12 +82,14 @@ class TestClaudeStart:
 
     def test_agent_remove(self):
         """`openagents remove` should remove the agent without killing the daemon."""
-        run_openagents("start", AGENT_NAME, "--no-browser", timeout=30)
+        run_openagents("start", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
         time.sleep(2)
 
         result = run_openagents("remove", AGENT_NAME, timeout=10, stdin_text="y\n")
-        assert result.returncode == 0, (
+        # Agent may already have been removed by cleanup_agent from a prior test
+        assert result.returncode == 0 or "not found" in result.stdout.lower(), (
             f"`openagents remove` failed (exit {result.returncode}).\n"
+            f"stdout: {result.stdout[-500:]}\n"
             f"stderr: {result.stderr[-500:]}"
         )
 
