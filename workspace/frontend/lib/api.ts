@@ -163,6 +163,26 @@ class WorkspaceApi {
     };
   }
 
+  /** Add an agent to an existing channel. */
+  async addChannelParticipant(channelName: string, agentName: string): Promise<void> {
+    await this.sendEvent({
+      type: 'network.channel.join',
+      source: 'human:user',
+      target: `channel/${channelName}`,
+      payload: { channel: channelName, agent_name: agentName },
+    });
+  }
+
+  /** Remove an agent from an existing channel. */
+  async removeChannelParticipant(channelName: string, agentName: string): Promise<void> {
+    await this.sendEvent({
+      type: 'network.channel.leave',
+      source: 'human:user',
+      target: `channel/${channelName}`,
+      payload: { channel: channelName, agent_name: agentName },
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Messages — via ONM events
   // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { getAgentColor, getAgentInitials, isRecentAgent, timeAgo } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import { workspaceApi } from '@/lib/api';
+import { Switch } from '@/components/ui/switch';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
 import type { WorkspaceCollaborator } from '@/lib/types';
@@ -488,6 +489,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   refreshWorkspace: () => Promise<void>;
 }) {
   const [name, setName] = useState(workspace?.name || '');
+  const [monitorMode, setMonitorMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const { isCopied: urlCopied, copyToClipboard: copyUrl } = useCopyToClipboard();
@@ -496,6 +498,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   useEffect(() => {
     if (open && workspace) {
       setName(workspace.name);
+      setMonitorMode(!!(workspace.settings?.monitorMode));
       const descs: Record<string, string> = {};
       for (const agent of workspace.agents) {
         descs[agent.agentName] = agent.description || '';
@@ -516,7 +519,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await workspaceApi.updateWorkspace({ name: name.trim() });
+      await workspaceApi.updateWorkspace({ name: name.trim(), settings: { ...workspace.settings, monitorMode } });
 
       // Save changed agent descriptions
       const updates = workspace.agents.map((agent) => {
@@ -565,6 +568,22 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                 {tokenCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
               </Button>
             </div>
+          </div>
+
+          {/* Experimental */}
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Label>Monitor Mode</Label>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-medium">
+                  Experimental
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Show a 2x3 grid overview of recent threads instead of the thread list.
+              </p>
+            </div>
+            <Switch checked={monitorMode} onCheckedChange={setMonitorMode} size="sm" />
           </div>
 
           {/* Agent Descriptions */}

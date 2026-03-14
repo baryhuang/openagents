@@ -11,9 +11,12 @@ import { BrowserTabList } from '@/components/browser/browser-tab-list';
 import { BrowserView } from '@/components/browser/browser-view';
 import { ConnectAgentView } from '@/components/connect/connect-agent-view';
 import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
+import { MonitorGrid } from '@/components/monitor/monitor-grid';
+import { useWorkspace } from '@/lib/workspace-context';
 
 export function Wrapper() {
   const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen, mobilePane } = useLayout();
+  const { monitorMode } = useWorkspace();
 
   // ── Mobile layout: single-pane with list/detail switching ──
   if (isMobile) {
@@ -68,29 +71,38 @@ export function Wrapper() {
             }}
           />
 
-          {/* Middle pane — thread list or file list (hidden for connect view) */}
-          {viewMode !== 'connect' && (
-            <div className="shrink-0 w-[300px] xl:w-[400px] bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
-              {viewMode === 'threads' && <ThreadList />}
-              {viewMode === 'files' && <FileList />}
-              {viewMode === 'browser' && <BrowserTabList />}
+          {/* Monitor mode: replace both panes with 2x3 grid */}
+          {viewMode === 'threads' && monitorMode ? (
+            <div className="flex-1 min-w-0">
+              <MonitorGrid />
             </div>
+          ) : (
+            <>
+              {/* Middle pane — thread list or file list (hidden for connect view) */}
+              {viewMode !== 'connect' && (
+                <div className="shrink-0 w-[300px] xl:w-[400px] bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
+                  {viewMode === 'threads' && <ThreadList />}
+                  {viewMode === 'files' && <FileList />}
+                  {viewMode === 'browser' && <BrowserTabList />}
+                </div>
+              )}
+
+              {/* Right pane — chat view, file preview, or connect agent */}
+              <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+                {viewMode === 'threads' && (
+                  <main className="h-full" role="content">
+                    <ChatView />
+                  </main>
+                )}
+                {viewMode === 'files' && <FilePreview />}
+                {viewMode === 'browser' && <BrowserView />}
+                {viewMode === 'connect' && <ConnectAgentView />}
+
+                {/* Agent profile slide-over */}
+                {isAgentPanelOpen && <AgentProfilePanel />}
+              </div>
+            </>
           )}
-
-          {/* Right pane — chat view, file preview, or connect agent */}
-          <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
-            {viewMode === 'threads' && (
-              <main className="h-full" role="content">
-                <ChatView />
-              </main>
-            )}
-            {viewMode === 'files' && <FilePreview />}
-            {viewMode === 'browser' && <BrowserView />}
-            {viewMode === 'connect' && <ConnectAgentView />}
-
-            {/* Agent profile slide-over */}
-            {isAgentPanelOpen && <AgentProfilePanel />}
-          </div>
         </div>
       </div>
     </div>

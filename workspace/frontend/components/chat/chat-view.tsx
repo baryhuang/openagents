@@ -8,14 +8,21 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import type { WorkspaceMessage } from '@/lib/types';
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, renameSession } = useWorkspace();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, renameSession, addParticipant, removeParticipant } = useWorkspace();
   const { isMobile, openMobileList } = useLayout();
   const { messages, loading, forceRefresh } = useMessagePolling({
     sessionId: currentSessionId,
@@ -382,13 +389,88 @@ export function ChatView() {
             </Button>
           )}
 
-          {/* Add agent button */}
-          <button
-            className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-primary transition-colors"
-            title="Add agent to thread"
-          >
-            <UserPlus className="size-3.5" />
-          </button>
+          {/* Manage agents dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
+                title="Manage thread agents"
+              >
+                <UserPlus className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {(() => {
+                const participants = currentSession?.participants || [];
+                const onlineAgents = agents.filter((a) => a.status === 'online');
+                const inThread = onlineAgents.filter((a) => participants.includes(a.agentName));
+                const notInThread = onlineAgents.filter((a) => !participants.includes(a.agentName));
+                return (
+                  <>
+                    {inThread.length > 0 && (
+                      <>
+                        <DropdownMenuLabel>In this thread</DropdownMenuLabel>
+                        {inThread.map((agent) => {
+                          const color = getAgentColor(agent.agentName, agentNames);
+                          return (
+                            <div
+                              key={agent.agentName}
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-md group"
+                            >
+                              <div className={cn(
+                                'size-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0',
+                                color.initials
+                              )}>
+                                {getAgentInitials(agent.agentName)}
+                              </div>
+                              <span className="text-sm flex-1 truncate">{agent.agentName}</span>
+                              {inThread.length > 1 && (
+                                <button
+                                  onClick={() => currentSessionId && removeParticipant(currentSessionId, agent.agentName)}
+                                  className="size-5 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                                  title="Remove from thread"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                    {notInThread.length > 0 && (
+                      <>
+                        {inThread.length > 0 && <DropdownMenuSeparator />}
+                        <DropdownMenuLabel>Add to thread</DropdownMenuLabel>
+                        {notInThread.map((agent) => {
+                          const color = getAgentColor(agent.agentName, agentNames);
+                          return (
+                            <button
+                              key={agent.agentName}
+                              onClick={() => currentSessionId && addParticipant(currentSessionId, agent.agentName)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors"
+                            >
+                              <div className={cn(
+                                'size-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0',
+                                color.initials
+                              )}>
+                                {getAgentInitials(agent.agentName)}
+                              </div>
+                              <span className="text-sm flex-1 truncate text-left">{agent.agentName}</span>
+                              <Plus className="size-3 text-muted-foreground shrink-0" />
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+                    {onlineAgents.length === 0 && (
+                      <p className="text-sm text-muted-foreground px-2 py-3 text-center">No agents online</p>
+                    )}
+                  </>
+                );
+              })()}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

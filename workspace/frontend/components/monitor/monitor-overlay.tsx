@@ -1,0 +1,149 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ChatMessages } from '@/components/chat/chat-messages';
+import { ChatInput, type PendingFile } from '@/components/chat/chat-input';
+import { useWorkspace } from '@/lib/workspace-context';
+import { useMessagePolling } from '@/hooks/use-polling';
+import { workspaceApi } from '@/lib/api';
+import type { WorkspaceMessage, WorkspaceSession } from '@/lib/types';
+
+interface MonitorOverlayProps {
+  sessionId: string;
+  session: WorkspaceSession;
+  /** Pre-loaded messages for instant display (from grid cache). */
+  initialMessages?: WorkspaceMessage[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function MonitorOverlay({ sessionId, session, initialMessages, open, onOpenChange }: MonitorOverlayProps) {
+  const { agents } = useWorkspace();
+  const { messages, loading, forceRefresh } = useMessagePolling({
+    sessionId: open ? sessionId : null,
+    initialMessages,
+  });
+
+  const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
+  const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
+
+  // Clear optimistic messages once real messages arrive
+  useEffect(() => {
+    if (messages.length > 0 && optimisticMessages.length > 0) {
+      setOptimisticMessages([]);
+    }
+  }, [messages.length, optimisticMessages.length]);
+
+  // Reset optimistic messages when overlay opens/closes
+  const prevOpenRef = useRef(open);
+  useEffect(() => {
+    if (open !== prevOpenRef.current) {
+      setOptimisticMessages([]);
+      prevOpenRef.current = open;
+    }
+  }, [open]);
+
+  const handleSend = useCallback(
+    async (content: string, mentions: string[] = [], files: PendingFile[] = []) => {
+      // Optimistic messages
+      const timestamp = Date.now();
+      const userOptimisticMsg: WorkspaceMessage = {
+        messageId: `optimistic-user-${timestamp}`,
+        sessionId,
+        senderName: 'You',
+        senderType: 'user',
+        content: content || (files.length > 0 ? files.map((f) => f.file.name).join(', ') : ''),
+        messageType: 'chat',
+        mentions: [],
+        targetAgents: null,
+        createdAt: new Date().toISOString(),
+        metadata: {},
+      };
+
+      const loadingOptimisticMsg: WorkspaceMessage = {
+        messageId: `optimistic-loading-${timestamp}`,
+        sessionId,
+        senderName: agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || 'Agent',
+        senderType: 'agent',
+        content: 'thinking...',
+        messageType: 'thinking',
+        mentions: [],
+        targetAgents: null,
+        createdAt: new Date().toISOString(),
+        metadata: {},
+      };
+
+      setOptimisticMessages([userOptimisticMsg, loadingOptimisticMsg]);
+
+      try {
+        let attachments: { fileId: string; filename: string; contentType: string; url: string }[] | undefined;
+        if (files.length > 0) {
+          const uploaded = await Promise.all(
+            files.map((pf) => workspaceApi.uploadFile(pf.file, sessionId))
+          );
+          attachments = uploaded.map((f) => ({
+            fileId: f.id,
+            filename: f.filename,
+            contentType: f.contentType,
+            url: workspaceApi.getFileUrl(f.id),
+          }));
+        }
+
+        await workspaceApi.sendMessage(
+          sessionId,
+          content || (attachments ? attachments.map((a) => a.filename).join(', ') : ''),
+          'user',
+          mentions.length > 0 ? mentions : undefined,
+          attachments,
+        );
+        forceRefresh();
+      } catch {
+        setOptimisticMessages([]);
+      }
+    },
+    [sessionId, forceRefresh, agents]
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent variant="fullscreen" className="flex flex-col p-0 gap-0" showCloseButton>
+        <DialogTitle className="sr-only">{session.title || 'Thread'}</DialogTitle>
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-3 border-b shrink-0">
+          <h2 className="text-sm font-semibold truncate">
+            {session.title || 'Thread'}
+          </h2>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {loading && messages.length === 0 ? (
+            <div className="flex items-center justify-center flex-1">
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <ChatMessages
+              messages={displayMessages}
+              agents={agents}
+              showAllSteps={false}
+              className="flex-1 overflow-y-auto px-5 py-3"
+            />
+          )}
+
+          {/* Input */}
+          <div className="px-4 py-3 border-t">
+            <div className="max-w-3xl mx-auto w-full">
+              <ChatInput onSend={handleSend} agents={agents} />
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

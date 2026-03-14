@@ -24,6 +24,8 @@ interface WorkspaceContextValue {
   lastMessageBySession: Record<string, LastMessageInfo>;
   activeSessionIds: Set<string>;
   completedSessionIds: Set<string>;
+  monitorMode: boolean;
+  acknowledgeCompletion: (sessionId: string) => void;
   agentModes: Record<string, string>;
   updateLastMessage: (sessionId: string, senderName: string, content: string, isStatus?: boolean) => void;
   setSessionActive: (sessionId: string, active: boolean) => void;
@@ -35,6 +37,8 @@ interface WorkspaceContextValue {
   createSession: (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   updateSession: (sessionId: string, updates: { starred?: boolean; status?: string }) => Promise<void>;
+  addParticipant: (sessionId: string, agentName: string) => Promise<void>;
+  removeParticipant: (sessionId: string, agentName: string) => Promise<void>;
   renameWorkspace: (name: string) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   refreshAgents: () => Promise<void>;
@@ -522,6 +526,63 @@ export function WorkspaceProvider({
     }
   }, [currentSessionId, sessions]);
 
+  const addParticipant = useCallback(async (sessionId: string, agentName: string) => {
+    // Optimistic update
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.sessionId === sessionId && !s.participants.includes(agentName)
+          ? { ...s, participants: [...s.participants, agentName] }
+          : s
+      )
+    );
+    try {
+      await workspaceApi.addChannelParticipant(sessionId, agentName);
+    } catch {
+      // Revert on failure
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.sessionId === sessionId
+            ? { ...s, participants: s.participants.filter((p) => p !== agentName) }
+            : s
+        )
+      );
+    }
+  }, []);
+
+  const removeParticipant = useCallback(async (sessionId: string, agentName: string) => {
+    // Optimistic update
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.sessionId === sessionId
+          ? { ...s, participants: s.participants.filter((p) => p !== agentName) }
+          : s
+      )
+    );
+    try {
+      await workspaceApi.removeChannelParticipant(sessionId, agentName);
+    } catch {
+      // Revert on failure
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.sessionId === sessionId && !s.participants.includes(agentName)
+            ? { ...s, participants: [...s.participants, agentName] }
+            : s
+        )
+      );
+    }
+  }, []);
+
+  const monitorMode = !!(workspace?.settings?.monitorMode);
+
+  const acknowledgeCompletion = useCallback((sessionId: string) => {
+    setCompletedSessionIds((prev) => {
+      if (!prev.has(sessionId)) return prev;
+      const next = new Set(prev);
+      next.delete(sessionId);
+      return next;
+    });
+  }, []);
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -537,6 +598,8 @@ export function WorkspaceProvider({
         lastMessageBySession,
         activeSessionIds,
         completedSessionIds,
+        monitorMode,
+        acknowledgeCompletion,
         agentModes,
         updateLastMessage,
         setSessionActive,
@@ -548,6 +611,8 @@ export function WorkspaceProvider({
         createSession,
         renameSession,
         updateSession,
+        addParticipant,
+        removeParticipant,
         renameWorkspace,
         refreshWorkspace,
         refreshAgents,

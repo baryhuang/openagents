@@ -22,8 +22,10 @@ interface NewThreadDialogProps {
 }
 
 export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreateThread }: NewThreadDialogProps) {
-  const agentNames = agents.map((a) => a.agentName);
-  const defaultMaster = agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || '';
+  // Only show online agents in the picker
+  const onlineAgents = agents.filter((a) => a.status === 'online');
+  const agentNames = onlineAgents.map((a) => a.agentName);
+  const defaultMaster = onlineAgents.find((a) => a.role === 'master')?.agentName || onlineAgents[0]?.agentName || '';
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [master, setMaster] = useState('');
@@ -84,11 +86,11 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
   );
 
   // Check if any selected agent is a Claude Code agent (heuristic: agent type or name contains 'claude')
-  const hasClaudeAgent = agents.some(
+  const hasClaudeAgent = onlineAgents.some(
     (a) => selected.has(a.agentName) && /claude/i.test(a.agentName)
   );
 
-  const multipleAgents = agents.length > 1;
+  const multipleAgents = onlineAgents.length > 1;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -102,11 +104,13 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
 
         {/* Agent list */}
         <div className="mt-3 space-y-1.5">
-          {agents.map((agent) => {
+          {onlineAgents.length === 0 && (
+            <p className="text-sm text-muted-foreground py-4 text-center">No agents are currently online.</p>
+          )}
+          {onlineAgents.map((agent) => {
             const color = getAgentColor(agent.agentName, agentNames);
             const isSelected = selected.has(agent.agentName);
             const isMaster = agent.agentName === master;
-            const isOnline = agent.status === 'online';
 
             return (
               <div
@@ -137,14 +141,9 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
                   {getAgentInitials(agent.agentName)}
                 </div>
 
-                {/* Name + status */}
+                {/* Name */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-medium truncate">{agent.agentName}</span>
-                    {!isOnline && (
-                      <span className="text-[10px] text-muted-foreground/60">offline</span>
-                    )}
-                  </div>
+                  <span className="text-sm font-medium truncate">{agent.agentName}</span>
                 </div>
 
                 {/* Lead badge / set-as-lead button — only show when multiple agents */}
