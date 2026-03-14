@@ -44,6 +44,10 @@ jobs:
       if: success()
       run: pytest tests/platform/start/test_claude.py -v -s --tb=long --junitxml=reports/claude-start.xml
 
+    - name: "Test 3: Connect Claude Code to workspace"
+      if: success()
+      run: pytest tests/platform/connect/test_claude.py -v -s --tb=long --junitxml=reports/claude-connect.xml
+
     - name: Upload test reports
       if: always()
       uses: actions/upload-artifact@v4
@@ -86,6 +90,10 @@ jobs:
       if: success()
       run: pytest tests/platform/start/test_openclaw.py -v -s --tb=long --junitxml=reports/openclaw-start.xml
 
+    - name: "Test 3: Connect OpenClaw to workspace"
+      if: success()
+      run: pytest tests/platform/connect/test_openclaw.py -v -s --tb=long --junitxml=reports/openclaw-connect.xml
+
     - name: Upload test reports
       if: always()
       uses: actions/upload-artifact@v4
@@ -111,7 +119,7 @@ jobs:
         echo "|-------|------|----|-------|----------|--------|" >> $GITHUB_STEP_SUMMARY
         find all-reports/ -name "*.xml" | sort | while read f; do
           agent=$(echo "$f" | grep -oP '(claude|openclaw)')
-          test_type=$(echo "$f" | grep -oP '(install|start)')
+          test_type=$(echo "$f" | grep -oP '(install|start|connect)')
           os=$(echo "$f" | grep -oP '(ubuntu|macos|windows)')
           tests=$(grep -oP 'tests="\K[^"]+' "$f" | head -1)
           failures=$(grep -oP 'failures="\K[^"]+' "$f" | head -1)

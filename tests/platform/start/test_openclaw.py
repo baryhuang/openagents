@@ -27,7 +27,7 @@ def cleanup_daemon():
     # Stop daemon if running
     run_openagents("down", timeout=30)
     # Remove the agent from config
-    run_openagents("remove", AGENT_NAME, "--yes", timeout=10)
+    run_openagents("remove", AGENT_NAME, timeout=10, stdin_text="y\n")
 
 
 class TestOpenClawStart:
