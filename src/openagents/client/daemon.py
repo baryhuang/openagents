@@ -270,8 +270,10 @@ class DaemonManager:
                 logger.info(f"{agent_cfg.name} is online → {net.slug}")
 
                 await adapter.run()
-                logger.info(f"{agent_cfg.name} exited cleanly")
-                break
+                logger.info(f"{agent_cfg.name} exited cleanly, restarting")
+                # Don't break — restart the adapter so the agent stays online
+                backoff = 2
+                await asyncio.sleep(backoff)
 
             except asyncio.CancelledError:
                 logger.debug(f"{agent_cfg.name} cancelled")
