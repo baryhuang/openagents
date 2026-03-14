@@ -348,8 +348,9 @@ def daemon_remove(
 
     # Signal daemon to reload config so it stops the removed agent
     from openagents.client.daemon import read_daemon_pid
+    import platform as _plat
     pid = read_daemon_pid()
-    if pid:
+    if pid and _plat.system() != "Windows":
         try:
             import signal as _sig
             os.kill(pid, _sig.SIGHUP)

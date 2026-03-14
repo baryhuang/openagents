@@ -555,8 +555,12 @@ def daemon_start_agent(
 
         # else skip_choice: run locally, no workspace
 
-    # Start daemon
-    _start_daemon()
+    # Start daemon (or reload if already running so it picks up the new agent)
+    from openagents.client.daemon import read_daemon_pid
+    if read_daemon_pid():
+        _signal_daemon_reload()
+    else:
+        _start_daemon()
 
 
 @app.command("stop", rich_help_panel="Client")
