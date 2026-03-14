@@ -110,6 +110,24 @@ def run_openagents(
     return run_cmd([binary, *args], timeout=timeout, stdin_text=stdin_text)
 
 
+def is_daemon_running_with_agents() -> bool:
+    """Check if a daemon is running with active network-connected agents.
+
+    Platform start/connect tests must NOT run when a live daemon is active,
+    because they call `openagents down` which would kill the running agents.
+    """
+    try:
+        from openagents.client.daemon import read_daemon_pid
+        from openagents.client.daemon_config import load_config
+        pid = read_daemon_pid()
+        if not pid:
+            return False
+        cfg = load_config()
+        return any(a.network for a in cfg.agents)
+    except Exception:
+        return False
+
+
 def safe_print(text: str) -> None:
     """Print text safely on all platforms.
 

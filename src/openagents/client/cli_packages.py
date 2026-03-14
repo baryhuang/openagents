@@ -345,6 +345,17 @@ def daemon_remove(
         raise typer.Exit(0)
 
     remove_agent_from_config(agent_name)
+
+    # Signal daemon to reload config so it stops the removed agent
+    from openagents.client.daemon import read_daemon_pid
+    pid = read_daemon_pid()
+    if pid:
+        try:
+            import signal as _sig
+            os.kill(pid, _sig.SIGHUP)
+        except (ProcessLookupError, PermissionError):
+            pass
+
     console.print(f"  [green]✓ Removed[/green] {agent_name}")
 
 

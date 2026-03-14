@@ -13,20 +13,22 @@ import time
 
 import pytest
 
-from tests.platform.conftest import run_cmd, run_openagents, safe_print
+from tests.platform.conftest import run_cmd, run_openagents, safe_print, is_daemon_running_with_agents
 
 
 AGENT_NAME = "openclaw"
 BINARY_NAME = "openclaw"
 
+pytestmark = pytest.mark.skipif(
+    is_daemon_running_with_agents(),
+    reason="Skipped: daemon is running with active agents — these tests would kill it",
+)
+
 
 @pytest.fixture(autouse=True)
-def cleanup_daemon():
-    """Stop daemon and remove agent config after each test."""
+def cleanup_agent():
+    """Remove the test agent after each test; daemon stays running."""
     yield
-    # Stop daemon if running
-    run_openagents("down", timeout=30)
-    # Remove the agent from config
     run_openagents("remove", AGENT_NAME, timeout=10, stdin_text="y\n")
 
 
@@ -74,16 +76,14 @@ class TestOpenClawStart:
             f"stderr:\n{result.stderr}"
         )
 
-    def test_daemon_stop(self):
-        """`openagents down` should stop the daemon cleanly."""
-        # Start first
+    def test_agent_remove(self):
+        """`openagents remove` should remove the agent without killing the daemon."""
         run_openagents("start", AGENT_NAME, "--no-browser", timeout=30)
         time.sleep(2)
 
-        # Stop
-        result = run_openagents("down", timeout=30)
+        result = run_openagents("remove", AGENT_NAME, timeout=10, stdin_text="y\n")
         assert result.returncode == 0, (
-            f"`openagents down` failed (exit {result.returncode}).\n"
+            f"`openagents remove` failed (exit {result.returncode}).\n"
             f"stderr: {result.stderr[-500:]}"
         )
 

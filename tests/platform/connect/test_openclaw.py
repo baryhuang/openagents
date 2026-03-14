@@ -17,11 +17,16 @@ import uuid
 
 import pytest
 
-from tests.platform.conftest import run_openagents, safe_print
+from tests.platform.conftest import run_openagents, safe_print, is_daemon_running_with_agents
 
 
 AGENT_TYPE = "openclaw"
 BINARY_NAME = "openclaw"
+
+pytestmark = pytest.mark.skipif(
+    is_daemon_running_with_agents(),
+    reason="Skipped: daemon is running with active agents — these tests would kill it",
+)
 
 
 @pytest.fixture()
@@ -29,8 +34,7 @@ def agent_name():
     """Generate a unique agent name for this test."""
     name = f"ci-oclaw-{uuid.uuid4().hex[:8]}"
     yield name
-    # Cleanup: stop daemon and remove the agent
-    run_openagents("down", timeout=30)
+    # Cleanup: remove the test agent; daemon stays running
     run_openagents("remove", name, timeout=10, stdin_text="y\n")
 
 
@@ -118,15 +122,15 @@ class TestOpenClawConnect:
                 f"Agent line: {agent_lines[0]}"
             )
 
-    def test_daemon_stop_after_connect(self, agent_name):
-        """`openagents down` should stop cleanly after workspace connect."""
+    def test_agent_remove_after_connect(self, agent_name):
+        """`openagents remove` should remove the agent without killing the daemon."""
         ws_name = f"ws-{agent_name}"
         _start_with_workspace(agent_name, ws_name)
         time.sleep(2)
 
-        result = run_openagents("down", timeout=30)
+        result = run_openagents("remove", agent_name, timeout=10, stdin_text="y\n")
         assert result.returncode == 0, (
-            f"`openagents down` failed (exit {result.returncode}).\n"
+            f"`openagents remove` failed (exit {result.returncode}).\n"
             f"stderr: {result.stderr[-500:]}"
         )
 
