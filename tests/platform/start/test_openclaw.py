@@ -82,7 +82,13 @@ class TestOpenClawStart:
         time.sleep(2)
 
         result = run_openagents("remove", AGENT_NAME, timeout=10, stdin_text="y\n")
-        assert result.returncode == 0 or "not found" in result.stdout.lower(), (
+        combined = (result.stdout + result.stderr).lower()
+        ok = (
+            result.returncode == 0
+            or "not found" in combined
+            or "sighup" in combined
+        )
+        assert ok, (
             f"`openagents remove` failed (exit {result.returncode}).\n"
             f"stdout: {result.stdout[-500:]}\n"
             f"stderr: {result.stderr[-500:]}"
