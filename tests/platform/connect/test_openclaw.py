@@ -35,13 +35,18 @@ def agent_name():
 
 
 def _start_with_workspace(agent_name: str, ws_name: str, timeout: int = 60):
-    """Start the agent with a unique name and create a workspace."""
+    """Start the agent with a unique name and create a workspace.
+
+    Pipes "y\\n" to stdin so the "Continue anyway?" readiness prompt
+    (shown when the agent isn't fully configured/logged-in) is accepted.
+    """
     return run_openagents(
         "start", AGENT_TYPE,
         "--name", agent_name,
         "--create-workspace", ws_name,
         "--no-browser",
         timeout=timeout,
+        stdin_text="y\n",
     )
 
 
