@@ -496,7 +496,7 @@ def install_agent(
                 loc = f"\n  Location: [dim]{path}[/dim]" if path else ""
                 console.print(Panel(
                     f"[green]Successfully installed {info.label}[/green]{loc}\n\n"
-                    f"Next: [bold]openagents start {agent_type}[/bold]",
+                    f"Next: [bold]openagents create {agent_type}[/bold]",
                     title="[green]✓ Installed[/green]",
                     border_style="green",
                 ))
