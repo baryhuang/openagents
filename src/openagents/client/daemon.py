@@ -117,6 +117,7 @@ class DaemonManager:
         self.config_path = config_path
         self.tasks: dict[str, asyncio.Task] = {}
         self.agent_status: dict[str, AgentStatus] = {}
+        self._stopped_agents: set[str] = set()  # agents stopped via command
         self._shutting_down = False
         self._shutdown_event = asyncio.Event()
         self._reload_pending = False
@@ -213,6 +214,7 @@ class DaemonManager:
 
     def _launch_agent(self, agent_cfg: AgentEntry, net: Optional[NetworkEntry]):
         """Create status entry and launch agent task."""
+        self._stopped_agents.discard(agent_cfg.name)
         network_label = net.slug if net else "(local)"
         status = AgentStatus(
             name=agent_cfg.name,
@@ -281,8 +283,11 @@ class DaemonManager:
                 logger.info(f"{agent_cfg.name} is online → {net.slug}")
 
                 await adapter.run()
-                # Check if agent was removed from config during run()
+                # Check if agent was stopped or removed during run()
                 # (adapter.run() swallows CancelledError internally)
+                if agent_cfg.name in self._stopped_agents:
+                    logger.info(f"{agent_cfg.name} was stopped, not restarting")
+                    break
                 if agent_cfg.name not in {a.name for a in self.config.agents}:
                     logger.info(f"{agent_cfg.name} removed from config, stopping")
                     break
@@ -393,6 +398,10 @@ class DaemonManager:
 
                 returncode = await proc.wait()
 
+                # Check if agent was stopped via command
+                if agent_cfg.name in self._stopped_agents:
+                    logger.info(f"{agent_cfg.name} was stopped, not restarting")
+                    break
                 if returncode == 0:
                     logger.info(f"{agent_cfg.name} exited cleanly")
                     break
@@ -472,6 +481,7 @@ class DaemonManager:
         task = self.tasks.get(agent_name)
         if task and not task.done():
             logger.info(f"Stopping agent: {agent_name}")
+            self._stopped_agents.add(agent_name)
             task.cancel()
             status = self.agent_status.get(agent_name)
             if status:
