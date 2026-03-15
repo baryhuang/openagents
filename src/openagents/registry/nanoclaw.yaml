@@ -3,10 +3,38 @@ label: NanoClaw
 description: Lightweight containerized coding agent built on Claude Agent SDK
 homepage: https://github.com/qwibitai/nanoclaw
 tags: [coding, container, lightweight, open-source]
+builtin: true
 
 install:
   binary: nanoclaw
-  requires: [git]
-  macos: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
-  linux: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
-  windows: "git clone https://github.com/qwibitai/nanoclaw && cd nanoclaw && claude /setup"
+  requires: [nodejs, git]
+  macos: "npm install -g nanoclaw"
+  linux: "npm install -g nanoclaw"
+  windows: "npm install -g nanoclaw"
+
+adapter:
+  module: openagents.adapters.nanoclaw
+  class: NanoClawAdapter
+
+launch:
+  args: []
+
+env_config:
+  - name: OPENAI_API_KEY
+    description: API key for LLM inference
+    required: true
+    password: true
+
+check_ready:
+  env_vars: [OPENAI_API_KEY]
+  saved_env_key: OPENAI_API_KEY
+  not_ready_message: "No API key — press e to configure"
+
+resolve_env:
+  rules:
+    - from: LLM_API_KEY
+      to: OPENAI_API_KEY
+    - from: LLM_BASE_URL
+      to: OPENAI_BASE_URL
+    - from: LLM_MODEL
+      to: NANOCLAW_MODEL

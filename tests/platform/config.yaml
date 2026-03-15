@@ -25,3 +25,10 @@ agents:
     credential_env:
       - LLM_API_KEY
       - OPENAI_API_KEY
+
+  nanoclaw:
+    binary: nanoclaw
+    model: claude-sonnet-4-6
+    credential_env:
+      - LLM_API_KEY
+      - OPENAI_API_KEY
