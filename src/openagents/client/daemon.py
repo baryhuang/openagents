@@ -238,12 +238,22 @@ class DaemonManager:
         status: AgentStatus,
     ):
         """Run a network-connected adapter with exponential backoff on crash."""
-        # Inject type-level + per-agent env vars into the process environment
+        # Inject type-level + per-agent env vars into the process environment.
+        # Merge saved config with process env vars so that CI/export-based
+        # env vars (e.g. LLM_API_KEY) are also picked up and resolved.
         from openagents.client.daemon_config import load_agent_env
         from openagents.client.plugin_registry import registry as _reg
         type_env = load_agent_env(agent_cfg.type)
         _plugin = _reg.get(agent_cfg.type)
-        resolved = _plugin.resolve_env(type_env) if _plugin else type_env
+        if _plugin:
+            # Also check process env for source keys from env_config
+            for var_def in _plugin.required_env_vars():
+                var_name = var_def.get("name", "")
+                if var_name and var_name not in type_env and os.environ.get(var_name):
+                    type_env[var_name] = os.environ[var_name]
+            resolved = _plugin.resolve_env(type_env)
+        else:
+            resolved = type_env
         for k, v in {**resolved, **agent_cfg.env}.items():
             os.environ[k] = v
 

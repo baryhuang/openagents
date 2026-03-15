@@ -265,12 +265,15 @@ def _make_plugin_from_yaml(data: dict):
         def check_ready(self) -> tuple[bool, str]:
             if not self.is_installed():
                 return False, f"Not installed. Run: openagents install {data['name']}"
-            # Check env vars
+            # Check env vars (resolved names like OPENAI_API_KEY)
             for var in check_cfg.get("env_vars", []):
                 if os.environ.get(var):
                     return True, f"Ready (API key set)"
-            # Check saved env config
+            # Check source env vars from env_config (e.g. LLM_API_KEY)
             saved_key = check_cfg.get("saved_env_key")
+            if saved_key and os.environ.get(saved_key):
+                return True, f"Ready (API key set)"
+            # Check saved env config
             if saved_key:
                 from openagents.client.daemon_config import load_agent_env
                 saved = load_agent_env(data["name"])
