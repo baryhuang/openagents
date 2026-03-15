@@ -20,7 +20,7 @@ def upgrade() -> None:
     op.create_table(
         "browser_contexts",
         sa.Column("id", sa.Text(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("workspace_id", sa.Text(), sa.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("workspace_id", sa.dialects.postgresql.UUID(as_uuid=False), sa.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
         sa.Column("bb_context_id", sa.Text(), nullable=True),
         sa.Column("domain", sa.Text(), nullable=True),

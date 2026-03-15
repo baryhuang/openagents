@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Globe, X, RefreshCw, Users, ChevronLeft, Lock, Unlock } from 'lucide-react';
+import { Globe, X, RefreshCw, Users, ChevronLeft, Lock, Unlock, Maximize2, Minimize2 } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
@@ -13,7 +13,7 @@ export function BrowserView() {
     browserTabs, selectedBrowserTabId, setSelectedBrowserTabId,
     closeBrowserTab, persistBrowserTab, unpersistBrowserTab, browserContexts,
   } = useWorkspace();
-  const { isMobile, openMobileList } = useLayout();
+  const { isMobile, openMobileList, isDetailExpanded, toggleDetailExpanded } = useLayout();
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const prevBlobRef = useRef<string | null>(null);
@@ -171,6 +171,16 @@ export function BrowserView() {
           >
             <Lock className="size-3" />
             Make Persistent
+          </button>
+        )}
+
+        {!isMobile && (
+          <button
+            onClick={toggleDetailExpanded}
+            className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
+            title={isDetailExpanded ? 'Restore size' : 'Expand to full page'}
+          >
+            {isDetailExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
           </button>
         )}
 
