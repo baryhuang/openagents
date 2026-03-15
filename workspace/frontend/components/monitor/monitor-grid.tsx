@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
 import { eventToMessage } from '@/lib/types';
 import type { WorkspaceMessage } from '@/lib/types';
 import { MonitorTile } from './monitor-tile';
 import { MonitorOverlay } from './monitor-overlay';
+import { Search, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { timeAgo } from '@/lib/helpers';
 
 const TILE_COUNT = 6;
 const POLL_INTERVAL = 5_000;
@@ -19,9 +22,12 @@ export interface TileData {
 }
 
 export function MonitorGrid() {
-  const { sessions, activeSessionIds, completedSessionIds, agents, acknowledgeCompletion } = useWorkspace();
+  const { sessions, activeSessionIds, completedSessionIds, agents, acknowledgeCompletion, lastMessageBySession } = useWorkspace();
   const [overlaySessionId, setOverlaySessionId] = useState<string | null>(null);
   const [tileData, setTileData] = useState<Record<string, TileData>>({});
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // Message cache for instant overlay loading — stores all fetched messages per session (chronological)
   const messageCacheRef = React.useRef<Record<string, WorkspaceMessage[]>>({});
 
@@ -126,13 +132,22 @@ export function MonitorGrid() {
     setOverlaySessionId(sessionId);
   };
 
-  // Keyboard shortcuts: 1-6 opens corresponding tile overlay
+  // Keyboard shortcuts: 1-6 opens corresponding tile overlay, / opens search
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // Ignore when typing in an input/textarea or when overlay is open
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (overlaySessionId) return;
+
+      // "/" to open search
+      if (e.key === '/') {
+        e.preventDefault();
+        setSearchOpen(true);
+        setSearchQuery('');
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+        return;
+      }
 
       const num = parseInt(e.key, 10);
       if (num >= 1 && num <= 6) {
@@ -148,29 +163,150 @@ export function MonitorGrid() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [topSessions, overlaySessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Focus search input when opened
+  useEffect(() => {
+    if (searchOpen) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+  }, [searchOpen]);
+
+  // All active sessions for search (beyond the top 6)
+  const allActiveSessions = useMemo(() => {
+    return [...sessions]
+      .filter((s) => s.status === 'active')
+      .sort((a, b) => {
+        const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        return bTime - aTime;
+      });
+  }, [sessions]);
+
+  const filteredSessions = useMemo(() => {
+    if (!searchQuery.trim()) return allActiveSessions;
+    const q = searchQuery.toLowerCase();
+    return allActiveSessions.filter((s) => {
+      const title = (s.title || '').toLowerCase();
+      const preview = lastMessageBySession[s.sessionId]?.content?.toLowerCase() || '';
+      return title.includes(q) || preview.includes(q);
+    });
+  }, [allActiveSessions, searchQuery, lastMessageBySession]);
+
+  const handleSearchSelect = (sessionId: string) => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    handleTileClick(sessionId);
+  };
+
   return (
     <>
-      <div className="grid grid-cols-3 grid-rows-2 gap-2.5 h-full">
-        {topSessions.map((session, idx) => (
-          <MonitorTile
-            key={session.sessionId}
-            session={session}
-            tileData={tileData[session.sessionId]}
-            isActive={activeSessionIds.has(session.sessionId)}
-            isCompleted={completedSessionIds.has(session.sessionId)}
-            agents={agents}
-            onClick={() => handleTileClick(session.sessionId)}
-            shortcutKey={idx + 1}
-          />
-        ))}
-        {Array.from({ length: Math.max(0, TILE_COUNT - topSessions.length) }).map((_, i) => (
-          <div
-            key={`empty-${i}`}
-            className="border border-dashed border-input rounded-xl flex items-center justify-center text-muted-foreground/40 text-xs"
+      <div className="relative h-full flex flex-col">
+        {/* Tile grid */}
+        <div className="grid grid-cols-3 grid-rows-2 gap-2.5 flex-1 min-h-0">
+          {topSessions.map((session, idx) => (
+            <MonitorTile
+              key={session.sessionId}
+              session={session}
+              tileData={tileData[session.sessionId]}
+              isActive={activeSessionIds.has(session.sessionId)}
+              isCompleted={completedSessionIds.has(session.sessionId)}
+              agents={agents}
+              onClick={() => handleTileClick(session.sessionId)}
+              shortcutKey={idx + 1}
+            />
+          ))}
+          {Array.from({ length: Math.max(0, TILE_COUNT - topSessions.length) }).map((_, i) => (
+            <div
+              key={`empty-${i}`}
+              className="border border-dashed border-input rounded-xl flex items-center justify-center text-muted-foreground/40 text-xs"
+            >
+              No thread
+            </div>
+          ))}
+        </div>
+
+        {/* Search FAB — bottom right */}
+        {!searchOpen && (
+          <button
+            onClick={() => { setSearchOpen(true); setSearchQuery(''); }}
+            className="absolute bottom-3 right-3 size-10 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors z-10"
+            title="Search threads (/)"
           >
-            No thread
+            <Search className="size-4" />
+          </button>
+        )}
+
+        {/* Search panel — bottom right overlay */}
+        {searchOpen && (
+          <div className="absolute bottom-3 right-3 w-80 bg-popover border rounded-xl shadow-xl z-20 overflow-hidden">
+            {/* Search input */}
+            <div className="flex items-center gap-2 px-3 py-2.5 border-b">
+              <Search className="size-4 text-muted-foreground shrink-0" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setSearchOpen(false);
+                    setSearchQuery('');
+                  }
+                  if (e.key === 'Enter' && filteredSessions.length > 0) {
+                    handleSearchSelect(filteredSessions[0].sessionId);
+                  }
+                }}
+                placeholder="Search threads..."
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+              />
+              <button
+                onClick={() => { setSearchOpen(false); setSearchQuery(''); }}
+                className="size-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+
+            {/* Thread list */}
+            <div className="max-h-64 overflow-y-auto">
+              {filteredSessions.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6">No threads found</p>
+              ) : (
+                filteredSessions.map((session) => {
+                  const isInGrid = topSessions.some((t) => t.sessionId === session.sessionId);
+                  const preview = lastMessageBySession[session.sessionId];
+                  const activityMs = session.lastEventAt;
+                  const displayTime = activityMs
+                    ? timeAgo(new Date(activityMs).toISOString())
+                    : session.createdAt ? timeAgo(session.createdAt) : '';
+                  return (
+                    <button
+                      key={session.sessionId}
+                      onClick={() => handleSearchSelect(session.sessionId)}
+                      className="w-full text-left px-3 py-2 hover:bg-accent transition-colors flex flex-col gap-0.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium truncate flex-1">
+                          {session.title || 'Untitled'}
+                        </span>
+                        {isInGrid && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0">
+                            in grid
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground shrink-0">{displayTime}</span>
+                      </div>
+                      {preview?.content && (
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {preview.senderName}: {preview.content}
+                        </p>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
-        ))}
+        )}
       </div>
 
       {overlaySessionId && overlaySession && (
