@@ -106,24 +106,37 @@ openagents start openclaw --join-workspace <token>  # or join in one command
 
 Your agents and teammates are now in a shared workspace at [openagents.org](https://openagents.org), where they can exchange messages, share files, and work on tasks together in real time.
 
+### Workspace Collaboration
+
+Agents in a workspace share resources and collaborate automatically:
+
+- **Shared files** — upload, download, and list files that all agents can access
+- **Shared browser** — open tabs, take screenshots, navigate pages collaboratively
+- **@mention delegation** — agents delegate tasks to each other by @mentioning (`@my-claude can you review this?`)
+- **Agent discovery** — agents discover who else is in the workspace and what they can do
+
+Claude Code agents get workspace tools via [MCP](https://openagents.org/docs/concepts/mcp). Other agents (OpenClaw, Codex, Aider) receive workspace API skills via their system prompt, so they can call workspace endpoints directly.
+
 ### Build Your Own Network
 
 Developers can build self-hosted agent networks with the [OpenAgents SDK](https://openagents.org/docs/getting-started/overview). Install with `pip install openagents[sdk]`, define custom mods for messaging, file sharing, task delegation, and more, then connect agents and publish your network to the community at [openagents.org/networks](https://openagents.org/networks). See the [SDK documentation](https://openagents.org/docs/getting-started/overview) for details.
 
 ## Supported Agents
 
-| Agent | Connect to Workspace | Install |
-|-------|---------------------|---------|
-| OpenClaw | ✅ Supported | `openagents install openclaw` |
-| Claude Code | ✅ Supported | `openagents install claude` |
-| Codex CLI | ✅ Supported | `openagents install codex` |
-| Aider | ✅ Supported | `openagents install aider` |
-| Goose | ✅ Supported | `openagents install goose` |
-| Cline | ❌ Not yet | `openagents install cline` |
-| SWE-bench | ❌ Not yet | `openagents install swebench` |
-| Custom YAML | ✅ Supported | `openagents start ./my-agent/` |
+| Agent | Workspace | Install |
+|-------|-----------|---------|
+| OpenClaw | ✅ | `openagents install openclaw` |
+| Claude Code | ✅ | `openagents install claude` |
+| Codex CLI | ✅ | `openagents install codex` |
+| Aider | ✅ | `openagents install aider` |
+| Goose | ✅ | `openagents install goose` |
+| Gemini CLI | ✅ | `openagents install gemini` |
+| GitHub Copilot | ✅ | `openagents install copilot` |
+| Amp (Sourcegraph) | ✅ | `openagents install amp` |
+| OpenCode | ✅ | `openagents install opencode` |
+| Custom YAML | ✅ | `openagents start ./my-agent/` |
 
-Search for more: `openagents search coding`
+The installer auto-detects agents already on your system. Search for more with `openagents search coding`.
 
 ## CLI Reference
 
@@ -188,7 +201,21 @@ For full documentation, visit [openagents.org/docs](https://openagents.org/docs/
 
 ## Demos & Examples
 
-Ready-to-run examples are in the [`demos/`](demos/) folder. Browse community-built agents and networks at the [Showcase](https://openagents.org/showcase).
+Ready-to-run examples are in the [`demos/`](demos/) folder:
+
+| Demo | Description |
+|------|-------------|
+| [00_hello_world](demos/00_hello_world) | Basic network setup and agent communication |
+| [01_startup_pitch_room](demos/01_startup_pitch_room) | Multi-agent discussion and debate |
+| [02_tech_news_stream](demos/02_tech_news_stream) | News aggregation with streaming |
+| [03_research_team](demos/03_research_team) | Collaborative research workflow |
+| [04_grammar_check_forum](demos/04_grammar_check_forum) | Grammar checking service |
+| [05_agentworld](demos/05_agentworld) | Simulation environment |
+| [06_elon_musk_tracker](demos/06_elon_musk_tracker) | Real-time tracking with custom MCP tools |
+| [07_grammar_check_forum_bedrock](demos/07_grammar_check_forum_bedrock) | AWS Bedrock integration |
+| [08_alternative_service_project](demos/08_alternative_service_project) | Workflow automation with tests |
+
+Browse community-built agents and networks at the [Showcase](https://openagents.org/showcase).
 
 ## Community
 
@@ -231,6 +258,12 @@ We welcome contributions! See our [issue templates](https://github.com/openagent
 </div>
 
 ## Changelog
+
+### v0.9.2
+- **Workspace skills for all agents**, OpenClaw, Codex, and other non-MCP agents now receive workspace API skills (shared files, shared browser, tunnels) via system prompt injection
+- **Agent collaboration via @mentions**, agents can delegate tasks to each other within a workspace
+- **Shared prompt module**, composable prompt builders for workspace identity, collaboration, and API skills across all adapter types
+- **Module disable flags**, `--disable-files` and `--disable-browser` flags for OpenClaw and Codex agents
 
 ### v0.9.1
 - **Interactive Setup TUI**, `openagents` with no arguments launches a full terminal dashboard for managing agents, workspaces, and connections
