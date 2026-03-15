@@ -25,6 +25,8 @@ interface MonitorTileProps {
   isCompleted: boolean;
   agents: WorkspaceAgent[];
   onClick: () => void;
+  /** Keyboard shortcut number (1-6) shown as a badge on the tile. */
+  shortcutKey?: number;
 }
 
 // ── Parsing (mirrors intermediate-steps.tsx patterns) ──
@@ -115,7 +117,7 @@ function stripMarkdown(text: string): string {
 
 // ── Tile Component ──
 
-export function MonitorTile({ session, tileData, isActive, isCompleted, agents, onClick }: MonitorTileProps) {
+export function MonitorTile({ session, tileData, isActive, isCompleted, agents, onClick, shortcutKey }: MonitorTileProps) {
   const participants = session.participants || [];
   const sessionAgents = participants.length > 0
     ? agents.filter((a) => participants.includes(a.agentName))
@@ -166,6 +168,11 @@ export function MonitorTile({ session, tileData, isActive, isCompleted, agents, 
           <CheckCircle2 className="size-3.5 shrink-0 text-amber-500" />
         ) : (
           <span className="text-[10px] text-muted-foreground shrink-0">{displayTime}</span>
+        )}
+        {shortcutKey && (
+          <kbd className="size-4 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input shrink-0">
+            {shortcutKey}
+          </kbd>
         )}
       </div>
 

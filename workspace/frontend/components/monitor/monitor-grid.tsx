@@ -126,10 +126,32 @@ export function MonitorGrid() {
     setOverlaySessionId(sessionId);
   };
 
+  // Keyboard shortcuts: 1-6 opens corresponding tile overlay
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing in an input/textarea or when overlay is open
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (overlaySessionId) return;
+
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= 6) {
+        const idx = num - 1;
+        const session = topSessions[idx];
+        if (session) {
+          e.preventDefault();
+          handleTileClick(session.sessionId);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [topSessions, overlaySessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <>
       <div className="grid grid-cols-3 grid-rows-2 gap-2.5 h-full">
-        {topSessions.map((session) => (
+        {topSessions.map((session, idx) => (
           <MonitorTile
             key={session.sessionId}
             session={session}
@@ -138,6 +160,7 @@ export function MonitorGrid() {
             isCompleted={completedSessionIds.has(session.sessionId)}
             agents={agents}
             onClick={() => handleTileClick(session.sessionId)}
+            shortcutKey={idx + 1}
           />
         ))}
         {Array.from({ length: Math.max(0, TILE_COUNT - topSessions.length) }).map((_, i) => (
