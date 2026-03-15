@@ -224,8 +224,9 @@ class TestClaudeRespond:
             f"stderr: {start_result.stderr[-500:]}"
         )
 
-        # Give agent a moment to connect and start polling
-        time.sleep(5)
+        # Give agent time to connect, start polling, and advance past existing events.
+        # On slower CI runners (ubuntu/windows), adapter setup can take 10-12s.
+        time.sleep(15)
 
         msg_content = f"Say hello in exactly one sentence. Test ID: {uuid.uuid4().hex[:8]}"
 
