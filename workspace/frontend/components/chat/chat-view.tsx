@@ -19,13 +19,77 @@ import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Pl
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { eventToMessage } from '@/lib/types';
 import type { WorkspaceMessage } from '@/lib/types';
+
+// Module-level message cache — survives component re-renders/unmounts.
+// Keyed by sessionId, stores the last known messages for instant thread switching.
+const messageCache = new Map<string, WorkspaceMessage[]>();
+const CACHE_MAX_SESSIONS = 10;
+
+function cacheMessages(sessionId: string, msgs: WorkspaceMessage[]) {
+  if (msgs.length === 0) return;
+  messageCache.set(sessionId, msgs);
+  // Evict oldest entries if cache grows too large
+  if (messageCache.size > CACHE_MAX_SESSIONS) {
+    const oldest = messageCache.keys().next().value;
+    if (oldest) messageCache.delete(oldest);
+  }
+}
+
+const PREFETCH_COUNT = 6;
+
+/** Pre-fetch messages for recent sessions in the background. */
+async function prefetchSession(sessionId: string) {
+  if (messageCache.has(sessionId)) return;
+  try {
+    const result = await workspaceApi.pollEvents({
+      channel: sessionId,
+      type: 'workspace.message',
+      sort: 'asc',
+      limit: 200,
+    });
+    const msgs = result.events.map(eventToMessage);
+    if (msgs.length > 0) {
+      messageCache.set(sessionId, msgs);
+    }
+  } catch {
+    // Prefetch is best-effort
+  }
+}
 
 export function ChatView() {
   const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, renameSession, addParticipant, removeParticipant } = useWorkspace();
   const { isMobile, openMobileList } = useLayout();
+
+  // Pre-fetch top recent sessions in background on mount
+  const prefetchedRef = useRef(false);
+  useEffect(() => {
+    if (prefetchedRef.current || sessions.length === 0) return;
+    prefetchedRef.current = true;
+    const recent = [...sessions]
+      .filter((s) => s.status === 'active')
+      .sort((a, b) => {
+        const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        return bTime - aTime;
+      })
+      .slice(0, PREFETCH_COUNT);
+    // Stagger prefetches to avoid hammering the API
+    recent.forEach((s, i) => {
+      setTimeout(() => prefetchSession(s.sessionId), i * 300);
+    });
+  }, [sessions]);
+
+  // Look up cached messages for the current session (read once per session switch)
+  const initialMessagesRef = useRef<WorkspaceMessage[] | undefined>(undefined);
+  if (currentSessionId !== initialMessagesRef.current?.[0]?.sessionId) {
+    initialMessagesRef.current = currentSessionId ? messageCache.get(currentSessionId) : undefined;
+  }
+
   const { messages, loading, forceRefresh } = useMessagePolling({
     sessionId: currentSessionId,
+    initialMessages: initialMessagesRef.current,
   });
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -40,12 +104,16 @@ export function ChatView() {
   const draftsRef = useRef<Record<string, string>>({});
   const [currentDraft, setCurrentDraft] = useState('');
 
-  // Save/restore draft when switching threads
+  // Save/restore draft when switching threads + cache messages
   const prevSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
-    // Save draft from previous session
+    // Save draft and messages from previous session
     if (prevSessionIdRef.current && prevSessionIdRef.current !== currentSessionId) {
       draftsRef.current[prevSessionIdRef.current] = currentDraft;
+      // Cache messages for instant switching back
+      if (messages.length > 0) {
+        cacheMessages(prevSessionIdRef.current, messages);
+      }
     }
     // Restore draft for new session
     setCurrentDraft(currentSessionId ? (draftsRef.current[currentSessionId] ?? '') : '');
@@ -53,6 +121,13 @@ export function ChatView() {
     // Clear optimistic messages when switching sessions
     setOptimisticMessages([]);
   }, [currentSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep cache updated with latest messages for the current session
+  useEffect(() => {
+    if (currentSessionId && messages.length > 0) {
+      cacheMessages(currentSessionId, messages);
+    }
+  }, [currentSessionId, messages]);
 
   // Clear optimistic messages once the real user message arrives from the server
   useEffect(() => {
