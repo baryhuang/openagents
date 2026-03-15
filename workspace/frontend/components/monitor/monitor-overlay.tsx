@@ -130,8 +130,8 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
       <DialogContent variant="fullscreen" className="flex flex-col p-0 gap-0" showCloseButton>
         <DialogTitle className="sr-only">{session.title || 'Thread'}</DialogTitle>
 
-        {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-3 border-b shrink-0">
+        {/* Header — pr-12 leaves room for the absolute-positioned close button */}
+        <div className="flex items-center gap-3 pl-5 pr-12 py-3 border-b shrink-0">
           <h2 className="text-sm font-semibold truncate flex-1">
             {session.title || 'Thread'}
           </h2>
