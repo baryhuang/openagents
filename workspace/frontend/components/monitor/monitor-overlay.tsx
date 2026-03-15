@@ -24,7 +24,10 @@ interface MonitorOverlayProps {
 }
 
 export function MonitorOverlay({ sessionId, session, initialMessages, open, onOpenChange }: MonitorOverlayProps) {
-  const { agents, activeSessionIds, stopAllAgents } = useWorkspace();
+  const { agents, activeSessionIds, stopAllAgents, renameSession } = useWorkspace();
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const { messages, loading, forceRefresh, generation } = useMessagePolling({
     sessionId: open ? sessionId : null,
     initialMessages,
@@ -53,15 +56,30 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
     }
   }, [messages, optimisticMessages]);
 
-  // Reset optimistic messages and focus input when overlay opens/closes
+  // Reset state when overlay opens/closes
   const prevOpenRef = useRef(open);
   useEffect(() => {
     if (open !== prevOpenRef.current) {
       setOptimisticMessages([]);
+      setEditingTitle(false);
       if (open) setFocusKey((k) => k + 1);
       prevOpenRef.current = open;
     }
   }, [open]);
+
+  const startEditingTitle = () => {
+    setTitleDraft(session.title || '');
+    setEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.select(), 0);
+  };
+
+  const commitTitle = () => {
+    setEditingTitle(false);
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== session.title) {
+      renameSession(sessionId, trimmed);
+    }
+  };
 
   const handleSend = useCallback(
     async (content: string, mentions: string[] = [], files: PendingFile[] = []) => {
@@ -132,9 +150,28 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
 
         {/* Header — pr-12 leaves room for the absolute-positioned close button */}
         <div className="flex items-center gap-3 pl-5 pr-12 py-3 border-b shrink-0">
-          <h2 className="text-sm font-semibold truncate flex-1">
-            {session.title || 'Thread'}
-          </h2>
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitTitle();
+                if (e.key === 'Escape') setEditingTitle(false);
+              }}
+              className="text-sm font-semibold bg-transparent border-b border-primary outline-none min-w-0 max-w-[300px] flex-1"
+              autoFocus
+            />
+          ) : (
+            <h2
+              className="text-sm font-semibold truncate flex-1 cursor-pointer hover:text-primary transition-colors"
+              onClick={startEditingTitle}
+              title="Click to rename"
+            >
+              {session.title || 'Thread'}
+            </h2>
+          )}
           {/* Stop button — visible when a Claude agent is working */}
           {(() => {
             const masterName = session.master;
