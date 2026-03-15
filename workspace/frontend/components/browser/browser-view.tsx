@@ -11,11 +11,12 @@ import { toast } from 'sonner';
 export function BrowserView() {
   const {
     browserTabs, selectedBrowserTabId, setSelectedBrowserTabId,
-    closeBrowserTab, persistBrowserTab, unpersistBrowserTab, browserContexts,
+    closeBrowserTab, reconnectBrowserTab, persistBrowserTab, unpersistBrowserTab, browserContexts,
   } = useWorkspace();
   const { isMobile, openMobileList, isDetailExpanded, toggleDetailExpanded } = useLayout();
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const prevBlobRef = useRef<string | null>(null);
 
   const tab = browserTabs.find((t) => t.id === selectedBrowserTabId);
@@ -68,6 +69,19 @@ export function BrowserView() {
       }
     };
   }, [selectedBrowserTabId, tab]);
+
+  const handleReconnect = async () => {
+    if (!tab || reconnecting) return;
+    setReconnecting(true);
+    try {
+      await reconnectBrowserTab(tab.id);
+      toast.success('Tab reconnected');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reconnect');
+    } finally {
+      setReconnecting(false);
+    }
+  };
 
   const handleClose = async () => {
     if (!selectedBrowserTabId) return;
@@ -173,6 +187,15 @@ export function BrowserView() {
             Make Persistent
           </button>
         )}
+
+        <button
+          onClick={handleReconnect}
+          disabled={reconnecting}
+          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 disabled:opacity-50"
+          title="Reconnect — create a new browser session"
+        >
+          <RefreshCw className={cn("size-4", reconnecting && "animate-spin")} />
+        </button>
 
         {!isMobile && (
           <button

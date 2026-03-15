@@ -359,6 +359,15 @@ class WorkspaceApi {
     return this.mapTab(result);
   }
 
+  /** Reconnect an expired browser tab (creates a new session). */
+  async reconnectBrowserTab(tabId: string): Promise<BrowserTab> {
+    const result = await this.request<Record<string, unknown>>(
+      `/v1/browser/tabs/${tabId}/reconnect`,
+      { method: 'POST' },
+    );
+    return this.mapTab(result);
+  }
+
   /** Close a browser tab. */
   async closeBrowserTab(tabId: string): Promise<void> {
     await this.request<unknown>(`/v1/browser/tabs/${tabId}`, { method: 'DELETE' });

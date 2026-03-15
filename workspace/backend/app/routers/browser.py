@@ -317,6 +317,64 @@ async def navigate_tab(
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/browser/tabs/{tab_id}/reconnect — create new session for expired tab
+# ---------------------------------------------------------------------------
+
+@router.post("/tabs/{tab_id}/reconnect")
+async def reconnect_tab(
+    tab_id: str,
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    tab = _get_tab(db, tab_id)
+    if not tab or tab.status != "active":
+        return json_response(ResponseCode.NOT_FOUND, "Tab not found")
+
+    workspace = _resolve_workspace(db, str(tab.workspace_id))
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+
+    manager = BrowserManager.get()
+
+    # Close old session gracefully (ignore errors — it's likely already dead)
+    try:
+        await manager.close_tab(tab_id, session_id_hint=tab.session_id)
+    except Exception:
+        pass
+
+    # Resolve persistent context if any
+    bb_context_id = None
+    if tab.context_id:
+        ctx = db.execute(
+            select(BrowserContext)
+            .where(BrowserContext.id == tab.context_id)
+            .where(BrowserContext.status == "active")
+        ).scalar_one_or_none()
+        if ctx:
+            bb_context_id = ctx.bb_context_id
+
+    # Create a new session
+    try:
+        result = await manager.open_tab(tab_id, tab.url or "about:blank", bb_context_id=bb_context_id)
+    except Exception as e:
+        logger.error("Reconnect failed: %s", e)
+        return json_response(ResponseCode.INTERNAL_ERROR, "Failed to reconnect browser tab")
+
+    # Update DB record
+    tab.session_id = manager.get_session_id(tab_id)
+    tab.live_url = manager.get_live_url(tab_id)
+    tab.url = result.get("url", tab.url)
+    tab.title = result.get("title", tab.title)
+    _touch(tab)
+    db.commit()
+
+    return success_response(_tab_to_dict(tab))
+
+
+# ---------------------------------------------------------------------------
 # POST /v1/browser/tabs/{tab_id}/click
 # ---------------------------------------------------------------------------
 

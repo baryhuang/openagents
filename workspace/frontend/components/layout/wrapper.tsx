@@ -57,7 +57,7 @@ export function Wrapper() {
   // ── Desktop layout: sidebar + two panes ──
   return (
     <div className="flex h-screen w-full [&_.container-fluid]:px-5">
-      <Sidebar />
+      {!isDetailExpanded && <Sidebar />}
 
       <div className="flex flex-col flex-1 min-w-0 w-full">
         <div className="flex grow min-h-0 overflow-hidden mx-2.5 py-2.5 gap-2.5">
