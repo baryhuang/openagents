@@ -103,8 +103,9 @@ def build_api_skills_prompt(
         "You can " + ", ".join(caps) + ".\n"
         "These are WORKSPACE tools shared with all agents and users. "
         "They are different from your native tools.\n\n"
-        "IMPORTANT: To use workspace tools, run `curl` commands via your "
-        "`exec` tool. Do NOT use your native `browser` or `web_fetch` tools "
+        "**HOW TO USE:** Call your `exec` tool to run the `curl` commands below. "
+        "Do NOT output curl commands as text — EXECUTE them with `exec`. "
+        "Do NOT use your native `browser` or `web_fetch` tools "
         "for workspace operations — those are separate from the shared workspace.\n\n"
         "**Auth header** (include on every request):\n"
         f"`X-Workspace-Token: {token}`\n"
@@ -116,23 +117,17 @@ def build_api_skills_prompt(
 
         if not is_plan:
             s += (
-                "**Example — share a report with the workspace:**\n"
-                "```bash\n"
-                "# 1. base64-encode the content\n"
-                "CONTENT=$(echo -n '# My Report\\n\\nFindings here...' | base64)\n"
-                "# 2. upload it\n"
-                f'curl -s -X POST {base_url}/v1/files/base64 \\\n'
-                f'  -H "{h}" \\\n'
-                '  -H "Content-Type: application/json" \\\n'
-                "  -d '{\n"
-                '    "filename": "report.md",\n'
-                '    "content_base64": "\'\"$CONTENT\"\'",\n'
-                '    "content_type": "text/markdown",\n'
-                f'    "network": "{workspace_id}",\n'
-                f'    "source": "openagents:{agent_name}",\n'
-                f'    "channel_name": "{channel_name}"\n'
-                "  }'\n"
-                "```\n\n"
+                "**To upload a file**, exec this (replace filename/content):\n"
+                f'CONTENT=$(echo -n \'YOUR_CONTENT\' | base64) && '
+                f'curl -s -X POST {base_url}/v1/files/base64 '
+                f'-H "{h}" '
+                '-H "Content-Type: application/json" '
+                "-d '{\"filename\":\"report.md\","
+                "\"content_base64\":\"'\"$CONTENT\"'\","
+                "\"content_type\":\"text/markdown\","
+                f"\"network\":\"{workspace_id}\","
+                f"\"source\":\"openagents:{agent_name}\","
+                f"\"channel_name\":\"{channel_name}\"}}'\n\n"
             )
 
         s += (
@@ -158,19 +153,17 @@ def build_api_skills_prompt(
 
         if not is_plan:
             s += (
-                "**Example — look up a website and summarize it:**\n"
-                "```bash\n"
-                "# 1. Open a tab\n"
-                f'TAB_ID=$(curl -s -X POST {base_url}/v1/browser/tabs \\\n'
-                f'  -H "{h}" -H "Content-Type: application/json" \\\n'
-                f'  -d \'{{"url":"https://example.com","network":"{workspace_id}",'
-                f'"source":"openagents:{agent_name}"}}\' | '
-                "python3 -c \"import sys,json; print(json.load(sys.stdin)['data']['id'])\")\n\n"
-                "# 2. Read the page content\n"
-                f'curl -s -H "{h}" {base_url}/v1/browser/tabs/$TAB_ID/snapshot\n\n'
-                "# 3. Close when done\n"
-                f'curl -s -X DELETE -H "{h}" {base_url}/v1/browser/tabs/$TAB_ID\n'
-                "```\n\n"
+                "**To browse a website**, exec these steps (use exec for each):\n"
+                f"Step 1 — open tab: "
+                f'curl -s -X POST {base_url}/v1/browser/tabs '
+                f'-H "{h}" -H "Content-Type: application/json" '
+                f'-d \'{{"url":"https://example.com","network":"{workspace_id}",'
+                f'"source":"openagents:{agent_name}"}}\'\n'
+                f"Step 2 — read content: "
+                f'curl -s -H "{h}" {base_url}/v1/browser/tabs/TAB_ID/snapshot\n'
+                f"Step 3 — close tab: "
+                f'curl -s -X DELETE -H "{h}" {base_url}/v1/browser/tabs/TAB_ID\n'
+                f"(Replace TAB_ID with the id from step 1 response)\n\n"
             )
 
         s += (
