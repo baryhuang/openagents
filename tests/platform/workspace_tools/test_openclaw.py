@@ -36,6 +36,17 @@ FILE_TOOLS = {
 }
 
 
+def _get_tools_from_server(server):
+    """Extract tool list from an MCP server by calling its ListTools handler."""
+    from mcp import types as mcp_types
+
+    handler = server.request_handlers[mcp_types.ListToolsRequest]
+    req = mcp_types.ListToolsRequest(method="tools/list")
+    result = asyncio.run(handler(req))
+    tools = result.root.tools
+    return tools
+
+
 @pytest.fixture()
 def mcp_tools():
     """Create an MCP server and list its tools."""
@@ -48,7 +59,7 @@ def mcp_tools():
         agent_name="test-openclaw",
     )
 
-    tools = asyncio.run(server.list_tools())
+    tools = _get_tools_from_server(server)
     tool_names = {t.name for t in tools}
     return tool_names, tools
 
