@@ -45,7 +45,7 @@ class TestCodexStart:
     def test_openagents_start(self):
         """`openagents create codex` should launch the daemon."""
         result = run_openagents(
-            "create", AGENT_NAME, "--no-browser",
+            "create", AGENT_NAME, "--name", AGENT_NAME, "--no-browser",
             timeout=30,
             stdin_text="y\n\n",  # "y" for readiness prompt, Enter for workspace skip
         )
@@ -58,7 +58,7 @@ class TestCodexStart:
 
     def test_daemon_running(self):
         """After start, `openagents status` should show daemon running."""
-        run_openagents("create", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
+        run_openagents("create", AGENT_NAME, "--name", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
 
         # Give daemon a moment to spin up
         time.sleep(2)
@@ -73,7 +73,7 @@ class TestCodexStart:
 
     def test_agent_remove(self):
         """`openagents remove` should remove the agent without killing the daemon."""
-        run_openagents("create", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
+        run_openagents("create", AGENT_NAME, "--name", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
         time.sleep(2)
 
         result = run_openagents("remove", AGENT_NAME, timeout=10, stdin_text="y\n")

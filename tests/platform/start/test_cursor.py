@@ -43,7 +43,7 @@ class TestCursorStart:
     def test_openagents_start(self):
         """`openagents create cursor` should launch the daemon."""
         result = run_openagents(
-            "create", AGENT_NAME, "--no-browser",
+            "create", AGENT_NAME, "--name", AGENT_NAME, "--no-browser",
             timeout=30,
             stdin_text="y\n\n",
         )
@@ -56,7 +56,7 @@ class TestCursorStart:
 
     def test_daemon_running(self):
         """After start, `openagents status` should show daemon running."""
-        run_openagents("create", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
+        run_openagents("create", AGENT_NAME, "--name", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
         time.sleep(2)
 
         result = run_openagents("status", timeout=10)
@@ -69,7 +69,7 @@ class TestCursorStart:
 
     def test_agent_remove(self):
         """`openagents remove` should remove the agent without killing the daemon."""
-        run_openagents("create", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
+        run_openagents("create", AGENT_NAME, "--name", AGENT_NAME, "--no-browser", timeout=30, stdin_text="y\n\n")
         time.sleep(2)
 
         result = run_openagents("remove", AGENT_NAME, timeout=10, stdin_text="y\n")
