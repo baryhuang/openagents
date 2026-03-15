@@ -430,12 +430,12 @@ def install_agent(
         ))
         raise typer.Exit(1)
 
-    # Check if already installed
+    # Check if the binary is already installed (don't skip install
+    # just because an adapter module exists for direct API mode)
     plugin = registry.get(agent_type)
-    if plugin and plugin.is_installed():
+    if plugin and plugin.which():
         path = plugin.which()
-        loc = f"\n  Location: [dim]{path}[/dim]" if path else ""
-        console.print(f"  [green]✓[/green] {info.label} is already installed.{loc}")
+        console.print(f"  [green]✓[/green] {info.label} is already installed.\n  Location: [dim]{path}[/dim]")
         raise typer.Exit(0)
 
     cmd = info.install_command
