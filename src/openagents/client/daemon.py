@@ -301,6 +301,13 @@ class DaemonManager:
                 break
 
             except Exception as e:
+                # Check if agent was stopped/removed before restarting
+                if agent_cfg.name in self._stopped_agents:
+                    logger.info(f"{agent_cfg.name} was stopped, not restarting")
+                    break
+                if agent_cfg.name not in {a.name for a in self.config.agents}:
+                    logger.info(f"{agent_cfg.name} removed from config, stopping")
+                    break
                 status.restarts += 1
                 status.state = "reconnecting"
                 status.last_error = str(e)[:200]
@@ -419,6 +426,13 @@ class DaemonManager:
                 break
 
             except Exception as e:
+                # Check if agent was stopped/removed before restarting
+                if agent_cfg.name in self._stopped_agents:
+                    logger.info(f"{agent_cfg.name} was stopped, not restarting")
+                    break
+                if agent_cfg.name not in {a.name for a in self.config.agents}:
+                    logger.info(f"{agent_cfg.name} removed from config, stopping")
+                    break
                 status.restarts += 1
                 status.state = "error"
                 status.last_error = str(e)[:200]
