@@ -1,12 +1,12 @@
 """
-Platform tool execution tests for OpenClaw agent.
+Platform tool execution tests for Codex agent.
 
 Tests that workspace tool operations (file upload, list, read, delete)
 work correctly via the workspace API. These test the same infrastructure
-that OpenClaw uses when executing workspace tools via HTTP calls.
+that Codex uses when executing workspace tools via HTTP calls.
 
 Run:
-    pytest tests/platform/tools/test_openclaw.py -v
+    pytest tests/platform/tools/test_codex.py -v
 """
 
 import asyncio
@@ -21,7 +21,7 @@ from tests.platform.conftest import (
 )
 
 
-AGENT_TYPE = "openclaw"
+AGENT_TYPE = "codex"
 _cfg = agent_config(AGENT_TYPE)
 BINARY_NAME = _cfg.get("binary", AGENT_TYPE)
 ENDPOINT = workspace_endpoint()
@@ -32,7 +32,7 @@ def workspace_env():
     """Create a workspace via the Python API and clean up after."""
     from openagents.client.workspace_client import WorkspaceClient
 
-    agent_name = f"ci-oclaw-{uuid.uuid4().hex[:8]}"
+    agent_name = f"ci-codex-{uuid.uuid4().hex[:8]}"
     ws_name = f"ws-{agent_name}"
     client = WorkspaceClient(endpoint=ENDPOINT)
 
@@ -49,11 +49,11 @@ def workspace_env():
     }
 
 
-class TestOpenClawTools:
-    """Test workspace tool operations for OpenClaw."""
+class TestCodexTools:
+    """Test workspace tool operations for Codex."""
 
     def test_agent_installed(self):
-        """OpenClaw must be installed."""
+        """Codex must be installed."""
         assert shutil.which(BINARY_NAME) is not None
 
     def test_upload_file(self, workspace_env):
@@ -169,7 +169,7 @@ class TestOpenClawTools:
         assert result is not None
 
 
-class TestOpenClawToolsReport:
+class TestCodexToolsReport:
     """Collect environment info for the test report."""
 
     def test_report_environment(self, os_platform, openagents_version):
