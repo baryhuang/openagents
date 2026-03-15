@@ -60,6 +60,8 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
   };
 
   const prevLengthRef = useRef(0);
+  // Track session identity to reset scroll state on thread switch
+  const prevSessionRef = useRef<string | null>(null);
 
   // Filter: skip empty status messages; when toggle is off, only show status messages after the last chat message
   const filteredMessages = useMemo(() => {
@@ -126,15 +128,24 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
   // Group into chat messages and intermediate step clusters
   const groups = useMemo(() => groupMessages(filteredMessages), [filteredMessages]);
 
+  // Derive the current session from messages for thread-switch detection
+  const currentSessionId = messages.length > 0 ? messages[0].sessionId : null;
+
   // Auto-scroll on new messages
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
+    // Detect thread switch: reset prevLength so wasEmpty triggers scroll-to-bottom
+    if (currentSessionId !== prevSessionRef.current) {
+      prevSessionRef.current = currentSessionId;
+      prevLengthRef.current = 0;
+    }
+
     const wasEmpty = prevLengthRef.current === 0;
     prevLengthRef.current = messages.length;
 
-    // Always scroll on initial load; otherwise only if near bottom
+    // Always scroll on initial load or thread switch; otherwise only if near bottom
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     if (wasEmpty || isNearBottom) {
       // Use rAF to ensure DOM has been laid out with the new content
@@ -142,7 +153,7 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
         scrollToBottom();
       });
     }
-  }, [messages.length]);
+  }, [messages.length, currentSessionId]);
 
   // Force scroll when scrollKey changes (user sent a message)
   useEffect(() => {
