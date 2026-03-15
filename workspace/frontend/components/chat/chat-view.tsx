@@ -99,6 +99,7 @@ export function ChatView() {
   // Optimistic message state for instant feedback
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
   const [scrollKey, setScrollKey] = useState(0);
+  const [focusKey, setFocusKey] = useState(0);
 
   // Per-thread message drafts
   const draftsRef = useRef<Record<string, string>>({});
@@ -120,6 +121,8 @@ export function ChatView() {
     prevSessionIdRef.current = currentSessionId;
     // Clear optimistic messages when switching sessions
     setOptimisticMessages([]);
+    // Focus the input when switching threads
+    if (currentSessionId) setFocusKey((k) => k + 1);
   }, [currentSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep cache updated with latest messages for the current session
@@ -584,6 +587,7 @@ export function ChatView() {
               agents={agents}
               draft={currentDraft}
               onDraftChange={handleDraftChange}
+              focusKey={focusKey}
             />
           </div>
         </div>

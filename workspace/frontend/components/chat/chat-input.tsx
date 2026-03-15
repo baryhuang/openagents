@@ -19,13 +19,15 @@ interface ChatInputProps {
   agents?: WorkspaceAgent[];
   draft?: string;
   onDraftChange?: (draft: string) => void;
+  /** Auto-focus the textarea when mounted or when this key changes. */
+  focusKey?: number;
 }
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange, focusKey }: ChatInputProps) {
   const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
@@ -44,6 +46,13 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
       textareaRef.current.style.height = 'auto';
     }
   }, [draft]);
+
+  // Auto-focus textarea when focusKey changes (thread opened/switched)
+  React.useEffect(() => {
+    if (focusKey != null && textareaRef.current) {
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [focusKey]);
 
   const agentNames = agents.map((a) => a.agentName);
 

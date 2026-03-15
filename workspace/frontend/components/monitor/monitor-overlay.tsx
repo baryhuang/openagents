@@ -31,6 +31,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
 
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
   const [scrollKey, setScrollKey] = useState(0);
+  const [focusKey, setFocusKey] = useState(0);
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
 
   // Clear optimistic messages once the real user message arrives from the server
@@ -46,11 +47,12 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
     }
   }, [messages, optimisticMessages]);
 
-  // Reset optimistic messages when overlay opens/closes
+  // Reset optimistic messages and focus input when overlay opens/closes
   const prevOpenRef = useRef(open);
   useEffect(() => {
     if (open !== prevOpenRef.current) {
       setOptimisticMessages([]);
+      if (open) setFocusKey((k) => k + 1);
       prevOpenRef.current = open;
     }
   }, [open]);
@@ -148,7 +150,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
           {/* Input */}
           <div className="px-4 py-3 border-t">
             <div className="max-w-3xl mx-auto w-full">
-              <ChatInput onSend={handleSend} agents={agents} />
+              <ChatInput onSend={handleSend} agents={agents} focusKey={focusKey} />
             </div>
           </div>
         </div>
