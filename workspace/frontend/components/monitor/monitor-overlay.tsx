@@ -24,7 +24,7 @@ interface MonitorOverlayProps {
 
 export function MonitorOverlay({ sessionId, session, initialMessages, open, onOpenChange }: MonitorOverlayProps) {
   const { agents } = useWorkspace();
-  const { messages, loading, forceRefresh } = useMessagePolling({
+  const { messages, loading, forceRefresh, generation } = useMessagePolling({
     sessionId: open ? sessionId : null,
     initialMessages,
   });
@@ -32,6 +32,11 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
   const [scrollKey, setScrollKey] = useState(0);
   const [focusKey, setFocusKey] = useState(0);
+
+  // Scroll to bottom when backfill replaces messages
+  useEffect(() => {
+    if (generation > 0) setScrollKey((k) => k + 1);
+  }, [generation]);
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
 
   // Clear optimistic messages once the real user message arrives from the server

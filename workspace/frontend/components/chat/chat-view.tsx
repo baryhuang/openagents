@@ -26,22 +26,28 @@ import type { WorkspaceMessage } from '@/lib/types';
 // Keyed by sessionId, stores the last known messages for instant thread switching.
 const messageCache = new Map<string, WorkspaceMessage[]>();
 const CACHE_MAX_SESSIONS = 10;
+// Track last seen message ID per cached session for incremental refresh
+const cacheLastSeenId = new Map<string, string>();
 
 function cacheMessages(sessionId: string, msgs: WorkspaceMessage[]) {
   if (msgs.length === 0) return;
   messageCache.set(sessionId, msgs);
+  cacheLastSeenId.set(sessionId, msgs[msgs.length - 1].messageId);
   // Evict oldest entries if cache grows too large
   if (messageCache.size > CACHE_MAX_SESSIONS) {
     const oldest = messageCache.keys().next().value;
-    if (oldest) messageCache.delete(oldest);
+    if (oldest) {
+      messageCache.delete(oldest);
+      cacheLastSeenId.delete(oldest);
+    }
   }
 }
 
 const PREFETCH_COUNT = 6;
+const CACHE_REFRESH_INTERVAL = 5_000; // refresh caches every 5s
 
-/** Pre-fetch messages for recent sessions in the background. */
-async function prefetchSession(sessionId: string) {
-  if (messageCache.has(sessionId)) return;
+/** Fetch all messages for a session (initial load). */
+async function fetchSessionMessages(sessionId: string): Promise<WorkspaceMessage[]> {
   try {
     const result = await workspaceApi.pollEvents({
       channel: sessionId,
@@ -49,12 +55,33 @@ async function prefetchSession(sessionId: string) {
       sort: 'asc',
       limit: 200,
     });
-    const msgs = result.events.map(eventToMessage);
-    if (msgs.length > 0) {
-      messageCache.set(sessionId, msgs);
+    return result.events.map(eventToMessage);
+  } catch {
+    return [];
+  }
+}
+
+/** Incrementally refresh a cached session — fetch only new messages since last seen. */
+async function refreshCachedSession(sessionId: string): Promise<void> {
+  const lastId = cacheLastSeenId.get(sessionId);
+  if (!lastId) {
+    // No cache yet — do full fetch
+    const msgs = await fetchSessionMessages(sessionId);
+    if (msgs.length > 0) cacheMessages(sessionId, msgs);
+    return;
+  }
+  try {
+    const result = await workspaceApi.pollMessages(sessionId, lastId);
+    if (result.messages.length > 0) {
+      const existing = messageCache.get(sessionId) || [];
+      const existingIds = new Set(existing.map((m) => m.messageId));
+      const unique = result.messages.filter((m) => !existingIds.has(m.messageId));
+      if (unique.length > 0) {
+        cacheMessages(sessionId, [...existing, ...unique]);
+      }
     }
   } catch {
-    // Prefetch is best-effort
+    // Best-effort
   }
 }
 
@@ -62,23 +89,45 @@ export function ChatView() {
   const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, renameSession, addParticipant, removeParticipant } = useWorkspace();
   const { isMobile, openMobileList } = useLayout();
 
-  // Pre-fetch top recent sessions in background on mount
-  const prefetchedRef = useRef(false);
+  // Continuously refresh message caches for top recent sessions in the background.
+  // This ensures clicking any recent thread shows messages instantly and up-to-date.
+  const currentSessionIdRef = useRef<string | null>(currentSessionId);
+  currentSessionIdRef.current = currentSessionId;
+
   useEffect(() => {
-    if (prefetchedRef.current || sessions.length === 0) return;
-    prefetchedRef.current = true;
-    const recent = [...sessions]
-      .filter((s) => s.status === 'active')
-      .sort((a, b) => {
-        const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-        return bTime - aTime;
-      })
-      .slice(0, PREFETCH_COUNT);
-    // Stagger prefetches to avoid hammering the API
-    recent.forEach((s, i) => {
-      setTimeout(() => prefetchSession(s.sessionId), i * 300);
+    if (sessions.length === 0) return;
+
+    const getTopSessions = () =>
+      [...sessions]
+        .filter((s) => s.status === 'active')
+        .sort((a, b) => {
+          const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+          const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+          return bTime - aTime;
+        })
+        .slice(0, PREFETCH_COUNT);
+
+    // Initial fetch — staggered
+    const initial = getTopSessions();
+    initial.forEach((s, i) => {
+      if (!messageCache.has(s.sessionId)) {
+        setTimeout(() => fetchSessionMessages(s.sessionId).then((msgs) => {
+          if (msgs.length > 0) cacheMessages(s.sessionId, msgs);
+        }), i * 300);
+      }
     });
+
+    // Periodic incremental refresh — skip the session the user is currently viewing
+    // (useMessagePolling handles that one)
+    const interval = setInterval(async () => {
+      const top = getTopSessions();
+      for (const s of top) {
+        if (s.sessionId === currentSessionIdRef.current) continue;
+        await refreshCachedSession(s.sessionId);
+      }
+    }, CACHE_REFRESH_INTERVAL);
+
+    return () => clearInterval(interval);
   }, [sessions]);
 
   // Look up cached messages for the current session (read once per session switch)
@@ -87,7 +136,7 @@ export function ChatView() {
     initialMessagesRef.current = currentSessionId ? messageCache.get(currentSessionId) : undefined;
   }
 
-  const { messages, loading, forceRefresh } = useMessagePolling({
+  const { messages, loading, forceRefresh, generation } = useMessagePolling({
     sessionId: currentSessionId,
     initialMessages: initialMessagesRef.current,
   });
@@ -98,8 +147,14 @@ export function ChatView() {
 
   // Optimistic message state for instant feedback
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
+  // scrollKey triggers scroll-to-bottom: incremented on user send + backfill completion
   const [scrollKey, setScrollKey] = useState(0);
   const [focusKey, setFocusKey] = useState(0);
+
+  // Scroll to bottom when backfill replaces messages (generation changes)
+  useEffect(() => {
+    if (generation > 0) setScrollKey((k) => k + 1);
+  }, [generation]);
 
   // Per-thread message drafts
   const draftsRef = useRef<Record<string, string>>({});

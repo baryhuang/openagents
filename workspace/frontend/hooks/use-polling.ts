@@ -14,6 +14,8 @@ interface UsePollingOptions {
 export function useMessagePolling({ sessionId, enabled = true, initialMessages }: UsePollingOptions) {
   const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  // Increments when messages are bulk-replaced (backfill/session switch) to signal scroll-to-bottom
+  const [generation, setGeneration] = useState(0);
   const lastSeenIdRef = useRef<string | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
   const initialLoadDoneRef = useRef(false);
@@ -125,6 +127,7 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
       if (allMessages.length > 0) {
         lastSeenIdRef.current = allMessages[allMessages.length - 1].messageId;
         setMessages(allMessages);
+        setGeneration((g) => g + 1);
       }
     } catch {
       // Backfill failed — seeded messages still work fine
@@ -165,5 +168,5 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
     poll();
   }, [poll]);
 
-  return { messages, loading, forceRefresh };
+  return { messages, loading, forceRefresh, generation };
 }
