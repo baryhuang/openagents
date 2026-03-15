@@ -19,6 +19,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
 
     steps:
     - uses: actions/checkout@v4
