@@ -55,6 +55,18 @@ jobs:
       if: success()
       run: pytest tests/platform/respond/test_claude.py -v -s --tb=long --junitxml=reports/claude-respond.xml
 
+    - name: "Daemon log (debug)"
+      if: always()
+      shell: bash
+      run: |
+        LOG="$HOME/.openagents/daemon.log"
+        if [ -f "$LOG" ]; then
+          echo "=== Daemon log (last 200 lines) ==="
+          tail -200 "$LOG"
+        else
+          echo "No daemon log found at $LOG"
+        fi
+
     - name: "Test 5: Execute tool calls (Claude Code)"
       if: success()
       run: pytest tests/platform/tools/test_claude.py -v -s --tb=long --junitxml=reports/claude-tools.xml
@@ -116,6 +128,18 @@ jobs:
     - name: "Test 4: Respond to message (OpenClaw)"
       if: success()
       run: pytest tests/platform/respond/test_openclaw.py -v -s --tb=long --junitxml=reports/openclaw-respond.xml
+
+    - name: "Daemon log (debug)"
+      if: always()
+      shell: bash
+      run: |
+        LOG="$HOME/.openagents/daemon.log"
+        if [ -f "$LOG" ]; then
+          echo "=== Daemon log (last 200 lines) ==="
+          tail -200 "$LOG"
+        else
+          echo "No daemon log found at $LOG"
+        fi
 
     - name: "Test 5: Execute tool calls (OpenClaw)"
       if: success()
