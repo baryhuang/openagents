@@ -1,18 +1,50 @@
 'use client';
 
-import { X, Copy, Check, MessageSquare, Settings, Globe, Folder, Monitor, UserRoundCog } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, Copy, Check, MessageSquare, Globe, Folder, Monitor, UserRoundCog } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
+import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export function AgentProfilePanel() {
   const { selectedAgentName, setSelectedAgentName, isMobile } = useLayout();
-  const { agents } = useWorkspace();
+  const { agents, refreshWorkspace } = useWorkspace();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
 
   const agent = agents.find((a) => a.agentName === selectedAgentName);
+
+  // Description state — local draft + save
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [descDirty, setDescDirty] = useState(false);
+
+  // Sync description when agent changes
+  useEffect(() => {
+    if (agent) {
+      setDescription(agent.description || '');
+      setDescDirty(false);
+    }
+  }, [agent?.agentName, agent?.description]);
+
+  const handleSaveDescription = useCallback(async () => {
+    if (!agent || !descDirty) return;
+    setSaving(true);
+    try {
+      await workspaceApi.updateMember(agent.agentName, { description });
+      await refreshWorkspace();
+      setDescDirty(false);
+      toast.success('Description saved');
+    } catch {
+      toast.error('Failed to save description');
+    } finally {
+      setSaving(false);
+    }
+  }, [agent, description, descDirty, refreshWorkspace]);
+
   if (!agent) return null;
 
   const agentNames = agents.map((a) => a.agentName);
@@ -83,8 +115,40 @@ export function AgentProfilePanel() {
           </div>
         </div>
 
-        {/* Details card */}
-        <div className="flex-1 overflow-y-auto px-3.5">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-3.5 space-y-3">
+          {/* Description */}
+          <div className="rounded-lg border overflow-hidden">
+            <div className="px-3.5 py-2.5 border-b">
+              <span className="text-xs font-medium">Description</span>
+            </div>
+            <div className="p-3">
+              <textarea
+                className="w-full text-[13px] leading-relaxed bg-transparent resize-none outline-none placeholder:text-muted-foreground/50 min-h-[60px]"
+                placeholder={`Describe what ${agent.agentName} does so other agents know when to delegate work...`}
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  setDescDirty(true);
+                }}
+                onBlur={handleSaveDescription}
+                rows={3}
+              />
+              {descDirty && (
+                <div className="flex justify-end mt-1.5">
+                  <button
+                    onClick={handleSaveDescription}
+                    disabled={saving}
+                    className="text-[11px] px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 font-medium transition-colors"
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Connection Details */}
           <div className="rounded-lg border overflow-hidden">
             <div className="px-3.5 py-2.5 border-b">
               <span className="text-xs font-medium">Connection Details</span>
@@ -125,10 +189,6 @@ export function AgentProfilePanel() {
             <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border bg-background hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
               <MessageSquare className="size-3" />
               Message
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border bg-background hover:bg-zinc-50 dark:hover:bg-zinc-800 text-muted-foreground transition-colors">
-              <Settings className="size-3" />
-              Configure
             </button>
           </div>
         </div>

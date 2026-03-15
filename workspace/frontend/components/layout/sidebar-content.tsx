@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, MessageSquare, FileText, Globe, PlusSquare,
-  Settings, Copy, Check, Bot,
+  Settings, Copy, Check,
   LogIn, LogOut, Shield, Moon, Sun, KeyRound, Share2, X, Crown,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -17,7 +17,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useLayout, type ViewMode } from './layout-context';
@@ -491,7 +491,6 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   const [name, setName] = useState(workspace?.name || '');
   const [monitorMode, setMonitorMode] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const { isCopied: urlCopied, copyToClipboard: copyUrl } = useCopyToClipboard();
   const { isCopied: tokenCopied, copyToClipboard: copyToken } = useCopyToClipboard();
 
@@ -499,39 +498,20 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
     if (open && workspace) {
       setName(workspace.name);
       setMonitorMode(!!(workspace.settings?.monitorMode));
-      const descs: Record<string, string> = {};
-      for (const agent of workspace.agents) {
-        descs[agent.agentName] = agent.description || '';
-      }
-      setDescriptions(descs);
     }
   }, [open, workspace]);
 
   if (!workspace) return null;
 
   const workspaceUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/${workspace.workspaceId}${window.location.search}`
+    ? `${window.location.origin}/${workspace.slug}${window.location.search}`
     : '';
-
-  const agentNames = workspace.agents.map((a) => a.agentName);
 
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
       await workspaceApi.updateWorkspace({ name: name.trim(), settings: { ...workspace.settings, monitorMode } });
-
-      // Save changed agent descriptions
-      const updates = workspace.agents.map((agent) => {
-        const newDesc = descriptions[agent.agentName] ?? '';
-        const oldDesc = agent.description || '';
-        if (newDesc !== oldDesc) {
-          return workspaceApi.updateMember(agent.agentName, { description: newDesc });
-        }
-        return null;
-      }).filter(Boolean);
-      await Promise.all(updates);
-
       await refreshWorkspace();
       toast.success('Settings saved');
       onOpenChange(false);
@@ -563,8 +543,8 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
           <div className="space-y-2">
             <Label variant="secondary">Workspace ID</Label>
             <div className="flex items-center gap-2">
-              <Input value={workspace.workspaceId} readOnly className="text-xs font-mono" />
-              <Button variant="outline" size="icon" onClick={() => copyToken(workspace.workspaceId)}>
+              <Input value={workspace.slug} readOnly className="text-xs font-mono" />
+              <Button variant="outline" size="icon" onClick={() => copyToken(workspace.slug)}>
                 {tokenCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
               </Button>
             </div>
@@ -586,49 +566,6 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
             <Switch checked={monitorMode} onCheckedChange={setMonitorMode} size="sm" />
           </div>
 
-          {/* Agent Descriptions */}
-          {workspace.agents.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Bot className="size-4 text-muted-foreground" />
-                <Label>Agent Descriptions</Label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Describe each agent&apos;s role so other agents know when to delegate work.
-              </p>
-              <div className="space-y-4">
-                {workspace.agents.map((agent) => {
-                  const color = getAgentColor(agent.agentName, agentNames);
-                  const initials = getAgentInitials(agent.agentName);
-                  return (
-                    <div key={agent.agentName} className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="size-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                          style={{ backgroundColor: color.bg }}
-                        >
-                          {initials}
-                        </div>
-                        <span className="text-sm font-medium">{agent.agentName}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {agent.agentType || 'unknown'} &middot; {agent.status}
-                        </span>
-                      </div>
-                      {agent.workingDir && (
-                        <p className="text-xs text-muted-foreground font-mono ml-8">{agent.workingDir}</p>
-                      )}
-                      <Textarea
-                        className="ml-8 text-sm min-h-[60px]"
-                        placeholder={`Describe what ${agent.agentName} does...`}
-                        value={descriptions[agent.agentName] || ''}
-                        onChange={(e) => setDescriptions((prev) => ({ ...prev, [agent.agentName]: e.target.value }))}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
