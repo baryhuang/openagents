@@ -232,7 +232,13 @@ def _make_plugin_from_yaml(data: dict):
             return shutil.which(binary)
 
         def is_installed(self) -> bool:
-            return self._which_binary() is not None
+            if self._which_binary() is not None:
+                return True
+            # Agents with an adapter module can run in direct API mode
+            # without a local binary (e.g. NanoClaw).
+            if adapter_cfg.get("module"):
+                return True
+            return False
 
         def which(self) -> Optional[str]:
             return self._which_binary()
