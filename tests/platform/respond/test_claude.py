@@ -5,16 +5,17 @@ Tests that a Claude Code agent connected to a workspace can receive
 a message via the workspace API. Verifies the message infrastructure
 works end-to-end (send message → poll → message appears).
 
-Note: On CI the agent isn't logged in, so it can't generate real
-responses. This test verifies the workspace messaging pipeline, not
-the agent's LLM capability.
+When ANTHROPIC_API_KEY is available, also tests that the agent
+actually generates a response via the Claude CLI.
 
 Run:
     pytest tests/platform/respond/test_claude.py -v
 """
 
 import asyncio
+import os
 import shutil
+import time
 import uuid
 
 import pytest
@@ -25,6 +26,9 @@ from tests.platform.conftest import run_openagents, safe_print
 AGENT_TYPE = "claude"
 BINARY_NAME = "claude"
 ENDPOINT = "https://workspace-endpoint.openagents.org"
+
+# Check if Anthropic credentials are available for real response tests
+HAS_ANTHROPIC_KEY = bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
 @pytest.fixture()
@@ -52,7 +56,6 @@ def workspace_env():
     }
 
     # Cleanup
-    run_openagents("down", timeout=30)
     run_openagents("remove", agent_name, timeout=10, stdin_text="y\n")
 
 
@@ -194,6 +197,94 @@ class TestClaudeRespond:
             f"Got {len(messages)} messages."
         )
 
+    @pytest.mark.skipif(
+        not HAS_ANTHROPIC_KEY,
+        reason="ANTHROPIC_API_KEY not available — skipping real response test",
+    )
+    def test_agent_responds_to_message(self, workspace_env):
+        """Send a message and verify Claude generates a real LLM response.
+
+        Requires ANTHROPIC_API_KEY to be set so the Claude CLI can
+        authenticate and generate responses.
+        """
+        env = workspace_env
+        client = env["client"]
+
+        # Start agent and join workspace
+        start_result = run_openagents(
+            "start", AGENT_TYPE,
+            "--name", env["agent_name"],
+            "--join-workspace", env["token"],
+            "--no-browser",
+            timeout=60,
+            stdin_text="y\n",
+        )
+        assert start_result.returncode == 0, (
+            f"Failed to start agent (exit {start_result.returncode}).\n"
+            f"stderr: {start_result.stderr[-500:]}"
+        )
+
+        # Give agent a moment to connect and start polling
+        time.sleep(5)
+
+        msg_content = f"Say hello in exactly one sentence. Test ID: {uuid.uuid4().hex[:8]}"
+
+        # Send message as human
+        asyncio.run(
+            client.send_message(
+                workspace_id=env["workspace_id"],
+                channel_name=env["channel_name"],
+                token=env["token"],
+                content=msg_content,
+                sender_type="human",
+                sender_name="ci-tester",
+            )
+        )
+
+        # Poll for agent response — retry with timeout
+        agent_response = None
+        messages = []
+        for attempt in range(24):  # 24 * 5s = 120s max wait
+            time.sleep(5)
+            messages = asyncio.run(
+                client.poll_messages(
+                    workspace_id=env["workspace_id"],
+                    channel_name=env["channel_name"],
+                    token=env["token"],
+                    limit=50,
+                )
+            )
+
+            # Look for a message from the agent (sender_type="agent")
+            # that is a "chat" message (not "status" or "thinking")
+            for m in messages:
+                if (
+                    m.get("senderType") == "agent"
+                    and m.get("messageType", "chat") == "chat"
+                    and m.get("content", "").strip()
+                ):
+                    agent_response = m
+                    break
+
+            if agent_response:
+                break
+
+            safe_print(f"  Attempt {attempt + 1}/24: no agent response yet...")
+
+        assert agent_response is not None, (
+            f"Agent did not respond within 120 seconds.\n"
+            f"Sent: '{msg_content}'\n"
+            f"Got {len(messages)} messages total."
+        )
+
+        response_content = agent_response.get("content", "")
+        safe_print(f"  Agent responded: {response_content[:200]}")
+
+        # Basic sanity: response should be non-empty and non-trivial
+        assert len(response_content.strip()) > 5, (
+            f"Agent response too short: '{response_content}'"
+        )
+
 
 class TestClaudeRespondReport:
     """Collect environment info for the test report."""
@@ -205,6 +296,7 @@ class TestClaudeRespondReport:
             "platform": os_platform,
             "openagents_version": openagents_version,
             "agent_binary": binary_path,
+            "anthropic_key": "available" if HAS_ANTHROPIC_KEY else "not set",
         }
         for k, v in report.items():
             safe_print(f"  {k}: {v}")

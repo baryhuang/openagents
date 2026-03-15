@@ -12,11 +12,13 @@ jobs:
   test-claude:
     if: ${{ github.event.inputs.agents == 'all' || contains(github.event.inputs.agents, 'claude') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
     - uses: actions/checkout@v4
@@ -70,11 +72,15 @@ jobs:
   test-openclaw:
     if: ${{ github.event.inputs.agents == 'all' || contains(github.event.inputs.agents, 'openclaw') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
 
     steps:
     - uses: actions/checkout@v4

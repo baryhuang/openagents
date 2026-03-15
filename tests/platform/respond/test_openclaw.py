@@ -5,16 +5,17 @@ Tests that an OpenClaw agent connected to a workspace can receive
 a message via the workspace API. Verifies the message infrastructure
 works end-to-end (send message → poll → message appears).
 
-Note: On CI the agent isn't configured, so it can't generate real
-responses. This test verifies the workspace messaging pipeline, not
-the agent's LLM capability.
+When LLM credentials are available (LLM_API_KEY / OPENAI_API_KEY),
+also tests that the agent actually generates a response.
 
 Run:
     pytest tests/platform/respond/test_openclaw.py -v
 """
 
 import asyncio
+import os
 import shutil
+import time
 import uuid
 
 import pytest
@@ -25,6 +26,12 @@ from tests.platform.conftest import run_openagents, safe_print
 AGENT_TYPE = "openclaw"
 BINARY_NAME = "openclaw"
 ENDPOINT = "https://workspace-endpoint.openagents.org"
+
+# Check if LLM credentials are available for real response tests
+HAS_LLM_CREDENTIALS = bool(
+    os.environ.get("LLM_API_KEY")
+    or os.environ.get("OPENAI_API_KEY")
+)
 
 
 @pytest.fixture()
@@ -52,7 +59,6 @@ def workspace_env():
     }
 
     # Cleanup
-    run_openagents("down", timeout=30)
     run_openagents("remove", agent_name, timeout=10, stdin_text="y\n")
 
 
@@ -193,6 +199,94 @@ class TestOpenClawRespond:
             f"Got {len(messages)} messages."
         )
 
+    @pytest.mark.skipif(
+        not HAS_LLM_CREDENTIALS,
+        reason="LLM credentials not available (set LLM_API_KEY or OPENAI_API_KEY)",
+    )
+    def test_agent_responds_to_message(self, workspace_env):
+        """Send a message and verify the agent generates a real LLM response.
+
+        Requires LLM_API_KEY (or OPENAI_API_KEY) + LLM_BASE_URL + LLM_MODEL
+        environment variables to be set. These are resolved by the openclaw.yaml
+        config to OPENAI_API_KEY, OPENAI_BASE_URL, OPENCLAW_MODEL.
+        """
+        env = workspace_env
+        client = env["client"]
+
+        # Start agent and join workspace
+        start_result = run_openagents(
+            "start", AGENT_TYPE,
+            "--name", env["agent_name"],
+            "--join-workspace", env["token"],
+            "--no-browser",
+            timeout=60,
+            stdin_text="y\n",
+        )
+        assert start_result.returncode == 0, (
+            f"Failed to start agent (exit {start_result.returncode}).\n"
+            f"stderr: {start_result.stderr[-500:]}"
+        )
+
+        # Give agent a moment to connect and start polling
+        time.sleep(5)
+
+        msg_content = f"Say hello in exactly one sentence. Test ID: {uuid.uuid4().hex[:8]}"
+
+        # Send message as human
+        asyncio.run(
+            client.send_message(
+                workspace_id=env["workspace_id"],
+                channel_name=env["channel_name"],
+                token=env["token"],
+                content=msg_content,
+                sender_type="human",
+                sender_name="ci-tester",
+            )
+        )
+
+        # Poll for agent response — retry with timeout
+        agent_response = None
+        for attempt in range(24):  # 24 * 5s = 120s max wait
+            time.sleep(5)
+            messages = asyncio.run(
+                client.poll_messages(
+                    workspace_id=env["workspace_id"],
+                    channel_name=env["channel_name"],
+                    token=env["token"],
+                    limit=50,
+                )
+            )
+
+            # Look for a message from the agent (sender_type="agent")
+            # that is a "chat" message (not "status" or "thinking")
+            for m in messages:
+                if (
+                    m.get("senderType") == "agent"
+                    and m.get("messageType", "chat") == "chat"
+                    and m.get("content", "").strip()
+                ):
+                    agent_response = m
+                    break
+
+            if agent_response:
+                break
+
+            safe_print(f"  Attempt {attempt + 1}/24: no agent response yet...")
+
+        assert agent_response is not None, (
+            f"Agent did not respond within 120 seconds.\n"
+            f"Sent: '{msg_content}'\n"
+            f"Got {len(messages)} messages total."
+        )
+
+        response_content = agent_response.get("content", "")
+        safe_print(f"  Agent responded: {response_content[:200]}")
+
+        # Basic sanity: response should be non-empty and non-trivial
+        assert len(response_content.strip()) > 5, (
+            f"Agent response too short: '{response_content}'"
+        )
+
 
 class TestOpenClawRespondReport:
     """Collect environment info for the test report."""
@@ -204,6 +298,9 @@ class TestOpenClawRespondReport:
             "platform": os_platform,
             "openagents_version": openagents_version,
             "agent_binary": binary_path,
+            "llm_credentials": "available" if HAS_LLM_CREDENTIALS else "not set",
+            "llm_base_url": os.environ.get("LLM_BASE_URL", "not set"),
+            "llm_model": os.environ.get("LLM_MODEL", "not set"),
         }
         for k, v in report.items():
             safe_print(f"  {k}: {v}")
