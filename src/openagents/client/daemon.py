@@ -281,6 +281,11 @@ class DaemonManager:
                 logger.info(f"{agent_cfg.name} is online → {net.slug}")
 
                 await adapter.run()
+                # Check if agent was removed from config during run()
+                # (adapter.run() swallows CancelledError internally)
+                if agent_cfg.name not in {a.name for a in self.config.agents}:
+                    logger.info(f"{agent_cfg.name} removed from config, stopping")
+                    break
                 logger.info(f"{agent_cfg.name} exited cleanly, restarting")
                 # Don't break — restart the adapter so the agent stays online
                 backoff = 2
