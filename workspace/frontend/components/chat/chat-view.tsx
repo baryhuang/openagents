@@ -53,12 +53,19 @@ export function ChatView() {
     setOptimisticMessages([]);
   }, [currentSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear optimistic messages once real messages arrive
+  // Clear optimistic messages once the real user message arrives from the server
   useEffect(() => {
-    if (messages.length > 0 && optimisticMessages.length > 0) {
+    if (optimisticMessages.length === 0) return;
+    const optimisticUser = optimisticMessages.find((m) => m.messageId.startsWith('optimistic-user-'));
+    if (!optimisticUser) return;
+    // Check if a real message with matching content has arrived
+    const found = messages.some(
+      (m) => m.senderType !== 'agent' && m.content === optimisticUser.content
+    );
+    if (found) {
       setOptimisticMessages([]);
     }
-  }, [messages.length, optimisticMessages.length]);
+  }, [messages, optimisticMessages]);
 
   const handleDraftChange = useCallback((draft: string) => {
     setCurrentDraft(draft);
