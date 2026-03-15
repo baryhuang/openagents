@@ -37,7 +37,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pytest pytest-html
-        pip install -e .
+        pip install -e ".[sdk]"
 
     - name: "Test 1: Install Claude Code"
       run: pytest tests/platform/install/test_claude.py -v -s --tb=long --junitxml=reports/claude-install.xml
@@ -99,7 +99,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pytest pytest-html
-        pip install -e .
+        pip install -e ".[sdk]"
 
     - name: "Test 1: Install OpenClaw"
       run: pytest tests/platform/install/test_openclaw.py -v -s --tb=long --junitxml=reports/openclaw-install.xml
