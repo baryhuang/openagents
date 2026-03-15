@@ -521,7 +521,7 @@ class DaemonManager:
             logger.warning(f"Cannot stop agent '{agent_name}': not running")
 
     def _restart_agent(self, agent_name: str):
-        """Restart a single agent: stop it, then relaunch from config."""
+        """Restart a single agent: stop it, reload config, then relaunch."""
         # Stop if running
         task = self.tasks.get(agent_name)
         if task and not task.done():
@@ -529,7 +529,10 @@ class DaemonManager:
             self._stopped_agents.add(agent_name)
             task.cancel()
 
-        # Find agent in current config and relaunch
+        # Reload config from disk to pick up any changes (e.g. connect/disconnect)
+        self.config = load_config(self.config_path)
+
+        # Find agent in refreshed config and relaunch
         agent_cfg = None
         for a in self.config.agents:
             if a.name == agent_name:

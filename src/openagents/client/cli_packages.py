@@ -346,16 +346,13 @@ def daemon_remove(
 
     remove_agent_from_config(agent_name)
 
-    # Signal daemon to reload config so it stops the removed agent
+    # Stop just this agent in the daemon
     from openagents.client.daemon import read_daemon_pid
-    import platform as _plat
+    from openagents.client.daemon_config import CMD_PATH
     pid = read_daemon_pid()
-    if pid and _plat.system() != "Windows":
-        try:
-            import signal as _sig
-            os.kill(pid, _sig.SIGHUP)
-        except (ProcessLookupError, PermissionError):
-            pass
+    if pid:
+        CMD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CMD_PATH.write_text(f"stop:{agent_name}\n")
 
     console.print(f"  [green]✓ Removed[/green] {agent_name}")
 

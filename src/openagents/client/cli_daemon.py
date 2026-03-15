@@ -797,8 +797,13 @@ def daemon_connect_agent(
     # Connect
     connect_agent_to_network(agent_name, net_entry.slug or net_entry.id)
 
-    # Signal daemon to reload config immediately
-    _signal_daemon_reload()
+    # Restart just this agent so it picks up the new network
+    from openagents.client.daemon import read_daemon_pid
+    from openagents.client.daemon_config import CMD_PATH
+    pid = read_daemon_pid()
+    if pid:
+        CMD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CMD_PATH.write_text(f"restart:{agent_name}\n")
 
     console.print(
         f"\n[green]Connected[/green] [cyan]{agent_name}[/cyan] ({agent.type}) "
@@ -827,8 +832,13 @@ def daemon_disconnect_agent(
     old_network = agent.network
     disconnect_agent_from_network(agent_name)
 
-    # Signal daemon to reload config immediately
-    _signal_daemon_reload()
+    # Restart just this agent so it drops the network connection
+    from openagents.client.daemon import read_daemon_pid
+    from openagents.client.daemon_config import CMD_PATH
+    pid = read_daemon_pid()
+    if pid:
+        CMD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CMD_PATH.write_text(f"restart:{agent_name}\n")
 
     console.print(
         f"[green]Disconnected[/green] [cyan]{agent_name}[/cyan] from {old_network}. "
