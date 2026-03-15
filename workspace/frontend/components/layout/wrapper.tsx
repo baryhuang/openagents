@@ -75,8 +75,9 @@ export function Wrapper() {
 
           {/* Monitor mode: replace both panes with 2x3 grid */}
           {viewMode === 'threads' && monitorMode ? (
-            <div className="flex-1 min-w-0">
+            <div className="relative flex-1 min-w-0">
               <MonitorGrid />
+              {isAgentPanelOpen && <AgentProfilePanel />}
             </div>
           ) : (
             <>
