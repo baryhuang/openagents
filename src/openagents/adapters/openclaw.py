@@ -146,6 +146,7 @@ class OpenClawAdapter(BaseAdapter):
         openclaw_token: Optional[str] = None,
         openclaw_agent_id: str = "main",
         disabled_modules: set | None = None,
+        working_dir: str | None = None,
     ):
         super().__init__(workspace_id, channel_name, token, agent_name, endpoint)
         self.disabled_modules = disabled_modules or set()
