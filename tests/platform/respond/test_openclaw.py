@@ -20,18 +20,17 @@ import uuid
 
 import pytest
 
-from tests.platform.conftest import run_openagents, safe_print
+from tests.platform.conftest import (
+    run_openagents, safe_print,
+    agent_config, workspace_endpoint, has_credentials,
+)
 
 
 AGENT_TYPE = "openclaw"
-BINARY_NAME = "openclaw"
-ENDPOINT = "https://workspace-endpoint.openagents.org"
-
-# Check if LLM credentials are available for real response tests
-HAS_LLM_CREDENTIALS = bool(
-    os.environ.get("LLM_API_KEY")
-    or os.environ.get("OPENAI_API_KEY")
-)
+_cfg = agent_config(AGENT_TYPE)
+BINARY_NAME = _cfg.get("binary", AGENT_TYPE)
+ENDPOINT = workspace_endpoint()
+HAS_LLM_CREDENTIALS = has_credentials(AGENT_TYPE)
 
 
 @pytest.fixture()
@@ -247,6 +246,7 @@ class TestOpenClawRespond:
 
         # Poll for agent response — retry with timeout
         agent_response = None
+        messages = []
         for attempt in range(24):  # 24 * 5s = 120s max wait
             time.sleep(5)
             messages = asyncio.run(
@@ -300,8 +300,7 @@ class TestOpenClawRespondReport:
             "openagents_version": openagents_version,
             "agent_binary": binary_path,
             "llm_credentials": "available" if HAS_LLM_CREDENTIALS else "not set",
-            "llm_base_url": os.environ.get("LLM_BASE_URL", "not set"),
-            "llm_model": os.environ.get("LLM_MODEL", "not set"),
+            "llm_model": _cfg.get("model", "not configured"),
         }
         for k, v in report.items():
             safe_print(f"  {k}: {v}")

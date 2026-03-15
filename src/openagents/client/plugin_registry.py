@@ -125,6 +125,14 @@ class AgentPlugin(ABC):
         """
         return []
 
+    def resolve_env_sources(self) -> list[str]:
+        """Return source var names from resolve_env rules.
+
+        Used by the daemon to pull these vars from os.environ
+        before calling resolve_env().
+        """
+        return []
+
     def resolve_env(self, saved: dict) -> dict:
         """Translate saved config fields to actual environment variables.
 

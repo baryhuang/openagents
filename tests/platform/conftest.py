@@ -8,9 +8,11 @@ Run:
 
 Structure:
     tests/platform/
+    ├── config.yaml       # Test configuration (models, endpoints, credentials)
     ├── install/          # Test 1: Can the agent be installed via `openagents install`?
     │   ├── test_claude.py
-    │   └── test_openclaw.py
+    │   ├── test_openclaw.py
+    │   └── test_codex.py
     ├── start/            # Test 2: Can the agent start?
     ├── connect/          # Test 3: Can it connect to a workspace?
     ├── respond/          # Test 4: Can it respond to a message?
@@ -19,14 +21,50 @@ Structure:
     └── collaborate/      # Test 7: Can agents collaborate?
 """
 
+import os
 import platform
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 
 import pytest
+import yaml
 
 IS_WINDOWS = platform.system().lower() == "windows"
+
+# ---------------------------------------------------------------------------
+# Test configuration loader
+# ---------------------------------------------------------------------------
+
+_CONFIG_PATH = Path(__file__).parent / "config.yaml"
+_config: dict | None = None
+
+
+def load_test_config() -> dict:
+    """Load and cache tests/platform/config.yaml."""
+    global _config
+    if _config is None:
+        with open(_CONFIG_PATH) as f:
+            _config = yaml.safe_load(f)
+    return _config
+
+
+def agent_config(agent_type: str) -> dict:
+    """Return the config block for a specific agent type."""
+    cfg = load_test_config()
+    return cfg.get("agents", {}).get(agent_type, {})
+
+
+def workspace_endpoint() -> str:
+    """Return the workspace endpoint from config."""
+    return load_test_config().get("workspace_endpoint", "https://workspace-endpoint.openagents.org")
+
+
+def has_credentials(agent_type: str) -> bool:
+    """Check if any of the agent's credential env vars are set."""
+    cfg = agent_config(agent_type)
+    return any(os.environ.get(v) for v in cfg.get("credential_env", []))
 
 
 def current_platform() -> str:

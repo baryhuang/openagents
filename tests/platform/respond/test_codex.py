@@ -1,15 +1,16 @@
 """
-Platform respond tests for Claude Code agent.
+Platform respond tests for Codex agent.
 
-Tests that a Claude Code agent connected to a workspace can receive
+Tests that a Codex agent connected to a workspace can receive
 a message via the workspace API. Verifies the message infrastructure
 works end-to-end (send message → poll → message appears).
 
-When ANTHROPIC_API_KEY is available, also tests that the agent
-actually generates a response via the Claude CLI.
+When LLM credentials are available (LLM_API_KEY / OPENAI_API_KEY),
+also tests that the agent actually generates a response via the
+direct OpenAI-compatible API (no Codex binary needed for this).
 
 Run:
-    pytest tests/platform/respond/test_claude.py -v
+    pytest tests/platform/respond/test_codex.py -v
 """
 
 import asyncio
@@ -25,11 +26,11 @@ from tests.platform.conftest import (
 )
 
 
-AGENT_TYPE = "claude"
+AGENT_TYPE = "codex"
 _cfg = agent_config(AGENT_TYPE)
 BINARY_NAME = _cfg.get("binary", AGENT_TYPE)
 ENDPOINT = workspace_endpoint()
-HAS_ANTHROPIC_KEY = has_credentials(AGENT_TYPE)
+HAS_LLM_CREDENTIALS = has_credentials(AGENT_TYPE)
 
 
 @pytest.fixture()
@@ -37,7 +38,7 @@ def workspace_env():
     """Create a workspace via the Python API and clean up after."""
     from openagents.client.workspace_client import WorkspaceClient
 
-    agent_name = f"ci-claude-{uuid.uuid4().hex[:8]}"
+    agent_name = f"ci-codex-{uuid.uuid4().hex[:8]}"
     ws_name = f"ws-{agent_name}"
     client = WorkspaceClient(endpoint=ENDPOINT)
 
@@ -60,11 +61,11 @@ def workspace_env():
     run_openagents("remove", agent_name, timeout=10, stdin_text="y\n")
 
 
-class TestClaudeRespond:
-    """Test sending messages to a workspace with Claude Code."""
+class TestCodexRespond:
+    """Test sending messages to a workspace with Codex."""
 
     def test_agent_installed(self):
-        """Claude must be installed."""
+        """Codex must be installed."""
         assert shutil.which(BINARY_NAME) is not None, (
             f"'{BINARY_NAME}' not on PATH."
         )
@@ -142,7 +143,6 @@ class TestClaudeRespond:
             timeout=60,
             stdin_text="y\n",
         )
-        # Accept either success or warning (agent may not be logged in)
         assert result.returncode == 0, (
             f"Failed to start and join workspace "
             f"(exit {result.returncode}).\n"
@@ -199,14 +199,19 @@ class TestClaudeRespond:
         )
 
     @pytest.mark.skipif(
-        not HAS_ANTHROPIC_KEY,
-        reason="ANTHROPIC_API_KEY not available — skipping real response test",
+        not HAS_LLM_CREDENTIALS,
+        reason="LLM credentials not available (set LLM_API_KEY or OPENAI_API_KEY)",
     )
     def test_agent_responds_to_message(self, workspace_env):
-        """Send a message and verify Claude generates a real LLM response.
+        """Send a message and verify the agent generates a real LLM response.
 
-        Requires ANTHROPIC_API_KEY to be set so the Claude CLI can
-        authenticate and generate responses.
+        Requires LLM_API_KEY (or OPENAI_API_KEY) + LLM_BASE_URL + LLM_MODEL
+        environment variables to be set. These are resolved by the codex.yaml
+        config to OPENAI_API_KEY, OPENAI_BASE_URL, CODEX_MODEL.
+
+        In direct mode (API key + base URL set), the Codex adapter calls
+        the OpenAI-compatible chat completions API directly — no Codex
+        binary needed.
         """
         env = workspace_env
         client = env["client"]
@@ -288,7 +293,7 @@ class TestClaudeRespond:
         )
 
 
-class TestClaudeRespondReport:
+class TestCodexRespondReport:
     """Collect environment info for the test report."""
 
     def test_report_environment(self, os_platform, openagents_version):
@@ -298,7 +303,7 @@ class TestClaudeRespondReport:
             "platform": os_platform,
             "openagents_version": openagents_version,
             "agent_binary": binary_path,
-            "anthropic_key": "available" if HAS_ANTHROPIC_KEY else "not set",
+            "llm_credentials": "available" if HAS_LLM_CREDENTIALS else "not set",
             "model": _cfg.get("model", "not configured"),
         }
         for k, v in report.items():

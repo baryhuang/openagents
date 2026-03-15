@@ -29,3 +29,12 @@ check_ready:
   env_vars: [OPENAI_API_KEY]
   saved_env_key: OPENAI_API_KEY
   not_ready_message: "No API key — press e to configure"
+
+resolve_env:
+  rules:
+    - from: LLM_API_KEY
+      to: OPENAI_API_KEY
+    - from: LLM_BASE_URL
+      to: OPENAI_BASE_URL
+    - from: LLM_MODEL
+      to: CODEX_MODEL

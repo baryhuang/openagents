@@ -240,6 +240,10 @@ def _make_plugin_from_yaml(data: dict):
         def required_env_vars(self) -> list[dict]:
             return env_config
 
+        def resolve_env_sources(self) -> list[str]:
+            """Return source var names from resolve_env rules."""
+            return [r.get("from", "") for r in resolve_rules if r.get("from")]
+
         def resolve_env(self, saved: dict) -> dict:
             if not resolve_rules:
                 return saved

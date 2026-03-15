@@ -253,6 +253,10 @@ class DaemonManager:
                 var_name = var_def.get("name", "")
                 if var_name and var_name not in type_env and os.environ.get(var_name):
                     type_env[var_name] = os.environ[var_name]
+            # Also check process env for resolve_env source vars (e.g. LLM_API_KEY)
+            for src_name in _plugin.resolve_env_sources():
+                if src_name not in type_env and os.environ.get(src_name):
+                    type_env[src_name] = os.environ[src_name]
             resolved = _plugin.resolve_env(type_env)
         else:
             resolved = type_env
@@ -360,6 +364,15 @@ class DaemonManager:
         from openagents.client.plugin_registry import registry as _reg
         type_env = load_agent_env(agent_cfg.type)
         _plugin = _reg.get(agent_cfg.type)
+        if _plugin:
+            # Also check process env for required + resolve_env source vars
+            for var_def in _plugin.required_env_vars():
+                var_name = var_def.get("name", "")
+                if var_name and var_name not in type_env and os.environ.get(var_name):
+                    type_env[var_name] = os.environ[var_name]
+            for src_name in _plugin.resolve_env_sources():
+                if src_name not in type_env and os.environ.get(src_name):
+                    type_env[src_name] = os.environ[src_name]
         resolved = _plugin.resolve_env(type_env) if _plugin else type_env
         merged_env = {**resolved, **agent_cfg.env}
         agent_env = {**os.environ, **merged_env} if merged_env else None
