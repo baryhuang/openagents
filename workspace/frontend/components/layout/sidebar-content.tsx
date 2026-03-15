@@ -354,7 +354,6 @@ export function SidebarContent() {
 
 function ShareDialogPortal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'editor' | 'viewer'>('editor');
   const [adding, setAdding] = useState(false);
   const [collaborators, setCollaborators] = useState<WorkspaceCollaborator[]>([]);
   const [owner, setOwner] = useState<string | null>(null);
@@ -377,7 +376,7 @@ function ShareDialogPortal({ open, onOpenChange }: { open: boolean; onOpenChange
     if (!trimmed || !trimmed.includes('@')) return;
     setAdding(true);
     try {
-      await workspaceApi.addCollaborator(trimmed, role);
+      await workspaceApi.addCollaborator(trimmed, 'editor');
       toast.success(`Shared with ${trimmed}`);
       setEmail('');
       loadCollaborators();
@@ -418,14 +417,6 @@ function ShareDialogPortal({ open, onOpenChange }: { open: boolean; onOpenChange
                 onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
                 className="flex-1"
               />
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')}
-                className="h-9 rounded-md border border-input bg-background px-2 text-xs"
-              >
-                <option value="editor">Editor</option>
-                <option value="viewer">Viewer</option>
-              </select>
               <Button onClick={handleAdd} disabled={adding || !email.trim()}>
                 {adding ? 'Adding...' : 'Add'}
               </Button>
@@ -455,7 +446,7 @@ function ShareDialogPortal({ open, onOpenChange }: { open: boolean; onOpenChange
                 <div key={c.email} className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/30">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{c.email}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{c.role}</p>
+                    <p className="text-xs text-muted-foreground">Full access</p>
                   </div>
                   <Button
                     variant="ghost"
