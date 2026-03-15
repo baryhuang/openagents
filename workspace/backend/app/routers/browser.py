@@ -558,30 +558,22 @@ async def persist_tab(
             logger.error("Failed to create BB context: %s", e)
             return json_response(ResponseCode.INTERNAL_ERROR, "Failed to create persistent context")
 
-    # If the tab has an active session, we need to close it and reopen with the context
-    # so that the current cookies are captured into the context.
-    # For the first persist, we recreate the session with context + persist=True.
+    # Try to close the current session and reopen with the context so that
+    # cookies are saved on next close. On serverless (Vercel), the in-memory
+    # browser state may be gone — if reconnection fails, we just create the
+    # context record anyway. The context will activate on next tab open.
     if manager.is_cloud and tab.session_id:
-        await _ensure_connected(tab)
-        # Get current URL before closing
-        current_url = tab.url
-
-        # Close the current session (without releasing context)
-        await manager.close_tab(tab_id, session_id_hint=tab.session_id)
-
-        # Reopen with context so cookies are saved on next close
         try:
+            await _ensure_connected(tab)
+            current_url = tab.url
+            await manager.close_tab(tab_id, session_id_hint=tab.session_id)
             result = await manager.open_tab(tab_id, current_url, bb_context_id=bb_context_id)
             tab.session_id = manager.get_session_id(tab_id)
             tab.live_url = manager.get_live_url(tab_id)
             tab.url = result.get("url", current_url)
             tab.title = result.get("title", tab.title)
         except Exception as e:
-            logger.error("Failed to reopen tab with context: %s", e)
-            # Clean up the context we just created
-            if bb_context_id:
-                manager.delete_bb_context(bb_context_id)
-            return json_response(ResponseCode.INTERNAL_ERROR, "Failed to attach persistent context")
+            logger.warning("Could not swap session for context (will activate on next open): %s", e)
 
     context = BrowserContext(
         workspace_id=str(workspace.id),
