@@ -30,6 +30,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
   });
 
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
+  const [scrollKey, setScrollKey] = useState(0);
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
 
   // Clear optimistic messages once the real user message arrives from the server
@@ -85,6 +86,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
       };
 
       setOptimisticMessages([userOptimisticMsg, loadingOptimisticMsg]);
+      setScrollKey((k) => k + 1);
 
       try {
         let attachments: { fileId: string; filename: string; contentType: string; url: string }[] | undefined;
@@ -138,6 +140,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
               messages={displayMessages}
               agents={agents}
               showAllSteps={false}
+              scrollKey={scrollKey}
               className="flex-1 overflow-y-auto px-5 py-3"
             />
           )}

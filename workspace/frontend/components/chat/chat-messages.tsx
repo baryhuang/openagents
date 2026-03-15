@@ -45,9 +45,11 @@ interface ChatMessagesProps {
   agents?: WorkspaceAgent[];
   showAllSteps: boolean;
   className?: string;
+  /** Increment to force scroll to bottom (e.g. after user sends a message). */
+  scrollKey?: number;
 }
 
-export function ChatMessages({ messages, agents, showAllSteps, className }: ChatMessagesProps) {
+export function ChatMessages({ messages, agents, showAllSteps, className, scrollKey }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
@@ -141,6 +143,13 @@ export function ChatMessages({ messages, agents, showAllSteps, className }: Chat
       });
     }
   }, [messages.length]);
+
+  // Force scroll when scrollKey changes (user sent a message)
+  useEffect(() => {
+    if (scrollKey) {
+      requestAnimationFrame(() => scrollToBottom());
+    }
+  }, [scrollKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track scroll position for "scroll to bottom" button
   useEffect(() => {

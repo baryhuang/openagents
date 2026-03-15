@@ -34,6 +34,7 @@ export function ChatView() {
 
   // Optimistic message state for instant feedback
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
+  const [scrollKey, setScrollKey] = useState(0);
 
   // Per-thread message drafts
   const draftsRef = useRef<Record<string, string>>({});
@@ -167,8 +168,9 @@ export function ChatView() {
         metadata: {},
       };
 
-      // Add optimistic messages immediately
+      // Add optimistic messages immediately and scroll to bottom
       setOptimisticMessages([userOptimisticMsg, loadingOptimisticMsg]);
+      setScrollKey((k) => k + 1);
 
       try {
         // Upload files first, then send message with attachment metadata
@@ -494,6 +496,7 @@ export function ChatView() {
             messages={displayMessages}
             agents={agents}
             showAllSteps={showAllSteps}
+            scrollKey={scrollKey}
             className="flex-1 overflow-y-auto px-3 lg:px-5 py-3"
           />
         )}
