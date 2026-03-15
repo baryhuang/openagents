@@ -164,9 +164,10 @@ class DaemonManager:
             self._shutdown_event.set()
 
     def _handle_reload(self):
-        """SIGHUP handler — flag config reload for next status loop iteration."""
+        """SIGHUP handler — schedule immediate config reload."""
         logger.info("SIGHUP received — scheduling config reload")
-        self._reload_pending = True
+        loop = asyncio.get_running_loop()
+        loop.create_task(self._do_reload())
 
     async def _do_reload(self):
         """Re-read config and start/stop agents as needed."""
