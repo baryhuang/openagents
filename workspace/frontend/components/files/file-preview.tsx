@@ -6,6 +6,7 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
 import { toast } from 'sonner';
+import { MarkdownContent } from '@/components/chat/markdown-content';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -19,6 +20,10 @@ function isHtmlFile(contentType: string, filename: string): boolean {
 
 function isImageFile(contentType: string): boolean {
   return contentType.startsWith('image/');
+}
+
+function isMarkdownFile(contentType: string, filename: string): boolean {
+  return contentType === 'text/markdown' || /\.mdx?$/i.test(filename);
 }
 
 function isTextFile(contentType: string, filename: string): boolean {
@@ -205,6 +210,10 @@ export function FilePreview() {
               alt={file.filename}
               className="max-w-full max-h-full object-contain rounded"
             />
+          </div>
+        ) : content !== null && isMarkdownFile(file.contentType || '', file.filename) ? (
+          <div className="p-5 max-w-3xl mx-auto text-sm">
+            <MarkdownContent content={content} agentNames={[]} />
           </div>
         ) : content !== null ? (
           <pre className="p-4 text-xs font-mono whitespace-pre-wrap break-words text-foreground">
