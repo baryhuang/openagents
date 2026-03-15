@@ -29,7 +29,10 @@ import aiohttp
 
 from openagents.adapters.base import BaseAdapter
 from openagents.adapters.utils import format_attachments_for_prompt
-from openagents.adapters.workspace_prompt import build_openclaw_system_prompt
+from openagents.adapters.workspace_prompt import (
+    build_openclaw_skill_md,
+    build_openclaw_system_prompt,
+)
 from openagents.workspace_client import DEFAULT_ENDPOINT
 
 logger = logging.getLogger(__name__)
@@ -172,6 +175,10 @@ class OpenClawAdapter(BaseAdapter):
         # Device identity for gateway WS auth
         self._device_identity = None if self._direct_mode else _load_openclaw_device_identity()
 
+        # Install workspace skill for gateway mode (system prompt injection)
+        if not self._direct_mode:
+            self._install_workspace_skill()
+
     def _build_system_prompt(self, channel_name: str) -> str:
         """Build system prompt with workspace context and API skills."""
         return build_openclaw_system_prompt(
@@ -183,6 +190,61 @@ class OpenClawAdapter(BaseAdapter):
             mode=self._mode,
             disabled_modules=self.disabled_modules,
         )
+
+    def _resolve_openclaw_workspace(self) -> Optional[Path]:
+        """Resolve the OpenClaw workspace directory for this agent.
+
+        Multi-agent setups use per-agent workspaces: ~/.openclaw/workspace-<id>
+        The default agent ("main") uses ~/.openclaw/workspace.
+        """
+        agent_id = self.openclaw_agent_id
+        if agent_id and agent_id != "main":
+            workspace_dir = OPENCLAW_STATE_DIR / f"workspace-{agent_id}"
+        else:
+            workspace_dir = OPENCLAW_STATE_DIR / "workspace"
+
+        if workspace_dir.is_dir():
+            return workspace_dir
+
+        # Fall back to default workspace if per-agent one doesn't exist
+        fallback = OPENCLAW_STATE_DIR / "workspace"
+        if fallback.is_dir():
+            return fallback
+
+        return None
+
+    def _install_workspace_skill(self):
+        """Write a SKILL.md into the OpenClaw workspace skills directory.
+
+        OpenClaw auto-discovers skills from <workspace>/skills/ and injects
+        them into the system prompt. This is the primary delivery mechanism
+        for workspace tool instructions in gateway (WS) mode, where
+        chat.send only accepts the user message.
+
+        Each agent gets its own namespaced skill directory so multiple
+        agents with different workspace IDs/tokens don't conflict.
+        """
+        workspace_dir = self._resolve_openclaw_workspace()
+        if not workspace_dir:
+            logger.debug("OpenClaw workspace not found, skipping skill install")
+            return
+
+        skill_name = f"openagents-workspace-{self.agent_name}"
+        skill_dir = workspace_dir / "skills" / skill_name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        content = build_openclaw_skill_md(
+            endpoint=self.endpoint,
+            workspace_id=self.workspace_id,
+            token=self.token,
+            agent_name=self.agent_name,
+            channel_name=self.channel_name,
+            disabled_modules=self.disabled_modules,
+        )
+
+        skill_path = skill_dir / "SKILL.md"
+        skill_path.write_text(content)
+        logger.info(f"Installed workspace skill at {skill_path}")
 
     async def _get_recent_history_text(self, channel_name: str) -> str:
         """Fetch recent workspace messages and format as context."""

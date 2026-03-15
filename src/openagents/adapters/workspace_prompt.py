@@ -79,154 +79,139 @@ def build_api_skills_prompt(
     """Build REST API skill instructions for non-MCP agents.
 
     These teach the agent how to interact with workspace resources
-    (files, browser, tunnels) by calling HTTP endpoints directly
-    using curl, Python requests, or any HTTP client.
+    (files, browser, tunnels) by calling HTTP endpoints directly.
 
     In plan mode, only read-only operations are documented.
     """
     _disabled = disabled_modules or set()
     base_url = endpoint.rstrip("/")
     is_plan = mode == "plan"
+    h = f"X-Workspace-Token: {token}"
 
     sections = []
 
-    sections.append(
-        "## Workspace API Skills\n\n"
-        "You have access to shared workspace resources via HTTP API. "
-        "Use `curl`, Python `requests`, or any HTTP client to call these.\n\n"
-        "**Authentication** — include this header on every request:\n"
-        f"```\nX-Workspace-Token: {token}\n```\n\n"
-        f"**Base URL:** `{base_url}`\n"
-    )
+    # ── Capabilities preamble ──
+    caps = []
+    if "files" not in _disabled:
+        caps.append("share and read files with other agents and users")
+    if "browser" not in _disabled:
+        caps.append("browse websites in a shared browser")
+    caps.append("discover other agents in the workspace")
 
-    # ── Agents / Discovery ──
     sections.append(
-        "\n### Discover Agents\n"
-        f"```\nGET {base_url}/v1/discover?network={workspace_id}\n"
-        f"X-Workspace-Token: {token}\n```\n"
-        "Returns `{\"data\": {\"agents\": [...], \"channels\": [...]}}`\n"
+        "## Workspace Tools\n\n"
+        "You can " + ", ".join(caps) + ".\n"
+        "These are WORKSPACE tools shared with all agents and users. "
+        "They are different from your native tools.\n\n"
+        "IMPORTANT: To use workspace tools, run `curl` commands via your "
+        "`exec` tool. Do NOT use your native `browser` or `web_fetch` tools "
+        "for workspace operations — those are separate from the shared workspace.\n\n"
+        "**Auth header** (include on every request):\n"
+        f"`X-Workspace-Token: {token}`\n"
     )
 
     # ── Files ──
     if "files" not in _disabled:
-        files_section = "\n### Shared Files\n"
+        s = "\n### Shared Files\n\n"
 
-        files_section += (
+        if not is_plan:
+            s += (
+                "**Example — share a report with the workspace:**\n"
+                "```bash\n"
+                "# 1. base64-encode the content\n"
+                "CONTENT=$(echo -n '# My Report\\n\\nFindings here...' | base64)\n"
+                "# 2. upload it\n"
+                f'curl -s -X POST {base_url}/v1/files/base64 \\\n'
+                f'  -H "{h}" \\\n'
+                '  -H "Content-Type: application/json" \\\n'
+                "  -d '{\n"
+                '    "filename": "report.md",\n'
+                '    "content_base64": "\'\"$CONTENT\"\'",\n'
+                '    "content_type": "text/markdown",\n'
+                f'    "network": "{workspace_id}",\n'
+                f'    "source": "openagents:{agent_name}",\n'
+                f'    "channel_name": "{channel_name}"\n'
+                "  }'\n"
+                "```\n\n"
+            )
+
+        s += (
             "**List files:**\n"
-            f"```\nGET {base_url}/v1/files?network={workspace_id}\n"
-            f"X-Workspace-Token: {token}\n```\n"
-            "Returns `{\"data\": {\"files\": [{\"id\", \"filename\", \"size\", ...}]}}`\n\n"
-        )
-
-        files_section += (
+            f"`curl -s -H \"{h}\" {base_url}/v1/files?network={workspace_id}`\n\n"
             "**Download file:**\n"
-            f"```\nGET {base_url}/v1/files/{{file_id}}\n"
-            f"X-Workspace-Token: {token}\n```\n"
-            "Returns the raw file bytes.\n\n"
-        )
-
-        files_section += (
-            "**File info (metadata only):**\n"
-            f"```\nGET {base_url}/v1/files/{{file_id}}/info\n"
-            f"X-Workspace-Token: {token}\n```\n"
+            f"`curl -s -H \"{h}\" {base_url}/v1/files/{{file_id}}`\n\n"
+            "**File info (metadata):**\n"
+            f"`curl -s -H \"{h}\" {base_url}/v1/files/{{file_id}}/info`\n"
         )
 
         if not is_plan:
-            files_section += (
-                "\n**Upload file (JSON base64):**\n"
-                f"```\nPOST {base_url}/v1/files/base64\n"
-                f"X-Workspace-Token: {token}\n"
-                "Content-Type: application/json\n\n"
-                "{\n"
-                f'  "filename": "report.md",\n'
-                f'  "content_base64": "<base64-encoded-content>",\n'
-                f'  "content_type": "text/markdown",\n'
-                f'  "network": "{workspace_id}",\n'
-                f'  "source": "openagents:{agent_name}",\n'
-                f'  "channel_name": "{channel_name}"\n'
-                "}\n```\n\n"
+            s += (
+                "\n**Delete file:**\n"
+                f"`curl -s -X DELETE -H \"{h}\" {base_url}/v1/files/{{file_id}}`\n"
             )
 
-            files_section += (
-                "**Delete file:**\n"
-                f"```\nDELETE {base_url}/v1/files/{{file_id}}\n"
-                f"X-Workspace-Token: {token}\n```\n"
-            )
-
-        sections.append(files_section)
+        sections.append(s)
 
     # ── Browser ──
     if "browser" not in _disabled:
-        browser_section = "\n### Shared Browser\n"
+        s = "\n### Shared Browser\n\n"
 
-        browser_section += (
-            "**List tabs:**\n"
-            f"```\nGET {base_url}/v1/browser/tabs?network={workspace_id}\n"
-            f"X-Workspace-Token: {token}\n```\n"
-            "Returns `{\"data\": {\"tabs\": [{\"id\", \"url\", \"title\", ...}]}}`\n\n"
-        )
+        if not is_plan:
+            s += (
+                "**Example — look up a website and summarize it:**\n"
+                "```bash\n"
+                "# 1. Open a tab\n"
+                f'TAB_ID=$(curl -s -X POST {base_url}/v1/browser/tabs \\\n'
+                f'  -H "{h}" -H "Content-Type: application/json" \\\n'
+                f'  -d \'{{"url":"https://example.com","network":"{workspace_id}",'
+                f'"source":"openagents:{agent_name}"}}\' | '
+                "python3 -c \"import sys,json; print(json.load(sys.stdin)['data']['id'])\")\n\n"
+                "# 2. Read the page content\n"
+                f'curl -s -H "{h}" {base_url}/v1/browser/tabs/$TAB_ID/snapshot\n\n'
+                "# 3. Close when done\n"
+                f'curl -s -X DELETE -H "{h}" {base_url}/v1/browser/tabs/$TAB_ID\n'
+                "```\n\n"
+            )
 
-        browser_section += (
-            "**Get tab screenshot** (returns PNG):\n"
-            f"```\nGET {base_url}/v1/browser/tabs/{{tab_id}}/screenshot\n"
-            f"X-Workspace-Token: {token}\n```\n\n"
-        )
-
-        browser_section += (
-            "**Get accessibility snapshot** (returns text):\n"
-            f"```\nGET {base_url}/v1/browser/tabs/{{tab_id}}/snapshot\n"
-            f"X-Workspace-Token: {token}\n```\n"
+        s += (
+            "**List open tabs:**\n"
+            f"`curl -s -H \"{h}\" {base_url}/v1/browser/tabs?network={workspace_id}`\n\n"
+            "**Get page content (text):**\n"
+            f"`curl -s -H \"{h}\" {base_url}/v1/browser/tabs/{{tab_id}}/snapshot`\n\n"
+            "**Get screenshot (PNG):**\n"
+            f"`curl -s -H \"{h}\" {base_url}/v1/browser/tabs/{{tab_id}}/screenshot`\n"
         )
 
         if not is_plan:
-            browser_section += (
-                "\n**Open new tab:**\n"
-                f"```\nPOST {base_url}/v1/browser/tabs\n"
-                f"X-Workspace-Token: {token}\n"
-                "Content-Type: application/json\n\n"
-                "{\n"
-                f'  "url": "https://example.com",\n'
-                f'  "network": "{workspace_id}",\n'
-                f'  "source": "openagents:{agent_name}"\n'
-                "}\n```\n"
-                "Returns `{\"data\": {\"id\": \"<tab_id>\", \"url\": \"...\"}}`\n\n"
-            )
-
-            browser_section += (
-                "**Navigate tab:**\n"
-                f"```\nPOST {base_url}/v1/browser/tabs/{{tab_id}}/navigate\n"
-                f"X-Workspace-Token: {token}\n"
-                "Content-Type: application/json\n\n"
-                '{\"url\": \"https://example.com\"}\n```\n\n'
-            )
-
-            browser_section += (
+            s += (
+                "\n**Open tab:**\n"
+                f"`curl -s -X POST -H \"{h}\" -H \"Content-Type: application/json\""
+                f" {base_url}/v1/browser/tabs"
+                f" -d '{{\"url\":\"URL\",\"network\":\"{workspace_id}\","
+                f"\"source\":\"openagents:{agent_name}\"}}'`\n\n"
+                "**Navigate:**\n"
+                f"`curl -s -X POST -H \"{h}\" -H \"Content-Type: application/json\""
+                f" {base_url}/v1/browser/tabs/{{tab_id}}/navigate"
+                f" -d '{{\"url\":\"URL\"}}'`\n\n"
                 "**Click element:**\n"
-                f"```\nPOST {base_url}/v1/browser/tabs/{{tab_id}}/click\n"
-                f"X-Workspace-Token: {token}\n"
-                "Content-Type: application/json\n\n"
-                '{\"selector\": \"button.submit\"}\n```\n\n'
-            )
-
-            browser_section += (
+                f"`curl -s -X POST -H \"{h}\" -H \"Content-Type: application/json\""
+                f" {base_url}/v1/browser/tabs/{{tab_id}}/click"
+                f" -d '{{\"selector\":\"CSS_SELECTOR\"}}'`\n\n"
                 "**Type text:**\n"
-                f"```\nPOST {base_url}/v1/browser/tabs/{{tab_id}}/type\n"
-                f"X-Workspace-Token: {token}\n"
-                "Content-Type: application/json\n\n"
-                '{\"selector\": \"input#search\", \"text\": \"hello\"}\n```\n\n'
-            )
-
-            browser_section += (
+                f"`curl -s -X POST -H \"{h}\" -H \"Content-Type: application/json\""
+                f" {base_url}/v1/browser/tabs/{{tab_id}}/type"
+                f" -d '{{\"selector\":\"CSS_SELECTOR\",\"text\":\"TEXT\"}}'`\n\n"
                 "**Close tab:**\n"
-                f"```\nDELETE {base_url}/v1/browser/tabs/{{tab_id}}\n"
-                f"X-Workspace-Token: {token}\n```\n"
+                f"`curl -s -X DELETE -H \"{h}\" {base_url}/v1/browser/tabs/{{tab_id}}`\n"
             )
 
-        sections.append(browser_section)
+        sections.append(s)
 
-    # ── Tunnels ──
-    # Tunnels are local-only (run on the agent's machine via cloudflared),
-    # not accessible via REST API. Skip for non-MCP agents.
+    # ── Discovery ──
+    sections.append(
+        "\n### Discover Agents\n"
+        f"`curl -s -H \"{h}\" {base_url}/v1/discover?network={workspace_id}`\n"
+    )
 
     return "\n".join(sections)
 
@@ -294,3 +279,50 @@ def build_openclaw_system_prompt(
         mode=mode,
     ))
     return "\n".join(parts)
+
+
+def build_openclaw_skill_md(
+    endpoint: str,
+    workspace_id: str,
+    token: str,
+    agent_name: str,
+    channel_name: str,
+    disabled_modules: Optional[set] = None,
+) -> str:
+    """Build a SKILL.md file for OpenClaw's skill auto-discovery.
+
+    OpenClaw loads SKILL.md files from <workspace>/skills/ and injects
+    them into the system prompt. This is the primary way to teach the
+    gateway-mode agent about workspace tools (since chat.send only
+    accepts the user message, not a system prompt).
+    """
+    body = build_api_skills_prompt(
+        endpoint=endpoint,
+        workspace_id=workspace_id,
+        token=token,
+        agent_name=agent_name,
+        channel_name=channel_name,
+        disabled_modules=disabled_modules,
+        mode="execute",
+    )
+
+    identity = build_workspace_identity(
+        agent_name, workspace_id, channel_name, "execute"
+    )
+    collab = build_collaboration_prompt()
+
+    frontmatter = (
+        "---\n"
+        "name: openagents-workspace\n"
+        'description: "Share files, browse websites, and collaborate '
+        "with other agents in an OpenAgents workspace. Use when: "
+        "(1) sharing results or reports with the user or other agents, "
+        "(2) browsing a website to gather information, "
+        "(3) reading files shared by users or other agents, "
+        '(4) checking who else is in the workspace."\n'
+        "metadata:\n"
+        '  {"openclaw": {"always": true, "emoji": "\\U0001F310"}}\n'
+        "---\n\n"
+    )
+
+    return frontmatter + identity + "\n" + collab + "\n" + body
