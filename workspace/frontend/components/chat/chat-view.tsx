@@ -494,8 +494,8 @@ export function ChatView() {
             );
           })()}
 
-          {/* Agent mode toggle */}
-          {agents.length > 0 && (() => {
+          {/* Agent mode toggle — only for Claude agents */}
+          {agents.length > 0 && agents[0].agentType === 'claude' && (() => {
             const agent = agents[0];
             const mode = agentModes[agent.agentName] || 'execute';
             const isExecute = mode === 'execute';
