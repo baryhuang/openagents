@@ -11,6 +11,7 @@ import { ChatInput, type PendingFile } from '@/components/chat/chat-input';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
+import { Square } from 'lucide-react';
 import type { WorkspaceMessage, WorkspaceSession } from '@/lib/types';
 
 interface MonitorOverlayProps {
@@ -23,7 +24,7 @@ interface MonitorOverlayProps {
 }
 
 export function MonitorOverlay({ sessionId, session, initialMessages, open, onOpenChange }: MonitorOverlayProps) {
-  const { agents } = useWorkspace();
+  const { agents, activeSessionIds, stopAllAgents } = useWorkspace();
   const { messages, loading, forceRefresh, generation } = useMessagePolling({
     sessionId: open ? sessionId : null,
     initialMessages,
@@ -131,9 +132,26 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
 
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-3 border-b shrink-0">
-          <h2 className="text-sm font-semibold truncate">
+          <h2 className="text-sm font-semibold truncate flex-1">
             {session.title || 'Thread'}
           </h2>
+          {/* Stop button — visible when a Claude agent is working */}
+          {(() => {
+            const masterName = session.master;
+            const masterAgent = masterName ? agents.find((a) => a.agentName === masterName) : null;
+            const isClaude = masterAgent?.agentType === 'claude';
+            const isWorking = activeSessionIds.has(sessionId);
+            if (!isClaude || !isWorking) return null;
+            return (
+              <button
+                onClick={stopAllAgents}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors shrink-0"
+              >
+                <Square className="size-3 fill-current" />
+                Stop
+              </button>
+            );
+          })()}
         </div>
 
         {/* Messages */}
