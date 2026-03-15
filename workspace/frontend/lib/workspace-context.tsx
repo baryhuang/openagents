@@ -215,13 +215,16 @@ export function WorkspaceProvider({
         return ch.lastEventAt && ch.lastEventAt !== prev;
       });
 
-      // Update known timestamps
-      for (const ch of updated) {
-        lastKnownEventAtRef.current[ch.sessionId] = ch.lastEventAt;
+      // Update known timestamps for the current session (ChatView handles its preview)
+      // Other channels' timestamps are updated after successful preview fetch
+      const currentSid = currentSessionIdRef.current;
+      if (currentSid) {
+        const currentCh = updated.find((ch) => ch.sessionId === currentSid);
+        if (currentCh) lastKnownEventAtRef.current[currentSid] = currentCh.lastEventAt;
       }
 
       // Fetch preview for changed channels (skip current session — ChatView handles it)
-      const toFetch = staleChannels.filter((ch) => ch.sessionId !== currentSessionIdRef.current);
+      const toFetch = staleChannels.filter((ch) => ch.sessionId !== currentSid);
       if (toFetch.length > 0) {
         const previews = await Promise.all(
           toFetch.map(async (ch) => {
@@ -230,38 +233,40 @@ export function WorkspaceProvider({
                 channel: ch.sessionId,
                 type: 'workspace.message',
                 sort: 'desc',
-                limit: 3,
+                limit: 10,
               });
               if (result.events.length === 0) return null;
               const latest = result.events[0];
               const latestPayload = latest.payload as Record<string, string>;
-              const latestIsStatus = latestPayload?.message_type === 'status';
-              // If latest is status, show it (agent working). But if it looks like
-              // a cleanup (e.g. TodoWrite with empty todos), prefer the last chat message.
-              let pick = latest;
-              if (latestIsStatus) {
-                const content = latestPayload?.content || '';
-                const isCleanup = /TodoWrite/i.test(content) && /\[\s*\]/.test(content);
-                if (isCleanup) {
-                  const chatMsg = result.events.find(
-                    (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
-                  );
-                  if (chatMsg) pick = chatMsg;
-                }
-              }
+              const latestType = latestPayload?.message_type || 'chat';
+              const isAgentWorking = latestType === 'status' || latestType === 'thinking';
+              // Find the latest chat/thinking message (not status) for preview
+              const lastChat = result.events.find((e) => {
+                const mt = (e.payload as Record<string, string>)?.message_type || 'chat';
+                return mt !== 'status' && mt !== 'thinking';
+              });
+              // If agent is actively working, show the status; otherwise show last chat
+              const pick = isAgentWorking ? latest : (lastChat || latest);
               const payload = pick.payload as Record<string, string>;
               const sender = pick.source.replace(/^(openagents:|human:)/, '');
               const content = payload?.content || '';
-              const isStatus = payload?.message_type === 'status' || payload?.message_type === 'thinking';
+              const msgType = payload?.message_type || 'chat';
+              const isStatus = msgType === 'status' || msgType === 'thinking';
               return { sessionId: ch.sessionId, senderName: sender, content, isStatus };
             } catch { /* ignore */ }
             return null;
           })
         );
         const batch: Record<string, LastMessageInfo> = {};
-        for (const p of previews) {
+        for (let i = 0; i < previews.length; i++) {
+          const p = previews[i];
           if (p && p.content) {
             batch[p.sessionId] = { senderName: p.senderName, content: p.content.slice(0, 100), isStatus: p.isStatus };
+          }
+          // Mark timestamp as known only after successful fetch (so failures retry next poll)
+          if (p) {
+            const ch = toFetch[i];
+            lastKnownEventAtRef.current[ch.sessionId] = ch.lastEventAt;
           }
         }
         if (Object.keys(batch).length > 0) {
@@ -392,31 +397,26 @@ export function WorkspaceProvider({
                 channel: s.sessionId,
                 type: 'workspace.message',
                 sort: 'desc',
-                limit: 5,
+                limit: 10,
               });
               if (result.events.length === 0) return null;
-              // Show the very latest event (including status if agent is working)
               const latest = result.events[0];
               const latestPayload = latest.payload as Record<string, string>;
-              const latestIsStatus = latestPayload?.message_type === 'status';
-              // If latest is a status, show it (agent in progress) — unless it's
-              // a cleanup (e.g. TodoWrite clearing todos), in which case show last chat
-              const lastChat = result.events.find(
-                (e) => ((e.payload as Record<string, string>)?.message_type || 'chat') !== 'status'
-              );
-              let pick: typeof latest;
-              if (latestIsStatus) {
-                const content = latestPayload?.content || '';
-                const isCleanup = /TodoWrite/i.test(content) && /\[\s*\]/.test(content);
-                pick = (isCleanup && lastChat) ? lastChat : latest;
-              } else {
-                pick = lastChat || latest;
-              }
+              const latestType = latestPayload?.message_type || 'chat';
+              const isAgentWorking = latestType === 'status' || latestType === 'thinking';
+              // Find the latest chat message for preview
+              const lastChat = result.events.find((e) => {
+                const mt = (e.payload as Record<string, string>)?.message_type || 'chat';
+                return mt !== 'status' && mt !== 'thinking';
+              });
+              // If agent is actively working, show the status; otherwise show last chat
+              const pick = isAgentWorking ? latest : (lastChat || latest);
               const payload = pick.payload as Record<string, string>;
-              if (pick) {
+              {
                 const sender = pick.source.replace(/^(openagents:|human:)/, '');
                 const content = payload?.content || '';
-                const isStatus = payload?.message_type === 'status' || payload?.message_type === 'thinking';
+                const msgType = payload?.message_type || 'chat';
+                const isStatus = msgType === 'status' || msgType === 'thinking';
                 return { sessionId: s.sessionId, senderName: sender, content, isStatus };
               }
             } catch { /* ignore */ }
