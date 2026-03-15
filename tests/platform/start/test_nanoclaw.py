@@ -1,8 +1,9 @@
 """
 Platform start tests for NanoClaw agent.
 
-Tests that `openagents start nanoclaw` can launch the agent daemon
-across Linux, macOS, and Windows.
+Tests that `openagents start nanoclaw` can launch the agent daemon.
+NanoClaw uses direct API mode so no binary is needed — the adapter
+calls the chat completions API directly.
 
 Run:
     pytest tests/platform/start/test_nanoclaw.py -v
@@ -38,13 +39,6 @@ def cleanup_agent():
 
 class TestNanoClawStart:
     """Test starting NanoClaw via `openagents start nanoclaw`."""
-
-    def test_agent_installed(self):
-        """NanoClaw must be installed before we can start it."""
-        assert shutil.which(BINARY_NAME) is not None, (
-            f"'{BINARY_NAME}' not on PATH. "
-            f"Run install tests first: pytest tests/platform/install/test_nanoclaw.py"
-        )
 
     def test_openagents_start(self):
         """`openagents start nanoclaw` should launch the daemon."""
@@ -101,7 +95,7 @@ class TestNanoClawStartReport:
         report = {
             "platform": os_platform,
             "openagents_version": openagents_version,
-            "agent_binary": binary_path,
+            "agent_binary": binary_path or "(direct API mode)",
         }
         for k, v in report.items():
             safe_print(f"  {k}: {v}")

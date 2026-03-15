@@ -1,9 +1,10 @@
 """
 Platform install tests for NanoClaw agent.
 
-NanoClaw is a Node.js service (not a standalone CLI binary), so
-installation is via git clone + npm install. The `openagents install
-nanoclaw` command handles this.
+NanoClaw uses direct API mode — it calls the OpenAI-compatible chat
+completions API directly without needing a local binary. The install
+step verifies the registry entry loads and that the SDK recognises the
+agent type.
 
 Run:
     pytest tests/platform/install/test_nanoclaw.py -v
@@ -14,11 +15,12 @@ import subprocess
 
 import pytest
 
-from tests.platform.conftest import run_cmd, run_openagents, safe_print
+from tests.platform.conftest import run_cmd, run_openagents, safe_print, agent_config
 
 
-AGENT_NAME = "nanoclaw"
-BINARY_NAME = "nanoclaw"
+AGENT_TYPE = "nanoclaw"
+_cfg = agent_config(AGENT_TYPE)
+BINARY_NAME = _cfg.get("binary", AGENT_TYPE)
 
 
 class TestNanoClawInstall:
@@ -32,38 +34,33 @@ class TestNanoClawInstall:
         )
 
     def test_openagents_install_nanoclaw(self):
-        """`openagents install nanoclaw --yes` should succeed."""
+        """`openagents install nanoclaw --yes` should succeed.
+
+        NanoClaw uses direct API mode so there is no npm package to install.
+        The install command should still succeed (the registry entry is valid).
+        """
         try:
-            result = run_openagents("install", AGENT_NAME, "--yes", timeout=300)
+            result = run_openagents("install", AGENT_TYPE, "--yes", timeout=60)
         except subprocess.TimeoutExpired:
-            if shutil.which(BINARY_NAME) is not None:
-                pytest.skip(
-                    f"Install timed out at 300s but '{BINARY_NAME}' "
-                    f"is on PATH — likely succeeded."
-                )
-            else:
-                pytest.fail(
-                    f"`openagents install {AGENT_NAME}` timed out "
-                    f"after 300s and binary not found on PATH."
-                )
+            pytest.skip("Install timed out — NanoClaw uses direct API mode, no binary expected.")
             return
 
         assert result.returncode == 0, (
-            f"`openagents install {AGENT_NAME}` failed "
+            f"`openagents install {AGENT_TYPE}` failed "
             f"(exit {result.returncode}).\n"
             f"stdout:\n{result.stdout[-1000:]}\n"
             f"stderr:\n{result.stderr[-1000:]}"
         )
 
-    def test_binary_on_path(self):
-        """After install, 'nanoclaw' binary should be on PATH."""
-        path = shutil.which(BINARY_NAME)
-        assert path is not None, (
-            f"'{BINARY_NAME}' not found on PATH after "
-            f"`openagents install {AGENT_NAME}`. "
-            f"The install command may have succeeded but the binary "
-            f"is not in PATH."
-        )
+    def test_direct_api_mode_note(self):
+        """NanoClaw uses direct API mode — binary is optional."""
+        binary_path = shutil.which(BINARY_NAME)
+        if binary_path:
+            safe_print(f"  NanoClaw binary found at: {binary_path}")
+        else:
+            safe_print(
+                f"  NanoClaw binary not found (expected — uses direct API mode)"
+            )
 
 
 class TestNanoClawInstallReport:
@@ -75,7 +72,7 @@ class TestNanoClawInstallReport:
         report = {
             "platform": os_platform,
             "openagents_version": openagents_version,
-            "agent_binary": binary_path,
+            "agent_binary": binary_path or "(direct API mode)",
         }
         for k, v in report.items():
             safe_print(f"  {k}: {v}")

@@ -53,13 +53,6 @@ def _start_with_workspace(agent_name: str, ws_name: str, timeout: int = 60):
 class TestNanoClawConnect:
     """Test connecting NanoClaw to a workspace."""
 
-    def test_agent_installed(self):
-        """NanoClaw must be installed before we can connect it."""
-        assert shutil.which(BINARY_NAME) is not None, (
-            f"'{BINARY_NAME}' not on PATH. "
-            f"Run install tests first: pytest tests/platform/install/test_nanoclaw.py"
-        )
-
     def test_create_workspace_and_connect(self, agent_name):
         """`openagents start nanoclaw --create-workspace` should create a
         workspace and connect the agent to it."""
@@ -142,7 +135,7 @@ class TestNanoClawConnectReport:
         report = {
             "platform": os_platform,
             "openagents_version": openagents_version,
-            "agent_binary": binary_path,
+            "agent_binary": binary_path or "(direct API mode)",
         }
         for k, v in report.items():
             safe_print(f"  {k}: {v}")

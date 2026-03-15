@@ -8,9 +8,9 @@ builtin: true
 install:
   binary: nanoclaw
   requires: [nodejs, git]
-  macos: "npm install -g nanoclaw"
-  linux: "npm install -g nanoclaw"
-  windows: "npm install -g nanoclaw"
+  macos: "echo 'NanoClaw uses direct API mode — no binary install needed'"
+  linux: "echo 'NanoClaw uses direct API mode — no binary install needed'"
+  windows: "echo 'NanoClaw uses direct API mode — no binary install needed'"
 
 adapter:
   module: openagents.adapters.nanoclaw

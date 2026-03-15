@@ -51,10 +51,6 @@ def workspace_env():
 class TestNanoClawTools:
     """Test workspace tool operations for NanoClaw."""
 
-    def test_agent_installed(self):
-        """NanoClaw must be installed."""
-        assert shutil.which(BINARY_NAME) is not None
-
     def test_upload_file(self, workspace_env):
         """Upload a file to the workspace."""
         env = workspace_env

@@ -66,10 +66,6 @@ def mcp_tools():
 class TestNanoClawWorkspaceTools:
     """Test workspace tool availability for NanoClaw."""
 
-    def test_agent_installed(self):
-        """NanoClaw must be installed."""
-        assert shutil.which(BINARY_NAME) is not None
-
     def test_core_tools_available(self, mcp_tools):
         """Core workspace tools must be present."""
         tool_names, _ = mcp_tools

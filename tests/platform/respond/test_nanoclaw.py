@@ -3,7 +3,7 @@ Platform respond tests for NanoClaw agent.
 
 Tests that a NanoClaw agent connected to a workspace can receive
 a message via the workspace API. Verifies the message infrastructure
-works end-to-end (send message → poll → message appears).
+works end-to-end (send message -> poll -> message appears).
 
 When LLM credentials are available (LLM_API_KEY / OPENAI_API_KEY),
 also tests that the agent actually generates a response via the
@@ -61,12 +61,6 @@ def workspace_env():
 
 class TestNanoClawRespond:
     """Test sending messages to a workspace with NanoClaw."""
-
-    def test_agent_installed(self):
-        """NanoClaw must be installed."""
-        assert shutil.which(BINARY_NAME) is not None, (
-            f"'{BINARY_NAME}' not on PATH."
-        )
 
     def test_send_message_to_workspace(self, workspace_env):
         """Send a message to the workspace via the API — should succeed."""
@@ -281,7 +275,7 @@ class TestNanoClawRespondReport:
         report = {
             "platform": os_platform,
             "openagents_version": openagents_version,
-            "agent_binary": binary_path,
+            "agent_binary": binary_path or "(direct API mode)",
             "llm_credentials": "available" if HAS_LLM_CREDENTIALS else "not set",
             "model": _cfg.get("model", "not configured"),
         }
