@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Globe, X, RefreshCw, Users, ChevronLeft } from 'lucide-react';
+import { Globe, X, RefreshCw, Users, ChevronLeft, Lock, Unlock } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
@@ -9,7 +9,10 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function BrowserView() {
-  const { browserTabs, selectedBrowserTabId, setSelectedBrowserTabId, closeBrowserTab } = useWorkspace();
+  const {
+    browserTabs, selectedBrowserTabId, setSelectedBrowserTabId,
+    closeBrowserTab, persistBrowserTab, unpersistBrowserTab, browserContexts,
+  } = useWorkspace();
   const { isMobile, openMobileList } = useLayout();
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -76,6 +79,31 @@ export function BrowserView() {
     }
   };
 
+  const handlePersist = async () => {
+    if (!tab || tab.contextId) return;
+    const name = prompt('Give this session a name (e.g. "LinkedIn Account", "Google Search Console"):');
+    if (!name?.trim()) return;
+    try {
+      await persistBrowserTab(tab.id, name.trim());
+      toast.success(`"${name.trim()}" is now persistent`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to make persistent');
+    }
+  };
+
+  const handleUnpersist = async () => {
+    if (!tab || !tab.contextId) return;
+    const ctx = browserContexts.find((c) => c.id === tab.contextId);
+    const label = ctx?.name || 'this tab';
+    if (!confirm(`Remove persistent state from "${label}"? The saved cookies and login state will be deleted.`)) return;
+    try {
+      await unpersistBrowserTab(tab.id);
+      toast.success('Tab is now temporal');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove persistent state');
+    }
+  };
+
   // No tab selected
   if (!tab) {
     return (
@@ -125,6 +153,26 @@ export function BrowserView() {
         <span className="text-[10px] text-muted-foreground shrink-0">
           by {(tab.createdBy || 'unknown').replace(/^(openagents:|human:)/, '')}
         </span>
+
+        {tab.contextId ? (
+          <button
+            onClick={handleUnpersist}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-green-600 dark:text-green-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-orange-500 dark:hover:text-orange-400 transition-colors shrink-0"
+            title="Remove persistent state — revert to temporal tab"
+          >
+            <Lock className="size-3" />
+            {browserContexts.find((c) => c.id === tab.contextId)?.name || 'persistent'}
+          </button>
+        ) : (
+          <button
+            onClick={handlePersist}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-green-600 transition-colors shrink-0"
+            title="Make persistent — preserve login state for agents to reuse"
+          >
+            <Lock className="size-3" />
+            Make Persistent
+          </button>
+        )}
 
         <button
           onClick={handleClose}

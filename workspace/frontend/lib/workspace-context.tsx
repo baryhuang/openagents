@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { workspaceApi } from './api';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserTab, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -49,8 +49,14 @@ interface WorkspaceContextValue {
   selectedBrowserTabId: string | null;
   setSelectedBrowserTabId: (id: string | null) => void;
   refreshBrowserTabs: () => Promise<void>;
-  openBrowserTab: (url?: string) => Promise<BrowserTab>;
+  openBrowserTab: (url?: string, contextId?: string) => Promise<BrowserTab>;
   closeBrowserTab: (tabId: string) => Promise<void>;
+  browserContexts: BrowserPersistentContext[];
+  refreshBrowserContexts: () => Promise<void>;
+  persistBrowserTab: (tabId: string, name: string) => Promise<BrowserPersistentContext>;
+  unpersistBrowserTab: (tabId: string) => Promise<void>;
+  deleteBrowserContext: (contextId: string) => Promise<void>;
+  openBrowserTabWithContext: (contextId: string, url?: string) => Promise<BrowserTab>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -97,6 +103,7 @@ export function WorkspaceProvider({
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
+  const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string, isStatus?: boolean) => {
@@ -304,9 +311,10 @@ export function WorkspaceProvider({
         }
       }
 
-      // Also refresh files and browser tabs so sidebar counts stay current
+      // Also refresh files, browser tabs, and persistent contexts so sidebar counts stay current
       workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {});
       workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {});
+      workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {});
     } catch {
       // Non-critical — keep existing state
     }
@@ -357,6 +365,45 @@ export function WorkspaceProvider({
     if (selectedBrowserTabId === tabId) setSelectedBrowserTabId(null);
   }, [selectedBrowserTabId]);
 
+  const refreshBrowserContexts = useCallback(async () => {
+    try {
+      const result = await workspaceApi.listBrowserContexts();
+      setBrowserContexts(result.contexts);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const persistBrowserTab = useCallback(async (tabId: string, name: string) => {
+    const result = await workspaceApi.persistBrowserTab(tabId, name);
+    // Update the tab in state with the new context_id
+    setBrowserTabs((prev) => prev.map((t) => (t.id === tabId ? result.tab : t)));
+    // Add the new context to state
+    setBrowserContexts((prev) => [result.context, ...prev]);
+    return result.context;
+  }, []);
+
+  const unpersistBrowserTab = useCallback(async (tabId: string) => {
+    const updatedTab = await workspaceApi.unpersistBrowserTab(tabId);
+    setBrowserTabs((prev) => prev.map((t) => (t.id === tabId ? updatedTab : t)));
+    // Refresh contexts to remove the deleted one
+    await refreshBrowserContexts();
+  }, [refreshBrowserContexts]);
+
+  const deleteBrowserContext = useCallback(async (contextId: string) => {
+    await workspaceApi.deleteBrowserContext(contextId);
+    setBrowserContexts((prev) => prev.filter((c) => c.id !== contextId));
+    // Clear context_id from any tabs that referenced it
+    setBrowserTabs((prev) => prev.map((t) => (t.contextId === contextId ? { ...t, contextId: null } : t)));
+  }, []);
+
+  const openBrowserTabWithContext = useCallback(async (contextId: string, url = 'about:blank') => {
+    const tab = await workspaceApi.openBrowserTab(url, contextId);
+    await refreshBrowserTabs();
+    setSelectedBrowserTabId(tab.id);
+    return tab;
+  }, [refreshBrowserTabs]);
+
   // Initial load: workspace metadata + discover for channels
   useEffect(() => {
     let cancelled = false;
@@ -368,6 +415,7 @@ export function WorkspaceProvider({
           workspaceApi.discover(),
           workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {}),
           workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {}),
+          workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {}),
         ]);
         if (cancelled) return;
 
@@ -625,6 +673,12 @@ export function WorkspaceProvider({
         refreshBrowserTabs,
         openBrowserTab,
         closeBrowserTab,
+        browserContexts,
+        refreshBrowserContexts,
+        persistBrowserTab,
+        unpersistBrowserTab,
+        deleteBrowserContext,
+        openBrowserTabWithContext,
       }}
     >
       {children}
