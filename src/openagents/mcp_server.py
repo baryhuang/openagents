@@ -597,7 +597,10 @@ def create_mcp_server(
                     )]
 
                 tunnel = Tunnel(port)
-                url = await tunnel.start()
+                try:
+                    url = await tunnel.start()
+                except RuntimeError as exc:
+                    return [types.TextContent(type="text", text=f"Error: {exc}")]
                 _active_tunnels[port] = tunnel
 
                 return [types.TextContent(

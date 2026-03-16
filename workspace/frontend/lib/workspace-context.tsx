@@ -668,8 +668,8 @@ export function WorkspaceProvider({
     prevCompletedRef.current = completedSessionIds;
     if (hasNew) {
       try {
-        const audio = new Audio('/notification.wav');
-        audio.volume = 0.5;
+        const audio = new Audio('/notification.mp3');
+        audio.volume = 0.25;
         audio.play().catch(() => {});
       } catch {}
     }
