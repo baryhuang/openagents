@@ -120,30 +120,81 @@ def _touch(tab: BrowserTab):
     tab.last_active_at = datetime.now(timezone.utc)
 
 
-async def _ensure_connected(tab: BrowserTab) -> None:
-    """Reconnect to the Browserbase session if the page is not in memory.
+async def _ensure_connected(tab: BrowserTab, db: Session = None) -> None:
+    """Ensure the browser tab has a live Playwright page.
 
-    On serverless (Vercel), each invocation may be a cold start with an
-    empty BrowserManager._pages dict.  If the tab has a session_id we can
-    reconnect via CDP.
+    Handles three cases:
+    1. Page already in memory → no-op.
+    2. Page missing (serverless cold start) but session alive → reconnect via CDP.
+    3. Session expired/dead → create a brand-new session (preserving persistent
+       context cookies if available) and update the tab record.
 
-    After reconnecting, syncs the live page URL/title back to the tab record
+    After (re)connecting, syncs the live page URL/title back to the tab record
     so the DB reflects any in-iframe navigation that happened.
     """
     manager = BrowserManager.get()
     if tab.id in manager._pages:
-        return
-    if not tab.session_id:
-        return  # no remote session to reconnect to
-    await manager.reconnect(tab.id, tab.session_id)
+        # Page in memory — but the CDP connection may be dead.  Do a quick
+        # liveness check so we don't hand back a zombie page.
+        try:
+            page = manager._pages[tab.id]
+            await page.title()  # lightweight CDP call
+            return
+        except Exception:
+            logger.warning("Tab %s has a stale page object — will recreate session", tab.id)
+            # Fall through to session recreation below
+            manager._pages.pop(tab.id, None)
+            manager._locks.pop(tab.id, None)
+            manager._browsers_cdp.pop(tab.id, None)
+            manager._sessions.pop(tab.id, None)
+            manager._live_urls.pop(tab.id, None)
 
-    # Sync current URL/title from the live page
-    live = await manager.get_current_url(tab.id)
-    if live:
-        if live["url"] and live["url"] != tab.url:
-            tab.url = live["url"]
-        if live["title"] and live["title"] != tab.title:
-            tab.title = live["title"]
+    if not tab.session_id and not manager.is_cloud:
+        return  # local mode, nothing to reconnect to
+
+    # --- Try reconnecting to the existing session first ---
+    if tab.session_id:
+        try:
+            await manager.reconnect(tab.id, tab.session_id)
+            # Sync URL/title from the live page
+            live = await manager.get_current_url(tab.id)
+            if live:
+                if live["url"] and live["url"] != tab.url:
+                    tab.url = live["url"]
+                if live["title"] and live["title"] != tab.title:
+                    tab.title = live["title"]
+            return
+        except Exception as e:
+            logger.info("Reconnect failed for tab %s (session %s), will create new session: %s",
+                        tab.id, tab.session_id, e)
+
+    # --- Session is dead — create a fresh one ---
+    # Clean up old session (best-effort)
+    try:
+        await manager.close_tab(tab.id, session_id_hint=tab.session_id)
+    except Exception:
+        pass
+
+    # Resolve persistent context (cookies/localStorage) if available
+    bb_context_id = None
+    if tab.context_id and db:
+        ctx = db.execute(
+            select(BrowserContext)
+            .where(BrowserContext.id == tab.context_id)
+            .where(BrowserContext.status == "active")
+        ).scalar_one_or_none()
+        if ctx:
+            bb_context_id = ctx.bb_context_id
+
+    result = await manager.open_tab(tab.id, tab.url or "about:blank", bb_context_id=bb_context_id)
+
+    # Update the tab record with the new session info
+    tab.session_id = manager.get_session_id(tab.id)
+    tab.live_url = manager.get_live_url(tab.id)
+    tab.url = result.get("url", tab.url)
+    tab.title = result.get("title", tab.title)
+    _touch(tab)
+    logger.info("Tab %s auto-reconnected with new session %s", tab.id, tab.session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +368,7 @@ async def navigate_tab(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    await _ensure_connected(tab)
+    await _ensure_connected(tab, db)
     manager = BrowserManager.get()
     try:
         result = await manager.navigate(tab_id, body.url)
@@ -422,7 +473,7 @@ async def click_tab(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    await _ensure_connected(tab)
+    await _ensure_connected(tab, db)
     manager = BrowserManager.get()
     try:
         result = await manager.click(tab_id, body.selector)
@@ -462,7 +513,7 @@ async def type_in_tab(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    await _ensure_connected(tab)
+    await _ensure_connected(tab, db)
     manager = BrowserManager.get()
     try:
         await manager.type_text(tab_id, body.selector, body.text)
@@ -499,7 +550,7 @@ async def get_screenshot(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    await _ensure_connected(tab)
+    await _ensure_connected(tab, db)
     manager = BrowserManager.get()
     try:
         data = await manager.screenshot(tab_id)
@@ -551,7 +602,7 @@ async def get_snapshot(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    await _ensure_connected(tab)
+    await _ensure_connected(tab, db)
     manager = BrowserManager.get()
     try:
         tree = await manager.snapshot(tab_id)
@@ -662,7 +713,7 @@ async def persist_tab(
     # context record anyway. The context will activate on next tab open.
     if manager.is_cloud and tab.session_id:
         try:
-            await _ensure_connected(tab)
+            await _ensure_connected(tab, db)
             current_url = tab.url
             await manager.close_tab(tab_id, session_id_hint=tab.session_id)
             result = await manager.open_tab(tab_id, current_url, bb_context_id=bb_context_id)
