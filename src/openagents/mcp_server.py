@@ -557,9 +557,11 @@ def create_mcp_server(
                     return [types.TextContent(type="text", text="No browser tabs open.")]
                 lines = []
                 for t in tabs:
+                    label = t.get("context_name") or t.get("title") or "(untitled)"
+                    persistent = " [persistent]" if t.get("persistent") else ""
                     lines.append(
-                        f"- {t['id']}: {t.get('url', 'about:blank')} "
-                        f"(by {t.get('created_by', '?')}, title: {t.get('title', '')})"
+                        f"- {t['id']}: {label}{persistent}\n"
+                        f"  URL: {t.get('url', 'about:blank')} | by {t.get('created_by', '?')}"
                     )
                 return [types.TextContent(type="text", text="\n".join(lines))]
 
@@ -630,19 +632,7 @@ def create_mcp_server(
 
         except Exception as e:
             error_msg = str(e)
-            # Provide clear guidance when browser backend is unavailable
-            if name.startswith("workspace_browser_") and (
-                "500" in error_msg or "Failed to open" in error_msg
-                or "Internal Server Error" in error_msg
-            ):
-                return [types.TextContent(
-                    type="text",
-                    text=f"Error: Shared browser is not available. "
-                         f"The workspace server needs BROWSERBASE_API_KEY and "
-                         f"BROWSERBASE_PROJECT_ID configured to enable cloud browser sessions. "
-                         f"Contact the workspace admin to set up Browserbase integration.",
-                )]
-            return [types.TextContent(type="text", text=f"Error: {e}")]
+            return [types.TextContent(type="text", text=f"Error: {error_msg}")]
 
     return server
 

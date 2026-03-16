@@ -77,7 +77,7 @@ class PersistTabRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _tab_to_dict(tab: BrowserTab) -> dict:
+def _tab_to_dict(tab: BrowserTab, context_name: str = None) -> dict:
     d = {
         "id": tab.id,
         "url": tab.url,
@@ -94,6 +94,11 @@ def _tab_to_dict(tab: BrowserTab) -> dict:
         d["session_id"] = tab.session_id
     if tab.context_id:
         d["context_id"] = tab.context_id
+        d["persistent"] = True
+        if context_name:
+            d["context_name"] = context_name
+    else:
+        d["persistent"] = False
     return d
 
 
@@ -316,8 +321,18 @@ async def list_tabs(
     if dirty:
         db.commit()
 
+    # Build a map of context_id → name for persistent tabs
+    context_ids = [t.context_id for t in rows if t.context_id]
+    context_names = {}
+    if context_ids:
+        contexts = db.execute(
+            select(BrowserContext.id, BrowserContext.name)
+            .where(BrowserContext.id.in_(context_ids))
+        ).all()
+        context_names = {c.id: c.name for c in contexts}
+
     return success_response({
-        "tabs": [_tab_to_dict(t) for t in rows],
+        "tabs": [_tab_to_dict(t, context_name=context_names.get(t.context_id)) for t in rows],
         "total": len(rows),
     })
 
