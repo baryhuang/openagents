@@ -330,5 +330,17 @@ class BrowserManager:
         """Return the Browserbase session ID for a tab."""
         return self._sessions.get(tab_id)
 
+    async def get_current_url(self, tab_id: str) -> Optional[dict]:
+        """Return the current {url, title} from the live Playwright page, or None."""
+        page = self._pages.get(tab_id)
+        if not page:
+            return None
+        try:
+            url = page.url
+            title = await page.title()
+            return {"url": url, "title": title}
+        except Exception:
+            return None
+
     def active_tab_count(self) -> int:
         return len(self._pages)

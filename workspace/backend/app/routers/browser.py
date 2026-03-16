@@ -126,6 +126,9 @@ async def _ensure_connected(tab: BrowserTab) -> None:
     On serverless (Vercel), each invocation may be a cold start with an
     empty BrowserManager._pages dict.  If the tab has a session_id we can
     reconnect via CDP.
+
+    After reconnecting, syncs the live page URL/title back to the tab record
+    so the DB reflects any in-iframe navigation that happened.
     """
     manager = BrowserManager.get()
     if tab.id in manager._pages:
@@ -133,6 +136,14 @@ async def _ensure_connected(tab: BrowserTab) -> None:
     if not tab.session_id:
         return  # no remote session to reconnect to
     await manager.reconnect(tab.id, tab.session_id)
+
+    # Sync current URL/title from the live page
+    live = await manager.get_current_url(tab.id)
+    if live:
+        if live["url"] and live["url"] != tab.url:
+            tab.url = live["url"]
+        if live["title"] and live["title"] != tab.title:
+            tab.title = live["title"]
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +249,21 @@ async def list_tabs(
         .where(BrowserTab.status == status)
         .order_by(BrowserTab.last_active_at.desc())
     ).scalars().all()
+
+    # Sync current URL/title from live Playwright pages (catches in-iframe navigation)
+    manager = BrowserManager.get()
+    dirty = False
+    for tab in rows:
+        live = await manager.get_current_url(tab.id)
+        if live:
+            if live["url"] and live["url"] != tab.url:
+                tab.url = live["url"]
+                dirty = True
+            if live["title"] and live["title"] != tab.title:
+                tab.title = live["title"]
+                dirty = True
+    if dirty:
+        db.commit()
 
     return success_response({
         "tabs": [_tab_to_dict(t) for t in rows],
@@ -482,6 +508,20 @@ async def get_screenshot(
     except Exception as e:
         logger.error("Screenshot failed: %s", e)
         return json_response(ResponseCode.INTERNAL_ERROR, "Screenshot failed")
+
+    # Sync current URL/title from live page back to DB (catches in-iframe navigation)
+    live = await manager.get_current_url(tab_id)
+    if live:
+        changed = False
+        if live["url"] and live["url"] != tab.url:
+            tab.url = live["url"]
+            changed = True
+        if live["title"] and live["title"] != tab.title:
+            tab.title = live["title"]
+            changed = True
+        if changed:
+            _touch(tab)
+            db.commit()
 
     return Response(
         content=data,
