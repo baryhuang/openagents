@@ -37,8 +37,8 @@ export function Wrapper() {
               {viewMode === 'browser' && <BrowserTabList />}
             </div>
           ) : (
-            /* Detail pane — full width */
-            <div className="relative h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+            /* Detail pane — full width, edge-to-edge on mobile */
+            <div className="relative h-full bg-background overflow-hidden">
               {viewMode === 'threads' && (
                 <main className="h-full" role="content">
                   <ChatView />
