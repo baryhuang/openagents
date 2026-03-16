@@ -58,6 +58,8 @@ interface WorkspaceContextValue {
   unpersistBrowserTab: (tabId: string) => Promise<void>;
   deleteBrowserContext: (contextId: string) => Promise<void>;
   openBrowserTabWithContext: (contextId: string, url?: string) => Promise<BrowserTab>;
+  notificationSound: boolean;
+  setNotificationSound: (enabled: boolean) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -106,6 +108,19 @@ export function WorkspaceProvider({
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
+
+  // Notification sound — client-side preference stored in localStorage
+  const [notificationSound, _setNotificationSound] = useState(false);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('oa_notification_sound');
+      if (stored === 'true') _setNotificationSound(true);
+    } catch {}
+  }, []);
+  const setNotificationSound = useCallback((enabled: boolean) => {
+    _setNotificationSound(enabled);
+    try { localStorage.setItem('oa_notification_sound', String(enabled)); } catch {}
+  }, []);
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string, isStatus?: boolean) => {
     setLastMessageBySession((prev) => {
@@ -638,6 +653,28 @@ export function WorkspaceProvider({
     });
   }, []);
 
+  // Play notification sound when a thread completes
+  const notificationSoundRef = React.useRef(notificationSound);
+  notificationSoundRef.current = notificationSound;
+  const prevCompletedRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!notificationSoundRef.current) {
+      prevCompletedRef.current = completedSessionIds;
+      return;
+    }
+    // Detect newly completed sessions
+    const prev = prevCompletedRef.current;
+    const hasNew = Array.from(completedSessionIds).some((id) => !prev.has(id));
+    prevCompletedRef.current = completedSessionIds;
+    if (hasNew) {
+      try {
+        const audio = new Audio('/notification.wav');
+        audio.volume = 0.5;
+        audio.play().catch(() => {});
+      } catch {}
+    }
+  }, [completedSessionIds]);
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -687,6 +724,8 @@ export function WorkspaceProvider({
         unpersistBrowserTab,
         deleteBrowserContext,
         openBrowserTabWithContext,
+        notificationSound,
+        setNotificationSound,
       }}
     >
       {children}

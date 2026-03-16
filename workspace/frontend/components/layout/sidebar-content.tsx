@@ -484,6 +484,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   const [saving, setSaving] = useState(false);
   const { isCopied: urlCopied, copyToClipboard: copyUrl } = useCopyToClipboard();
   const { isCopied: tokenCopied, copyToClipboard: copyToken } = useCopyToClipboard();
+  const { notificationSound, setNotificationSound } = useWorkspace();
 
   useEffect(() => {
     if (open && workspace) {
@@ -555,6 +556,16 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
               </p>
             </div>
             <Switch checked={monitorMode} onCheckedChange={setMonitorMode} size="sm" />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">
+            <div className="space-y-0.5">
+              <Label>Notification Sound</Label>
+              <p className="text-xs text-muted-foreground">
+                Play a sound when an agent completes a task.
+              </p>
+            </div>
+            <Switch checked={notificationSound} onCheckedChange={setNotificationSound} size="sm" />
           </div>
 
         </div>
