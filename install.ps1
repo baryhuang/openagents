@@ -148,9 +148,15 @@ if (-not $oaCmd) {
 
     foreach ($dir in @($scriptsDir, $userScripts)) {
         if ($dir -and (Test-Path "$dir\openagents.exe")) {
+            # Add to current session
             $env:Path = "$dir;$env:Path"
-            Warn "Added $dir to PATH for this session"
-            Warn "To make permanent, add to your PATH in System Settings"
+
+            # Persist to user PATH so it survives terminal restarts
+            $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+            if ($userPath -notlike "*$dir*") {
+                [System.Environment]::SetEnvironmentVariable("Path", "$dir;$userPath", "User")
+                Ok "Added $dir to user PATH (persistent)"
+            }
             break
         }
     }
@@ -160,7 +166,7 @@ if (Get-Command openagents -ErrorAction SilentlyContinue) {
     Ok "openagents CLI is ready"
 } else {
     Warn "openagents installed but not found on PATH"
-    Warn "You may need to restart your terminal"
+    Warn "Restart your terminal, or run: python -m openagents"
 }
 
 # =========================================================================

@@ -113,15 +113,13 @@ class TestSendEvent:
         assert "agent-alpha" in data["metadata"]["target_agents"]
 
 
-    def test_agent_message_with_mentions_sets_target_agents(self, client, workspace):
-        """Agent messages with @mentions in content set target_agents metadata."""
-        # Add agent-beta as a workspace member so @mention resolves
-        client.post("/v1/join", json={
-            "agent_name": "agent-beta",
-            "token": workspace["token"],
-            "network": workspace["id"],
-        })
+    def test_agent_message_master_no_targeting_in_single_agent_channel(self, client, workspace):
+        """Master agent messages in single-agent channels have no target_agents.
 
+        With the LLM router, multi-agent routing uses the router.
+        In single-agent channels (or when router is disabled), the fallback
+        applies: master's own messages get no targeting.
+        """
         channel_name = workspace["channel"]["name"]
         resp = client.post("/v1/events", json={
             "type": "workspace.message.posted",
@@ -136,7 +134,8 @@ class TestSendEvent:
 
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["metadata"]["target_agents"] == ["agent-beta"]
+        # Master's message in a single-agent channel — no targeting
+        assert "target_agents" not in data["metadata"]
 
     def test_master_message_without_mentions_no_target_agents(self, client, workspace):
         """Master agent messages without mentions have no target_agents (no self-trigger)."""
@@ -177,9 +176,13 @@ class TestSendEvent:
         # Member's response should be routed back to the master
         assert data["metadata"]["target_agents"] == ["agent-alpha"]
 
-    def test_member_message_with_mention_routes_to_mentioned_agent(self, client, workspace):
-        """Member agent messages with @mentions route to the mentioned agent, not master."""
-        # Add two member agents
+    def test_member_message_routes_to_master_in_fallback(self, client, workspace):
+        """Member agent messages in single-agent channels route to master (fallback).
+
+        With the LLM router disabled (no API key in tests), member messages
+        always route back to the channel master regardless of @mentions.
+        """
+        # Add member agents to workspace (not to channel — so channel stays single-participant)
         for name in ["agent-beta", "agent-gamma"]:
             client.post("/v1/join", json={
                 "agent_name": name,
@@ -198,8 +201,8 @@ class TestSendEvent:
 
         assert resp.status_code == 200
         data = resp.json()["data"]
-        # Should route to mentioned agent, NOT to master
-        assert data["metadata"]["target_agents"] == ["agent-gamma"]
+        # Fallback: member messages route to master
+        assert data["metadata"]["target_agents"] == ["agent-alpha"]
 
 
 class TestPollEvents:

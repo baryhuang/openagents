@@ -6,6 +6,7 @@ Transform mod (priority 50). Handles workspace-specific event processing:
 - Agent join/leave/ping → update WorkspaceMember
 - Channel create/join/leave → manage Channel + ChannelMember rows
 - Message posted by human → route to channel master
+- Message posted by agent → LLM router decides next speaker or stop
 
 Expects context.extra to contain:
   - db: SQLAlchemy Session
@@ -23,6 +24,10 @@ from openagents.core.onm_events import Event, WorkspaceEventTypes
 from openagents.core.onm_mods import PipelineContext, TransformMod
 
 logger = logging.getLogger(__name__)
+
+# Lazy-initialized LLM client for the router
+_llm_client = None
+_llm_provider = None
 
 
 class WorkspaceMod(TransformMod):
@@ -338,6 +343,185 @@ def _extract_leading_mention(content: str, known_agents: List[str]) -> Optional[
     return None
 
 
+_ROUTER_PROMPT = """\
+You are a conversation router for a multi-agent workspace. Your job is to \
+decide whether another agent should be triggered to respond, or if the \
+conversation is complete and should wait for human input.
+
+Channel participants: {participants}
+Master agent: {master}
+
+Recent conversation:
+{history}
+
+New message from {sender}:
+{content}
+
+Rules:
+- If the sender is delegating a task to a specific agent, output that agent.
+- If the sender is reporting results and the master should review or synthesize, output the master.
+- If the response is a final answer, summary, or conclusion meant for the human user, output STOP.
+- If the task appears complete and no further agent action is needed, output STOP.
+- When in doubt, prefer STOP — let the human decide next steps.
+
+Output EXACTLY one line, no explanation:
+- "next:<agent_name>" to trigger a single agent
+- "next:<agent1>,<agent2>" to trigger multiple agents
+- "stop" if no agent should be triggered"""
+
+
+def _get_router_api_key() -> str:
+    """Resolve the API key: ROUTER_LLM_API_KEY takes priority, then ANTHROPIC_API_KEY."""
+    from app.config import config
+    return config.ROUTER_LLM_API_KEY or config.ANTHROPIC_API_KEY
+
+
+def _get_router_model() -> str:
+    """Resolve the model: explicit config or provider default."""
+    from app.config import config
+    if config.ROUTER_LLM_MODEL:
+        return config.ROUTER_LLM_MODEL
+    if config.ROUTER_LLM_PROVIDER == "openai":
+        return "gpt-4o-mini"
+    return "claude-haiku-4-5-20251001"
+
+
+def _get_llm_client():
+    """Lazy-init the LLM client based on provider config."""
+    global _llm_client, _llm_provider
+    from app.config import config
+
+    provider = config.ROUTER_LLM_PROVIDER
+    if _llm_client is not None and _llm_provider == provider:
+        return _llm_client, provider
+
+    api_key = _get_router_api_key()
+
+    if provider == "openai":
+        from openai import OpenAI
+        kwargs = {"api_key": api_key}
+        if config.ROUTER_LLM_BASE_URL:
+            kwargs["base_url"] = config.ROUTER_LLM_BASE_URL
+        _llm_client = OpenAI(**kwargs)
+    else:
+        import anthropic
+        _llm_client = anthropic.Anthropic(api_key=api_key)
+
+    _llm_provider = provider
+    return _llm_client, provider
+
+
+async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]:
+    """Use a small LLM to decide which agent(s) should respond next.
+
+    Returns a list of agent names to target, or an empty list (stop).
+    Falls back to empty list on any error.
+    """
+    from app.config import config
+    from app.models import EventRecord
+
+    if not _get_router_api_key():
+        logger.warning("LLM router: no API key set (ROUTER_LLM_API_KEY or ANTHROPIC_API_KEY), defaulting to stop")
+        return []
+
+    # Fetch last 5 chat messages from this channel
+    channel_target = f"channel/{channel.name}"
+    recent = db.execute(
+        select(EventRecord)
+        .where(
+            EventRecord.network_id == workspace.id,
+            EventRecord.target == channel_target,
+            EventRecord.type == "workspace.message.posted",
+        )
+        .order_by(EventRecord.timestamp.desc())
+        .limit(5)
+    ).scalars().all()
+
+    # Build conversation history (oldest first)
+    recent.reverse()
+    history_lines = []
+    for evt in recent:
+        payload = evt.payload or {}
+        msg_type = payload.get("message_type", "chat")
+        if msg_type in ("thinking", "status"):
+            continue
+        source = evt.source
+        if source.startswith("human:"):
+            label = "human"
+        elif source.startswith("openagents:"):
+            label = source[len("openagents:"):]
+        else:
+            label = source
+        text = (payload.get("content") or "")[:500]  # Truncate long messages
+        history_lines.append(f"[{label}] {text}")
+
+    history = "\n".join(history_lines) if history_lines else "(no prior messages)"
+
+    # Participant list
+    participants = [p.agent_name for p in (channel.participants or [])]
+    master = channel.master_agent or "(none)"
+    sender = new_event.source
+    if sender.startswith("openagents:"):
+        sender = sender[len("openagents:"):]
+
+    content = (new_event.payload or {}).get("content", "")[:500]
+
+    prompt = _ROUTER_PROMPT.format(
+        participants=", ".join(participants),
+        master=master,
+        history=history,
+        sender=sender,
+        content=content,
+    )
+
+    try:
+        import asyncio
+        client, provider = _get_llm_client()
+        model = _get_router_model()
+
+        # Run synchronous LLM call in a thread to avoid blocking the event loop
+        if provider == "openai":
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: client.chat.completions.create(
+                    model=model,
+                    max_tokens=30,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+            )
+            result = response.choices[0].message.content.strip().lower()
+        else:
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: client.messages.create(
+                    model=model,
+                    max_tokens=30,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+            )
+            result = response.content[0].text.strip().lower()
+
+        logger.info("LLM router decision: %s (channel=%s, sender=%s, provider=%s)", result, channel.name, sender, provider)
+
+        if result.startswith("next:"):
+            agents_str = result[len("next:"):].strip()
+            agent_names = [a.strip() for a in agents_str.split(",") if a.strip()]
+            # Validate against actual participants
+            valid_participants = {p.agent_name for p in (channel.participants or [])}
+            valid = [a for a in agent_names if a in valid_participants]
+            if valid:
+                return valid
+            logger.warning("LLM router returned unknown agents: %s (valid: %s)", agent_names, valid_participants)
+            return []
+        else:
+            # "stop" or any unrecognized output → stop
+            return []
+
+    except Exception as e:
+        logger.error("LLM router failed, defaulting to stop: %s", e)
+        return []
+
+
 _DEFAULT_TITLES = {"New Thread", "Session 1", None, ""}
 
 
@@ -364,11 +548,11 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     - Starts with @agent-name → route to that agent only
     - No leading @mention → channel master (or all participants if no master)
 
-    Routing rules (agent messages):
-    - Any @mentions in body → route to mentioned agents
-    - No mentions and sender is NOT channel master → route to channel master
-      (so the master can review the member's response and decide next steps)
-    - No mentions and sender IS channel master → no targeting (visible in UI only)
+    Routing rules (agent messages in multi-agent threads):
+    - LLM router (Haiku) evaluates the last few messages and decides:
+      - "next:agent-name" → route to that agent
+      - "stop" → no targeting, conversation rests until human speaks
+    - Fallback (single-agent threads or router disabled): no routing needed.
     """
     from app.models import Channel, WorkspaceMember
 
@@ -379,11 +563,11 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     message_type = payload.get("message_type", "chat")
 
     # "thinking" and "status" messages are intermediate agent output —
-    # they should NOT trigger other agents via @mentions.
+    # they should NOT trigger other agents.
     if message_type in ("thinking", "status"):
         return event
 
-    # Parse @mentions from message content
+    # Parse @mentions from message content (used for human message routing)
     known_agents = [
         m.agent_name for m in db.execute(
             select(WorkspaceMember).where(
@@ -404,13 +588,21 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
             )
         ).scalar_one_or_none()
 
-    # Agent messages: route to mentioned agents, or back to master
+    # Agent messages: use LLM router for multi-agent threads
     if event.source.startswith("openagents:"):
-        if mentions:
-            event.metadata["target_agents"] = mentions
-        elif channel and channel.master_agent:
-            # No mentions — route back to channel master so it can review,
-            # unless the sender IS the master (avoid self-trigger loop).
+        if channel and len(channel.participants or []) >= 2:
+            # Multi-agent thread → LLM router decides next speaker
+            from app.config import config
+            if config.ROUTER_LLM_ENABLED and _get_router_api_key():
+                targets = await _route_with_llm(channel, event, db, workspace)
+                if targets:
+                    event.metadata["target_agents"] = targets
+                # else: stop — no targeting, conversation rests
+                return event
+
+        # Fallback for single-agent threads or router disabled:
+        # Route member messages back to master so it can review.
+        if channel and channel.master_agent:
             sender = event.source[len("openagents:"):]
             if sender != channel.master_agent:
                 event.metadata["target_agents"] = [channel.master_agent]
