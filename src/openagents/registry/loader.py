@@ -234,9 +234,9 @@ def _make_plugin_from_yaml(data: dict):
         def is_installed(self) -> bool:
             if self._which_binary() is not None:
                 return True
-            # Agents with an adapter module can run in direct API mode
-            # without a local binary (e.g. NanoClaw).
-            if adapter_cfg.get("module"):
+            # API-only agents (e.g. NanoClaw) don't need a local binary —
+            # they run entirely via the adapter module in direct API mode.
+            if install.get("api_only") and adapter_cfg.get("module"):
                 return True
             return False
 
