@@ -262,10 +262,9 @@ def _make_plugin_from_yaml(data: dict):
         def is_installed(self) -> bool:
             if self._which_binary() is not None:
                 return True
-            # Check persistent install marker for API-only agents
-            if install.get("api_only"):
-                return _is_marked_installed(data["name"])
-            return False
+            # Check persistent install marker (covers API-only agents and
+            # cases where the binary isn't on PATH yet after install)
+            return _is_marked_installed(data["name"])
 
         def which(self) -> Optional[str]:
             return self._which_binary()
