@@ -19,6 +19,34 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+_INSTALLED_MARKERS_PATH = Path.home() / ".openagents" / "installed_agents.json"
+
+
+def _load_installed_markers() -> set:
+    """Load the set of agent names that have been explicitly installed."""
+    try:
+        if _INSTALLED_MARKERS_PATH.exists():
+            data = json.loads(_INSTALLED_MARKERS_PATH.read_text())
+            return set(data) if isinstance(data, list) else set()
+    except Exception:
+        pass
+    return set()
+
+
+def _is_marked_installed(agent_name: str) -> bool:
+    return agent_name in _load_installed_markers()
+
+
+def mark_installed(agent_name: str) -> None:
+    """Persist an install marker for an agent (used for API-only agents)."""
+    markers = _load_installed_markers()
+    markers.add(agent_name)
+    try:
+        _INSTALLED_MARKERS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _INSTALLED_MARKERS_PATH.write_text(json.dumps(sorted(markers)))
+    except Exception as e:
+        logger.warning("Failed to save install marker for %s: %s", agent_name, e)
+
 
 def get_current_platform() -> str:
     """Return the current platform key: 'macos', 'linux', or 'windows'."""
@@ -234,10 +262,9 @@ def _make_plugin_from_yaml(data: dict):
         def is_installed(self) -> bool:
             if self._which_binary() is not None:
                 return True
-            # API-only agents (e.g. NanoClaw) don't need a local binary —
-            # they run entirely via the adapter module in direct API mode.
-            if install.get("api_only") and adapter_cfg.get("module"):
-                return True
+            # Check persistent install marker for API-only agents
+            if install.get("api_only"):
+                return _is_marked_installed(data["name"])
             return False
 
         def which(self) -> Optional[str]:

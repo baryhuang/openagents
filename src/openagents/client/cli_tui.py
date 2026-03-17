@@ -335,6 +335,9 @@ class InstallAgentScreen(Screen[dict | None]):
         if _platform.system() == "Windows":
             from openagents.client.cli_packages import _refresh_path_windows
             _refresh_path_windows()
+        # Persist install marker so API-only agents stay "installed" across restarts
+        from openagents.registry.loader import mark_installed
+        mark_installed(item["name"])
         # Refresh table to show updated status
         self._items = _load_catalog()
         # Force-mark the just-installed item as installed (in case PATH
