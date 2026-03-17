@@ -169,8 +169,11 @@ export function FilePreview() {
         )}
         <FileText className="size-4 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{file.filename}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm font-medium truncate">{file.filename.split('/').pop() || file.filename}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {file.filename.includes('/') && (
+              <span className="text-muted-foreground/60">{file.filename.split('/').slice(0, -1).join('/')}/ · </span>
+            )}
             {formatSize(file.size)} · {file.contentType || 'unknown'} · {(file.uploadedBy || 'unknown').replace(/^(openagents:|human:)/, '')}
           </p>
         </div>
