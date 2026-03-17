@@ -2,7 +2,7 @@
 # Usage: irm https://openagents.org/install.ps1 | iex
 
 $ErrorActionPreference = "Continue"
-$VERSION = "0.9.1"
+$VERSION = "0.9.3"
 $MIN_PYTHON_MAJOR = 3
 $MIN_PYTHON_MINOR = 10
 
@@ -109,11 +109,30 @@ if ($installed) {
     Write-Fail "Failed to install openagents. Try: pip install openagents"
 }
 
+if (-not (Get-Command openagents -ErrorAction SilentlyContinue)) {
+    # Try to find and add the scripts directory to PATH
+    $scriptsDir = & $PythonCmd -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
+    $userScripts = & $PythonCmd -c "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))" 2>$null
+
+    foreach ($dir in @($scriptsDir, $userScripts)) {
+        if ($dir -and (Test-Path "$dir\openagents.exe")) {
+            $env:Path = "$dir;$env:Path"
+            # Persist to user PATH so it survives terminal restarts
+            $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+            if ($userPath -notlike "*$dir*") {
+                [System.Environment]::SetEnvironmentVariable("Path", "$dir;$userPath", "User")
+                Write-Ok "Added $dir to user PATH (persistent)"
+            }
+            break
+        }
+    }
+}
+
 if (Get-Command openagents -ErrorAction SilentlyContinue) {
     Write-Ok "openagents CLI is ready"
 } else {
     Write-Warn "openagents installed but not found on PATH"
-    Write-Warn "You may need to restart your terminal"
+    Write-Warn "Restart your terminal, or run: $PythonCmd -m openagents"
 }
 
 Write-Host ""
