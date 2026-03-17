@@ -7,7 +7,7 @@
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$VERSION = "0.8.6"
+$VERSION = "0.9.3"
 $MIN_PYTHON_MAJOR = 3
 $MIN_PYTHON_MINOR = 10
 
