@@ -330,8 +330,19 @@ class InstallAgentScreen(Screen[dict | None]):
 
     def _finish_install(self, item: dict) -> None:
         self._installing = False
+        # Refresh PATH on Windows so newly installed binaries are found
+        import platform as _platform
+        if _platform.system() == "Windows":
+            from openagents.client.cli_packages import _refresh_path_windows
+            _refresh_path_windows()
         # Refresh table to show updated status
         self._items = _load_catalog()
+        # Force-mark the just-installed item as installed (in case PATH
+        # refresh didn't catch the new binary yet — the install succeeded)
+        for it in self._items:
+            if it["name"] == item["name"]:
+                it["installed"] = True
+                break
         table = self.query_one("#install-table", DataTable)
         table.clear()
         for it in self._items:
@@ -1263,19 +1274,36 @@ class OpenAgentsTUI(App):
 
     @work(thread=True)
     def _do_restart(self, name: str) -> None:
-        """Restart a stopped agent by calling `openagents up`."""
-        try:
-            subprocess.Popen(
-                [sys.executable, "-m", "openagents.client.cli", "up"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self.app.call_from_thread(
-                self._log,
-                f"[green]✓[/green] Restarting [cyan]{name}[/cyan] via daemon",
-            )
-        except Exception as e:
-            self.app.call_from_thread(self._log, f"[red]✗ Failed to restart:[/red] {e}")
+        """Restart a stopped agent by sending a restart command to the daemon."""
+        from openagents.client.daemon import read_daemon_pid
+        from openagents.client.daemon_config import CMD_PATH
+
+        pid = read_daemon_pid()
+        if pid is None:
+            # Daemon not running — start it (will launch all agents)
+            try:
+                subprocess.Popen(
+                    [sys.executable, "-m", "openagents.client.cli", "up"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                self.app.call_from_thread(
+                    self._log,
+                    f"[green]✓[/green] Starting daemon (will launch [cyan]{name}[/cyan])",
+                )
+            except Exception as e:
+                self.app.call_from_thread(self._log, f"[red]✗ Failed to start daemon:[/red] {e}")
+        else:
+            # Daemon running — send restart command via command file
+            try:
+                CMD_PATH.parent.mkdir(parents=True, exist_ok=True)
+                CMD_PATH.write_text(f"restart:{name}\n")
+                self.app.call_from_thread(
+                    self._log,
+                    f"[green]✓[/green] Restarting [cyan]{name}[/cyan] via daemon",
+                )
+            except Exception as e:
+                self.app.call_from_thread(self._log, f"[red]✗ Failed to restart:[/red] {e}")
         import time
         time.sleep(2)
         self.app.call_from_thread(self._refresh_table)
