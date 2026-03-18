@@ -122,38 +122,37 @@ $PythonCmd = $Python.Command
 $PythonPath = (Get-Command $PythonCmd -ErrorAction SilentlyContinue).Source
 if (-not $PythonPath) { $PythonPath = $PythonCmd }
 
+$currentVersion = $null
 try {
     $currentVersion = & $PythonCmd -c "from openagents import __version__; print(__version__)" 2>$null
-    if ($currentVersion) {
-        Write-Ok "openagents already installed (v${currentVersion})"
-        Write-Info "Upgrading to latest..."
-    }
 } catch {}
 
 $installed = $false
 
-# Try with spinner
-$ok = Run-WithSpinner "Installing openagents" @($PythonPath, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "openagents")
-if ($ok) {
-    $installed = $true
+if ($currentVersion) {
+    Write-Ok "openagents already installed (v${currentVersion})"
+    # Quick upgrade check — use pip cache for speed
+    $ok = Run-WithSpinner "Checking for updates" @($PythonPath, "-m", "pip", "install", "--upgrade", "openagents")
+    if ($ok) { $installed = $true }
+    if (-not $installed) {
+        $ok = Run-WithSpinner "Checking for updates (user mode)" @($PythonPath, "-m", "pip", "install", "--user", "--upgrade", "openagents")
+        if ($ok) { $installed = $true }
+    }
 } else {
-    # Retry with --user flag
-    $ok = Run-WithSpinner "Installing openagents (user mode)" @($PythonPath, "-m", "pip", "install", "--no-cache-dir", "--user", "--upgrade", "openagents")
-    if ($ok) {
-        $installed = $true
-    } else {
-        # Final fallback: run directly (no spinner) so we can see errors
+    # Fresh install
+    $ok = Run-WithSpinner "Installing openagents" @($PythonPath, "-m", "pip", "install", "openagents")
+    if ($ok) { $installed = $true }
+    if (-not $installed) {
+        $ok = Run-WithSpinner "Installing openagents (user mode)" @($PythonPath, "-m", "pip", "install", "--user", "openagents")
+        if ($ok) { $installed = $true }
+    }
+    if (-not $installed) {
+        # Final fallback: run directly so we can see errors
         Write-Info "Retrying install..."
         try {
-            & $PythonCmd -m pip install --no-cache-dir --upgrade openagents 2>&1 | Out-Null
+            & $PythonCmd -m pip install openagents 2>&1 | Out-Null
             $installed = $true
         } catch {}
-        if (-not $installed) {
-            try {
-                & $PythonCmd -m pip install --no-cache-dir --user --upgrade openagents 2>&1 | Out-Null
-                $installed = $true
-            } catch {}
-        }
     }
 }
 

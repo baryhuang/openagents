@@ -158,27 +158,32 @@ step "Installing OpenAgents CLI..."
 
 PIP="$PYTHON -m pip"
 
+# Determine pip flags (use cache for speed)
+PIP_USER_FLAG=""
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+    PIP_USER_FLAG="--user"
+fi
+
 # Check if already installed
+installed=false
 if $PYTHON -c "import openagents" 2>/dev/null; then
     current=$($PYTHON -c "from openagents import __version__; print(__version__)" 2>/dev/null || echo "unknown")
     ok "openagents already installed (v${current})"
-    info "Upgrading to latest..."
-fi
-
-# Determine pip flags
-PIP_FLAGS="--no-cache-dir"
-if [ -z "${VIRTUAL_ENV:-}" ]; then
-    # Not in a venv — use --user to avoid permission issues
-    PIP_FLAGS="$PIP_FLAGS --user"
-fi
-
-installed=false
-if run_with_progress "Installing openagents" $PIP install $PIP_FLAGS --upgrade openagents; then
-    installed=true
-elif run_with_progress "Installing openagents (break-system-packages)" $PIP install $PIP_FLAGS --upgrade --break-system-packages openagents; then
-    installed=true
-elif run_with_progress "Installing openagents (system)" $PYTHON -m pip install --no-cache-dir --upgrade openagents; then
-    installed=true
+    # Quick upgrade check — use pip cache for speed
+    if run_with_progress "Checking for updates" $PIP install $PIP_USER_FLAG --upgrade openagents; then
+        installed=true
+    elif run_with_progress "Checking for updates (break-system-packages)" $PIP install $PIP_USER_FLAG --upgrade --break-system-packages openagents; then
+        installed=true
+    fi
+else
+    # Fresh install
+    if run_with_progress "Installing openagents" $PIP install $PIP_USER_FLAG openagents; then
+        installed=true
+    elif run_with_progress "Installing openagents (break-system-packages)" $PIP install $PIP_USER_FLAG --break-system-packages openagents; then
+        installed=true
+    elif run_with_progress "Installing openagents (system)" $PYTHON -m pip install openagents; then
+        installed=true
+    fi
 fi
 
 if [ "$installed" = true ]; then
