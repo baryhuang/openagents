@@ -9,7 +9,7 @@ set -euo pipefail
 # Works on macOS, Linux, and Windows (WSL/Git Bash).
 # =============================================================================
 
-VERSION="0.9.0"
+VERSION="0.9.3"
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=10
 
@@ -31,6 +31,26 @@ ok()    { echo "${BOLD}${GREEN} ✓${RESET} $*"; }
 warn()  { echo "${BOLD}${YELLOW} !${RESET} $*"; }
 fail()  { echo "${BOLD}${RED} ✗${RESET} $*"; exit 1; }
 step()  { echo ""; info "$*"; }
+
+# Animated spinner for long-running commands
+run_with_progress() {
+    local msg="$1"
+    shift
+    local pid
+    "$@" >/dev/null 2>&1 &
+    pid=$!
+    local spinner='|/-\'
+    local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        local char="${spinner:$((i % 4)):1}"
+        printf "\r    %s %s..." "$char" "$msg"
+        sleep 0.25
+        i=$((i + 1))
+    done
+    printf "\r%*s\r" $((${#msg} + 10)) ""
+    wait "$pid"
+    return $?
+}
 
 # --- Header ---
 echo ""
@@ -76,8 +96,7 @@ else
     case "$OS" in
         macos)
             if command -v brew >/dev/null 2>&1; then
-                info "Installing Python via Homebrew..."
-                brew install python@3.12 2>/dev/null || true
+                run_with_progress "Installing Python via Homebrew" brew install python@3.12 || true
             else
                 info "Installing Homebrew first..."
                 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -87,23 +106,19 @@ else
                 elif [ -f /usr/local/bin/brew ]; then
                     eval "$(/usr/local/bin/brew shellenv)"
                 fi
-                brew install python@3.12
+                run_with_progress "Installing Python via Homebrew" brew install python@3.12
             fi
             ;;
         linux)
             if command -v apt-get >/dev/null 2>&1; then
-                info "Installing Python via apt..."
-                sudo apt-get update -qq
-                sudo apt-get install -y -qq python3 python3-pip python3-venv
+                run_with_progress "Updating package index" sudo apt-get update -qq
+                run_with_progress "Installing Python" sudo apt-get install -y -qq python3 python3-pip python3-venv
             elif command -v dnf >/dev/null 2>&1; then
-                info "Installing Python via dnf..."
-                sudo dnf install -y python3 python3-pip
+                run_with_progress "Installing Python" sudo dnf install -y python3 python3-pip
             elif command -v pacman >/dev/null 2>&1; then
-                info "Installing Python via pacman..."
-                sudo pacman -Sy --noconfirm python python-pip
+                run_with_progress "Installing Python" sudo pacman -Sy --noconfirm python python-pip
             elif command -v apk >/dev/null 2>&1; then
-                info "Installing Python via apk..."
-                sudo apk add python3 py3-pip
+                run_with_progress "Installing Python" sudo apk add python3 py3-pip
             else
                 fail "Cannot auto-install Python on this system.
   Please install Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ manually:
@@ -112,11 +127,9 @@ else
             ;;
         windows)
             if command -v winget >/dev/null 2>&1; then
-                info "Installing Python via winget..."
-                winget install -e --id Python.Python.3.12 --accept-source-agreements 2>/dev/null || true
+                run_with_progress "Installing Python via winget" winget install -e --id Python.Python.3.12 --accept-source-agreements || true
             elif command -v choco >/dev/null 2>&1; then
-                info "Installing Python via Chocolatey..."
-                choco install python --version=3.12 -y 2>/dev/null || true
+                run_with_progress "Installing Python via Chocolatey" choco install python --version=3.12 -y || true
             else
                 fail "Cannot auto-install Python on this system.
   Please install Python from: https://www.python.org/downloads/"
@@ -153,18 +166,18 @@ if $PYTHON -c "import openagents" 2>/dev/null; then
 fi
 
 # Determine pip flags
-PIP_FLAGS="--quiet --no-cache-dir"
+PIP_FLAGS="--no-cache-dir"
 if [ -z "${VIRTUAL_ENV:-}" ]; then
     # Not in a venv — use --user to avoid permission issues
     PIP_FLAGS="$PIP_FLAGS --user"
 fi
 
 installed=false
-if $PIP install $PIP_FLAGS --upgrade openagents 2>/dev/null; then
+if run_with_progress "Installing openagents" $PIP install $PIP_FLAGS --upgrade openagents; then
     installed=true
-elif $PIP install $PIP_FLAGS --upgrade --break-system-packages openagents 2>/dev/null; then
+elif run_with_progress "Installing openagents (break-system-packages)" $PIP install $PIP_FLAGS --upgrade --break-system-packages openagents; then
     installed=true
-elif $PYTHON -m pip install --quiet --no-cache-dir --upgrade openagents 2>/dev/null; then
+elif run_with_progress "Installing openagents (system)" $PYTHON -m pip install --no-cache-dir --upgrade openagents; then
     installed=true
 fi
 
@@ -195,7 +208,7 @@ if command -v openagents >/dev/null 2>&1; then
     ok "openagents CLI is ready"
 else
     warn "openagents installed but not found on PATH"
-    warn "You may need to restart your terminal or add it to PATH"
+    warn "Restart your terminal, or run: $PYTHON -m openagents"
 fi
 
 # =========================================================================

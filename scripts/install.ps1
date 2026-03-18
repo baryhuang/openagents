@@ -19,11 +19,55 @@ function Write-Fail {
 }
 function Write-Step { Write-Host ""; Write-Info $args }
 
+function Show-Progress {
+    param([string]$Activity, [scriptblock]$Action)
+    $job = Start-Job -ScriptBlock $Action
+    $spinner = @("|", "/", "-", "\")
+    $i = 0
+    while ($job.State -eq "Running") {
+        $char = $spinner[$i % 4]
+        Write-Host "`r    $char $Activity..." -NoNewline -ForegroundColor DarkGray
+        Start-Sleep -Milliseconds 200
+        $i++
+    }
+    Write-Host "`r" -NoNewline
+    # Clear the progress line
+    Write-Host ("`r" + (" " * ($Activity.Length + 10)) + "`r") -NoNewline
+    $result = Receive-Job -Job $job
+    $exitCode = $job.ChildJobs[0].JobStateInfo.Reason
+    Remove-Job -Job $job -Force
+    return $result
+}
+
+function Run-WithProgress {
+    param([string]$Activity, [string]$Command)
+    $spinner = @("|", "/", "-", "\")
+    $i = 0
+    $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $Command" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\oa_stdout.txt" -RedirectStandardError "$env:TEMP\oa_stderr.txt"
+    while (-not $process.HasExited) {
+        $char = $spinner[$i % 4]
+        Write-Host "`r    $char $Activity..." -NoNewline -ForegroundColor DarkGray
+        Start-Sleep -Milliseconds 250
+        $i++
+    }
+    # Clear progress line
+    $blank = " " * ($Activity.Length + 10)
+    Write-Host "`r$blank`r" -NoNewline
+    $exitCode = $process.ExitCode
+    $stdout = ""; $stderr = ""
+    if (Test-Path "$env:TEMP\oa_stdout.txt") { $stdout = Get-Content "$env:TEMP\oa_stdout.txt" -Raw -ErrorAction SilentlyContinue; Remove-Item "$env:TEMP\oa_stdout.txt" -Force -ErrorAction SilentlyContinue }
+    if (Test-Path "$env:TEMP\oa_stderr.txt") { $stderr = Get-Content "$env:TEMP\oa_stderr.txt" -Raw -ErrorAction SilentlyContinue; Remove-Item "$env:TEMP\oa_stderr.txt" -Force -ErrorAction SilentlyContinue }
+    return @{ ExitCode = $exitCode; Stdout = $stdout; Stderr = $stderr }
+}
+
 Write-Host ""
 Write-Host "  OpenAgents Installer  v$VERSION" -ForegroundColor White
 Write-Host "  Multi-agent orchestration for your local machine" -ForegroundColor DarkGray
 Write-Host ""
 
+# =========================================================================
+# Step 1: Python
+# =========================================================================
 Write-Step "Checking Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+..."
 
 function Find-Python {
@@ -51,22 +95,23 @@ if ($Python) {
     Write-Ok "Python $($Python.Version) ($($Python.Command))"
 } else {
     Write-Warn "Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ not found - attempting install..."
-    
-    Write-Info "Downloading Python installer..."
+
     $pythonUrl = "https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe"
     $installerPath = "$env:TEMP\python-installer.exe"
-    
+
     try {
+        Write-Info "Downloading Python installer..."
+        $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $pythonUrl -OutFile $installerPath -UseBasicParsing
-        Write-Info "Running Python installer..."
-        Start-Process -FilePath $installerPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait
-        Remove-Item $installerPath -Force
+        $ProgressPreference = 'Continue'
+        $result = Run-WithProgress "Installing Python" "$installerPath /quiet InstallAllUsers=1 PrependPath=1"
+        Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
     } catch {
         Write-Fail "Cannot install Python. Please install from https://www.python.org/downloads/"
     }
-    
+
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-    
+
     $Python = Find-Python
     if ($Python) {
         Write-Ok "Python $($Python.Version) installed"
@@ -75,6 +120,9 @@ if ($Python) {
     }
 }
 
+# =========================================================================
+# Step 2: Install/upgrade openagents
+# =========================================================================
 Write-Step "Installing OpenAgents CLI..."
 
 $PythonCmd = $Python.Command
@@ -88,14 +136,14 @@ try {
 } catch {}
 
 $installed = $false
-try {
-    & $PythonCmd -m pip install --quiet --no-cache-dir --upgrade openagents 2>$null
+$pipResult = Run-WithProgress "Installing openagents" "$PythonCmd -m pip install --no-cache-dir --upgrade openagents"
+if ($pipResult.ExitCode -eq 0) {
     $installed = $true
-} catch {
-    try {
-        & $PythonCmd -m pip install --quiet --no-cache-dir --user --upgrade openagents 2>$null
+} else {
+    $pipResult = Run-WithProgress "Installing openagents (user mode)" "$PythonCmd -m pip install --no-cache-dir --user --upgrade openagents"
+    if ($pipResult.ExitCode -eq 0) {
         $installed = $true
-    } catch {}
+    }
 }
 
 if ($installed) {
