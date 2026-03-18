@@ -19,45 +19,37 @@ function Write-Fail {
 }
 function Write-Step { Write-Host ""; Write-Info $args }
 
-function Show-Progress {
-    param([string]$Activity, [scriptblock]$Action)
-    $job = Start-Job -ScriptBlock $Action
+# Run a command with an animated spinner. Returns $true on success.
+function Run-WithSpinner {
+    param([string]$Message, [string[]]$Cmd)
     $spinner = @("|", "/", "-", "\")
     $i = 0
-    while ($job.State -eq "Running") {
-        $char = $spinner[$i % 4]
-        Write-Host "`r    $char $Activity..." -NoNewline -ForegroundColor DarkGray
-        Start-Sleep -Milliseconds 200
-        $i++
-    }
-    Write-Host "`r" -NoNewline
-    # Clear the progress line
-    Write-Host ("`r" + (" " * ($Activity.Length + 10)) + "`r") -NoNewline
-    $result = Receive-Job -Job $job
-    $exitCode = $job.ChildJobs[0].JobStateInfo.Reason
-    Remove-Job -Job $job -Force
-    return $result
-}
+    $tempOut = [System.IO.Path]::GetTempFileName()
+    $tempErr = [System.IO.Path]::GetTempFileName()
 
-function Run-WithProgress {
-    param([string]$Activity, [string]$Command)
-    $spinner = @("|", "/", "-", "\")
-    $i = 0
-    $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $Command" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\oa_stdout.txt" -RedirectStandardError "$env:TEMP\oa_stderr.txt"
-    while (-not $process.HasExited) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Cmd[0]
+    $psi.Arguments = ($Cmd | Select-Object -Skip 1) -join " "
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+
+    $proc = [System.Diagnostics.Process]::Start($psi)
+
+    while (-not $proc.HasExited) {
         $char = $spinner[$i % 4]
-        Write-Host "`r    $char $Activity..." -NoNewline -ForegroundColor DarkGray
+        Write-Host "`r    $char $Message..." -NoNewline -ForegroundColor DarkGray
         Start-Sleep -Milliseconds 250
         $i++
     }
-    # Clear progress line
-    $blank = " " * ($Activity.Length + 10)
+    $proc.WaitForExit()
+
+    # Clear spinner line
+    $blank = " " * ($Message.Length + 12)
     Write-Host "`r$blank`r" -NoNewline
-    $exitCode = $process.ExitCode
-    $stdout = ""; $stderr = ""
-    if (Test-Path "$env:TEMP\oa_stdout.txt") { $stdout = Get-Content "$env:TEMP\oa_stdout.txt" -Raw -ErrorAction SilentlyContinue; Remove-Item "$env:TEMP\oa_stdout.txt" -Force -ErrorAction SilentlyContinue }
-    if (Test-Path "$env:TEMP\oa_stderr.txt") { $stderr = Get-Content "$env:TEMP\oa_stderr.txt" -Raw -ErrorAction SilentlyContinue; Remove-Item "$env:TEMP\oa_stderr.txt" -Force -ErrorAction SilentlyContinue }
-    return @{ ExitCode = $exitCode; Stdout = $stdout; Stderr = $stderr }
+
+    return ($proc.ExitCode -eq 0)
 }
 
 Write-Host ""
@@ -104,7 +96,8 @@ if ($Python) {
         $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $pythonUrl -OutFile $installerPath -UseBasicParsing
         $ProgressPreference = 'Continue'
-        $result = Run-WithProgress "Installing Python" "$installerPath /quiet InstallAllUsers=1 PrependPath=1"
+        Write-Info "Installing Python..."
+        Start-Process -FilePath $installerPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait
         Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
     } catch {
         Write-Fail "Cannot install Python. Please install from https://www.python.org/downloads/"
@@ -126,6 +119,8 @@ if ($Python) {
 Write-Step "Installing OpenAgents CLI..."
 
 $PythonCmd = $Python.Command
+$PythonPath = (Get-Command $PythonCmd -ErrorAction SilentlyContinue).Source
+if (-not $PythonPath) { $PythonPath = $PythonCmd }
 
 try {
     $currentVersion = & $PythonCmd -c "from openagents import __version__; print(__version__)" 2>$null
@@ -136,13 +131,29 @@ try {
 } catch {}
 
 $installed = $false
-$pipResult = Run-WithProgress "Installing openagents" "$PythonCmd -m pip install --no-cache-dir --upgrade openagents"
-if ($pipResult.ExitCode -eq 0) {
+
+# Try with spinner
+$ok = Run-WithSpinner "Installing openagents" @($PythonPath, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "openagents")
+if ($ok) {
     $installed = $true
 } else {
-    $pipResult = Run-WithProgress "Installing openagents (user mode)" "$PythonCmd -m pip install --no-cache-dir --user --upgrade openagents"
-    if ($pipResult.ExitCode -eq 0) {
+    # Retry with --user flag
+    $ok = Run-WithSpinner "Installing openagents (user mode)" @($PythonPath, "-m", "pip", "install", "--no-cache-dir", "--user", "--upgrade", "openagents")
+    if ($ok) {
         $installed = $true
+    } else {
+        # Final fallback: run directly (no spinner) so we can see errors
+        Write-Info "Retrying install..."
+        try {
+            & $PythonCmd -m pip install --no-cache-dir --upgrade openagents 2>&1 | Out-Null
+            $installed = $true
+        } catch {}
+        if (-not $installed) {
+            try {
+                & $PythonCmd -m pip install --no-cache-dir --user --upgrade openagents 2>&1 | Out-Null
+                $installed = $true
+            } catch {}
+        }
     }
 }
 
@@ -157,15 +168,16 @@ if ($installed) {
     Write-Fail "Failed to install openagents. Try: pip install openagents"
 }
 
+# =========================================================================
+# Step 3: Ensure openagents is on PATH
+# =========================================================================
 if (-not (Get-Command openagents -ErrorAction SilentlyContinue)) {
-    # Try to find and add the scripts directory to PATH
     $scriptsDir = & $PythonCmd -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
     $userScripts = & $PythonCmd -c "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))" 2>$null
 
     foreach ($dir in @($scriptsDir, $userScripts)) {
         if ($dir -and (Test-Path "$dir\openagents.exe")) {
             $env:Path = "$dir;$env:Path"
-            # Persist to user PATH so it survives terminal restarts
             $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
             if ($userPath -notlike "*$dir*") {
                 [System.Environment]::SetEnvironmentVariable("Path", "$dir;$userPath", "User")
@@ -183,6 +195,9 @@ if (Get-Command openagents -ErrorAction SilentlyContinue) {
     Write-Warn "Restart your terminal, or run: $PythonCmd -m openagents"
 }
 
+# =========================================================================
+# Done
+# =========================================================================
 Write-Host ""
 Write-Host "  Installation complete!" -ForegroundColor Green
 Write-Host ""
