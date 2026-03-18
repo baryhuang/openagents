@@ -34,18 +34,38 @@ def _load_installed_markers() -> set:
 
 
 def _is_marked_installed(agent_name: str) -> bool:
-    return agent_name in _load_installed_markers()
+    if agent_name in _load_installed_markers():
+        return True
+    # Fallback: check per-agent marker file
+    try:
+        marker = _INSTALLED_MARKERS_PATH.parent / "installed" / agent_name
+        return marker.exists()
+    except Exception:
+        return False
 
 
 def mark_installed(agent_name: str) -> None:
-    """Persist an install marker for an agent (used for API-only agents)."""
+    """Persist an install marker for an agent.
+
+    Writes to ~/.openagents/installed_agents.json.
+    Also writes to a per-agent marker file as a fallback in case the
+    JSON file has issues (permissions, corruption, etc.).
+    """
     markers = _load_installed_markers()
     markers.add(agent_name)
     try:
         _INSTALLED_MARKERS_PATH.parent.mkdir(parents=True, exist_ok=True)
         _INSTALLED_MARKERS_PATH.write_text(json.dumps(sorted(markers)))
     except Exception as e:
-        logger.warning("Failed to save install marker for %s: %s", agent_name, e)
+        logger.warning("Failed to save install marker JSON for %s: %s", agent_name, e)
+
+    # Also write a per-agent marker file as fallback
+    try:
+        marker_dir = _INSTALLED_MARKERS_PATH.parent / "installed"
+        marker_dir.mkdir(parents=True, exist_ok=True)
+        (marker_dir / agent_name).write_text("")
+    except Exception as e:
+        logger.warning("Failed to save install marker file for %s: %s", agent_name, e)
 
 
 def get_current_platform() -> str:
