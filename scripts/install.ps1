@@ -131,12 +131,24 @@ $installed = $false
 
 if ($currentVersion) {
     Write-Ok "openagents already installed (v${currentVersion})"
-    # Quick upgrade check — use pip cache for speed
-    $ok = Run-WithSpinner "Checking for updates" @($PythonPath, "-m", "pip", "install", "--upgrade", "openagents")
-    if ($ok) { $installed = $true }
-    if (-not $installed) {
-        $ok = Run-WithSpinner "Checking for updates (user mode)" @($PythonPath, "-m", "pip", "install", "--user", "--upgrade", "openagents")
+    # Quick check: is there a newer version? Use pip index to avoid slow dependency resolution
+    $latestVersion = $null
+    try {
+        $pipOutput = & $PythonCmd -m pip index versions openagents 2>$null | Select-Object -First 1
+        if ($pipOutput -match "\(([^)]+)\)") { $latestVersion = $matches[1] }
+    } catch {}
+
+    if ($latestVersion -and $latestVersion -ne $currentVersion) {
+        Write-Info "Upgrading v${currentVersion} -> v${latestVersion}..."
+        $ok = Run-WithSpinner "Upgrading openagents" @($PythonPath, "-m", "pip", "install", "--upgrade", "openagents")
         if ($ok) { $installed = $true }
+        if (-not $installed) {
+            $ok = Run-WithSpinner "Upgrading openagents (user mode)" @($PythonPath, "-m", "pip", "install", "--user", "--upgrade", "openagents")
+            if ($ok) { $installed = $true }
+        }
+    } else {
+        Write-Ok "Already up to date"
+        $installed = $true
     }
 } else {
     # Fresh install

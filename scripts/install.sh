@@ -169,10 +169,17 @@ installed=false
 if $PYTHON -c "import openagents" 2>/dev/null; then
     current=$($PYTHON -c "from openagents import __version__; print(__version__)" 2>/dev/null || echo "unknown")
     ok "openagents already installed (v${current})"
-    # Quick upgrade check — use pip cache for speed
-    if run_with_progress "Checking for updates" $PIP install $PIP_USER_FLAG --upgrade openagents; then
-        installed=true
-    elif run_with_progress "Checking for updates (break-system-packages)" $PIP install $PIP_USER_FLAG --upgrade --break-system-packages openagents; then
+    # Quick check: is there a newer version?
+    latest=$($PIP index versions openagents 2>/dev/null | head -1 | grep -oP '\(([^)]+)\)' | tr -d '()' || echo "")
+    if [ -n "$latest" ] && [ "$latest" != "$current" ]; then
+        info "Upgrading v${current} -> v${latest}..."
+        if run_with_progress "Upgrading openagents" $PIP install $PIP_USER_FLAG --upgrade openagents; then
+            installed=true
+        elif run_with_progress "Upgrading openagents (break-system-packages)" $PIP install $PIP_USER_FLAG --upgrade --break-system-packages openagents; then
+            installed=true
+        fi
+    else
+        ok "Already up to date"
         installed=true
     fi
 else
