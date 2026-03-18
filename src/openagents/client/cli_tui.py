@@ -252,6 +252,12 @@ class InstallAgentScreen(Screen[dict | None]):
                 cmd, shell=True, capture_output=True, text=True, timeout=600,
             )
             if result.returncode == 0:
+                # Write install marker immediately (before UI callbacks) so it
+                # persists even if the user dismisses the screen before
+                # _finish_install runs on the main thread.
+                from openagents.registry.loader import mark_installed
+                mark_installed(item["name"])
+
                 self.app.call_from_thread(
                     self._hide_progress,
                     f"[green]✓ Installed {item['name']}[/green]  —  Press [bold]n[/bold] on the main screen to create an agent",
