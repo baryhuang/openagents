@@ -26,7 +26,7 @@ def _load_installed_markers() -> set:
     """Load the set of agent names that have been explicitly installed."""
     try:
         if _INSTALLED_MARKERS_PATH.exists():
-            data = json.loads(_INSTALLED_MARKERS_PATH.read_text())
+            data = json.loads(_INSTALLED_MARKERS_PATH.read_text(encoding="utf-8"))
             return set(data) if isinstance(data, list) else set()
     except Exception:
         pass
@@ -55,7 +55,7 @@ def mark_installed(agent_name: str) -> None:
     markers.add(agent_name)
     try:
         _INSTALLED_MARKERS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _INSTALLED_MARKERS_PATH.write_text(json.dumps(sorted(markers)))
+        _INSTALLED_MARKERS_PATH.write_text(json.dumps(sorted(markers)), encoding="utf-8")
     except Exception as e:
         logger.warning("Failed to save install marker JSON for %s: %s", agent_name, e)
 
@@ -113,7 +113,7 @@ def _simple_yaml_parse(path: Path) -> dict:
     current_dict: Optional[dict] = None
     indent_level = 0
 
-    for raw_line in path.read_text().splitlines():
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
         # Skip comments and blank lines
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
@@ -342,7 +342,7 @@ def _make_plugin_from_yaml(data: dict):
                 creds_path = Path(os.path.expanduser(creds_file))
                 if creds_path.exists():
                     try:
-                        creds = json.loads(creds_path.read_text())
+                        creds = json.loads(creds_path.read_text(encoding="utf-8"))
                         creds_key = check_cfg.get("creds_key")
                         if creds_key and creds.get(creds_key):
                             return True, "Ready (logged in)"
