@@ -388,13 +388,14 @@ class DaemonManager:
             logger.warning("OpenClaw binary not found on PATH or npm global dirs, cannot auto-start gateway")
             return
 
-        # Start the gateway in the background
-        logger.info("Auto-starting OpenClaw gateway: %s gateway start", binary)
+        # Start the gateway as a foreground process in the background.
+        # Use "gateway run" (foreground mode) instead of "gateway start" (service mode)
+        # because service mode requires admin privileges on Windows.
+        logger.info("Auto-starting OpenClaw gateway: %s gateway run", binary)
         try:
-            # Use shell=True on Windows so .cmd files run through cmd.exe
             use_shell = platform.system() == "Windows"
-            subprocess.Popen(
-                [binary, "gateway", "start"],
+            self._openclaw_gateway_proc = subprocess.Popen(
+                [binary, "gateway", "run", "--allow-unconfigured"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 shell=use_shell,
