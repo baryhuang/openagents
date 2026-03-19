@@ -8,9 +8,9 @@ builtin: true
 install:
   binary: openclaw
   requires: ["nodejs>=22", git]
-  macos: "npm install -g openclaw@2026.3.11"
-  linux: "npm install -g openclaw@2026.3.11"
-  windows: "npm install -g openclaw@2026.3.11"
+  macos: "npm install -g openclaw@latest"
+  linux: "npm install -g openclaw@latest"
+  windows: "npm install -g openclaw@latest"
 
 adapter:
   module: openagents.adapters.openclaw
