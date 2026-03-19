@@ -150,12 +150,12 @@ if ($currentVersion) {
         $installed = $true
     }
 } else {
-    # Fresh install — show pip's native progress
+    # Fresh install — always use --upgrade in case a stale system-level install exists
     Write-Info "Downloading and installing..."
-    & $PythonCmd -m pip install openagents 2>&1
+    & $PythonCmd -m pip install --upgrade openagents 2>&1
     if ($LASTEXITCODE -eq 0) { $installed = $true }
     if (-not $installed) {
-        & $PythonCmd -m pip install --user openagents 2>&1
+        & $PythonCmd -m pip install --user --upgrade openagents 2>&1
         if ($LASTEXITCODE -eq 0) { $installed = $true }
     }
 }

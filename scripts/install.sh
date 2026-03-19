@@ -184,13 +184,13 @@ if $PYTHON -c "import openagents" 2>/dev/null; then
         installed=true
     fi
 else
-    # Fresh install — show pip's native progress
+    # Fresh install — always use --upgrade in case a stale system-level install exists
     info "Downloading and installing..."
-    if $PIP install $PIP_USER_FLAG openagents; then
+    if $PIP install $PIP_USER_FLAG --upgrade openagents; then
         installed=true
-    elif $PIP install $PIP_USER_FLAG --break-system-packages openagents; then
+    elif $PIP install $PIP_USER_FLAG --upgrade --break-system-packages openagents; then
         installed=true
-    elif $PYTHON -m pip install openagents; then
+    elif $PYTHON -m pip install --upgrade openagents; then
         installed=true
     fi
 fi
