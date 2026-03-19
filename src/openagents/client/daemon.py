@@ -269,6 +269,9 @@ class DaemonManager:
                 status.state = "starting"
                 self._write_status()
 
+                # Auto-start required services (e.g. OpenClaw gateway)
+                await self._ensure_agent_services(agent_cfg)
+
                 adapter = await setup_agent(
                     agent_type=agent_cfg.type,
                     agent_name=agent_cfg.name,
@@ -327,6 +330,60 @@ class DaemonManager:
                 backoff = min(backoff * 2, 60)
 
         status.state = "stopped"
+
+    async def _ensure_agent_services(self, agent_cfg: AgentEntry):
+        """Auto-start required background services for an agent type.
+
+        For OpenClaw: starts the gateway daemon if not already running.
+        """
+        if agent_cfg.type != "openclaw":
+            return
+
+        import shutil
+        import socket
+
+        # Check if gateway is already running
+        host = "127.0.0.1"
+        port = 18789
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        try:
+            if sock.connect_ex((host, port)) == 0:
+                logger.info("OpenClaw gateway already running on %s:%d", host, port)
+                return
+        finally:
+            sock.close()
+
+        # Find the openclaw binary
+        binary = shutil.which("openclaw") or shutil.which("openclaw.cmd")
+        if not binary:
+            logger.warning("OpenClaw binary not found on PATH, cannot auto-start gateway")
+            return
+
+        # Start the gateway in the background
+        logger.info("Auto-starting OpenClaw gateway: %s gateway start", binary)
+        try:
+            subprocess.Popen(
+                [binary, "gateway", "start"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            # Wait for gateway to be ready
+            for i in range(15):
+                await asyncio.sleep(1)
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                try:
+                    if sock.connect_ex((host, port)) == 0:
+                        logger.info("OpenClaw gateway started successfully")
+                        return
+                finally:
+                    sock.close()
+
+            logger.warning("OpenClaw gateway did not start within 15 seconds")
+        except Exception as e:
+            logger.error("Failed to auto-start OpenClaw gateway: %s", e)
 
     async def _run_local_agent(
         self,
