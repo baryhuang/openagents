@@ -1,5 +1,5 @@
 """OpenAgents - AI Agent Networks for Open Collaboration."""
 
-__version__ = "0.9.3.post8"
+__version__ = "0.9.3.post9"
 
 from openagents.connect import AgentIdentity, connect, connect_sync
