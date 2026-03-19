@@ -138,31 +138,25 @@ if ($currentVersion) {
 
     if ($latestVersion -and $latestVersion -ne $currentVersion) {
         Write-Info "Upgrading v${currentVersion} -> v${latestVersion}..."
-        $ok = Run-WithSpinner "Upgrading openagents" @($PythonPath, "-m", "pip", "install", "--upgrade", "openagents")
-        if ($ok) { $installed = $true }
+        # Show pip's native progress (don't hide behind spinner)
+        & $PythonCmd -m pip install --upgrade openagents 2>&1
+        if ($LASTEXITCODE -eq 0) { $installed = $true }
         if (-not $installed) {
-            $ok = Run-WithSpinner "Upgrading openagents (user mode)" @($PythonPath, "-m", "pip", "install", "--user", "--upgrade", "openagents")
-            if ($ok) { $installed = $true }
+            & $PythonCmd -m pip install --user --upgrade openagents 2>&1
+            if ($LASTEXITCODE -eq 0) { $installed = $true }
         }
     } else {
         Write-Ok "Already up to date"
         $installed = $true
     }
 } else {
-    # Fresh install
-    $ok = Run-WithSpinner "Installing openagents" @($PythonPath, "-m", "pip", "install", "openagents")
-    if ($ok) { $installed = $true }
+    # Fresh install — show pip's native progress
+    Write-Info "Downloading and installing..."
+    & $PythonCmd -m pip install openagents 2>&1
+    if ($LASTEXITCODE -eq 0) { $installed = $true }
     if (-not $installed) {
-        $ok = Run-WithSpinner "Installing openagents (user mode)" @($PythonPath, "-m", "pip", "install", "--user", "openagents")
-        if ($ok) { $installed = $true }
-    }
-    if (-not $installed) {
-        # Final fallback: run directly so we can see errors
-        Write-Info "Retrying install..."
-        try {
-            & $PythonCmd -m pip install openagents 2>&1 | Out-Null
-            $installed = $true
-        } catch {}
+        & $PythonCmd -m pip install --user openagents 2>&1
+        if ($LASTEXITCODE -eq 0) { $installed = $true }
     }
 }
 

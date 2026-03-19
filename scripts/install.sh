@@ -173,9 +173,10 @@ if $PYTHON -c "import openagents" 2>/dev/null; then
     latest=$($PIP index versions openagents 2>/dev/null | head -1 | grep -oP '\(([^)]+)\)' | tr -d '()' || echo "")
     if [ -n "$latest" ] && [ "$latest" != "$current" ]; then
         info "Upgrading v${current} -> v${latest}..."
-        if run_with_progress "Upgrading openagents" $PIP install $PIP_USER_FLAG --upgrade openagents; then
+        # Show pip's native progress (don't hide behind spinner)
+        if $PIP install $PIP_USER_FLAG --upgrade openagents; then
             installed=true
-        elif run_with_progress "Upgrading openagents (break-system-packages)" $PIP install $PIP_USER_FLAG --upgrade --break-system-packages openagents; then
+        elif $PIP install $PIP_USER_FLAG --upgrade --break-system-packages openagents; then
             installed=true
         fi
     else
@@ -183,12 +184,13 @@ if $PYTHON -c "import openagents" 2>/dev/null; then
         installed=true
     fi
 else
-    # Fresh install
-    if run_with_progress "Installing openagents" $PIP install $PIP_USER_FLAG openagents; then
+    # Fresh install — show pip's native progress
+    info "Downloading and installing..."
+    if $PIP install $PIP_USER_FLAG openagents; then
         installed=true
-    elif run_with_progress "Installing openagents (break-system-packages)" $PIP install $PIP_USER_FLAG --break-system-packages openagents; then
+    elif $PIP install $PIP_USER_FLAG --break-system-packages openagents; then
         installed=true
-    elif run_with_progress "Installing openagents (system)" $PYTHON -m pip install openagents; then
+    elif $PYTHON -m pip install openagents; then
         installed=true
     fi
 fi
