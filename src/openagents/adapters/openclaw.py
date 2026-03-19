@@ -403,11 +403,11 @@ class OpenClawAdapter(BaseAdapter):
             raise RuntimeError("OpenClaw agent timed out after 600 seconds")
 
         if result.returncode != 0:
-            stderr = result.stderr.strip()[:300] if result.stderr else ""
+            stderr = (result.stderr or "").strip()[:300]
             raise RuntimeError(f"OpenClaw agent exited with code {result.returncode}: {stderr}")
 
         # Parse JSON output
-        stdout = result.stdout.strip()
+        stdout = (result.stdout or "").strip()
         if not stdout:
             return ""
 
