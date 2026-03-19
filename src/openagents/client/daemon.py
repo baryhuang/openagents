@@ -354,10 +354,38 @@ class DaemonManager:
         finally:
             sock.close()
 
-        # Find the openclaw binary
+        # Find the openclaw binary — check PATH first, then common npm locations
         binary = shutil.which("openclaw") or shutil.which("openclaw.cmd")
         if not binary:
-            logger.warning("OpenClaw binary not found on PATH, cannot auto-start gateway")
+            # npm global bin directories not always on PATH (especially Windows SSH sessions)
+            npm_dirs = []
+            if platform.system() == "Windows":
+                appdata = os.environ.get("APPDATA", "")
+                if appdata:
+                    npm_dirs.append(os.path.join(appdata, "npm"))
+                # Also check user profile
+                userprofile = os.environ.get("USERPROFILE", "")
+                if userprofile:
+                    npm_dirs.append(os.path.join(userprofile, "AppData", "Roaming", "npm"))
+            else:
+                home = os.path.expanduser("~")
+                npm_dirs.extend([
+                    os.path.join(home, ".npm-global", "bin"),
+                    "/usr/local/bin",
+                ])
+            for d in npm_dirs:
+                for name in ["openclaw.cmd", "openclaw"]:
+                    candidate = os.path.join(d, name)
+                    if os.path.isfile(candidate):
+                        binary = candidate
+                        # Add to PATH for this process so the gateway can find node_modules too
+                        os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+                        logger.info("Found openclaw at %s (added to PATH)", candidate)
+                        break
+                if binary:
+                    break
+        if not binary:
+            logger.warning("OpenClaw binary not found on PATH or npm global dirs, cannot auto-start gateway")
             return
 
         # Start the gateway in the background
