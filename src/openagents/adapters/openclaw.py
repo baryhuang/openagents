@@ -151,33 +151,18 @@ class OpenClawAdapter(BaseAdapter):
         super().__init__(workspace_id, channel_name, token, agent_name, endpoint)
         self.disabled_modules = disabled_modules or set()
 
-        # Check for direct LLM API mode (bypasses OpenClaw gateway).
-        # Direct mode is used when:
-        #   1. OPENCLAW_DIRECT_MODE=1 is explicitly set, OR
-        #   2. API key + base URL are configured and gateway is not reachable
+        # OpenClaw always runs in gateway mode — the gateway provides tool
+        # execution (file editing, terminal, etc.) which is essential.
+        # The LLM env vars (API key, base URL, model) are passed to the
+        # gateway process, not used for direct API calls.
         self._direct_api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
         self._direct_base_url = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
         self._direct_model = os.environ.get("OPENCLAW_MODEL", "")
-        self._direct_mode = os.environ.get("OPENCLAW_DIRECT_MODE", "").strip() == "1"
+        self._direct_mode = False  # Always gateway mode
 
-        # Auto-detect direct mode: if we have API credentials but no gateway
-        if not self._direct_mode and self._direct_api_key and self._direct_base_url:
-            if not self._is_gateway_reachable(openclaw_host, openclaw_port):
-                self._direct_mode = True
-                logger.info("OpenClaw gateway not reachable, auto-switching to direct API mode")
-
-        if self._direct_mode:
-            if not (self._direct_api_key and self._direct_base_url):
-                raise ValueError(
-                    "Direct API mode requires OPENAI_API_KEY and OPENAI_BASE_URL. "
-                    "Configure via: openagents (press e on the openclaw agent)"
-                )
-            self.openclaw_url = f"{self._direct_base_url}/chat/completions"
-            logger.info(f"Direct LLM mode: {self._direct_base_url} model={self._direct_model or 'default'}")
-        else:
-            self.openclaw_url = (
-                f"http://{openclaw_host}:{openclaw_port}/v1/chat/completions"
-            )
+        self.openclaw_url = (
+            f"http://{openclaw_host}:{openclaw_port}/v1/chat/completions"
+        )
 
         self.openclaw_host = openclaw_host
         self.openclaw_port = openclaw_port
@@ -193,20 +178,6 @@ class OpenClawAdapter(BaseAdapter):
         # Install workspace skill for gateway mode (system prompt injection)
         if not self._direct_mode:
             self._install_workspace_skill()
-
-    @staticmethod
-    def _is_gateway_reachable(host: str, port: int) -> bool:
-        """Quick TCP check to see if the OpenClaw gateway is running."""
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        try:
-            result = sock.connect_ex((host, port))
-            return result == 0
-        except Exception:
-            return False
-        finally:
-            sock.close()
 
     def _build_system_prompt(self, channel_name: str) -> str:
         """Build system prompt with workspace context and API skills."""
