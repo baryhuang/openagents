@@ -388,6 +388,9 @@ class DaemonManager:
             logger.warning("OpenClaw binary not found on PATH or npm global dirs, cannot auto-start gateway")
             return
 
+        # Ensure device identity exists (required for gateway WS auth)
+        await self._ensure_openclaw_identity(binary)
+
         # Start the gateway as a foreground process in the background.
         # Use "gateway run" (foreground mode) instead of "gateway start" (service mode)
         # because service mode requires admin privileges on Windows.
@@ -409,6 +412,8 @@ class DaemonManager:
                 try:
                     if sock.connect_ex((host, port)) == 0:
                         logger.info("OpenClaw gateway started successfully")
+                        # Auto-pair device with the gateway
+                        await self._ensure_openclaw_pairing(binary, host, port)
                         return
                 finally:
                     sock.close()
@@ -416,6 +421,160 @@ class DaemonManager:
             logger.warning("OpenClaw gateway did not start within 15 seconds")
         except Exception as e:
             logger.error("Failed to auto-start OpenClaw gateway: %s", e)
+
+    async def _ensure_openclaw_identity(self, binary: str):
+        """Ensure OpenClaw device identity exists via non-interactive onboard."""
+        identity_dir = Path.home() / ".openclaw" / "identity"
+        if (identity_dir / "device.json").exists() and (identity_dir / "device-auth.json").exists():
+            return
+
+        logger.info("Running OpenClaw onboard to generate device identity...")
+        try:
+            use_shell = platform.system() == "Windows"
+            result = subprocess.run(
+                [binary, "onboard", "--non-interactive", "--accept-risk"],
+                capture_output=True, text=True, timeout=30,
+                shell=use_shell,
+            )
+            if result.returncode == 0:
+                logger.info("OpenClaw onboard completed")
+            else:
+                logger.warning("OpenClaw onboard exited %d: %s", result.returncode, result.stderr[:200])
+        except Exception as e:
+            logger.error("OpenClaw onboard failed: %s", e)
+
+    async def _ensure_openclaw_pairing(self, binary: str, host: str, port: int):
+        """Auto-pair the device with the local OpenClaw gateway.
+
+        After onboard creates the device identity, the first WS connection
+        triggers a PAIRING_REQUIRED challenge. We approve it via the CLI,
+        then reconnect to get a fresh token saved to device-auth.json.
+        """
+        import json
+        import aiohttp
+
+        identity_dir = Path.home() / ".openclaw" / "identity"
+        if not (identity_dir / "device.json").exists():
+            return
+
+        # Check if already paired
+        paired_file = Path.home() / ".openclaw" / "devices" / "paired.json"
+        if paired_file.exists():
+            try:
+                paired = json.loads(paired_file.read_text(encoding="utf-8"))
+                device = json.loads((identity_dir / "device.json").read_text(encoding="utf-8"))
+                if device.get("deviceId") in paired:
+                    logger.debug("OpenClaw device already paired")
+                    return
+            except Exception:
+                pass
+
+        logger.info("Auto-pairing OpenClaw device with gateway...")
+        try:
+            # Step 1: Connect to gateway — triggers PAIRING_REQUIRED
+            async with aiohttp.ClientSession() as session:
+                async with session.ws_connect(
+                    f"ws://{host}:{port}",
+                    headers={"Origin": f"http://localhost:{port}"},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as ws:
+                    # Read challenge
+                    raw = await asyncio.wait_for(ws.receive(), timeout=5)
+                    challenge = json.loads(raw.data)
+                    nonce = challenge.get("payload", {}).get("nonce", "")
+
+                    # Sign and send connect
+                    from openagents.adapters.openclaw import _load_openclaw_device_identity, _sign_ws_challenge
+                    device_info = _load_openclaw_device_identity()
+                    if not device_info:
+                        logger.warning("No device identity for pairing")
+                        return
+
+                    params = _sign_ws_challenge(device_info, nonce)
+                    if not params:
+                        logger.warning("Failed to sign pairing challenge")
+                        return
+
+                    await ws.send_json({"type": "req", "id": "pair1", "method": "connect", "params": params})
+                    raw2 = await asyncio.wait_for(ws.receive(), timeout=5)
+                    res = json.loads(raw2.data)
+
+                    if res.get("ok"):
+                        logger.info("OpenClaw device already connected")
+                        return
+
+                    error = res.get("error", {})
+                    request_id = error.get("details", {}).get("requestId")
+                    if not request_id:
+                        logger.warning("Pairing failed without requestId: %s", error)
+                        return
+
+            # Step 2: Approve the pairing request via CLI
+            logger.info("Approving pairing request %s...", request_id)
+            use_shell = platform.system() == "Windows"
+            result = subprocess.run(
+                [binary, "devices", "approve", request_id],
+                capture_output=True, text=True, timeout=15,
+                shell=use_shell,
+            )
+            if "Approved" in result.stdout or result.returncode == 0:
+                logger.info("Pairing approved")
+            else:
+                logger.warning("Pairing approval may have failed: %s", result.stderr[:200])
+
+            # Step 3: Sync the device token from the gateway's paired.json
+            # After approval, the gateway has a new token for this device but
+            # device-auth.json still has the old one. Read the correct token
+            # from the gateway's records and update device-auth.json.
+            await asyncio.sleep(1)
+            self._sync_openclaw_device_token()
+
+        except Exception as e:
+            logger.error("Auto-pairing failed: %s", e)
+
+    def _sync_openclaw_device_token(self):
+        """Sync the device token from gateway's paired.json to device-auth.json.
+
+        After pairing approval, the gateway stores the correct token in its
+        paired.json but device-auth.json may have a stale token from the
+        initial onboard. This reads the paired token and updates device-auth.json.
+        """
+        import json
+
+        identity_dir = Path.home() / ".openclaw" / "identity"
+        paired_file = Path.home() / ".openclaw" / "devices" / "paired.json"
+        auth_file = identity_dir / "device-auth.json"
+        device_file = identity_dir / "device.json"
+
+        if not paired_file.exists() or not device_file.exists():
+            return
+
+        try:
+            device = json.loads(device_file.read_text(encoding="utf-8"))
+            paired = json.loads(paired_file.read_text(encoding="utf-8"))
+            device_id = device.get("deviceId", "")
+
+            if device_id not in paired:
+                return
+
+            paired_info = paired[device_id]
+            paired_tokens = paired_info.get("tokens", {})
+
+            if not paired_tokens:
+                return
+
+            # Build updated auth data
+            auth_data = {"tokens": {}}
+            for role, token_info in paired_tokens.items():
+                if isinstance(token_info, dict):
+                    auth_data["tokens"][role] = token_info
+                else:
+                    auth_data["tokens"][role] = {"token": token_info, "scopes": paired_info.get("scopes", [])}
+
+            auth_file.write_text(json.dumps(auth_data, indent=2), encoding="utf-8")
+            logger.info("Synced device token from gateway paired.json")
+        except Exception as e:
+            logger.warning("Failed to sync device token: %s", e)
 
     async def _run_local_agent(
         self,
