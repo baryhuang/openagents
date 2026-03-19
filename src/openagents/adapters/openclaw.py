@@ -392,6 +392,8 @@ class OpenClawAdapter(BaseAdapter):
                     cmd,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=600,
                     shell=use_shell,
                     cwd=os.environ.get("OPENCLAW_WORKSPACE_DIR"),
