@@ -390,6 +390,79 @@ class DaemonManager:
             except Exception as e:
                 logger.warning("OpenClaw onboard failed: %s", e)
 
+        # Configure model provider from OpenAgents env vars
+        self._configure_openclaw_model()
+
+    def _configure_openclaw_model(self):
+        """Write model provider config into openclaw.json from env vars.
+
+        OpenClaw's --local mode reads API keys from its own config, not
+        from environment variables. This syncs the OpenAgents LLM config
+        (OPENAI_API_KEY, OPENAI_BASE_URL, OPENCLAW_MODEL) into OpenClaw's
+        models.providers section.
+        """
+        import json
+
+        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
+        base_url = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
+        model = os.environ.get("OPENCLAW_MODEL", "")
+
+        if not api_key:
+            return
+
+        openclaw_config = Path.home() / ".openclaw" / "openclaw.json"
+        if not openclaw_config.exists():
+            return
+
+        try:
+            config_data = json.loads(openclaw_config.read_text(encoding="utf-8"))
+        except Exception:
+            return
+
+        # Determine API format from base URL
+        is_anthropic = "anthropic" in base_url.lower() if base_url else bool(os.environ.get("ANTHROPIC_API_KEY"))
+        api_format = "anthropic-messages" if is_anthropic else "openai-chat"
+
+        # Build provider config
+        provider_id = "openagents-llm"
+        provider_config = {
+            "apiKey": api_key,
+            "api": api_format,
+        }
+        if base_url:
+            provider_config["baseUrl"] = base_url
+
+        model_id = model or ("claude-sonnet-4-6" if is_anthropic else "gpt-4o")
+        provider_config["models"] = [{
+            "id": model_id,
+            "name": model_id,
+            "contextWindow": 200000,
+            "maxTokens": 16384,
+        }]
+
+        # Update config
+        if "models" not in config_data:
+            config_data["models"] = {}
+        if "providers" not in config_data["models"]:
+            config_data["models"]["providers"] = {}
+        config_data["models"]["providers"][provider_id] = provider_config
+
+        # Set as default model for agents
+        if "agents" not in config_data:
+            config_data["agents"] = {}
+        if "defaults" not in config_data["agents"]:
+            config_data["agents"]["defaults"] = {}
+        config_data["agents"]["defaults"]["model"] = {
+            "primary": f"{provider_id}/{model_id}",
+            "fallbacks": [],
+        }
+
+        try:
+            openclaw_config.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
+            logger.info("Configured OpenClaw model: %s/%s", provider_id, model_id)
+        except Exception as e:
+            logger.warning("Failed to write OpenClaw model config: %s", e)
+
     async def _ensure_openclaw_identity(self, binary: str):
         """Ensure OpenClaw device identity exists via non-interactive onboard."""
         identity_dir = Path.home() / ".openclaw" / "identity"
