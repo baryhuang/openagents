@@ -24,8 +24,6 @@ function Run-WithSpinner {
     param([string]$Message, [string[]]$Cmd)
     $spinner = @("|", "/", "-", "\")
     $i = 0
-    $tempOut = [System.IO.Path]::GetTempFileName()
-    $tempErr = [System.IO.Path]::GetTempFileName()
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $Cmd[0]
