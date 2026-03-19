@@ -332,38 +332,25 @@ class DaemonManager:
         status.state = "stopped"
 
     async def _ensure_agent_services(self, agent_cfg: AgentEntry):
-        """Auto-start required background services for an agent type.
+        """Ensure required setup for an agent type before starting.
 
-        For OpenClaw: starts the gateway daemon if not already running.
+        For OpenClaw: ensures the binary is on PATH and runs onboard if needed.
+        The adapter uses CLI mode (openclaw agent --local) which doesn't need
+        a running gateway — it runs the agent locally with full tool support.
         """
         if agent_cfg.type != "openclaw":
             return
 
         import shutil
-        import socket
 
-        # Check if gateway is already running
-        host = "127.0.0.1"
-        port = 18789
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        try:
-            if sock.connect_ex((host, port)) == 0:
-                logger.info("OpenClaw gateway already running on %s:%d", host, port)
-                return
-        finally:
-            sock.close()
-
-        # Find the openclaw binary — check PATH first, then common npm locations
+        # Ensure openclaw binary is on PATH
         binary = shutil.which("openclaw") or shutil.which("openclaw.cmd")
         if not binary:
-            # npm global bin directories not always on PATH (especially Windows SSH sessions)
             npm_dirs = []
             if platform.system() == "Windows":
                 appdata = os.environ.get("APPDATA", "")
                 if appdata:
                     npm_dirs.append(os.path.join(appdata, "npm"))
-                # Also check user profile
                 userprofile = os.environ.get("USERPROFILE", "")
                 if userprofile:
                     npm_dirs.append(os.path.join(userprofile, "AppData", "Roaming", "npm"))
@@ -378,49 +365,30 @@ class DaemonManager:
                     candidate = os.path.join(d, name)
                     if os.path.isfile(candidate):
                         binary = candidate
-                        # Add to PATH for this process so the gateway can find node_modules too
                         os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
                         logger.info("Found openclaw at %s (added to PATH)", candidate)
                         break
                 if binary:
                     break
+
         if not binary:
-            logger.warning("OpenClaw binary not found on PATH or npm global dirs, cannot auto-start gateway")
+            logger.warning("OpenClaw binary not found on PATH or npm global dirs")
             return
 
-        # Ensure device identity exists (required for gateway WS auth)
-        await self._ensure_openclaw_identity(binary)
-
-        # Start the gateway as a foreground process in the background.
-        # Use "gateway run" (foreground mode) instead of "gateway start" (service mode)
-        # because service mode requires admin privileges on Windows.
-        logger.info("Auto-starting OpenClaw gateway: %s gateway run", binary)
-        try:
-            use_shell = platform.system() == "Windows"
-            self._openclaw_gateway_proc = subprocess.Popen(
-                [binary, "gateway", "run", "--allow-unconfigured"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                shell=use_shell,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            # Wait for gateway to be ready
-            for i in range(15):
-                await asyncio.sleep(1)
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1)
-                try:
-                    if sock.connect_ex((host, port)) == 0:
-                        logger.info("OpenClaw gateway started successfully")
-                        # Auto-pair device with the gateway
-                        await self._ensure_openclaw_pairing(binary, host, port)
-                        return
-                finally:
-                    sock.close()
-
-            logger.warning("OpenClaw gateway did not start within 15 seconds")
-        except Exception as e:
-            logger.error("Failed to auto-start OpenClaw gateway: %s", e)
+        # Run onboard to initialize workspace and config if needed
+        openclaw_dir = Path.home() / ".openclaw"
+        if not (openclaw_dir / "openclaw.json").exists():
+            logger.info("Running OpenClaw onboard...")
+            try:
+                use_shell = platform.system() == "Windows"
+                subprocess.run(
+                    [binary, "onboard", "--non-interactive", "--accept-risk"],
+                    capture_output=True, text=True, timeout=30,
+                    shell=use_shell,
+                )
+                logger.info("OpenClaw onboard completed")
+            except Exception as e:
+                logger.warning("OpenClaw onboard failed: %s", e)
 
     async def _ensure_openclaw_identity(self, binary: str):
         """Ensure OpenClaw device identity exists via non-interactive onboard."""
@@ -575,6 +543,8 @@ class DaemonManager:
             logger.info("Synced device token from gateway paired.json")
         except Exception as e:
             logger.warning("Failed to sync device token: %s", e)
+
+    # Keep _sync_openclaw_device_token for potential future gateway mode use
 
     async def _run_local_agent(
         self,
