@@ -391,10 +391,13 @@ class DaemonManager:
         # Start the gateway in the background
         logger.info("Auto-starting OpenClaw gateway: %s gateway start", binary)
         try:
+            # Use shell=True on Windows so .cmd files run through cmd.exe
+            use_shell = platform.system() == "Windows"
             subprocess.Popen(
                 [binary, "gateway", "start"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                shell=use_shell,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             # Wait for gateway to be ready
