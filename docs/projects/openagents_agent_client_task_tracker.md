@@ -2,7 +2,22 @@
 
 **Last updated:** 2026-03-20
 
-## Completed
+## Repository Layout
+
+```
+openagents/
+├── src/openagents/              # Python SDK (backend, ONM, adapters)
+├── packages/
+│   ├── agent-connector/         # @openagents-org/agent-connector (Node.js library + CLI)
+│   └── desktop-connector/       # Electron desktop app (Windows/macOS)
+└── workspace/
+    ├── backend/                 # workspace backend (FastAPI)
+    └── frontend/                # workspace frontend
+```
+
+---
+
+## Part 1: Completed (Python SDK + Desktop App)
 
 | # | Task | Files | Status |
 |---|------|-------|--------|
@@ -54,26 +69,63 @@
 | 46 | Agent registry API — model, CRUD endpoints, 15 tests | `openagents-web: models.py, agent_registry.py, test_agent_registry.py` | Done |
 | 47 | Repository restructure — layered architecture (3 phases) | `src/openagents/client/`, `src/openagents/sdk/`, `src/openagents/core/` | Done |
 | 48 | CI pipeline split — client-tests (fast) + sdk-tests (full) | `.github/workflows/pytest.yml` | Done |
-| 49 | Desktop connector Electron app — agent CRUD, config, workspace, tray | `workspace/apps/desktop-connector/` | Done |
-| 50 | Fix CSP — replace inline onclick with data-action event delegation | `desktop-connector/src/renderer/renderer.js` | Done |
-| 51 | Fix workspace polling — remove member filter from poll_pending | `workspace_client.py` | Done |
-| 52 | Uninstall agent types — derive uninstall cmd + clear install markers | `desktop-connector/src/main/agent-manager.js` | Done |
+
+### Desktop App (Electron) — Completed
+
+| # | Task | Status |
+|---|------|--------|
+| D1 | Scaffold Electron app — main process, preload, renderer | Done |
+| D2 | System tray with agent status menu | Done |
+| D3 | PythonManager — detect Python, check SDK version | Done |
+| D4 | AgentManager — read daemon.yaml, env files, status, logs | Done |
+| D5 | YAML parser for daemon.yaml (PyYAML indent-0 list format) | Done |
+| D6 | Custom JSON store (replaced electron-store ESM issue) | Done |
+| D7 | Windows path quoting fix (`C:\Program Files` spaces) | Done |
+| D8 | Bypass interactive CLI prompts (use Python SDK directly) | Done |
+| D9 | Dashboard tab — agent cards with status, start/stop | Done |
+| D10 | Agents tab — add/remove agents, context menu actions | Done |
+| D11 | Install tab — Python/SDK status, agent catalog with install/update/uninstall | Done |
+| D12 | Logs tab — read daemon.log with agent filter | Done |
+| D13 | Settings tab — start on boot, minimize to tray | Done |
+| D14 | Configure agent — modal with env fields, save, test connection | Done |
+| D15 | Workspace connect/disconnect/create/join-with-token | Done |
+| D16 | Fix CSP — replace inline onclick with data-action event delegation | Done |
+| D17 | Fix workspace polling — remove member filter from poll_pending | Done |
+| D18 | Uninstall agent types — derive uninstall cmd + clear install markers | Done |
+| D19 | Hide Electron menu bar on Windows/Linux | Done |
+| D20 | Signal daemon reload after config changes | Done |
 
 ---
 
-## Phase N: Node.js Agent Connector — `@openagents-org/agent-connector`
+## Part 2: Desktop App — Pending
 
-**Goal:** Extract agent management into a standalone Node.js package that works as both a CLI tool and a library for the Electron desktop app. Eliminates the Python dependency for users who only run Node-based agents (Claude Code, OpenClaw, Codex, Gemini CLI, etc.).
+| # | Task | Priority | Status | Notes |
+|---|------|----------|--------|-------|
+| D21 | Fix GBK encoding — garbled error messages on Chinese locale Windows | Medium | Pending | Handle stderr encoding on non-UTF8 locale machines |
+| D22 | Auto-install dependencies — Node.js, Git, etc. when installing agent type | Low | Pending | TUI does this; desktop app delegates to SDK install but doesn't handle deps |
+| D23 | Login for agent types — agent-specific login (e.g. `claude login`) | Low | Pending | TUI supports `l` key for login; desktop app has no login flow |
+| D24 | Daemon start/stop toggle — explicit daemon on/off button | Low | Pending | TUI has `u` key; desktop app has start/stop all but no daemon toggle |
+| D25 | Activity log panel — live action feed on dashboard | Low | Pending | TUI has live activity log; desktop app only shows daemon.log file |
+| D26 | Responsive agent cards — adapt layout to window size | Low | Pending | |
+| D27 | Loading states — spinners during async operations | Low | Pending | |
+| D28 | Auto-refresh logs — scroll to bottom, periodic refresh on logs tab | Low | Pending | |
+| D29 | Workspace URL display — show full URL, not just slug | Low | Pending | |
+| D30 | Move app from `workspace/apps/desktop-connector/` to `packages/desktop-connector/` | High | Pending | Part of repo restructure to consolidate Node.js packages |
+
+---
+
+## Part 3: Node.js Agent Connector — `@openagents-org/agent-connector`
+
+**Goal:** Extract agent management into a standalone Node.js package that works as both a CLI tool (Linux/headless) and a library (Electron app on Windows/macOS). Eliminates the Python dependency for users who only run Node-based agents.
 
 **Why:** The current Electron app shells out to `python -m openagents` for every operation. This requires Python 3.10+ installed, causes subprocess quoting/encoding bugs on Windows, and doubles memory usage (Python daemon + Node agent). Most supported agents are Node.js — requiring both runtimes is unnecessary friction.
 
 **Design principles:**
-- Works as a CLI (`npx @openagents-org/agent-connector up`) for Linux/headless servers
-- Works as a library (`require('@openagents-org/agent-connector')`) for Electron app on Windows/macOS
+- CLI-first: `npx @openagents-org/agent-connector up` works on headless Linux
+- Library: `require('@openagents-org/agent-connector')` for Electron app
 - Cross-platform: Windows, macOS, Linux — first-class support for all three
-- Agent registry is remote-first (fetch from API) with bundled offline fallback
+- Remote-first registry with bundled offline fallback
 - Zero Python dependency for Node-based agent workflows
-- Python SDK continues to exist for workspace backend, ONM, and Python-based agents
 
 ### Package Structure
 
@@ -81,24 +133,18 @@
 packages/agent-connector/
 ├── src/
 │   ├── index.js              # main export — AgentConnector class
-│   ├── config.js             # daemon.yaml read/write (YAML parser exists)
+│   ├── config.js             # daemon.yaml read/write
 │   ├── env.js                # ~/.openagents/env/<type>.env read/write + resolve_env
-│   ├── registry.js           # remote agent catalog fetch + 24h cache + offline fallback
+│   ├── registry.js           # remote agent catalog fetch + cache + offline fallback
 │   ├── installer.js          # npm/pip install/uninstall + install markers
 │   ├── daemon.js             # process spawn/monitor/stop, PID file, log rotation
-│   ├── workspace-client.js   # HTTP client for workspace API (join/connect/events)
+│   ├── workspace-client.js   # HTTP client for workspace API
 │   └── cli.js                # CLI entry point
-├── registry.json             # bundled fallback catalog (generated from YAML plugins)
+├── registry.json             # bundled fallback catalog
 ├── package.json
 ├── bin/
 │   └── agent-connector       # CLI binary → src/cli.js
 └── test/
-    ├── config.test.js
-    ├── env.test.js
-    ├── registry.test.js
-    ├── installer.test.js
-    ├── daemon.test.js
-    └── workspace-client.test.js
 ```
 
 ### Tasks
@@ -106,102 +152,99 @@ packages/agent-connector/
 | # | Task | Priority | Status | Notes |
 |---|------|----------|--------|-------|
 | N1 | Scaffold package — package.json, directory structure, ESM/CJS dual export | High | Pending | `@openagents-org/agent-connector`, MIT license, bin entry for CLI |
-| N2 | `config.js` — read/write `daemon.yaml`, agent/network CRUD | High | Pending | Port YAML parser from `agent-manager.js`, add write support. Must preserve comments/formatting where possible. |
-| N3 | `env.js` — read/write `~/.openagents/env/<type>.env`, `resolve_env` rules | High | Pending | Port from `agent-manager.js:_loadAgentEnv/_saveAgentEnv`. Add `resolve_env` logic (LLM_* → provider-specific vars) from Python `registry/loader.py`. |
-| N4 | `registry.js` — fetch agent catalog from remote API + cache | High | Pending | `GET https://registry.openagents.org/v1/agents` → cache at `~/.openagents/agent_catalog.json` (24h TTL). Fallback to bundled `registry.json`. Returns: name, label, description, install_command, uninstall_command, env_fields, binary_names. |
-| N5 | Generate `registry.json` — script to convert YAML plugin definitions to JSON | High | Pending | Read `src/openagents/registry/agents/*.yaml`, output `registry.json` with all fields needed by the connector. Run as build step. |
-| N6 | `installer.js` — install/uninstall agent runtimes | High | Pending | `npm install -g`, `pip install`, curl-pipe-bash. Manage install markers (`~/.openagents/installed_agents.json`). Detect existing binaries on PATH + nvm/fnm/volta dirs. |
-| N7 | `daemon.js` — agent process lifecycle management | High | Pending | Spawn agent processes, monitor health, auto-restart on crash, PID file, log to `~/.openagents/daemon.log`. Cross-platform: Unix signals (SIGHUP/SIGTERM), Windows file-based commands (`daemon.cmd`). |
-| N8 | `workspace-client.js` — workspace API HTTP client | High | Pending | `POST /v1/events`, `GET /v1/events` (poll), `POST /v1/join`, `POST /v1/token/resolve`, `GET /v1/networks`, `POST /v1/workspaces`. Token auth via `X-Workspace-Token` header. |
-| N9 | `cli.js` — CLI commands for Linux/headless use | High | Pending | Commands: `up`, `down`, `status`, `create <type> [name]`, `install <type>`, `uninstall <type>`, `connect <agent> <workspace>`, `disconnect <agent>`, `workspace create/list/join`, `logs`, `search`. Use `commander` or `yargs` for arg parsing. Must work via `npx @openagents-org/agent-connector <cmd>` and as global install. |
-| N10 | Wire Electron app to use package directly | High | Pending | Replace `agent-manager.js` subprocess calls with `require('@openagents-org/agent-connector')`. Eliminate all `_execPythonCode()` and `_runOpenAgents()` calls. |
-| N11 | Cross-platform PATH detection | Medium | Pending | Find agent binaries across: system PATH, nvm/fnm/volta dirs, `~/.local/bin`, `%APPDATA%\npm`, Homebrew dirs. Port logic from `install.sh` and `python-manager.js`. |
-| N12 | Agent health check — binary existence + version check | Medium | Pending | Per-agent health: check binary on PATH, run `--version`, compare against registry's latest. Used by `status` command and dashboard. |
-| N13 | Log management — write, rotate, tail, filter | Medium | Pending | Agent stdout/stderr → `~/.openagents/daemon.log` with timestamps and agent name prefix. `logs` CLI command with `--follow` and `--agent` filter. Rotate at 10MB. |
-| N14 | Config hot-reload — watch `daemon.yaml` for changes | Medium | Pending | `fs.watch` on `daemon.yaml` + debounce. Start new agents, stop removed ones, restart changed ones. Replace SIGHUP mechanism on Unix; works natively on Windows. |
-| N15 | `autostart` — register as system service | Low | Pending | Linux: generate systemd unit file. macOS: generate launchd plist. Windows: Task Scheduler via `schtasks`. CLI: `agent-connector autostart [enable\|disable]`. |
-| N16 | Tests — unit tests for all modules | High | Pending | Use `vitest` or `jest`. Mock filesystem for config/env tests, mock HTTP for registry/workspace tests, mock child_process for daemon/installer tests. Target 80% coverage. |
-| N17 | CI pipeline — lint, test, publish | Medium | Pending | GitHub Actions: lint (eslint), test (vitest), publish to npm on tag. Test on ubuntu, macos, windows runners. |
-| N18 | Migrate Electron app to use `@openagents-org/agent-connector` | High | Pending | After N10. Remove `agent-manager.js`, `python-manager.js`. Electron `main.js` creates `AgentConnector` instance, IPC handlers call it directly. Preload/renderer unchanged. |
-| N19 | Global install CLI — `npm install -g @openagents-org/agent-connector` | Medium | Pending | Ensure bin entry works globally. Add alias: `agent-connector` and `openagents-connector`. Test on clean machines (Windows, macOS, Linux). |
-| N20 | macOS app packaging — DMG with code signing | Low | Pending | electron-builder config for macOS. Code signing with Apple Developer cert. Auto-update via electron-updater. |
-| N21 | Windows app packaging — NSIS installer or MSIX | Low | Pending | electron-builder config for Windows. Code signing with EV cert. Auto-update. Include Node.js runtime if not detected. |
-| N22 | Linux packaging — AppImage + .deb + .rpm | Low | Pending | electron-builder config for Linux. AppImage for universal, .deb for Ubuntu/Debian, .rpm for Fedora/RHEL. |
+| N2 | `config.js` — read/write `daemon.yaml`, agent/network CRUD | High | Pending | Port YAML parser from `agent-manager.js`, add write support |
+| N3 | `env.js` — read/write env files, `resolve_env` rules | High | Pending | Port from `agent-manager.js`. Add `resolve_env` (LLM_* -> provider vars) from Python `registry/loader.py` |
+| N4 | `registry.js` — fetch agent catalog from remote API + cache | High | Pending | `GET https://registry.openagents.org/v1/agents`, 24h cache, bundled fallback |
+| N5 | Generate `registry.json` — YAML plugin defs to JSON build step | High | Pending | Read `src/openagents/registry/agents/*.yaml`, output `registry.json` |
+| N6 | `installer.js` — install/uninstall agent runtimes | High | Pending | npm/pip/curl install, manage markers, detect binaries on PATH + nvm/fnm/volta |
+| N7 | `daemon.js` — agent process lifecycle management | High | Pending | Spawn, monitor, auto-restart, PID file, logging. Unix signals + Windows `daemon.cmd` |
+| N8 | `workspace-client.js` — workspace API HTTP client | High | Pending | Events, join, token resolve, networks, workspaces. `X-Workspace-Token` auth |
+| N9 | `cli.js` — CLI commands for Linux/headless use | High | Pending | `up`, `down`, `status`, `create`, `install`, `uninstall`, `connect`, `disconnect`, `workspace`, `logs`, `search`. Use `commander` or `yargs` |
+| N10 | Cross-platform PATH detection | Medium | Pending | System PATH, nvm/fnm/volta, `~/.local/bin`, `%APPDATA%\npm`, Homebrew |
+| N11 | Agent health check — binary existence + version check | Medium | Pending | Check binary, run `--version`, compare against registry latest |
+| N12 | Log management — write, rotate, tail, filter | Medium | Pending | Timestamped logs, agent prefix, `--follow`, rotate at 10MB |
+| N13 | Config hot-reload — watch `daemon.yaml` for changes | Medium | Pending | `fs.watch` + debounce. Start/stop/restart agents on config change |
+| N14 | `autostart` — register as system service | Low | Pending | systemd (Linux), launchd (macOS), Task Scheduler (Windows) |
+| N15 | Tests — unit tests for all modules | High | Pending | vitest or jest, mock fs/http/child_process, 80% coverage target |
+| N16 | CI pipeline — lint, test, publish | Medium | Pending | GitHub Actions on ubuntu/macos/windows, publish to npm on tag |
+| N17 | Wire Electron app to use package directly | High | Pending | Replace `agent-manager.js` + `python-manager.js` with `require('@openagents-org/agent-connector')` |
+| N18 | Global install CLI — `npm install -g @openagents-org/agent-connector` | Medium | Pending | Bin entry, aliases, test on clean machines all platforms |
+
+### Desktop App Distribution
+
+| # | Task | Priority | Status | Notes |
+|---|------|----------|--------|-------|
+| N19 | macOS app — DMG, code signing, auto-update | Low | Pending | electron-builder, Apple Developer cert |
+| N20 | Windows app — NSIS installer, code signing, auto-update | Low | Pending | electron-builder, EV cert, bundle Node.js if not detected |
+| N21 | Linux app — AppImage + .deb + .rpm | Low | Pending | electron-builder, universal + distro-specific |
 
 ### Migration Path
 
-**Phase 1 — Core library (N1-N6)**
-Scaffold the package. Port config, env, registry, and installer modules. These are mostly file I/O and HTTP calls — straightforward to port from the existing `agent-manager.js` and Python code. The Electron app continues working unchanged during this phase.
+**Phase 1 — Core library (N1-N6):** Scaffold, port config/env/registry/installer. Mostly file I/O and HTTP. Electron app unchanged.
 
-**Phase 2 — Daemon + workspace (N7-N8)**
-Port the daemon process manager and workspace client. The daemon is the most complex piece — process spawning, signal handling, auto-restart, cross-platform differences. The workspace client is simpler — just HTTP calls with token auth.
+**Phase 2 — Daemon + workspace (N7-N8):** Port process manager and workspace client. Daemon is the complex piece (signals, auto-restart, cross-platform).
 
-**Phase 3 — CLI (N9)**
-Build the CLI interface. This makes the connector usable on headless Linux servers without the Electron app. Commands mirror the existing `openagents` CLI but powered by Node.js.
+**Phase 3 — CLI (N9):** Build CLI for headless Linux. Commands mirror existing `openagents` CLI.
 
-**Phase 4 — Electron integration (N10, N18)**
-Wire the Electron app to use the package directly. Replace all Python subprocess calls. This is where the real payoff happens — direct function calls, no subprocess overhead, no encoding bugs.
+**Phase 4 — Electron integration (N17):** Wire Electron app to use package directly. The real payoff — no more subprocess calls.
 
-**Phase 5 — Distribution (N19-N22)**
-Global npm install, platform-specific app packaging, CI/CD pipeline for automated releases.
+**Phase 5 — Distribution (N18-N21):** npm global install, platform-specific app packaging.
 
 ### What Stays in Python
 
-- **Workspace backend** (`workspace/backend/`) — FastAPI + PostgreSQL, runs server-side
+- **Workspace backend** (`workspace/backend/`) — FastAPI + PostgreSQL, server-side
 - **ONM primitives** (`src/openagents/core/onm_*.py`) — shared protocol definitions
-- **Python SDK** (`src/openagents/sdk/`) — for building custom agents/networks in Python
-- **Python-based agents** (Aider, SWE-bench) — still need Python, connector just runs `pip install` + spawns the binary
-- **Adapters** (`src/openagents/adapters/`) — agent-specific protocol bridges, run inside the daemon
+- **Python SDK** (`src/openagents/sdk/`) — custom agents/networks in Python
+- **Python-based agents** (Aider, SWE-bench) — connector just runs `pip install` + spawns binary
+- **Adapters** (`src/openagents/adapters/`) — agent protocol bridges, run inside daemon
 
 ### API Surface
-
-The package exports a single `AgentConnector` class:
 
 ```js
 const { AgentConnector } = require('@openagents-org/agent-connector');
 const connector = new AgentConnector({ configDir: '~/.openagents' });
 
 // Registry
-await connector.getCatalog();                      // → [{name, label, installed, ...}]
-await connector.getEnvFields('openclaw');           // → [{name, required, description}]
+await connector.getCatalog();                      // [{name, label, installed, ...}]
+await connector.getEnvFields('openclaw');           // [{name, required, description}]
 
 // Install / Uninstall
 await connector.install('openclaw');                // npm install -g openclaw@latest
 await connector.uninstall('openclaw');              // npm uninstall -g openclaw
-await connector.isInstalled('openclaw');            // → true/false
+await connector.isInstalled('openclaw');            // true/false
 
 // Agent CRUD
-connector.listAgents();                            // → [{name, type, state, network, env}]
-connector.addAgent({ name, type });                 // adds to daemon.yaml
-connector.removeAgent('my-agent');                  // removes from daemon.yaml
-connector.getAgentEnv('openclaw');                  // reads env file
-connector.saveAgentEnv('openclaw', { LLM_API_KEY }); // writes env file
+connector.listAgents();                            // [{name, type, state, network, env}]
+connector.addAgent({ name, type });
+connector.removeAgent('my-agent');
+connector.getAgentEnv('openclaw');
+connector.saveAgentEnv('openclaw', { LLM_API_KEY });
 
 // Daemon lifecycle
-await connector.start();                           // start daemon (all agents)
-await connector.stop();                             // stop daemon
-await connector.startAgent('my-agent');             // start single agent
-await connector.stopAgent('my-agent');              // stop single agent
-connector.getStatus();                              // → {agents: {name: {state, restarts}}}
-connector.getLogs({ agent: 'my-agent', lines: 100 }); // tail logs
+await connector.start();                           // start all agents
+await connector.stop();                            // stop all
+await connector.startAgent('my-agent');
+await connector.stopAgent('my-agent');
+connector.getStatus();                             // {agents: {name: {state, restarts}}}
+connector.getLogs({ agent: 'my-agent', lines: 100 });
 
 // Workspace
-await connector.connectWorkspace('my-agent', slug); // connect agent to workspace
-await connector.disconnectWorkspace('my-agent');    // disconnect
-await connector.createWorkspace('my-ws');           // create new workspace
-await connector.listWorkspaces();                   // list configured workspaces
-await connector.testLLM({ LLM_API_KEY, LLM_BASE_URL, LLM_MODEL }); // test connection
+await connector.connectWorkspace('my-agent', slug);
+await connector.disconnectWorkspace('my-agent');
+await connector.createWorkspace('my-ws');
+await connector.listWorkspaces();
+await connector.testLLM({ LLM_API_KEY, LLM_BASE_URL, LLM_MODEL });
 ```
 
 ---
 
-## Legacy Pending (Python SDK)
+## Part 4: Legacy Pending (Python SDK)
 
 | # | Task | Priority | Notes |
 |---|------|----------|-------|
-| P8 | `network start` refactor | Low | Separate network launching (Layer 3) from agent launching. |
-| P9 | Community plugins | Low | Publish `openagents-aider`, `openagents-goose` as pip-installable plugin packages. |
-| P10 | Agent registry API — seed data + deployment | Medium | Seed built-in + known agents into DB. Deploy to `endpoint.openagents.org`. |
-| P11 | Remote agents via SSH tunnel | Low | Support agents running on remote servers, connected via SSH tunnel. |
-| P25 | Update internal docs — agent workspace concept | Medium | Update the agent-workspace internal doc to reflect latest concept. |
-| P27 | README rewrite — three-layer narrative | High | Full rewrite with layered narrative. |
+| P8 | `network start` refactor | Low | Separate network launching (Layer 3) from agent launching |
+| P9 | Community plugins | Low | Publish `openagents-aider`, `openagents-goose` as pip packages |
+| P10 | Agent registry API — seed data + deployment | Medium | Seed agents into DB, deploy to `endpoint.openagents.org` |
+| P11 | Remote agents via SSH tunnel | Low | Agents on remote servers via SSH tunnel |
+| P25 | Update internal docs — agent workspace concept | Medium | Reflect latest concept in internal docs |
+| P27 | README rewrite — three-layer narrative | High | Full rewrite with layered narrative |
