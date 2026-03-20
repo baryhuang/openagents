@@ -450,11 +450,24 @@ class AgentManager {
 
     return new Promise((resolve, reject) => {
       const { exec } = require('child_process');
-      exec(uninstallCmd, { encoding: 'utf-8', timeout: 60000, shell: true }, (error, stdout, stderr) => {
+      exec(uninstallCmd, { encoding: 'utf-8', timeout: 60000, shell: true }, async (error, stdout, stderr) => {
         if (error) {
           reject(new Error(stderr || stdout || error.message));
           return;
         }
+        // Remove install marker so is_installed() returns false
+        try {
+          await this._execPythonCode(
+            `import json; from pathlib import Path; ` +
+            `p = Path.home() / ".openagents" / "installed_agents.json"; ` +
+            `d = json.loads(p.read_text()) if p.exists() else []; ` +
+            `d = [x for x in d if x != "${agentType}"]; ` +
+            `p.write_text(json.dumps(d)); ` +
+            `m = Path.home() / ".openagents" / "installed" / "${agentType}"; ` +
+            `m.unlink(missing_ok=True); ` +
+            `print("marker_cleared")`
+          );
+        } catch {}
         resolve({ success: true, output: (stdout || '').trim() + '\n' + (stderr || '').trim() });
       });
     });
