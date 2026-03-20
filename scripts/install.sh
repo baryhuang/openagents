@@ -170,7 +170,7 @@ if $PYTHON -c "import openagents" 2>/dev/null; then
     current=$($PYTHON -c "from openagents import __version__; print(__version__)" 2>/dev/null || echo "unknown")
     ok "openagents already installed (v${current})"
     # Quick check: is there a newer version?
-    latest=$($PIP index versions openagents 2>/dev/null | head -1 | grep -oP '\(([^)]+)\)' | tr -d '()' || echo "")
+    latest=$($PIP index versions openagents 2>/dev/null | head -1 | sed -n 's/.*(\([^)]*\)).*/\1/p' || echo "")
     if [ -n "$latest" ] && [ "$latest" != "$current" ]; then
         info "Upgrading v${current} -> v${latest}..."
         # Show pip's native progress (don't hide behind spinner)
