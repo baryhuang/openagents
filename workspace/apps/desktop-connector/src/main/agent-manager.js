@@ -423,6 +423,43 @@ class AgentManager {
     return this._runOpenAgents(['install', agentType, '--yes']);
   }
 
+  async uninstallAgentType(agentType) {
+    // Derive uninstall command from the install command
+    const code =
+      'import json; from openagents.client.plugin_registry import registry; ' +
+      `cat = registry.get_catalog(); item = cat.get("${agentType}"); ` +
+      'print(json.dumps({"install_command": item.install_command if item else ""}))';
+    let installCmd = '';
+    try {
+      const result = await this._execPythonCode(code);
+      const info = JSON.parse(result.output);
+      installCmd = info.install_command || '';
+    } catch {}
+
+    // Build uninstall command based on install pattern
+    let uninstallCmd = '';
+    if (installCmd.includes('npm install -g ')) {
+      const pkg = installCmd.split('npm install -g ')[1].split(/\s/)[0].replace(/@latest$/, '');
+      uninstallCmd = `npm uninstall -g ${pkg}`;
+    } else if (installCmd.includes('pip install ')) {
+      const pkg = installCmd.split('pip install ')[1].split(/\s/)[0];
+      uninstallCmd = `pip uninstall -y ${pkg}`;
+    } else {
+      return { success: false, output: `No automatic uninstall for ${agentType}. Install command: ${installCmd}` };
+    }
+
+    return new Promise((resolve, reject) => {
+      const { exec } = require('child_process');
+      exec(uninstallCmd, { encoding: 'utf-8', timeout: 60000, shell: true }, (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || stdout || error.message));
+          return;
+        }
+        resolve({ success: true, output: (stdout || '').trim() + '\n' + (stderr || '').trim() });
+      });
+    });
+  }
+
   // ------------------------------------------------------------------
   // Workspace connection
   // ------------------------------------------------------------------

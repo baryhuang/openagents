@@ -146,6 +146,7 @@ function setupIPC() {
 
   // Agent install (openclaw, etc.)
   ipcMain.handle('agents:install-type', (_e, agentType) => agentManager.installAgentType(agentType));
+  ipcMain.handle('agents:uninstall-type', (_e, agentType) => agentManager.uninstallAgentType(agentType));
   ipcMain.handle('agents:check-type', (_e, agentType) => agentManager.checkAgentType(agentType));
   ipcMain.handle('agents:catalog', () => agentManager.getCatalog());
 

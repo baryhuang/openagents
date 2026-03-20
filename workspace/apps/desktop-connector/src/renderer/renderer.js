@@ -684,6 +684,7 @@ async function refreshCatalog() {
           <button class="btn btn-sm" data-action="install-catalog" data-name="${esc(c.name)}" data-installed="${c.installed}">
             ${c.installed ? 'Update' : 'Install'}
           </button>
+          ${c.installed ? `<button class="btn btn-sm btn-danger" data-action="uninstall-catalog" data-name="${esc(c.name)}">Uninstall</button>` : ''}
         </div>
       </div>
     `).join('');
@@ -708,6 +709,22 @@ async function installCatalogItem(name, isInstalled) {
   } catch (err) {
     output.textContent += '\nError: ' + err.message;
     showToast(`Install failed: ${err.message}`, 'error');
+  }
+}
+
+async function uninstallCatalogItem(name) {
+  const output = document.getElementById('catalog-install-output');
+  output.style.display = 'block';
+  output.textContent = `Uninstalling ${name}...\n`;
+
+  try {
+    const result = await window.api.uninstallAgentType(name);
+    output.textContent += (result.output || '') + `\n\nDone! ${name} has been uninstalled.`;
+    showToast(`${name} uninstalled`, 'success');
+    refreshCatalog();
+  } catch (err) {
+    output.textContent += '\nError: ' + err.message;
+    showToast(`Uninstall failed: ${err.message}`, 'error');
   }
 }
 
@@ -865,6 +882,7 @@ document.addEventListener('click', (e) => {
     case 'test-llm': testLLMConfig(type); break;
     case 'close-modal': closeModal(); break;
     case 'install-catalog': installCatalogItem(name, btn.dataset.installed === 'true'); break;
+    case 'uninstall-catalog': uninstallCatalogItem(name); break;
   }
 });
 

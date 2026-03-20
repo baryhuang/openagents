@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Agent type install & catalog
   installAgentType: (type) => ipcRenderer.invoke('agents:install-type', type),
+  uninstallAgentType: (type) => ipcRenderer.invoke('agents:uninstall-type', type),
   checkAgentType: (type) => ipcRenderer.invoke('agents:check-type', type),
   getCatalog: () => ipcRenderer.invoke('agents:catalog'),
 
