@@ -1,0 +1,47 @@
+{
+  "name": "openagents-connector",
+  "version": "0.1.0",
+  "description": "OpenAgents Desktop Connector — install, configure, and manage agents",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron . --remote-debugging-port=9222 --remote-allow-origins=*",
+    "dev": "electron . --dev",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:all": "electron-builder --win --mac"
+  },
+  "author": "OpenAgents",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {},
+  "build": {
+    "appId": "com.openagents.connector",
+    "productName": "OpenAgents Connector",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/",
+        "filter": ["**/*"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,829 @@
+// ---- Tab navigation ----
+
+function switchTab(tabName) {
+  document.querySelectorAll('.nav-item').forEach((el) => {
+    el.classList.toggle('active', el.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.tab-content').forEach((el) => {
+    el.classList.toggle('active', el.id === `tab-${tabName}`);
+  });
+
+  if (tabName === 'dashboard') refreshDashboard();
+  if (tabName === 'agents') refreshAgentList();
+  if (tabName === 'install') refreshInstallStatus();
+  if (tabName === 'logs') refreshLogs();
+}
+
+document.querySelectorAll('.nav-item').forEach((el) => {
+  el.addEventListener('click', () => switchTab(el.dataset.tab));
+});
+
+// Keyboard shortcuts: Ctrl+1..5 for tabs
+const tabShortcuts = ['dashboard', 'agents', 'install', 'logs', 'settings'];
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key >= '1' && e.key <= '5') {
+    e.preventDefault();
+    switchTab(tabShortcuts[parseInt(e.key) - 1]);
+  }
+});
+
+// ---- Toast notifications ----
+
+function showToast(message, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  const colors = { info: 'var(--accent)', success: 'var(--success)', error: 'var(--danger)', warning: 'var(--warning)' };
+  toast.style.cssText = `background:var(--bg-card);border:1px solid ${colors[type] || colors.info};border-radius:var(--radius);padding:12px 18px;font-size:13px;color:var(--text-primary);box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:350px;animation:fadeIn 0.2s;`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
+}
+
+// ---- Modal system ----
+
+function showModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+  document.getElementById('modal-content').innerHTML = '';
+}
+
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+
+// ---- Dashboard ----
+
+async function refreshDashboard() {
+  try {
+    const agents = await window.api.listAgents();
+    const cardsEl = document.getElementById('agent-cards');
+
+    if (!agents || agents.length === 0) {
+      cardsEl.innerHTML = `
+        <div class="card empty-state">
+          <p>No agents configured yet.</p>
+          <button class="btn" onclick="switchTab('agents')">Add Agent</button>
+        </div>`;
+    } else {
+      cardsEl.innerHTML = agents.map((a) => {
+        const wsDisplay = a.networkName || a.network || '';
+        return `
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <span class="agent-card-name">${esc(a.name)}</span>
+            <span class="agent-card-type">${esc(a.type)}</span>
+          </div>
+          <div class="agent-card-status">
+            <span class="status-dot ${statusClass(a.state)}"></span>
+            ${esc(a.state)}
+            ${wsDisplay ? ` &middot; ${esc(wsDisplay)}` : ''}
+          </div>
+          ${a.lastError ? `<div class="agent-card-error">${esc(a.lastError)}</div>` : ''}
+          <div class="agent-card-actions">
+            <button class="btn btn-sm" onclick="toggleAgent('${esc(a.name)}', '${a.state}')">
+              ${a.state === 'online' || a.state === 'running' ? 'Stop' : 'Start'}
+            </button>
+            <button class="btn btn-sm" onclick="showAgentActions('${esc(a.name)}', '${esc(a.type)}', '${a.state}', '${esc(a.network || '')}')">Actions</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('Dashboard refresh error:', err);
+  }
+
+  updateDaemonStatus();
+
+  try {
+    const pyStatus = await window.api.pythonStatus();
+    const banner = document.getElementById('setup-banner');
+    const versionEl = document.getElementById('sdk-version');
+    if (!pyStatus.pythonFound) {
+      banner.style.display = 'block';
+      banner.querySelector('p').textContent = 'Python 3.10+ is not installed. Please install Python first.';
+      versionEl.textContent = 'No Python';
+    } else if (!pyStatus.sdkInstalled) {
+      banner.style.display = 'block';
+      versionEl.textContent = 'SDK not installed';
+    } else {
+      banner.style.display = 'none';
+      versionEl.textContent = `v${pyStatus.sdkVersion}`;
+    }
+  } catch {}
+}
+
+async function updateDaemonStatus() {
+  try {
+    const status = await window.api.agentStatus();
+    const el = document.getElementById('daemon-status');
+    const agents = Object.values(status);
+    const hasOnline = agents.some((s) => s.state === 'online' || s.state === 'running');
+    const hasStarting = agents.some((s) => s.state === 'starting' || s.state === 'reconnecting');
+
+    if (hasOnline) {
+      el.innerHTML = '<span class="status-dot online"></span><span>Daemon: running</span>';
+    } else if (hasStarting) {
+      el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: starting</span>';
+    } else if (agents.length > 0) {
+      el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: idle</span>';
+    } else {
+      el.innerHTML = '<span class="status-dot offline"></span><span>Daemon: offline</span>';
+    }
+  } catch {
+    document.getElementById('daemon-status').innerHTML =
+      '<span class="status-dot offline"></span><span>Daemon: offline</span>';
+  }
+}
+
+async function toggleAgent(name, currentState) {
+  try {
+    if (currentState === 'online' || currentState === 'running') {
+      await window.api.stopAgent(name);
+      showToast(`Stopping ${name}...`, 'info');
+    } else {
+      await window.api.startAgent(name);
+      showToast(`Starting ${name}...`, 'info');
+    }
+    setTimeout(() => refreshDashboard(), 2000);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+document.getElementById('btn-start-all').addEventListener('click', async () => {
+  try {
+    const result = await window.api.startAll();
+    showToast(result.message || 'Starting all agents...', 'success');
+    setTimeout(() => refreshDashboard(), 2000);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+});
+
+document.getElementById('btn-stop-all').addEventListener('click', async () => {
+  try {
+    await window.api.stopAll();
+    showToast('Stopping all agents...', 'info');
+    setTimeout(() => refreshDashboard(), 2000);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+});
+
+// ---- Agent Actions (context menu) ----
+
+function showAgentActions(name, type, state, network) {
+  const isRunning = state === 'online' || state === 'running';
+  const actions = [];
+
+  if (isRunning) {
+    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); toggleAgent('${esc(name)}', '${state}')">Stop</button>`);
+  } else {
+    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); toggleAgent('${esc(name)}', '${state}')">Start</button>`);
+  }
+
+  actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); openConfigureScreen('${esc(type)}')">Configure</button>`);
+
+  if (network) {
+    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); disconnectAgent('${esc(name)}')">Disconnect from Workspace</button>`);
+    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); openWorkspaceInBrowser('${esc(name)}')">Open Workspace in Browser</button>`);
+  } else {
+    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); showConnectWorkspace('${esc(name)}')">Connect to Workspace</button>`);
+  }
+
+  actions.push(`<button class="btn modal-action-btn btn-danger" onclick="closeModal(); removeAgent('${esc(name)}')">Remove Agent</button>`);
+
+  showModal(`
+    <h3>Agent: ${esc(name)}</h3>
+    <div class="modal-actions-list">
+      ${actions.join('')}
+    </div>
+    <button class="btn modal-close-btn" onclick="closeModal()">Cancel</button>
+  `);
+}
+
+async function disconnectAgent(name) {
+  try {
+    await window.api.disconnectWorkspace(name);
+    showToast(`Disconnected ${name} from workspace`, 'success');
+    window.api.signalReload();
+    refreshDashboard();
+    refreshAgentList();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+async function openWorkspaceInBrowser(name) {
+  try {
+    const agents = await window.api.listAgents();
+    const agent = agents.find((a) => a.name === name);
+    if (!agent || !agent.network) {
+      showToast('No workspace connected', 'warning');
+      return;
+    }
+    const slug = agent.networkName || agent.network;
+    const url = `https://workspace.openagents.org/${slug}`;
+    window.api.openExternal(url);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+// ---- Configure Agent Screen ----
+
+async function openConfigureScreen(agentType) {
+  showModal(`<div class="loading-text">Loading configuration...</div>`);
+
+  try {
+    const [fields, saved] = await Promise.all([
+      window.api.getEnvFields(agentType),
+      window.api.getAgentEnv(agentType),
+    ]);
+
+    if (!fields || fields.length === 0) {
+      showModal(`
+        <h3>Configure ${esc(agentType)}</h3>
+        <p class="hint">No configuration required for this agent type.</p>
+        <button class="btn" onclick="closeModal()">Close</button>
+      `);
+      return;
+    }
+
+    const fieldsHtml = fields.map((f) => {
+      const current = saved[f.name] || f.default || '';
+      const required = f.required ? ' <span class="required">*</span>' : '';
+      const inputType = f.password ? 'password' : 'text';
+      return `
+        <div class="form-group">
+          <label>${esc(f.description)}${required}</label>
+          <input type="${inputType}" id="cfg-${f.name}" value="${esc(current)}"
+                 placeholder="${esc(f.placeholder || `Enter ${f.name}...`)}">
+        </div>`;
+    }).join('');
+
+    showModal(`
+      <h3>Configure ${esc(agentType)}</h3>
+      <p class="hint">Settings saved to ~/.openagents/env/</p>
+      <div class="configure-form">
+        ${fieldsHtml}
+      </div>
+      <div id="test-result"></div>
+      <div class="modal-button-row">
+        <button class="btn btn-primary" onclick="saveConfig('${esc(agentType)}')">Save</button>
+        <button class="btn" onclick="testLLMConfig('${esc(agentType)}')">Test Connection</button>
+        <button class="btn" onclick="closeModal()">Cancel</button>
+      </div>
+    `);
+  } catch (err) {
+    showModal(`
+      <h3>Error</h3>
+      <p>${esc(err.message)}</p>
+      <button class="btn" onclick="closeModal()">Close</button>
+    `);
+  }
+}
+
+async function saveConfig(agentType) {
+  const fields = document.querySelectorAll('.configure-form input');
+  const env = {};
+  fields.forEach((input) => {
+    const name = input.id.replace('cfg-', '');
+    const val = input.value.trim();
+    if (val) env[name] = val;
+  });
+
+  try {
+    await window.api.saveAgentEnv(agentType, env);
+    showToast('Configuration saved', 'success');
+    closeModal();
+    refreshDashboard();
+    refreshAgentList();
+  } catch (err) {
+    showToast(`Error saving: ${err.message}`, 'error');
+  }
+}
+
+async function testLLMConfig(agentType) {
+  const fields = document.querySelectorAll('.configure-form input');
+  const env = {};
+  fields.forEach((input) => {
+    const name = input.id.replace('cfg-', '');
+    const val = input.value.trim();
+    if (val) env[name] = val;
+  });
+
+  const resultEl = document.getElementById('test-result');
+  if (!resultEl) return;
+
+  resultEl.innerHTML = '<span class="test-loading">Testing...</span>';
+
+  try {
+    const result = await window.api.testLLM(env);
+    if (result.success) {
+      resultEl.innerHTML = `<span class="test-success">OK — model: ${esc(result.model)}, response: "${esc(result.response)}"</span>`;
+    } else {
+      resultEl.innerHTML = `<span class="test-error">${esc(result.error)}</span>`;
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<span class="test-error">${esc(err.message)}</span>`;
+  }
+}
+
+// ---- Connect Workspace Screen ----
+
+async function showConnectWorkspace(agentName) {
+  showModal(`<div class="loading-text">Loading workspaces...</div>`);
+
+  try {
+    const networks = await window.api.listWorkspaces();
+
+    let rows = '';
+    if (networks && networks.length > 0) {
+      rows = networks.map((n) => {
+        const display = n.name || n.slug || n.id;
+        const url = n.endpoint && (n.endpoint.includes('localhost') || n.endpoint.includes('127.0.0.1'))
+          ? `${n.endpoint}/${n.slug || n.id}`
+          : `workspace.openagents.org/${n.slug || n.id}`;
+        return `<button class="btn modal-action-btn" onclick="closeModal(); doConnectWorkspace('${esc(agentName)}', '${esc(n.slug || n.id)}')">${esc(display)} — ${esc(url)}</button>`;
+      }).join('');
+    }
+
+    showModal(`
+      <h3>Connect '${esc(agentName)}' to Workspace</h3>
+      <div class="modal-actions-list">
+        ${rows}
+        <button class="btn modal-action-btn" onclick="closeModal(); showCreateWorkspace('${esc(agentName)}')">+ Create New Workspace</button>
+        <button class="btn modal-action-btn" onclick="closeModal(); showJoinWithToken('${esc(agentName)}')">Join with Token</button>
+      </div>
+      <button class="btn modal-close-btn" onclick="closeModal()">Cancel</button>
+    `);
+  } catch (err) {
+    showModal(`
+      <h3>Error</h3>
+      <p>${esc(err.message)}</p>
+      <button class="btn" onclick="closeModal()">Close</button>
+    `);
+  }
+}
+
+async function doConnectWorkspace(agentName, slug) {
+  try {
+    showToast(`Connecting ${agentName} to workspace...`, 'info');
+    await window.api.connectWorkspace(agentName, slug);
+    window.api.signalReload();
+    showToast(`Connected to ${slug}`, 'success');
+    refreshDashboard();
+    refreshAgentList();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+function showCreateWorkspace(agentName) {
+  showModal(`
+    <h3>Create New Workspace</h3>
+    <div class="form-group">
+      <label>Workspace name</label>
+      <input type="text" id="new-workspace-name" placeholder="my-workspace">
+    </div>
+    <div class="modal-button-row">
+      <button class="btn btn-primary" onclick="doCreateWorkspace('${esc(agentName)}')">Create</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+  setTimeout(() => { const el = document.getElementById('new-workspace-name'); if (el) el.focus(); }, 100);
+}
+
+async function doCreateWorkspace(agentName) {
+  const name = document.getElementById('new-workspace-name')?.value?.trim();
+  if (!name) { showToast('Workspace name is required', 'warning'); return; }
+
+  closeModal();
+  try {
+    showToast(`Creating workspace '${name}'...`, 'info');
+    await window.api.createWorkspace(name);
+    showToast(`Workspace '${name}' created`, 'success');
+    // Auto-connect the agent
+    const networks = await window.api.listWorkspaces();
+    const newNet = networks.find((n) => n.name === name || n.slug === name);
+    if (newNet && agentName) {
+      await window.api.connectWorkspace(agentName, newNet.slug || newNet.id);
+      window.api.signalReload();
+      showToast(`Connected ${agentName} to ${name}`, 'success');
+    }
+    refreshDashboard();
+    refreshAgentList();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+function showJoinWithToken(agentName) {
+  showModal(`
+    <h3>Join Workspace with Token</h3>
+    <div class="form-group">
+      <label>Paste workspace token</label>
+      <input type="text" id="workspace-token" placeholder="Paste token here...">
+    </div>
+    <div class="modal-button-row">
+      <button class="btn btn-primary" onclick="doJoinWithToken('${esc(agentName)}')">Join</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+  setTimeout(() => { const el = document.getElementById('workspace-token'); if (el) el.focus(); }, 100);
+}
+
+async function doJoinWithToken(agentName) {
+  const token = document.getElementById('workspace-token')?.value?.trim();
+  if (!token) { showToast('Token is required', 'warning'); return; }
+
+  closeModal();
+  try {
+    showToast('Joining workspace...', 'info');
+    await window.api.connectWorkspace(agentName, token);
+    window.api.signalReload();
+    showToast('Joined workspace', 'success');
+    refreshDashboard();
+    refreshAgentList();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+// ---- Agents tab ----
+
+document.getElementById('btn-add-agent').addEventListener('click', () => showNewAgentDialog());
+
+async function showNewAgentDialog() {
+  // First check which agent types are installed
+  showModal(`<div class="loading-text">Loading installed types...</div>`);
+
+  try {
+    const catalog = await window.api.getCatalog();
+    const installed = catalog.filter((c) => c.installed);
+
+    if (installed.length === 0) {
+      showModal(`
+        <h3>New Agent</h3>
+        <p class="hint">No agent runtimes installed. Install one first.</p>
+        <div class="modal-button-row">
+          <button class="btn btn-primary" onclick="closeModal(); switchTab('install')">Go to Install</button>
+          <button class="btn" onclick="closeModal()">Cancel</button>
+        </div>
+      `);
+      return;
+    }
+
+    const typeOptions = installed.map((c) =>
+      `<option value="${esc(c.name)}">${esc(c.label || c.name)}</option>`
+    ).join('');
+
+    showModal(`
+      <h3>New Agent</h3>
+      <div class="form-group">
+        <label>Agent type</label>
+        <select id="new-agent-type">${typeOptions}</select>
+      </div>
+      <div class="form-group">
+        <label>Agent name</label>
+        <input type="text" id="new-agent-name" placeholder="my-agent">
+      </div>
+      <div class="form-group">
+        <label>Working directory (optional)</label>
+        <input type="text" id="new-agent-path" placeholder="/path/to/project">
+      </div>
+      <div class="modal-button-row">
+        <button class="btn btn-primary" onclick="doAddAgent()">Create</button>
+        <button class="btn" onclick="closeModal()">Cancel</button>
+      </div>
+    `);
+
+    // Auto-generate name
+    const nameInput = document.getElementById('new-agent-name');
+    const typeSelect = document.getElementById('new-agent-type');
+    const generateName = () => {
+      const type = typeSelect.value;
+      const suffix = Math.random().toString(36).slice(2, 6);
+      nameInput.placeholder = `${type}-${suffix}`;
+    };
+    typeSelect.addEventListener('change', generateName);
+    generateName();
+    setTimeout(() => nameInput.focus(), 100);
+  } catch (err) {
+    showModal(`
+      <h3>Error</h3>
+      <p>${esc(err.message)}</p>
+      <button class="btn" onclick="closeModal()">Close</button>
+    `);
+  }
+}
+
+async function doAddAgent() {
+  const type = document.getElementById('new-agent-type')?.value;
+  let name = document.getElementById('new-agent-name')?.value?.trim();
+  const agentPath = document.getElementById('new-agent-path')?.value?.trim();
+
+  if (!name) {
+    name = document.getElementById('new-agent-name')?.placeholder || `${type}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    showToast('Agent name can only contain letters, numbers, hyphens, and underscores', 'warning');
+    return;
+  }
+
+  closeModal();
+
+  try {
+    await window.api.addAgent({ name, type, path: agentPath || undefined });
+    showToast(`Agent '${name}' created`, 'success');
+    // Open configure screen for the new agent
+    openConfigureScreen(type);
+    refreshAgentList();
+    refreshDashboard();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+async function refreshAgentList() {
+  try {
+    const agents = await window.api.listAgents();
+    const listEl = document.getElementById('agent-list');
+
+    if (!agents || agents.length === 0) {
+      listEl.innerHTML = '<p class="hint" style="padding:20px 0;">No agents configured. Click "+ New Agent" to get started.</p>';
+      return;
+    }
+
+    listEl.innerHTML = agents.map((a) => {
+      const wsDisplay = a.networkName || a.network || 'local only';
+      const envDisplay = [];
+      if (a.env?.LLM_BASE_URL || a.env?.OPENAI_BASE_URL) envDisplay.push(`API: ${a.env.LLM_BASE_URL || a.env.OPENAI_BASE_URL}`);
+      if (a.env?.LLM_MODEL || a.env?.OPENCLAW_MODEL) envDisplay.push(`Model: ${a.env.LLM_MODEL || a.env.OPENCLAW_MODEL}`);
+      const hasKey = a.env?.LLM_API_KEY || a.env?.OPENAI_API_KEY || a.env?.ANTHROPIC_API_KEY;
+
+      return `
+        <div class="agent-list-item">
+          <div class="agent-list-info">
+            <h4>${esc(a.name)}</h4>
+            <span>
+              ${esc(a.type)} &middot;
+              <span class="status-dot ${statusClass(a.state)}"></span> ${esc(a.state)}
+              &middot; ${esc(wsDisplay)}
+              ${a.restarts > 0 ? ` &middot; restarts: ${a.restarts}` : ''}
+            </span>
+            <span class="agent-config-hint">
+              ${hasKey ? '&#128273; API key set' : '<span class="text-warning">&#9888; No API key</span>'}
+              ${envDisplay.length ? ' &middot; ' + envDisplay.map(esc).join(' &middot; ') : ''}
+            </span>
+            ${a.lastError ? `<span class="agent-error">${esc(a.lastError)}</span>` : ''}
+          </div>
+          <div class="agent-list-actions">
+            <button class="btn btn-sm" onclick="toggleAgent('${esc(a.name)}', '${a.state}')">
+              ${a.state === 'online' || a.state === 'running' ? 'Stop' : 'Start'}
+            </button>
+            <button class="btn btn-sm" onclick="openConfigureScreen('${esc(a.type)}')">Configure</button>
+            ${a.network
+              ? `<button class="btn btn-sm" onclick="disconnectAgent('${esc(a.name)}')">Disconnect</button>
+                 <button class="btn btn-sm" onclick="openWorkspaceInBrowser('${esc(a.name)}')">Open WS</button>`
+              : `<button class="btn btn-sm" onclick="showConnectWorkspace('${esc(a.name)}')">Connect</button>`
+            }
+            <button class="btn btn-sm btn-danger" onclick="removeAgent('${esc(a.name)}')">Remove</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    console.error('Agent list error:', err);
+    showToast('Failed to load agents', 'error');
+  }
+}
+
+async function removeAgent(name) {
+  if (!confirm(`Remove agent '${name}'? This will stop it if running.`)) return;
+  try {
+    await window.api.removeAgent(name);
+    showToast(`Agent '${name}' removed`, 'success');
+    refreshAgentList();
+    refreshDashboard();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+// ---- Install tab ----
+
+async function refreshInstallStatus() {
+  // Python
+  try {
+    const pyStatus = await window.api.pythonStatus();
+
+    const pyEl = document.getElementById('python-status');
+    if (pyStatus.pythonFound) {
+      pyEl.textContent = pyStatus.pythonPath;
+      pyEl.style.color = 'var(--success)';
+    } else {
+      pyEl.textContent = 'Not found — install Python 3.10+';
+      pyEl.style.color = 'var(--danger)';
+    }
+
+    const sdkEl = document.getElementById('sdk-status');
+    if (pyStatus.sdkInstalled) {
+      sdkEl.textContent = `v${pyStatus.sdkVersion}`;
+      sdkEl.style.color = 'var(--success)';
+    } else {
+      sdkEl.textContent = pyStatus.pythonFound ? 'Not installed' : 'Requires Python';
+      sdkEl.style.color = 'var(--warning)';
+    }
+
+    document.getElementById('btn-install-sdk').disabled = !pyStatus.pythonFound;
+  } catch {}
+
+  // Catalog
+  refreshCatalog();
+}
+
+async function refreshCatalog() {
+  const container = document.getElementById('catalog-table-container');
+
+  try {
+    const catalog = await window.api.getCatalog();
+
+    if (!catalog || catalog.length === 0) {
+      container.innerHTML = '<p class="hint">No agent runtimes available. Install the SDK first.</p>';
+      return;
+    }
+
+    const rows = catalog.map((c) => `
+      <div class="catalog-row ${c.installed ? 'installed' : ''}" data-name="${esc(c.name)}">
+        <div class="catalog-info">
+          <span class="catalog-name">${esc(c.label || c.name)}</span>
+          <span class="catalog-desc">${esc(c.description || '')}</span>
+        </div>
+        <div class="catalog-status">
+          ${c.installed
+            ? '<span class="badge badge-success">installed</span>'
+            : '<span class="badge badge-warning">not installed</span>'}
+        </div>
+        <div class="catalog-actions">
+          <button class="btn btn-sm" onclick="installCatalogItem('${esc(c.name)}', ${c.installed})">
+            ${c.installed ? 'Update' : 'Install'}
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+    container.innerHTML = `<div class="catalog-list">${rows}</div>`;
+  } catch (err) {
+    container.innerHTML = `<p class="hint">Failed to load catalog: ${esc(err.message)}</p>`;
+  }
+}
+
+async function installCatalogItem(name, isInstalled) {
+  const output = document.getElementById('catalog-install-output');
+  output.style.display = 'block';
+  const verb = isInstalled ? 'Updating' : 'Installing';
+  output.textContent = `${verb} ${name}...\n`;
+
+  try {
+    const result = await window.api.installAgentType(name);
+    output.textContent += (result.output || '') + `\n\nDone! ${name} is now installed.`;
+    showToast(`${name} installed`, 'success');
+    refreshCatalog();
+  } catch (err) {
+    output.textContent += '\nError: ' + err.message;
+    showToast(`Install failed: ${err.message}`, 'error');
+  }
+}
+
+document.getElementById('btn-install-sdk').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-install-sdk');
+  const output = document.getElementById('sdk-install-output');
+  btn.disabled = true;
+  btn.textContent = 'Installing...';
+  output.style.display = 'block';
+  output.textContent = 'Running: pip install --upgrade openagents\n\n';
+
+  try {
+    const result = await window.api.installSDK();
+    output.textContent += (result.output || '') + '\n\nInstalled successfully! Version: ' + (result.version || 'unknown');
+    showToast('SDK installed successfully', 'success');
+    refreshInstallStatus();
+    refreshDashboard();
+  } catch (err) {
+    output.textContent += '\nError: ' + err.message;
+    showToast('SDK install failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Install / Upgrade SDK';
+  }
+});
+
+// ---- Logs tab ----
+
+async function refreshLogs() {
+  try {
+    const filter = document.getElementById('log-agent-filter').value;
+    const result = await window.api.agentLogs(filter, 500);
+    const viewer = document.getElementById('log-viewer');
+    if (result.lines && result.lines.length > 0) {
+      viewer.textContent = result.lines.join('\n');
+      viewer.scrollTop = viewer.scrollHeight;
+    } else {
+      viewer.textContent = 'No logs available.\n\nLogs appear here after the daemon starts.';
+    }
+  } catch (err) {
+    document.getElementById('log-viewer').textContent = 'Error loading logs: ' + err.message;
+  }
+
+  // Populate agent filter dropdown
+  try {
+    const agents = await window.api.listAgents();
+    const select = document.getElementById('log-agent-filter');
+    const current = select.value;
+    const existingOptions = new Set();
+    select.querySelectorAll('option').forEach((o) => existingOptions.add(o.value));
+
+    (agents || []).forEach((a) => {
+      if (!existingOptions.has(a.name)) {
+        const opt = document.createElement('option');
+        opt.value = a.name;
+        opt.textContent = a.name;
+        if (a.name === current) opt.selected = true;
+        select.appendChild(opt);
+      }
+    });
+  } catch {}
+}
+
+document.getElementById('btn-refresh-logs').addEventListener('click', refreshLogs);
+document.getElementById('log-agent-filter').addEventListener('change', refreshLogs);
+
+// ---- Settings tab ----
+
+document.getElementById('link-docs').addEventListener('click', (e) => {
+  e.preventDefault();
+  window.api.openExternal('https://docs.openagents.com');
+});
+
+(async () => {
+  try {
+    const startOnBoot = await window.api.getSetting('startOnBoot');
+    const minimizeToTray = await window.api.getSetting('minimizeToTray');
+    if (startOnBoot !== undefined) document.getElementById('setting-start-on-boot').checked = !!startOnBoot;
+    if (minimizeToTray !== undefined) document.getElementById('setting-minimize-to-tray').checked = !!minimizeToTray;
+  } catch {}
+})();
+
+document.getElementById('setting-start-on-boot').addEventListener('change', (e) => {
+  window.api.setSetting('startOnBoot', e.target.checked);
+});
+document.getElementById('setting-minimize-to-tray').addEventListener('change', (e) => {
+  window.api.setSetting('minimizeToTray', e.target.checked);
+});
+
+// ---- Utilities ----
+
+function esc(str) {
+  if (str == null) return '';
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+
+function statusClass(state) {
+  if (state === 'online' || state === 'running') return 'online';
+  if (state === 'starting' || state === 'reconnecting') return 'starting';
+  return 'offline';
+}
+
+// ---- Periodic refresh ----
+
+setInterval(() => {
+  const activeTab = document.querySelector('.nav-item.active');
+  if (activeTab) {
+    const tab = activeTab.dataset.tab;
+    if (tab === 'dashboard') refreshDashboard();
+    else if (tab === 'logs') refreshLogs();
+  }
+  updateDaemonStatus();
+}, 5000);
+
+// ---- Initial load ----
+
+refreshDashboard();

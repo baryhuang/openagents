@@ -459,7 +459,6 @@ class WorkspaceClient:
         params: Dict[str, Any] = {
             "network": workspace_id,
             "type": "workspace.message",
-            "member": agent_name,
             "limit": limit,
         }
         if after:
