@@ -1304,9 +1304,12 @@ class OpenAgentsTUI(App):
             )
         except Exception as e:
             self.app.call_from_thread(self._log, f"[red]✗ Failed to start daemon:[/red] {e}")
+            return
         import time
-        time.sleep(2)
+        time.sleep(5)
         self.app.call_from_thread(self._refresh_table)
+        # Check if agent actually started — show daemon log errors if not
+        self._check_agent_started(name)
 
     @work(thread=True)
     def _do_restart(self, name: str) -> None:
@@ -1329,6 +1332,7 @@ class OpenAgentsTUI(App):
                 )
             except Exception as e:
                 self.app.call_from_thread(self._log, f"[red]✗ Failed to start daemon:[/red] {e}")
+                return
         else:
             # Daemon running — send restart command via command file
             try:
@@ -1340,9 +1344,66 @@ class OpenAgentsTUI(App):
                 )
             except Exception as e:
                 self.app.call_from_thread(self._log, f"[red]✗ Failed to restart:[/red] {e}")
+                return
         import time
-        time.sleep(2)
+        time.sleep(5)
         self.app.call_from_thread(self._refresh_table)
+        # Check if agent actually started — show daemon log errors if not
+        self._check_agent_started(name)
+
+    def _check_agent_started(self, name: str) -> None:
+        """Check if agent came online; if not, surface daemon log errors."""
+        from openagents.client.daemon_config import read_status, LOG_PATH
+
+        status = read_status() or {}
+        agent_info = status.get("agents", {}).get(name, {})
+        state = agent_info.get("state", "stopped")
+
+        if state in ("online", "starting", "reconnecting"):
+            return  # Agent is fine
+
+        # Agent didn't start — check for last_error in status
+        last_err = agent_info.get("last_error", "")
+        if last_err:
+            self.app.call_from_thread(
+                self._log,
+                f"[red]✗ {name} failed:[/red] {last_err}",
+            )
+            return
+
+        # No error in status — tail the daemon log for clues
+        try:
+            if LOG_PATH.exists():
+                text = LOG_PATH.read_text(encoding="utf-8", errors="replace")
+                # Find last error/warning lines mentioning this agent or general errors
+                lines = text.splitlines()
+                error_lines = []
+                for line in reversed(lines):
+                    if len(error_lines) >= 3:
+                        break
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    low = stripped.lower()
+                    if "error" in low or "failed" in low or "crash" in low:
+                        error_lines.append(stripped)
+                if error_lines:
+                    error_lines.reverse()
+                    for line in error_lines:
+                        self.app.call_from_thread(
+                            self._log,
+                            f"[red]daemon:[/red] {line[:200]}",
+                        )
+                else:
+                    self.app.call_from_thread(
+                        self._log,
+                        f"[yellow]{name} not started yet — check daemon log for details[/yellow]",
+                    )
+        except Exception:
+            self.app.call_from_thread(
+                self._log,
+                f"[yellow]{name} not started yet — check daemon log for details[/yellow]",
+            )
 
     # -- Stop --
 
@@ -1640,9 +1701,16 @@ class OpenAgentsTUI(App):
             self.app.call_from_thread(self._log, "[green]✓[/green] Daemon starting…")
         except Exception as e:
             self.app.call_from_thread(self._log, f"[red]✗ Failed:[/red] {e}")
+            return
         import time
-        time.sleep(3)
+        time.sleep(5)
         self.app.call_from_thread(self._refresh_table)
+        # Check if any configured agents failed to start
+        from openagents.client.daemon_config import load_config
+        cfg = load_config()
+        for agent in cfg.agents:
+            if agent.network:  # only check network agents
+                self._check_agent_started(agent.name)
 
     def action_daemon_down(self) -> None:
         self._log("Stopping daemon…")
