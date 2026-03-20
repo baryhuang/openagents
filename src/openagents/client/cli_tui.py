@@ -166,6 +166,7 @@ class InstallAgentScreen(Screen[dict | None]):
         with Vertical():
             yield Label(" [bold]Install Agent Runtime[/bold]  —  Enter to install, or update an installed runtime\n")
             yield Static("", id="install-status")
+            yield Static("", id="install-log")
             yield LoadingIndicator(id="install-spinner")
             table = DataTable(id="install-table", cursor_type="row")
             table.add_columns("Name", "Label", "Version", "Status", "Description")
@@ -199,9 +200,13 @@ class InstallAgentScreen(Screen[dict | None]):
     def _update_progress(self, msg: str) -> None:
         self.query_one("#install-status", Static).update(f" {msg}")
 
+    def _update_log(self, msg: str) -> None:
+        self.query_one("#install-log", Static).update(f" [dim]{msg}[/dim]")
+
     def _hide_progress(self, msg: str = "") -> None:
         self.query_one("#install-status", Static).update(f" {msg}" if msg else "")
         self.query_one("#install-spinner", LoadingIndicator).display = False
+        self.query_one("#install-log", Static).update("")
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if not self._items or self._installing:
@@ -253,11 +258,27 @@ class InstallAgentScreen(Screen[dict | None]):
         env["CI"] = "1"  # many tools skip prompts when CI is set
 
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=600,
-                stdin=subprocess.DEVNULL, env=env,
+            proc = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, stdin=subprocess.DEVNULL, env=env,
+                encoding="utf-8", errors="replace",
             )
-            if result.returncode == 0:
+            last_err = ""
+            while True:
+                line = proc.stdout.readline()
+                if not line and proc.poll() is not None:
+                    break
+                line = line.rstrip()
+                if line:
+                    # Show the latest output line so user sees progress
+                    display = line[:120]
+                    self.app.call_from_thread(self._update_log, display)
+                    # Track last meaningful line for error reporting
+                    if "err" in line.lower() or "warn" in line.lower():
+                        last_err = line.strip()[:200]
+
+            returncode = proc.wait(timeout=600)
+            if returncode == 0:
                 # Write install marker immediately (before UI callbacks) so it
                 # persists even if the user dismisses the screen before
                 # _finish_install runs on the main thread.
@@ -270,7 +291,7 @@ class InstallAgentScreen(Screen[dict | None]):
                 )
                 self.app.call_from_thread(self._finish_install, item)
             else:
-                err = result.stderr.strip()[:200] if result.stderr else "unknown error"
+                err = last_err or f"exit code {returncode}"
                 self.app.call_from_thread(self._hide_progress, f"[red]✗ Install failed:[/red] {err}")
                 self._installing = False
         except Exception as e:
@@ -1594,11 +1615,28 @@ class OpenAgentsTUI(App):
     @work(thread=True)
     def _do_daemon_up(self) -> None:
         try:
-            subprocess.Popen(
-                [sys.executable, "-m", "openagents.client.cli", "up"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            if sys.platform == "win32":
+                # On Windows+SSH, DETACHED_PROCESS and CREATE_NEW_PROCESS_GROUP
+                # cause children to die immediately.  Start the daemon as a
+                # plain child process with no special flags — it stays alive as
+                # long as the TUI (its parent) is alive, which is exactly what
+                # we want for the interactive TUI session.
+                from openagents.client.daemon import LOG_PATH, PID_PATH
+                LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                log_file = open(LOG_PATH, "a")
+                self._daemon_proc = subprocess.Popen(
+                    [sys.executable, "-m", "openagents", "up", "--foreground"],
+                    stdout=log_file,
+                    stderr=log_file,
+                    stdin=subprocess.DEVNULL,
+                )
+                PID_PATH.write_text(str(self._daemon_proc.pid))
+            else:
+                subprocess.Popen(
+                    [sys.executable, "-m", "openagents.client.cli", "up"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             self.app.call_from_thread(self._log, "[green]✓[/green] Daemon starting…")
         except Exception as e:
             self.app.call_from_thread(self._log, f"[red]✗ Failed:[/red] {e}")

@@ -141,7 +141,10 @@ class DaemonManager:
             signal.signal(signal.SIGTERM, _sig_handler)
         else:
             for sig in (signal.SIGTERM, signal.SIGINT):
-                loop.add_signal_handler(sig, self._handle_signal)
+                loop.add_signal_handler(
+                    sig,
+                    lambda s=sig: self._handle_signal_named(s.name),
+                )
             if hasattr(signal, "SIGHUP"):
                 loop.add_signal_handler(signal.SIGHUP, self._handle_reload)
 
@@ -159,8 +162,17 @@ class DaemonManager:
 
     def _handle_signal(self):
         """Signal handler — trigger graceful shutdown."""
+        self._handle_signal_named("UNKNOWN")
+
+    def _handle_signal_named(self, sig_name: str):
+        """Signal handler with signal name — trigger graceful shutdown."""
         if not self._shutting_down:
-            logger.info("Shutdown signal received")
+            import traceback
+            stack = "".join(traceback.format_stack())
+            logger.info(
+                f"Shutdown signal received: {sig_name} (PID {os.getpid()}). "
+                f"Stack:\n{stack}"
+            )
             self._shutting_down = True
             self._shutdown_event.set()
 
@@ -260,7 +272,7 @@ class DaemonManager:
             resolved = _plugin.resolve_env(type_env)
         else:
             resolved = type_env
-        for k, v in {**resolved, **agent_cfg.env}.items():
+        for k, v in {**type_env, **resolved, **agent_cfg.env}.items():
             os.environ[k] = v
 
         backoff = 2
@@ -665,7 +677,7 @@ class DaemonManager:
                 if src_name not in type_env and os.environ.get(src_name):
                     type_env[src_name] = os.environ[src_name]
         resolved = _plugin.resolve_env(type_env) if _plugin else type_env
-        merged_env = {**resolved, **agent_cfg.env}
+        merged_env = {**type_env, **resolved, **agent_cfg.env}
         agent_env = {**os.environ, **merged_env} if merged_env else None
 
         while not self._shutting_down:
@@ -928,17 +940,14 @@ def _daemonize_unix():
 
 def _daemonize_windows():
     """Windows: re-launch this command as a detached subprocess."""
-    import shutil
 
     # Ensure common tool directories are on PATH before spawning daemon
     _ensure_windows_path()
 
-    # Find the openagents CLI entry point
-    openagents_bin = shutil.which("openagents")
-    if openagents_bin:
-        args = [openagents_bin, "up", "--foreground"]
-    else:
-        args = [sys.executable, "-m", "openagents", "up", "--foreground"]
+    # Always use sys.executable -m openagents for reliability on Windows;
+    # shutil.which("openagents") can return .cmd wrappers that fail when
+    # launched without a console.
+    args = [sys.executable, "-m", "openagents", "up", "--foreground"]
 
     # Pass through --config if it was provided
     for i, a in enumerate(sys.argv):
@@ -947,17 +956,20 @@ def _daemonize_windows():
             break
 
     log_file = open(LOG_PATH, "a")
-    # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS detaches from parent console
-    creation_flags = (
-        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        | getattr(subprocess, "DETACHED_PROCESS", 0)
-    )
+    # CREATE_NO_WINDOW (0x08000000) hides the console window while keeping
+    # the process alive.  DETACHED_PROCESS (0x8) — alone or combined with
+    # CREATE_NEW_PROCESS_GROUP — causes the child to die immediately on
+    # some Windows configurations (observed on Windows Server with SSH).
+    CREATE_NO_WINDOW = 0x08000000
+    CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+    creation_flags = CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB
     proc = subprocess.Popen(
         args,
         stdout=log_file,
         stderr=log_file,
         stdin=subprocess.DEVNULL,
         creationflags=creation_flags,
+        env=os.environ.copy(),
     )
 
     PID_PATH.write_text(str(proc.pid))

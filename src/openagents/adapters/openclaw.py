@@ -169,11 +169,26 @@ class OpenClawAdapter(BaseAdapter):
         # Device identity for gateway WS auth (used when gateway mode is available)
         self._device_identity = _load_openclaw_device_identity()
 
+        # Direct API mode: call LLM API via HTTP (no Node.js/OpenClaw CLI needed).
+        # Activated when OPENAI_API_KEY + OPENAI_BASE_URL are set and either:
+        #   - OpenClaw binary is not found, or
+        #   - OPENCLAW_DIRECT_API=1 is set (useful on low-memory machines)
+        self._direct_api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
+        self._direct_base_url = (os.environ.get("OPENAI_BASE_URL") or "").rstrip("/")
+        self._direct_model = os.environ.get("OPENCLAW_MODEL", "")
+        force_direct = os.environ.get("OPENCLAW_DIRECT_API", "").strip() in ("1", "true", "yes")
+        self._direct_mode = bool(self._direct_api_key and self._direct_base_url and force_direct)
+
+        if self._direct_mode:
+            self.openclaw_url = f"{self._direct_base_url}/chat/completions"
+
         # Determine mode: CLI (preferred) or gateway WS/HTTP
         # CLI mode uses `openclaw agent --local` which includes full tool support
         # without needing gateway authentication or a running gateway process.
-        self._use_cli_mode = self._openclaw_binary is not None
-        if self._use_cli_mode:
+        self._use_cli_mode = self._openclaw_binary is not None and not self._direct_mode
+        if self._direct_mode:
+            logger.info("Using direct LLM API mode (%s, model=%s)", self._direct_base_url, self._direct_model)
+        elif self._use_cli_mode:
             logger.info("Using OpenClaw CLI mode (openclaw agent --local)")
         else:
             logger.info("OpenClaw binary not found, falling back to gateway HTTP mode")
@@ -325,7 +340,9 @@ class OpenClawAdapter(BaseAdapter):
         await self._send_status(msg_channel, "thinking...")
 
         try:
-            if self._use_cli_mode:
+            if self._direct_mode:
+                response_text = await self._stream_completion_http(content, msg_channel)
+            elif self._use_cli_mode:
                 response_text = await self._run_cli_agent(content, msg_channel)
             else:
                 # Fallback: try gateway WS, then HTTP
