@@ -25,7 +25,9 @@
     },
     "win": {
       "target": ["nsis"],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "sign": "./scripts/azure-sign.js",
+      "signingHashAlgorithms": ["sha256"]
     },
     "mac": {
       "target": ["dmg"],
