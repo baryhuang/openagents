@@ -49,13 +49,13 @@
 
         <div class="banner warning" id="setup-banner" style="display:none;">
           <strong>Setup Required</strong>
-          <p>OpenAgents SDK is not installed. Go to <a href="#" onclick="switchTab('install')">Install</a> to set it up.</p>
+          <p>OpenAgents SDK is not installed. Go to <a href="#" data-action="switch-tab" data-action-tab="install">Install</a> to set it up.</p>
         </div>
 
         <div class="card-grid" id="agent-cards">
           <div class="card empty-state">
             <p>No agents configured yet.</p>
-            <button class="btn" onclick="switchTab('agents')">Add Agent</button>
+            <button class="btn" data-action="switch-tab" data-action-tab="agents">Add Agent</button>
           </div>
         </div>
 

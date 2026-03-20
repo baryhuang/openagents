@@ -76,7 +76,7 @@ async function refreshDashboard() {
       cardsEl.innerHTML = `
         <div class="card empty-state">
           <p>No agents configured yet.</p>
-          <button class="btn" onclick="switchTab('agents')">Add Agent</button>
+          <button class="btn" data-action="switch-tab" data-action-tab="agents">Add Agent</button>
         </div>`;
     } else {
       cardsEl.innerHTML = agents.map((a) => {
@@ -94,10 +94,10 @@ async function refreshDashboard() {
           </div>
           ${a.lastError ? `<div class="agent-card-error">${esc(a.lastError)}</div>` : ''}
           <div class="agent-card-actions">
-            <button class="btn btn-sm" onclick="toggleAgent('${esc(a.name)}', '${a.state}')">
+            <button class="btn btn-sm" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">
               ${a.state === 'online' || a.state === 'running' ? 'Stop' : 'Start'}
             </button>
-            <button class="btn btn-sm" onclick="showAgentActions('${esc(a.name)}', '${esc(a.type)}', '${a.state}', '${esc(a.network || '')}')">Actions</button>
+            <button class="btn btn-sm" data-action="show-agent-actions" data-name="${esc(a.name)}" data-type="${esc(a.type)}" data-state="${esc(a.state)}" data-network="${esc(a.network || '')}">Actions</button>
           </div>
         </div>`;
       }).join('');
@@ -191,28 +191,28 @@ function showAgentActions(name, type, state, network) {
   const actions = [];
 
   if (isRunning) {
-    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); toggleAgent('${esc(name)}', '${state}')">Stop</button>`);
+    actions.push(`<button class="btn modal-action-btn" data-action="toggle-agent" data-name="${esc(name)}" data-state="${esc(state)}">Stop</button>`);
   } else {
-    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); toggleAgent('${esc(name)}', '${state}')">Start</button>`);
+    actions.push(`<button class="btn modal-action-btn" data-action="toggle-agent" data-name="${esc(name)}" data-state="${esc(state)}">Start</button>`);
   }
 
-  actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); openConfigureScreen('${esc(type)}')">Configure</button>`);
+  actions.push(`<button class="btn modal-action-btn" data-action="configure" data-type="${esc(type)}">Configure</button>`);
 
   if (network) {
-    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); disconnectAgent('${esc(name)}')">Disconnect from Workspace</button>`);
-    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); openWorkspaceInBrowser('${esc(name)}')">Open Workspace in Browser</button>`);
+    actions.push(`<button class="btn modal-action-btn" data-action="disconnect" data-name="${esc(name)}">Disconnect from Workspace</button>`);
+    actions.push(`<button class="btn modal-action-btn" data-action="open-ws" data-name="${esc(name)}">Open Workspace in Browser</button>`);
   } else {
-    actions.push(`<button class="btn modal-action-btn" onclick="closeModal(); showConnectWorkspace('${esc(name)}')">Connect to Workspace</button>`);
+    actions.push(`<button class="btn modal-action-btn" data-action="connect-workspace" data-name="${esc(name)}">Connect to Workspace</button>`);
   }
 
-  actions.push(`<button class="btn modal-action-btn btn-danger" onclick="closeModal(); removeAgent('${esc(name)}')">Remove Agent</button>`);
+  actions.push(`<button class="btn modal-action-btn btn-danger" data-action="remove-agent" data-name="${esc(name)}">Remove Agent</button>`);
 
   showModal(`
     <h3>Agent: ${esc(name)}</h3>
     <div class="modal-actions-list">
       ${actions.join('')}
     </div>
-    <button class="btn modal-close-btn" onclick="closeModal()">Cancel</button>
+    <button class="btn modal-close-btn" data-action="close-modal">Cancel</button>
   `);
 }
 
@@ -259,7 +259,7 @@ async function openConfigureScreen(agentType) {
       showModal(`
         <h3>Configure ${esc(agentType)}</h3>
         <p class="hint">No configuration required for this agent type.</p>
-        <button class="btn" onclick="closeModal()">Close</button>
+        <button class="btn" data-action="close-modal">Close</button>
       `);
       return;
     }
@@ -284,16 +284,16 @@ async function openConfigureScreen(agentType) {
       </div>
       <div id="test-result"></div>
       <div class="modal-button-row">
-        <button class="btn btn-primary" onclick="saveConfig('${esc(agentType)}')">Save</button>
-        <button class="btn" onclick="testLLMConfig('${esc(agentType)}')">Test Connection</button>
-        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" data-action="save-config" data-type="${esc(agentType)}">Save</button>
+        <button class="btn" data-action="test-llm" data-type="${esc(agentType)}">Test Connection</button>
+        <button class="btn" data-action="close-modal">Cancel</button>
       </div>
     `);
   } catch (err) {
     showModal(`
       <h3>Error</h3>
       <p>${esc(err.message)}</p>
-      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn" data-action="close-modal">Close</button>
     `);
   }
 }
@@ -359,7 +359,7 @@ async function showConnectWorkspace(agentName) {
         const url = n.endpoint && (n.endpoint.includes('localhost') || n.endpoint.includes('127.0.0.1'))
           ? `${n.endpoint}/${n.slug || n.id}`
           : `workspace.openagents.org/${n.slug || n.id}`;
-        return `<button class="btn modal-action-btn" onclick="closeModal(); doConnectWorkspace('${esc(agentName)}', '${esc(n.slug || n.id)}')">${esc(display)} — ${esc(url)}</button>`;
+        return `<button class="btn modal-action-btn" data-action="do-connect-workspace" data-name="${esc(agentName)}" data-slug="${esc(n.slug || n.id)}">${esc(display)} — ${esc(url)}</button>`;
       }).join('');
     }
 
@@ -367,16 +367,16 @@ async function showConnectWorkspace(agentName) {
       <h3>Connect '${esc(agentName)}' to Workspace</h3>
       <div class="modal-actions-list">
         ${rows}
-        <button class="btn modal-action-btn" onclick="closeModal(); showCreateWorkspace('${esc(agentName)}')">+ Create New Workspace</button>
-        <button class="btn modal-action-btn" onclick="closeModal(); showJoinWithToken('${esc(agentName)}')">Join with Token</button>
+        <button class="btn modal-action-btn" data-action="show-create-workspace" data-name="${esc(agentName)}">+ Create New Workspace</button>
+        <button class="btn modal-action-btn" data-action="show-join-token" data-name="${esc(agentName)}">Join with Token</button>
       </div>
-      <button class="btn modal-close-btn" onclick="closeModal()">Cancel</button>
+      <button class="btn modal-close-btn" data-action="close-modal">Cancel</button>
     `);
   } catch (err) {
     showModal(`
       <h3>Error</h3>
       <p>${esc(err.message)}</p>
-      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn" data-action="close-modal">Close</button>
     `);
   }
 }
@@ -402,8 +402,8 @@ function showCreateWorkspace(agentName) {
       <input type="text" id="new-workspace-name" placeholder="my-workspace">
     </div>
     <div class="modal-button-row">
-      <button class="btn btn-primary" onclick="doCreateWorkspace('${esc(agentName)}')">Create</button>
-      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" data-action="do-create-workspace" data-name="${esc(agentName)}">Create</button>
+      <button class="btn" data-action="close-modal">Cancel</button>
     </div>
   `);
   setTimeout(() => { const el = document.getElementById('new-workspace-name'); if (el) el.focus(); }, 100);
@@ -441,8 +441,8 @@ function showJoinWithToken(agentName) {
       <input type="text" id="workspace-token" placeholder="Paste token here...">
     </div>
     <div class="modal-button-row">
-      <button class="btn btn-primary" onclick="doJoinWithToken('${esc(agentName)}')">Join</button>
-      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" data-action="do-join-token" data-name="${esc(agentName)}">Join</button>
+      <button class="btn" data-action="close-modal">Cancel</button>
     </div>
   `);
   setTimeout(() => { const el = document.getElementById('workspace-token'); if (el) el.focus(); }, 100);
@@ -482,8 +482,8 @@ async function showNewAgentDialog() {
         <h3>New Agent</h3>
         <p class="hint">No agent runtimes installed. Install one first.</p>
         <div class="modal-button-row">
-          <button class="btn btn-primary" onclick="closeModal(); switchTab('install')">Go to Install</button>
-          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" data-action="switch-tab" data-action-tab="install">Go to Install</button>
+          <button class="btn" data-action="close-modal">Cancel</button>
         </div>
       `);
       return;
@@ -508,8 +508,8 @@ async function showNewAgentDialog() {
         <input type="text" id="new-agent-path" placeholder="/path/to/project">
       </div>
       <div class="modal-button-row">
-        <button class="btn btn-primary" onclick="doAddAgent()">Create</button>
-        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" data-action="do-add-agent">Create</button>
+        <button class="btn" data-action="close-modal">Cancel</button>
       </div>
     `);
 
@@ -528,7 +528,7 @@ async function showNewAgentDialog() {
     showModal(`
       <h3>Error</h3>
       <p>${esc(err.message)}</p>
-      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn" data-action="close-modal">Close</button>
     `);
   }
 }
@@ -595,16 +595,16 @@ async function refreshAgentList() {
             ${a.lastError ? `<span class="agent-error">${esc(a.lastError)}</span>` : ''}
           </div>
           <div class="agent-list-actions">
-            <button class="btn btn-sm" onclick="toggleAgent('${esc(a.name)}', '${a.state}')">
+            <button class="btn btn-sm" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">
               ${a.state === 'online' || a.state === 'running' ? 'Stop' : 'Start'}
             </button>
-            <button class="btn btn-sm" onclick="openConfigureScreen('${esc(a.type)}')">Configure</button>
+            <button class="btn btn-sm" data-action="configure" data-type="${esc(a.type)}">Configure</button>
             ${a.network
-              ? `<button class="btn btn-sm" onclick="disconnectAgent('${esc(a.name)}')">Disconnect</button>
-                 <button class="btn btn-sm" onclick="openWorkspaceInBrowser('${esc(a.name)}')">Open WS</button>`
-              : `<button class="btn btn-sm" onclick="showConnectWorkspace('${esc(a.name)}')">Connect</button>`
+              ? `<button class="btn btn-sm" data-action="disconnect" data-name="${esc(a.name)}">Disconnect</button>
+                 <button class="btn btn-sm" data-action="open-ws" data-name="${esc(a.name)}">Open WS</button>`
+              : `<button class="btn btn-sm" data-action="connect-workspace" data-name="${esc(a.name)}">Connect</button>`
             }
-            <button class="btn btn-sm btn-danger" onclick="removeAgent('${esc(a.name)}')">Remove</button>
+            <button class="btn btn-sm btn-danger" data-action="remove-agent" data-name="${esc(a.name)}">Remove</button>
           </div>
         </div>`;
     }).join('');
@@ -681,7 +681,7 @@ async function refreshCatalog() {
             : '<span class="badge badge-warning">not installed</span>'}
         </div>
         <div class="catalog-actions">
-          <button class="btn btn-sm" onclick="installCatalogItem('${esc(c.name)}', ${c.installed})">
+          <button class="btn btn-sm" data-action="install-catalog" data-name="${esc(c.name)}" data-installed="${c.installed}">
             ${c.installed ? 'Update' : 'Install'}
           </button>
         </div>
@@ -823,6 +823,50 @@ setInterval(() => {
   }
   updateDaemonStatus();
 }, 5000);
+
+// ---- Delegated click handler ----
+// CSP blocks inline onclick; use data-action attributes + delegation instead.
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+
+  const action = btn.dataset.action;
+  const name = btn.dataset.name || '';
+  const type = btn.dataset.type || '';
+  const state = btn.dataset.state || '';
+  const network = btn.dataset.network || '';
+  const slug = btn.dataset.slug || '';
+  const tab = btn.dataset.actionTab || '';
+
+  // Close modal for actions triggered from inside a modal
+  const inModal = !!btn.closest('.modal');
+  const autoClose = ['switch-tab', 'toggle-agent', 'configure', 'disconnect',
+    'open-ws', 'remove-agent', 'connect-workspace', 'do-connect-workspace',
+    'show-create-workspace', 'show-join-token'];
+  if (inModal && autoClose.includes(action)) closeModal();
+
+  switch (action) {
+    case 'switch-tab': switchTab(tab); break;
+    case 'toggle-agent': toggleAgent(name, state); break;
+    case 'show-agent-actions': showAgentActions(name, type, state, network); break;
+    case 'configure': openConfigureScreen(type); break;
+    case 'disconnect': disconnectAgent(name); break;
+    case 'open-ws': openWorkspaceInBrowser(name); break;
+    case 'remove-agent': removeAgent(name); break;
+    case 'connect-workspace': showConnectWorkspace(name); break;
+    case 'do-connect-workspace': doConnectWorkspace(name, slug); break;
+    case 'show-create-workspace': showCreateWorkspace(name); break;
+    case 'show-join-token': showJoinWithToken(name); break;
+    case 'do-create-workspace': doCreateWorkspace(name); break;
+    case 'do-join-token': doJoinWithToken(name); break;
+    case 'do-add-agent': doAddAgent(); break;
+    case 'save-config': saveConfig(type); break;
+    case 'test-llm': testLLMConfig(type); break;
+    case 'close-modal': closeModal(); break;
+    case 'install-catalog': installCatalogItem(name, btn.dataset.installed === 'true'); break;
+  }
+});
 
 // ---- Initial load ----
 
