@@ -252,16 +252,22 @@ class InstallAgentScreen(Screen[dict | None]):
         if is_windows and cmd.startswith("npm "):
             cmd = "npm.cmd " + cmd[4:]
 
+        # Force npm to produce streaming output (it suppresses progress when
+        # stdout is not a TTY, so without this we get zero lines until exit).
+        if "npm " in cmd or "npm.cmd " in cmd:
+            cmd += " --foreground-scripts --loglevel=verbose"
+
         # Build env: suppress interactive prompts from npm/pip/etc.
         env = os.environ.copy()
         env["npm_config_yes"] = "true"
         env["CI"] = "1"  # many tools skip prompts when CI is set
+        env["PYTHONUNBUFFERED"] = "1"  # force unbuffered output for pip
 
         try:
             proc = subprocess.Popen(
                 cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, stdin=subprocess.DEVNULL, env=env,
-                encoding="utf-8", errors="replace",
+                bufsize=1, encoding="utf-8", errors="replace",
             )
             last_err = ""
             while True:
