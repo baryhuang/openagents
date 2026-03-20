@@ -247,9 +247,15 @@ class InstallAgentScreen(Screen[dict | None]):
         if is_windows and cmd.startswith("npm "):
             cmd = "npm.cmd " + cmd[4:]
 
+        # Build env: suppress interactive prompts from npm/pip/etc.
+        env = os.environ.copy()
+        env["npm_config_yes"] = "true"
+        env["CI"] = "1"  # many tools skip prompts when CI is set
+
         try:
             result = subprocess.run(
                 cmd, shell=True, capture_output=True, text=True, timeout=600,
+                stdin=subprocess.DEVNULL, env=env,
             )
             if result.returncode == 0:
                 # Write install marker immediately (before UI callbacks) so it
@@ -1556,13 +1562,30 @@ class OpenAgentsTUI(App):
     # -- Daemon up/down --
 
     def action_daemon_toggle(self) -> None:
-        """Start daemon if not running, stop it if running."""
+        """Start daemon if not running, stop it (with confirmation) if running."""
         from openagents.client.daemon import read_daemon_pid
         pid = read_daemon_pid()
         if pid:
-            self.action_daemon_down()
+            self._confirm_daemon_down()
         else:
             self.action_daemon_up()
+
+    def _confirm_daemon_down(self) -> None:
+        """Ask for confirmation before stopping the daemon."""
+        self.push_screen(
+            TextInputScreen(
+                "Stop daemon? This will disconnect ALL agents.\n"
+                "Type 'yes' to confirm:",
+                "Confirm Daemon Stop",
+            ),
+            callback=self._on_daemon_down_confirmed,
+        )
+
+    def _on_daemon_down_confirmed(self, result: str | None) -> None:
+        if result and result.strip().lower() == "yes":
+            self.action_daemon_down()
+        else:
+            self._log("[dim]Daemon stop cancelled[/dim]")
 
     def action_daemon_up(self) -> None:
         self._log("Starting daemon…")
