@@ -194,9 +194,14 @@ class OpenClawAdapter extends BaseAdapter {
 
       const spawnEnv = { ...process.env };
       if (IS_WINDOWS) {
+        // Ensure node and npm global bin are on PATH
+        const nodeBinDir = path.dirname(process.execPath);
         const npmBin = path.join(process.env.APPDATA || '', 'npm');
-        if (npmBin && !(spawnEnv.PATH || '').includes(npmBin)) {
-          spawnEnv.PATH = npmBin + ';' + (spawnEnv.PATH || '');
+        const extraPaths = [nodeBinDir, npmBin].filter(Boolean);
+        for (const p of extraPaths) {
+          if (p && !(spawnEnv.PATH || '').includes(p)) {
+            spawnEnv.PATH = p + ';' + (spawnEnv.PATH || '');
+          }
         }
       }
 
