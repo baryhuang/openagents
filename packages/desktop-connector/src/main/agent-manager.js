@@ -204,12 +204,25 @@ class AgentManager {
   // ------------------------------------------------------------------
 
   _startDaemon() {
-    // Use the Node.js agent-connector CLI to start the daemon
+    // Use the Node.js agent-connector CLI to start the daemon.
+    // We must use the system 'node' binary, NOT process.execPath (which is
+    // electron.exe inside a packaged app and would spawn another Electron).
     const cliPath = require.resolve('@openagents-org/agent-connector/bin/agent-connector.js');
+
+    // Find system node binary
+    const { execSync } = require('child_process');
+    let nodeBin;
+    try {
+      nodeBin = execSync(process.platform === 'win32' ? 'where node' : 'which node',
+        { encoding: 'utf-8', timeout: 5000 }).split(/\r?\n/)[0].trim();
+    } catch {
+      nodeBin = 'node'; // fallback — hope it's on PATH
+    }
+
     const foregroundArgs = [cliPath, 'up', '--foreground'];
 
     try {
-      Daemon.daemonize(CONFIG_DIR, foregroundArgs);
+      Daemon.daemonize(CONFIG_DIR, foregroundArgs, nodeBin);
     } catch (err) {
       return { success: false, message: err.message };
     }

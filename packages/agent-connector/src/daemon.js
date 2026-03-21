@@ -145,41 +145,28 @@ class Daemon {
    * The parent process prints info and exits; the child runs `start()`.
    * @param {string[]} foregroundArgs - CLI args for the foreground child process
    */
-  static daemonize(configDir, foregroundArgs) {
+  static daemonize(configDir, foregroundArgs, execPath) {
     const logFile = path.join(configDir, 'daemon.log');
     const pidFile = path.join(configDir, 'daemon.pid');
+    const bin = execPath || process.execPath;
 
     fs.mkdirSync(configDir, { recursive: true });
     const logFd = fs.openSync(logFile, 'a');
 
-    if (IS_WINDOWS) {
-      // Windows: re-launch as detached with CREATE_NO_WINDOW
-      const proc = spawn(process.execPath, foregroundArgs, {
-        detached: true,
-        stdio: ['ignore', logFd, logFd],
-        windowsHide: true,
-        env: { ...process.env },
-      });
-      proc.unref();
-      fs.writeFileSync(pidFile, String(proc.pid), 'utf-8');
-      fs.closeSync(logFd);
-      console.log(`Daemon started (PID ${proc.pid})`);
-      console.log(`Logs: ${logFile}`);
-      console.log('Stop: agent-connector down');
-    } else {
-      // Unix: spawn detached child
-      const proc = spawn(process.execPath, foregroundArgs, {
-        detached: true,
-        stdio: ['ignore', logFd, logFd],
-        env: { ...process.env },
-      });
-      proc.unref();
-      fs.writeFileSync(pidFile, String(proc.pid), 'utf-8');
-      fs.closeSync(logFd);
-      console.log(`Daemon started (PID ${proc.pid})`);
-      console.log(`Logs: ${logFile}`);
-      console.log('Stop: agent-connector down');
-    }
+    const opts = {
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      env: { ...process.env },
+    };
+    if (IS_WINDOWS) opts.windowsHide = true;
+
+    const proc = spawn(bin, foregroundArgs, opts);
+    proc.unref();
+    fs.writeFileSync(pidFile, String(proc.pid), 'utf-8');
+    fs.closeSync(logFd);
+    console.log(`Daemon started (PID ${proc.pid})`);
+    console.log(`Logs: ${logFile}`);
+    console.log('Stop: agent-connector down');
   }
 
   /**
