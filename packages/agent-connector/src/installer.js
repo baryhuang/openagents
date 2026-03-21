@@ -139,6 +139,7 @@ class Installer {
       if (process.platform === 'win32') {
         const npmBin = path.join(process.env.APPDATA || '', 'npm');
         if (npmBin) extraPaths.push(npmBin);
+        extraPaths.push('C:\\Program Files\\nodejs');
       }
       for (const p of extraPaths) {
         if (p && !(env.PATH || '').includes(p)) {
@@ -226,6 +227,18 @@ class Installer {
       if (process.platform === 'win32') {
         const npmBin = path.join(process.env.APPDATA || '', 'npm');
         if (npmBin) extraPaths.push(npmBin);
+        // Common binary locations on Windows
+        extraPaths.push('C:\\Program Files\\nodejs');
+        extraPaths.push('C:\\Program Files (x86)\\nodejs');
+        extraPaths.push('C:\\Program Files\\Git\\cmd');
+        extraPaths.push('C:\\Program Files (x86)\\Git\\cmd');
+        // Also try to find node/git via where
+        for (const bin of ['node', 'git']) {
+          try {
+            const p = execSync(`where ${bin}`, { encoding: 'utf-8', timeout: 3000 }).split(/\r?\n/)[0].trim();
+            if (p) extraPaths.push(path.dirname(p));
+          } catch {}
+        }
       }
       for (const p of extraPaths) {
         if (p && !(env.PATH || '').includes(p)) {
