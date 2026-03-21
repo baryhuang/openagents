@@ -207,6 +207,10 @@ class AgentManager {
   // ------------------------------------------------------------------
 
   _startDaemon() {
+    // Stop any existing daemon first to avoid multiple daemons fighting
+    // over the status file
+    try { this._connector.stopDaemon(); } catch {}
+
     // Use the Node.js agent-connector CLI to start the daemon.
     // We must use the system 'node' binary, NOT process.execPath (which is
     // electron.exe inside a packaged app and would spawn another Electron).
