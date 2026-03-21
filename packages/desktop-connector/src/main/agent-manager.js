@@ -9,7 +9,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { AgentConnector, Daemon } = require('../../../agent-connector/src/index');
+const { AgentConnector, Daemon } = require('@openagents-org/agent-connector');
 
 const CONFIG_DIR = path.join(os.homedir(), '.openagents');
 
@@ -205,7 +205,7 @@ class AgentManager {
 
   _startDaemon() {
     // Use the Node.js agent-connector CLI to start the daemon
-    const cliPath = path.resolve(__dirname, '..', '..', '..', 'agent-connector', 'bin', 'agent-connector.js');
+    const cliPath = require.resolve('@openagents-org/agent-connector/bin/agent-connector.js');
     const foregroundArgs = [cliPath, 'up', '--foreground'];
 
     try {

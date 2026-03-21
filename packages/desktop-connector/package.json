@@ -16,7 +16,9 @@
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@openagents-org/agent-connector": "^0.1.0"
+  },
   "build": {
     "appId": "com.openagents.connector",
     "productName": "OpenAgents Connector",
@@ -25,9 +27,7 @@
     },
     "win": {
       "target": ["nsis"],
-      "icon": "assets/icon.ico",
-      "sign": "./scripts/azure-sign.js",
-      "signingHashAlgorithms": ["sha256"]
+      "icon": "assets/icon.ico"
     },
     "mac": {
       "target": ["dmg"],
