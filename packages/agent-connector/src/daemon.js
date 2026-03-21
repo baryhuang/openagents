@@ -481,20 +481,34 @@ class Daemon {
 
       this._log(`${agentCfg.name} CLI: ${binary} ${args.slice(0, 5).join(' ')} ...`);
 
-      const spawnOpts = {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env,
-        timeout: 600000,
-      };
+      const spawnEnv = { ...env };
       if (IS_WINDOWS) {
-        spawnOpts.shell = true;
         const npmBin = path.join(process.env.APPDATA || '', 'npm');
-        if (npmBin && !(env.PATH || '').includes(npmBin)) {
-          spawnOpts.env = { ...env, PATH: npmBin + ';' + (env.PATH || process.env.PATH || '') };
+        if (npmBin && !(spawnEnv.PATH || '').includes(npmBin)) {
+          spawnEnv.PATH = npmBin + ';' + (spawnEnv.PATH || process.env.PATH || '');
         }
       }
 
-      const proc = spawn(binary, args, spawnOpts);
+      // On Windows, .cmd shims need shell:true but that breaks argument
+      // quoting. Use execFileSync-style approach: resolve the .cmd to its
+      // target and run directly, or use spawn without shell and full path.
+      let spawnBinary = binary;
+      let spawnArgs = args;
+      const spawnOpts = {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: spawnEnv,
+        timeout: 600000,
+      };
+
+      if (IS_WINDOWS) {
+        // Find the actual .cmd shim and invoke via cmd.exe /C with proper quoting
+        spawnBinary = process.env.COMSPEC || 'cmd.exe';
+        // Wrap argument containing spaces in double quotes for cmd.exe
+        const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
+        spawnArgs = ['/C', binary, ...quotedArgs];
+      }
+
+      const proc = spawn(spawnBinary, spawnArgs, spawnOpts);
       let stdout = '';
       let stderr = '';
 
