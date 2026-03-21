@@ -1,0 +1,30 @@
+{
+  "name": "@openagents-org/agent-connector",
+  "version": "0.1.0",
+  "description": "Agent management CLI and library for OpenAgents — install, configure, and run AI coding agents",
+  "main": "src/index.js",
+  "bin": {
+    "agent-connector": "bin/agent-connector.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build:registry": "node scripts/build-registry.js",
+    "lint": "eslint src/"
+  },
+  "keywords": ["openagents", "ai", "agent", "coding", "cli"],
+  "author": "OpenAgents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openagents-org/openagents",
+    "directory": "packages/agent-connector"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src/",
+    "bin/",
+    "registry.json"
+  ]
+}

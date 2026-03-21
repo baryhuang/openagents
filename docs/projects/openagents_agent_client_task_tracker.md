@@ -139,6 +139,7 @@ packages/agent-connector/
 │   ├── installer.js          # npm/pip install/uninstall + install markers
 │   ├── daemon.js             # process spawn/monitor/stop, PID file, log rotation
 │   ├── workspace-client.js   # HTTP client for workspace API
+│   ├── utils.js              # testLLMConnection helper
 │   └── cli.js                # CLI entry point
 ├── registry.json             # bundled fallback catalog
 ├── package.json
@@ -151,21 +152,21 @@ packages/agent-connector/
 
 | # | Task | Priority | Status | Notes |
 |---|------|----------|--------|-------|
-| N1 | Scaffold package — package.json, directory structure, ESM/CJS dual export | High | Pending | `@openagents-org/agent-connector`, MIT license, bin entry for CLI |
-| N2 | `config.js` — read/write `daemon.yaml`, agent/network CRUD | High | Pending | Port YAML parser from `agent-manager.js`, add write support |
-| N3 | `env.js` — read/write env files, `resolve_env` rules | High | Pending | Port from `agent-manager.js`. Add `resolve_env` (LLM_* -> provider vars) from Python `registry/loader.py` |
-| N4 | `registry.js` — fetch agent catalog from remote API + cache | High | Pending | `GET https://registry.openagents.org/v1/agents`, 24h cache, bundled fallback |
-| N5 | Generate `registry.json` — YAML plugin defs to JSON build step | High | Pending | Read `src/openagents/registry/agents/*.yaml`, output `registry.json` |
-| N6 | `installer.js` — install/uninstall agent runtimes | High | Pending | npm/pip/curl install, manage markers, detect binaries on PATH + nvm/fnm/volta |
-| N7 | `daemon.js` — agent process lifecycle management | High | Pending | Spawn, monitor, auto-restart, PID file, logging. Unix signals + Windows `daemon.cmd` |
-| N8 | `workspace-client.js` — workspace API HTTP client | High | Pending | Events, join, token resolve, networks, workspaces. `X-Workspace-Token` auth |
-| N9 | `cli.js` — CLI commands for Linux/headless use | High | Pending | `up`, `down`, `status`, `create`, `install`, `uninstall`, `connect`, `disconnect`, `workspace`, `logs`, `search`. Use `commander` or `yargs` |
+| N1 | Scaffold package — package.json, directory structure, bin entry | High | Done | `@openagents-org/agent-connector`, MIT license, bin entry for CLI |
+| N2 | `config.js` — read/write `daemon.yaml`, agent/network CRUD | High | Done | YAML parser + serializer, agent/network CRUD, status/PID/cmd/logs |
+| N3 | `env.js` — read/write env files, `resolve_env` rules | High | Done | Load/save/delete env files, conditional resolve_env rules |
+| N4 | `registry.js` — fetch agent catalog from remote API + cache | High | Done | Remote → 24h cache → bundled fallback, background refresh |
+| N5 | Generate `registry.json` — YAML plugin defs to JSON build step | High | Done | `scripts/build-registry.js`, 13 agent entries |
+| N6 | `installer.js` — install/uninstall agent runtimes | High | Done | npm/pip/pipx install/uninstall, dual marker format, binary detection |
+| N7 | `daemon.js` — agent process lifecycle management | High | Done | Spawn, auto-restart + backoff, PID file, status, cmd protocol, signals, daemonize |
+| N8 | `workspace-client.js` — workspace API HTTP client | High | Done | Register, create, join, resolve, heartbeat, disconnect, events, messages |
+| N9 | `cli.js` — CLI commands for Linux/headless use | High | Done | 18 commands: up, down, status, list, create, remove, start, stop, install, uninstall, search, runtimes, connect, disconnect, env, test-llm, logs, workspace. Zero dependencies. |
 | N10 | Cross-platform PATH detection | Medium | Pending | System PATH, nvm/fnm/volta, `~/.local/bin`, `%APPDATA%\npm`, Homebrew |
 | N11 | Agent health check — binary existence + version check | Medium | Pending | Check binary, run `--version`, compare against registry latest |
 | N12 | Log management — write, rotate, tail, filter | Medium | Pending | Timestamped logs, agent prefix, `--follow`, rotate at 10MB |
 | N13 | Config hot-reload — watch `daemon.yaml` for changes | Medium | Pending | `fs.watch` + debounce. Start/stop/restart agents on config change |
 | N14 | `autostart` — register as system service | Low | Pending | systemd (Linux), launchd (macOS), Task Scheduler (Windows) |
-| N15 | Tests — unit tests for all modules | High | Pending | vitest or jest, mock fs/http/child_process, 80% coverage target |
+| N15 | Tests — unit tests for all modules | High | In Progress | 65 tests passing (config, env, registry, installer, daemon, workspace-client, CLI) |
 | N16 | CI pipeline — lint, test, publish | Medium | Pending | GitHub Actions on ubuntu/macos/windows, publish to npm on tag |
 | N17 | Wire Electron app to use package directly | High | Pending | Replace `agent-manager.js` + `python-manager.js` with `require('@openagents-org/agent-connector')` |
 | N18 | Global install CLI — `npm install -g @openagents-org/agent-connector` | Medium | Pending | Bin entry, aliases, test on clean machines all platforms |
