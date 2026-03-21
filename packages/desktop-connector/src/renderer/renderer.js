@@ -81,7 +81,8 @@ async function refreshDashboard() {
         </div>`;
     } else {
       cardsEl.innerHTML = agents.map((a) => {
-        const wsDisplay = a.networkName || a.network || '';
+        const slug = a.network || '';
+        const wsLabel = slug ? (a.networkName && a.networkName !== slug ? `${slug} (${a.networkName})` : slug) : '';
         return `
         <div class="agent-card">
           <div class="agent-card-header">
@@ -91,7 +92,7 @@ async function refreshDashboard() {
           <div class="agent-card-status">
             <span class="status-dot ${statusClass(a.state)}"></span>
             ${esc(a.state)}
-            ${wsDisplay ? ` &middot; ${esc(wsDisplay)}` : ''}
+            ${wsLabel ? ` &middot; ${esc(wsLabel)}` : ''}
           </div>
           ${a.lastError ? `<div class="agent-card-error">${esc(a.lastError)}</div>` : ''}
           <div class="agent-card-actions">
@@ -573,7 +574,8 @@ async function refreshAgentList() {
     }
 
     listEl.innerHTML = agents.map((a) => {
-      const wsDisplay = a.networkName || a.network || 'local only';
+      const slug = a.network || '';
+      const wsDisplay = slug ? (a.networkName && a.networkName !== slug ? `${slug} (${a.networkName})` : slug) : 'local only';
       const envDisplay = [];
       if (a.env?.LLM_BASE_URL || a.env?.OPENAI_BASE_URL) envDisplay.push(`API: ${a.env.LLM_BASE_URL || a.env.OPENAI_BASE_URL}`);
       if (a.env?.LLM_MODEL || a.env?.OPENCLAW_MODEL) envDisplay.push(`Model: ${a.env.LLM_MODEL || a.env.OPENCLAW_MODEL}`);

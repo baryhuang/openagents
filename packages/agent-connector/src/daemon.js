@@ -471,15 +471,115 @@ class Daemon {
     }
   }
 
+  /**
+   * Build workspace context preamble for CLI agents.
+   * Teaches the agent about shared workspace APIs (browser, files).
+   */
+  /**
+   * On Windows, resolve a .cmd shim to the underlying node script
+   * so we can spawn directly with node (avoiding cmd.exe argument limits).
+   */
+  _resolveWindowsBinary(binary, env) {
+    const { execSync } = require('child_process');
+    try {
+      // Find the .cmd shim
+      const cmdPath = execSync(`where ${binary}`, {
+        encoding: 'utf-8', timeout: 5000, env,
+      }).split(/\r?\n/)[0].trim();
+
+      if (cmdPath.endsWith('.cmd')) {
+        // Read the .cmd file to find the target JS script
+        const cmdContent = fs.readFileSync(cmdPath, 'utf-8');
+        // npm .cmd shims have: "%~dp0\node_modules\...\bin\cli.js" %*
+        // or: @IF EXIST "%~dp0\node.exe" ... "%~dp0\node_modules\...\cli.js" %*
+        const match = cmdContent.match(/"([^"]+\.js)"/);
+        if (match) {
+          const jsPath = match[1].replace('%~dp0\\', path.dirname(cmdPath) + '\\');
+          return { binary: process.execPath, prefix: [jsPath] };
+        }
+      }
+    } catch {}
+
+    // Fallback: use cmd.exe /C (may truncate long args)
+    return { binary: process.env.COMSPEC || 'cmd.exe', prefix: ['/C', binary] };
+  }
+
+  _buildWorkspaceContext(agentCfg, network) {
+    const baseUrl = 'https://workspace-endpoint.openagents.org';
+    const h = `Authorization: Bearer ${network.token}`;
+    const wsId = network.id;
+    const name = agentCfg.name;
+
+    return [
+      '=== WORKSPACE CONTEXT ===',
+      `You are agent "${name}" in workspace "${network.slug}".`,
+      'You have access to shared workspace tools via HTTP API. Use your exec tool to run curl commands.',
+      '',
+      '## Shared Browser',
+      'The workspace has a shared browser visible to all users and agents.',
+      `Open tab: curl -s -X POST ${baseUrl}/v1/browser/tabs -H "${h}" -H "Content-Type: application/json" -d '{"url":"URL","network":"${wsId}","source":"openagents:${name}"}'`,
+      `Read page: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/snapshot`,
+      `Screenshot: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/screenshot`,
+      `Navigate: curl -s -X POST ${baseUrl}/v1/browser/tabs/TAB_ID/navigate -H "${h}" -H "Content-Type: application/json" -d '{"url":"URL"}'`,
+      `Click: curl -s -X POST ${baseUrl}/v1/browser/tabs/TAB_ID/click -H "${h}" -H "Content-Type: application/json" -d '{"selector":"CSS_SELECTOR"}'`,
+      `Type: curl -s -X POST ${baseUrl}/v1/browser/tabs/TAB_ID/type -H "${h}" -H "Content-Type: application/json" -d '{"selector":"CSS_SELECTOR","text":"TEXT"}'`,
+      `Close: curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID`,
+      `List tabs: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs?network=${wsId}`,
+      '(Replace TAB_ID with the id from the open response)',
+      '',
+      '## Workspace Files',
+      `List: curl -s -H "${h}" ${baseUrl}/v1/files?network=${wsId}`,
+      `Read: curl -s -H "${h}" ${baseUrl}/v1/files/FILE_PATH?network=${wsId}`,
+      `Write: curl -s -X PUT ${baseUrl}/v1/files/FILE_PATH -H "${h}" -H "Content-Type: application/json" -d '{"content":"...","network":"${wsId}"}'`,
+      '=== END WORKSPACE CONTEXT ===',
+      '',
+    ].join('\n');
+  }
+
   _runCliAgent(binary, message, channel, agentCfg, network, env) {
     return new Promise((resolve, reject) => {
       const sessionKey = `openagents-${network.id.slice(0, 8)}-${channel.slice(-8)}`;
       const agentId = agentCfg.openclaw_agent_id || 'main';
 
-      const args = ['agent', '--local', '--agent', agentId,
-        '--session-id', sessionKey, '--message', message, '--json'];
+      // Prepend workspace context on first message in a session
+      const contextKey = `${agentCfg.name}:${sessionKey}`;
+      let fullMessage = message;
+      if (!this._sessionContextSent) this._sessionContextSent = new Set();
+      if (!this._sessionContextSent.has(contextKey)) {
+        fullMessage = this._buildWorkspaceContext(agentCfg, network) + message;
+        this._sessionContextSent.add(contextKey);
+      }
 
-      this._log(`${agentCfg.name} CLI: ${binary} ${args.slice(0, 5).join(' ')} ...`);
+      // Write message to temp file to avoid cmd.exe argument length limits
+      const msgFile = path.join(this.config.configDir, `msg-${Date.now()}.tmp`);
+      fs.writeFileSync(msgFile, fullMessage, 'utf-8');
+
+      // Use a small node wrapper to read the message file and exec openclaw
+      // This avoids all cmd.exe quoting/length issues
+      const wrapperCode = [
+        `const msg = require("fs").readFileSync(${JSON.stringify(msgFile)}, "utf-8");`,
+        `const cp = require("child_process");`,
+        `const path = require("path");`,
+        `const args = ${JSON.stringify(['agent', '--local', '--agent', agentId, '--session-id', sessionKey, '--json'])};`,
+        `args.push("--message", msg);`,
+        // Resolve the .cmd shim to find the actual JS entry point
+        `let bin = ${JSON.stringify(binary)};`,
+        `try {`,
+        `  const w = cp.execSync("where " + bin, { encoding: "utf-8", timeout: 5000 }).split(/\\r?\\n/)[0].trim();`,
+        `  if (w.endsWith(".cmd")) {`,
+        `    const c = require("fs").readFileSync(w, "utf-8");`,
+        `    const m = c.match(/"([^"]+\\.js)"/);`,
+        `    if (m) { args.unshift(m[1].replace("%~dp0\\\\", path.dirname(w) + "\\\\")); bin = process.execPath; }`,
+        `  }`,
+        `} catch {}`,
+        `const r = cp.spawnSync(bin, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env, timeout: 600000 });`,
+        `try { require("fs").unlinkSync(${JSON.stringify(msgFile)}); } catch {}`,
+        `if (r.stdout) process.stdout.write(r.stdout);`,
+        `if (r.stderr) process.stderr.write(r.stderr);`,
+        `process.exit(r.status || 0);`,
+      ].join('\n');
+
+      this._log(`${agentCfg.name} CLI: ${binary} agent --local --agent ${agentId} ... (via wrapper, msg ${fullMessage.length} chars)`);
 
       const spawnEnv = { ...env };
       if (IS_WINDOWS) {
@@ -489,24 +589,13 @@ class Daemon {
         }
       }
 
-      // On Windows, .cmd shims need shell:true but that breaks argument
-      // quoting. Use execFileSync-style approach: resolve the .cmd to its
-      // target and run directly, or use spawn without shell and full path.
-      let spawnBinary = binary;
-      let spawnArgs = args;
+      const spawnBinary = process.execPath; // node
+      const spawnArgs = ['-e', wrapperCode];
       const spawnOpts = {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: spawnEnv,
-        timeout: 600000,
+        timeout: 620000,
       };
-
-      if (IS_WINDOWS) {
-        // Find the actual .cmd shim and invoke via cmd.exe /C with proper quoting
-        spawnBinary = process.env.COMSPEC || 'cmd.exe';
-        // Wrap argument containing spaces in double quotes for cmd.exe
-        const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
-        spawnArgs = ['/C', binary, ...quotedArgs];
-      }
 
       const proc = spawn(spawnBinary, spawnArgs, spawnOpts);
       let stdout = '';
