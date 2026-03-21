@@ -7,7 +7,7 @@ const { WorkspaceClient } = require('../src/workspace-client');
 describe('WorkspaceClient', () => {
   it('constructs with default endpoint', () => {
     const client = new WorkspaceClient();
-    assert.equal(client.endpoint, 'https://endpoint.openagents.org');
+    assert.equal(client.endpoint, 'https://workspace-endpoint.openagents.org');
   });
 
   it('constructs with custom endpoint and strips trailing slash', () => {

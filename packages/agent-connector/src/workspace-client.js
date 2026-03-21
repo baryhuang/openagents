@@ -3,7 +3,7 @@
 const https = require('https');
 const http = require('http');
 
-const DEFAULT_ENDPOINT = 'https://endpoint.openagents.org';
+const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
 
 /**
  * HTTP client for workspace API operations.
@@ -143,6 +143,79 @@ class WorkspaceClient {
     }, token);
   }
 
+  /**
+   * Poll for pending messages targeted at an agent via GET /v1/events.
+   * Returns { messages, cursor } where cursor is the last event ID.
+   */
+  async pollPending(workspaceId, agentName, token, { after, limit = 50 } = {}) {
+    const params = new URLSearchParams({
+      network: workspaceId,
+      type: 'workspace.message',
+      limit: String(limit),
+    });
+    if (after) params.set('after', after);
+
+    const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
+    const result = data.data || data;
+    const events = (result && result.events) || [];
+
+    let cursor = null;
+    if (events.length > 0) {
+      cursor = events[events.length - 1].id || null;
+    }
+
+    // Filter for messages targeted at this agent
+    const messages = [];
+    for (const e of events) {
+      const source = e.source || '';
+      const meta = e.metadata || {};
+      const targetAgents = meta.target_agents || [];
+
+      // Skip own messages
+      if (source === `openagents:${agentName}`) continue;
+
+      if (source.startsWith('human:')) {
+        // Human messages: pick up if targeted at this agent or broadcast
+        if (!targetAgents.length || targetAgents.includes(agentName)) {
+          messages.push(this._eventToMessage(e));
+        }
+      } else if (source.startsWith('openagents:')) {
+        // Agent messages: only pick up if explicitly mentioned
+        if (targetAgents.includes(agentName)) {
+          messages.push(this._eventToMessage(e));
+        }
+      }
+    }
+
+    return { messages, cursor };
+  }
+
+  /**
+   * Convert an ONM event to a message-compatible object.
+   */
+  _eventToMessage(event) {
+    const source = event.source || '';
+    const isHuman = source.startsWith('human:');
+    const senderName = source.replace('openagents:', '').replace('human:', '');
+    const payload = event.payload || {};
+    const target = event.target || '';
+    const ts = event.timestamp;
+
+    const msg = {
+      messageId: event.id || '',
+      sessionId: target.startsWith('channel/') ? target.replace('channel/', '') : target,
+      senderType: isHuman ? 'human' : 'agent',
+      senderName,
+      content: (payload.content || ''),
+      messageType: payload.message_type || 'chat',
+      metadata: event.metadata || {},
+    };
+    if (ts) {
+      msg.createdAt = new Date(ts).toISOString();
+    }
+    return msg;
+  }
+
   // -- Internal --
 
   _wsHeaders(token) {
@@ -150,6 +223,40 @@ class WorkspaceClient {
       'Content-Type': 'application/json',
       'X-Workspace-Token': token,
     };
+  }
+
+  _get(urlPath, headers = {}) {
+    const fullUrl = this.endpoint + urlPath;
+
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(fullUrl);
+      const transport = parsedUrl.protocol === 'https:' ? https : http;
+
+      const req = transport.request(fullUrl, {
+        method: 'GET',
+        headers,
+        timeout: 15000,
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (res.statusCode >= 400) {
+              reject(new Error(parsed.message || `HTTP ${res.statusCode}`));
+            } else {
+              resolve(parsed);
+            }
+          } catch {
+            reject(new Error(`Invalid response: ${data.slice(0, 200)}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+      req.end();
+    });
   }
 
   _post(urlPath, body, headers = {}) {

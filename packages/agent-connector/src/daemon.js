@@ -2,8 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, execFileSync } = require('child_process');
 const os = require('os');
+const { WorkspaceClient } = require('./workspace-client');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -244,7 +245,19 @@ class Daemon {
     };
     this._processes[name] = info;
 
-    this._spawnLoop(name, agentCfg, info);
+    // Workspace-connected agents use the adapter loop (poll + CLI per message).
+    // Local-only agents use the spawn loop (long-running child process).
+    const network = agentCfg.network
+      ? this.config.getNetworks().find(
+          (n) => n.slug === agentCfg.network || n.id === agentCfg.network
+        )
+      : null;
+
+    if (network) {
+      this._adapterLoop(name, agentCfg, info, network);
+    } else {
+      this._spawnLoop(name, agentCfg, info);
+    }
   }
 
   async _spawnLoop(name, agentCfg, info) {
@@ -321,6 +334,220 @@ class Daemon {
     this._writeStatus();
   }
 
+  // ---------------------------------------------------------------------------
+  // Internal — adapter loop (workspace-connected agents)
+  // ---------------------------------------------------------------------------
+
+  async _adapterLoop(name, agentCfg, info, network) {
+    const wsClient = new WorkspaceClient(network.endpoint || 'https://workspace-endpoint.openagents.org');
+    const binary = this._resolveAgentBinary(agentCfg);
+    const env = this._buildAgentEnv(agentCfg);
+    let cursor = null;
+    const processedIds = new Set();
+
+    // Skip existing events on startup
+    try {
+      while (true) {
+        const { cursor: newCursor } = await wsClient.pollPending(
+          network.id, name, network.token, { after: cursor, limit: 200 }
+        );
+        if (!newCursor || newCursor === cursor) break;
+        cursor = newCursor;
+      }
+      this._log(`${name} skipped existing events, cursor=${cursor}`);
+    } catch (e) {
+      this._log(`${name} skip-events failed: ${e.message}`);
+    }
+
+    // Heartbeat interval
+    const heartbeatInterval = setInterval(async () => {
+      if (this._stoppedAgents.has(name) || this._shuttingDown) return;
+      try {
+        await wsClient.heartbeat(network.id, name, network.token);
+      } catch (e) {
+        this._log(`${name} heartbeat failed: ${e.message}`);
+      }
+    }, 30000);
+
+    // Send initial heartbeat
+    try { await wsClient.heartbeat(network.id, name, network.token); } catch {}
+
+    info.state = 'running';
+    info.startedAt = new Date().toISOString();
+    this._writeStatus();
+    this._log(`${name} adapter online → ${network.slug}${binary ? ` (binary: ${binary})` : ''}`);
+
+    let idleCount = 0;
+
+    while (!this._shuttingDown && !this._stoppedAgents.has(name)) {
+      try {
+        const { messages, cursor: newCursor } = await wsClient.pollPending(
+          network.id, name, network.token, { after: cursor }
+        );
+        if (newCursor) cursor = newCursor;
+
+        // Filter already-processed messages
+        const incoming = messages.filter((m) => {
+          const id = m.messageId;
+          if (!id || processedIds.has(id)) return false;
+          if (m.messageType === 'status') return false;
+          return true;
+        });
+
+        if (incoming.length > 0) {
+          idleCount = 0;
+          for (const msg of incoming) {
+            if (msg.messageId) processedIds.add(msg.messageId);
+            await this._handleAdapterMessage(name, agentCfg, msg, network, wsClient, binary, env);
+          }
+          // Cap dedup set
+          if (processedIds.size > 2000) {
+            const arr = [...processedIds];
+            processedIds.clear();
+            for (const id of arr.slice(-1000)) processedIds.add(id);
+          }
+        } else {
+          idleCount++;
+        }
+
+        // Adaptive polling: 2s active, up to 15s idle
+        const delay = incoming.length > 0 ? 2000 : Math.min(2000 + idleCount * 1000, 15000);
+        await this._sleep(delay);
+      } catch (e) {
+        if (this._stoppedAgents.has(name) || this._shuttingDown) break;
+        info.lastError = (e.message || String(e)).slice(0, 200);
+        this._log(`${name} poll error: ${info.lastError}`);
+        await this._sleep(5000);
+      }
+    }
+
+    clearInterval(heartbeatInterval);
+
+    // Disconnect from workspace
+    try { await wsClient.disconnect(network.id, name, network.token); } catch {}
+
+    info.state = 'stopped';
+    this._writeStatus();
+    this._log(`${name} adapter stopped`);
+  }
+
+  async _handleAdapterMessage(name, agentCfg, msg, network, wsClient, binary, env) {
+    const content = (msg.content || '').trim();
+    if (!content) return;
+
+    const channel = msg.sessionId || 'general';
+    const sender = msg.senderName || msg.senderType || 'user';
+    this._log(`${name} message from ${sender} in ${channel}: ${content.slice(0, 80)}`);
+
+    // Send "thinking..." status
+    try {
+      await wsClient.sendMessage(network.id, channel, network.token, 'thinking...', {
+        senderType: 'agent', senderName: name, messageType: 'status',
+      });
+    } catch {}
+
+    try {
+      let response;
+      if (binary) {
+        response = await this._runCliAgent(binary, content, channel, agentCfg, network, env);
+      } else {
+        response = `Agent type '${agentCfg.type}' has no CLI binary — cannot process message.`;
+      }
+
+      if (response) {
+        await wsClient.sendMessage(network.id, channel, network.token, response, {
+          senderType: 'agent', senderName: name,
+        });
+        this._log(`${name} responded in ${channel}: ${response.slice(0, 80)}...`);
+      }
+    } catch (e) {
+      const errMsg = `Error: ${(e.message || String(e)).slice(0, 200)}`;
+      this._log(`${name} error handling message: ${errMsg}`);
+      try {
+        await wsClient.sendMessage(network.id, channel, network.token, errMsg, {
+          senderType: 'agent', senderName: name,
+        });
+      } catch {}
+    }
+  }
+
+  _runCliAgent(binary, message, channel, agentCfg, network, env) {
+    return new Promise((resolve, reject) => {
+      const sessionKey = `openagents-${network.id.slice(0, 8)}-${channel.slice(-8)}`;
+      const agentId = agentCfg.openclaw_agent_id || 'main';
+
+      const args = ['agent', '--local', '--agent', agentId,
+        '--session-id', sessionKey, '--message', message, '--json'];
+
+      this._log(`${agentCfg.name} CLI: ${binary} ${args.slice(0, 5).join(' ')} ...`);
+
+      const spawnOpts = {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env,
+        timeout: 600000,
+      };
+      if (IS_WINDOWS) {
+        spawnOpts.shell = true;
+        const npmBin = path.join(process.env.APPDATA || '', 'npm');
+        if (npmBin && !(env.PATH || '').includes(npmBin)) {
+          spawnOpts.env = { ...env, PATH: npmBin + ';' + (env.PATH || process.env.PATH || '') };
+        }
+      }
+
+      const proc = spawn(binary, args, spawnOpts);
+      let stdout = '';
+      let stderr = '';
+
+      if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
+      if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; });
+
+      proc.on('error', (err) => reject(err));
+      proc.on('exit', (code) => {
+        if (code !== 0) {
+          reject(new Error(`CLI exited ${code}: ${stderr.slice(0, 300)}`));
+          return;
+        }
+
+        stdout = stdout.trim();
+        if (!stdout) { resolve(''); return; }
+
+        // Parse JSON output — find first '{'
+        const jsonStart = stdout.indexOf('{');
+        if (jsonStart < 0) { resolve(stdout); return; }
+
+        try {
+          const data = JSON.parse(stdout.slice(jsonStart));
+          const payloads = data.payloads || [];
+          if (payloads.length > 0) {
+            const texts = payloads.filter((p) => p.text).map((p) => p.text);
+            resolve(texts.join('\n\n'));
+          } else {
+            resolve(stdout.slice(0, jsonStart).trim() || '');
+          }
+        } catch {
+          resolve(stdout);
+        }
+      });
+    });
+  }
+
+  _resolveAgentBinary(agentCfg) {
+    const entry = this.registry.getEntry(agentCfg.type);
+    let binary = (entry && entry.install && entry.install.binary);
+    if (!binary) {
+      const knownBinaries = {
+        openclaw: 'openclaw', claude: 'claude', codex: 'codex',
+        aider: 'aider', goose: 'goose', gemini: 'gemini',
+      };
+      binary = knownBinaries[agentCfg.type];
+    }
+    return binary || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal — spawn loop (local-only agents)
+  // ---------------------------------------------------------------------------
+
   _spawnAgent(cmd, opts) {
     const [binary, ...args] = cmd;
     const spawnOpts = {
@@ -352,46 +579,23 @@ class Daemon {
   }
 
   _getLaunchCommand(agentCfg) {
-    const entry = this.registry.getEntry(agentCfg.type);
-
-    // Resolve binary name from registry (bundled or remote format)
-    let binary = (entry && entry.install && entry.install.binary);
-    // Fallback: known binary names for built-in types
-    if (!binary) {
-      const knownBinaries = {
-        openclaw: 'openclaw', claude: 'claude', codex: 'codex',
-        aider: 'aider', goose: 'goose', gemini: 'gemini',
-      };
-      binary = knownBinaries[agentCfg.type];
-    }
+    const binary = this._resolveAgentBinary(agentCfg);
     if (!binary) return null;
 
+    const entry = this.registry.getEntry(agentCfg.type);
     const args = [];
 
     // Add launch args from registry
-    if (entry.launch && entry.launch.args) {
+    if (entry && entry.launch && entry.launch.args) {
       for (const arg of entry.launch.args) {
         args.push(arg.replace(/\{agent_name\}/g, agentCfg.name));
       }
     }
 
-    // Built-in launch profiles for known agent types
+    // Built-in launch profiles for local-only agents
     if (!args.length) {
       const type = agentCfg.type || '';
-      if (type === 'openclaw') {
-        args.push('agent', '--local', '--agent', 'main');
-        // Add workspace connection if configured
-        if (agentCfg.network) {
-          const network = this.config.getNetworks().find(
-            n => n.slug === agentCfg.network || n.id === agentCfg.network
-          );
-          if (network) {
-            args.push('--workspace-id', network.id);
-            args.push('--workspace-token', network.token);
-            args.push('--agent-name', agentCfg.name);
-          }
-        }
-      } else if (type === 'claude') {
+      if (type === 'claude') {
         args.push('--print');
       } else if (type === 'codex') {
         args.push('--quiet');
