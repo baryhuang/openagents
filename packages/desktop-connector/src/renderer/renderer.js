@@ -229,7 +229,11 @@ async function openWorkspaceInBrowser(name) {
       return;
     }
     const slug = agent.networkName || agent.network;
-    const url = `https://workspace.openagents.org/${slug}`;
+    // Look up token from workspaces list
+    const workspaces = await window.api.listWorkspaces();
+    const ws = workspaces.find((w) => w.slug === agent.network || w.id === agent.network);
+    let url = `https://workspace.openagents.org/${slug}`;
+    if (ws && ws.token) url += `?token=${encodeURIComponent(ws.token)}`;
     window.api.openExternal(url);
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
