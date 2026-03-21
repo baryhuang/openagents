@@ -106,17 +106,6 @@ class WorkspaceClient {
   }
 
   /**
-   * Poll for pending tasks via POST /v1/poll_pending.
-   */
-  async pollPending(workspaceId, agentName, token) {
-    const data = await this._post('/v1/poll_pending', {
-      agent_name: agentName,
-      network: workspaceId,
-    }, this._wsHeaders(token));
-    return data.data || data;
-  }
-
-  /**
    * Post a task result via POST /v1/events.
    */
   async sendEvent(workspaceId, event, token) {
@@ -188,6 +177,54 @@ class WorkspaceClient {
     }
 
     return { messages, cursor };
+  }
+
+  /**
+   * Get session/channel info via GET /v1/sessions/{channelName}.
+   */
+  async getSession(workspaceId, channelName, token) {
+    try {
+      const params = new URLSearchParams({ network: workspaceId });
+      const data = await this._get(`/v1/sessions/${channelName}?${params}`, this._wsHeaders(token));
+      return (data.data || data) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Update session/channel info via PUT /v1/sessions/{channelName}.
+   */
+  async updateSession(workspaceId, channelName, token, { title, autoTitle } = {}) {
+    const body = { network: workspaceId };
+    if (title !== undefined) body.title = title;
+    if (autoTitle !== undefined) body.auto_title = autoTitle;
+    try {
+      await this._post(`/v1/sessions/${channelName}`, body, this._wsHeaders(token));
+    } catch {}
+  }
+
+  /**
+   * Poll for control events targeted at an agent via GET /v1/events.
+   */
+  async pollControl(workspaceId, agentName, token, { after } = {}) {
+    try {
+      const params = new URLSearchParams({
+        network: workspaceId,
+        type: 'workspace.control',
+        limit: '10',
+      });
+      if (after) params.set('after', after);
+      const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
+      const result = data.data || data;
+      const events = (result && result.events) || [];
+      return events.filter((e) => {
+        const targets = (e.metadata || {}).target_agents || [];
+        return !targets.length || targets.includes(agentName);
+      });
+    } catch {
+      return [];
+    }
   }
 
   /**

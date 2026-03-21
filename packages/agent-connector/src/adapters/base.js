@@ -17,7 +17,7 @@
 
 'use strict';
 
-const WorkspaceClient = require('../workspace-client');
+const { WorkspaceClient } = require('../workspace-client');
 const { generateSessionTitle, SESSION_DEFAULT_RE } = require('./utils');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
