@@ -372,6 +372,11 @@ class Daemon {
     // Send initial heartbeat
     try { await wsClient.heartbeat(network.id, name, network.token); } catch {}
 
+    // Install workspace skill into OpenClaw's skills directory
+    try { this._installWorkspaceSkill(agentCfg, network); } catch (e) {
+      this._log(`${name} skill install failed: ${e.message}`);
+    }
+
     info.state = 'running';
     info.startedAt = new Date().toISOString();
     this._writeStatus();
@@ -504,36 +509,74 @@ class Daemon {
     return { binary: process.env.COMSPEC || 'cmd.exe', prefix: ['/C', binary] };
   }
 
-  _buildWorkspaceContext(agentCfg, network) {
+  /**
+   * Install a SKILL.md into OpenClaw's workspace skills directory.
+   * OpenClaw auto-discovers skills from <workspace>/skills/ and injects
+   * them into the system prompt — same mechanism as the Python adapter.
+   */
+  _installWorkspaceSkill(agentCfg, network) {
     const baseUrl = 'https://workspace-endpoint.openagents.org';
     const h = `Authorization: Bearer ${network.token}`;
     const wsId = network.id;
     const name = agentCfg.name;
+    const agentId = agentCfg.openclaw_agent_id || 'main';
 
-    return [
-      '=== WORKSPACE CONTEXT ===',
-      `You are agent "${name}" in workspace "${network.slug}".`,
-      'You have access to shared workspace tools via HTTP API. Use your exec tool to run curl commands.',
+    const home = IS_WINDOWS ? process.env.USERPROFILE : process.env.HOME;
+    const openclawDir = path.join(home, '.openclaw');
+    const wsDir = agentId && agentId !== 'main'
+      ? path.join(openclawDir, `workspace-${agentId}`)
+      : path.join(openclawDir, 'workspace');
+
+    if (!fs.existsSync(wsDir)) {
+      this._log(`OpenClaw workspace not found at ${wsDir}, skipping skill install`);
+      return;
+    }
+
+    const skillName = `openagents-workspace-${name}`;
+    const skillDir = path.join(wsDir, 'skills', skillName);
+    fs.mkdirSync(skillDir, { recursive: true });
+
+    const content = [
+      '---',
+      'name: openagents-workspace',
+      'description: "Share files, browse websites, and collaborate with other agents in an OpenAgents workspace. Use when: (1) sharing results or reports, (2) browsing a website, (3) reading shared files, (4) checking who else is in the workspace."',
+      'metadata:',
+      '  {"openclaw": {"always": true, "emoji": "\\U0001F310"}}',
+      '---',
       '',
-      '## Shared Browser',
-      'The workspace has a shared browser visible to all users and agents.',
-      `Open tab: curl -s -X POST ${baseUrl}/v1/browser/tabs -H "${h}" -H "Content-Type: application/json" -d '{"url":"URL","network":"${wsId}","source":"openagents:${name}"}'`,
-      `Read page: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/snapshot`,
-      `Screenshot: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/screenshot`,
-      `Navigate: curl -s -X POST ${baseUrl}/v1/browser/tabs/TAB_ID/navigate -H "${h}" -H "Content-Type: application/json" -d '{"url":"URL"}'`,
-      `Click: curl -s -X POST ${baseUrl}/v1/browser/tabs/TAB_ID/click -H "${h}" -H "Content-Type: application/json" -d '{"selector":"CSS_SELECTOR"}'`,
-      `Type: curl -s -X POST ${baseUrl}/v1/browser/tabs/TAB_ID/type -H "${h}" -H "Content-Type: application/json" -d '{"selector":"CSS_SELECTOR","text":"TEXT"}'`,
-      `Close: curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID`,
-      `List tabs: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs?network=${wsId}`,
-      '(Replace TAB_ID with the id from the open response)',
+      `You are agent "${name}" in workspace "${network.slug || network.name || wsId}".`,
       '',
-      '## Workspace Files',
-      `List: curl -s -H "${h}" ${baseUrl}/v1/files?network=${wsId}`,
-      `Read: curl -s -H "${h}" ${baseUrl}/v1/files/FILE_PATH?network=${wsId}`,
-      `Write: curl -s -X PUT ${baseUrl}/v1/files/FILE_PATH -H "${h}" -H "Content-Type: application/json" -d '{"content":"...","network":"${wsId}"}'`,
-      '=== END WORKSPACE CONTEXT ===',
+      '## Workspace Tools (MANDATORY)',
+      '',
+      'Use your `exec` tool to run the `curl` commands below.',
+      'Do NOT use native browsing tools for workspace browser tasks — use `exec` + `curl`.',
+      'The workspace browser is a *shared* browser visible to all users and agents.',
+      '',
+      '### Shared Browser',
+      '',
+      '**To browse a website**, exec these steps:',
+      `Step 1 — open tab: curl -s -X POST ${baseUrl}/v1/browser/tabs -H "${h}" -H "Content-Type: application/json" -d '{"url":"https://example.com","network":"${wsId}","source":"openagents:${name}"}'`,
+      `Step 2 — read content: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/snapshot`,
+      `Step 3 — close tab: curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID`,
+      '(Replace TAB_ID with the id from step 1 response)',
+      '',
+      `List tabs: \`curl -s -H "${h}" ${baseUrl}/v1/browser/tabs?network=${wsId}\``,
+      `Navigate: \`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/browser/tabs/{tab_id}/navigate -d '{"url":"URL"}'\``,
+      `Click: \`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/browser/tabs/{tab_id}/click -d '{"selector":"CSS"}'\``,
+      `Type: \`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/browser/tabs/{tab_id}/type -d '{"selector":"CSS","text":"TEXT"}'\``,
+      `Close: \`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}\``,
+      '',
+      '### Workspace Files',
+      '',
+      `List: \`curl -s -H "${h}" ${baseUrl}/v1/files?network=${wsId}\``,
+      `Read: \`curl -s -H "${h}" ${baseUrl}/v1/files/FILE_PATH?network=${wsId}\``,
+      `Write: \`curl -s -X PUT -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/files/FILE_PATH -d '{"content":"...","network":"${wsId}"}'\``,
       '',
     ].join('\n');
+
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    fs.writeFileSync(skillPath, content, 'utf-8');
+    this._log(`Installed workspace skill at ${skillPath}`);
   }
 
   _runCliAgent(binary, message, channel, agentCfg, network, env) {
@@ -541,45 +584,10 @@ class Daemon {
       const sessionKey = `openagents-${network.id.slice(0, 8)}-${channel.slice(-8)}`;
       const agentId = agentCfg.openclaw_agent_id || 'main';
 
-      // Prepend workspace context on first message in a session
-      const contextKey = `${agentCfg.name}:${sessionKey}`;
-      let fullMessage = message;
-      if (!this._sessionContextSent) this._sessionContextSent = new Set();
-      if (!this._sessionContextSent.has(contextKey)) {
-        fullMessage = this._buildWorkspaceContext(agentCfg, network) + message;
-        this._sessionContextSent.add(contextKey);
-      }
+      const args = ['agent', '--local', '--agent', agentId,
+        '--session-id', sessionKey, '--message', message, '--json'];
 
-      // Write message to temp file to avoid cmd.exe argument length limits
-      const msgFile = path.join(this.config.configDir, `msg-${Date.now()}.tmp`);
-      fs.writeFileSync(msgFile, fullMessage, 'utf-8');
-
-      // Use a small node wrapper to read the message file and exec openclaw
-      // This avoids all cmd.exe quoting/length issues
-      const wrapperCode = [
-        `const msg = require("fs").readFileSync(${JSON.stringify(msgFile)}, "utf-8");`,
-        `const cp = require("child_process");`,
-        `const path = require("path");`,
-        `const args = ${JSON.stringify(['agent', '--local', '--agent', agentId, '--session-id', sessionKey, '--json'])};`,
-        `args.push("--message", msg);`,
-        // Resolve the .cmd shim to find the actual JS entry point
-        `let bin = ${JSON.stringify(binary)};`,
-        `try {`,
-        `  const w = cp.execSync("where " + bin, { encoding: "utf-8", timeout: 5000 }).split(/\\r?\\n/)[0].trim();`,
-        `  if (w.endsWith(".cmd")) {`,
-        `    const c = require("fs").readFileSync(w, "utf-8");`,
-        `    const m = c.match(/"([^"]+\\.js)"/);`,
-        `    if (m) { args.unshift(m[1].replace("%~dp0\\\\", path.dirname(w) + "\\\\")); bin = process.execPath; }`,
-        `  }`,
-        `} catch {}`,
-        `const r = cp.spawnSync(bin, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env, timeout: 600000 });`,
-        `try { require("fs").unlinkSync(${JSON.stringify(msgFile)}); } catch {}`,
-        `if (r.stdout) process.stdout.write(r.stdout);`,
-        `if (r.stderr) process.stderr.write(r.stderr);`,
-        `process.exit(r.status || 0);`,
-      ].join('\n');
-
-      this._log(`${agentCfg.name} CLI: ${binary} agent --local --agent ${agentId} ... (via wrapper, msg ${fullMessage.length} chars)`);
+      this._log(`${agentCfg.name} CLI: ${binary} ${args.slice(0, 5).join(' ')} ...`);
 
       const spawnEnv = { ...env };
       if (IS_WINDOWS) {
@@ -589,13 +597,21 @@ class Daemon {
         }
       }
 
-      const spawnBinary = process.execPath; // node
-      const spawnArgs = ['-e', wrapperCode];
+      // On Windows, use cmd.exe /C for .cmd shim resolution
+      let spawnBinary = binary;
+      let spawnArgs = args;
       const spawnOpts = {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: spawnEnv,
-        timeout: 620000,
+        timeout: 600000,
       };
+
+      if (IS_WINDOWS) {
+        spawnBinary = process.env.COMSPEC || 'cmd.exe';
+        const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
+        spawnArgs = ['/C', binary, ...quotedArgs];
+      }
+
 
       const proc = spawn(spawnBinary, spawnArgs, spawnOpts);
       let stdout = '';
