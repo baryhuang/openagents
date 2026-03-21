@@ -339,316 +339,63 @@ class Daemon {
   // ---------------------------------------------------------------------------
 
   async _adapterLoop(name, agentCfg, info, network) {
-    const wsClient = new WorkspaceClient(network.endpoint || 'https://workspace-endpoint.openagents.org');
-    const binary = this._resolveAgentBinary(agentCfg);
-    const env = this._buildAgentEnv(agentCfg);
-    let cursor = null;
-    const processedIds = new Set();
+    const { createAdapter } = require('./adapters');
+    const agentType = agentCfg.type || 'openclaw';
+    const endpoint = network.endpoint || 'https://workspace-endpoint.openagents.org';
 
-    // Skip existing events on startup
+    let adapter;
     try {
-      while (true) {
-        const { cursor: newCursor } = await wsClient.pollPending(
-          network.id, name, network.token, { after: cursor, limit: 200 }
-        );
-        if (!newCursor || newCursor === cursor) break;
-        cursor = newCursor;
-      }
-      this._log(`${name} skipped existing events, cursor=${cursor}`);
+      adapter = createAdapter(agentType, {
+        workspaceId: network.id,
+        channelName: 'general',
+        token: network.token,
+        agentName: name,
+        endpoint,
+        openclawAgentId: agentCfg.openclaw_agent_id || 'main',
+        disabledModules: new Set(),
+      });
     } catch (e) {
-      this._log(`${name} skip-events failed: ${e.message}`);
+      this._log(`${name} failed to create ${agentType} adapter: ${e.message}`);
+      info.state = 'error';
+      info.lastError = e.message;
+      this._writeStatus();
+      return;
     }
 
-    // Heartbeat interval
-    const heartbeatInterval = setInterval(async () => {
-      if (this._stoppedAgents.has(name) || this._shuttingDown) return;
-      try {
-        await wsClient.heartbeat(network.id, name, network.token);
-      } catch (e) {
-        this._log(`${name} heartbeat failed: ${e.message}`);
-      }
-    }, 30000);
-
-    // Send initial heartbeat
-    try { await wsClient.heartbeat(network.id, name, network.token); } catch {}
-
-    // Install workspace skill into OpenClaw's skills directory
-    try { this._installWorkspaceSkill(agentCfg, network); } catch (e) {
-      this._log(`${name} skill install failed: ${e.message}`);
-    }
+    // Store adapter reference for stop
+    this._adapters = this._adapters || {};
+    this._adapters[name] = adapter;
 
     info.state = 'running';
     info.startedAt = new Date().toISOString();
     this._writeStatus();
-    this._log(`${name} adapter online → ${network.slug}${binary ? ` (binary: ${binary})` : ''}`);
+    this._log(`${name} adapter online → ${network.slug} (type: ${agentType})`);
 
-    let idleCount = 0;
-
-    while (!this._shuttingDown && !this._stoppedAgents.has(name)) {
-      try {
-        const { messages, cursor: newCursor } = await wsClient.pollPending(
-          network.id, name, network.token, { after: cursor }
-        );
-        if (newCursor) cursor = newCursor;
-
-        // Filter already-processed messages
-        const incoming = messages.filter((m) => {
-          const id = m.messageId;
-          if (!id || processedIds.has(id)) return false;
-          if (m.messageType === 'status') return false;
-          return true;
-        });
-
-        if (incoming.length > 0) {
-          idleCount = 0;
-          for (const msg of incoming) {
-            if (msg.messageId) processedIds.add(msg.messageId);
-            await this._handleAdapterMessage(name, agentCfg, msg, network, wsClient, binary, env);
-          }
-          // Cap dedup set
-          if (processedIds.size > 2000) {
-            const arr = [...processedIds];
-            processedIds.clear();
-            for (const id of arr.slice(-1000)) processedIds.add(id);
-          }
-        } else {
-          idleCount++;
+    try {
+      // Run adapter poll loop — stops when adapter.stop() is called
+      // or when the daemon shuts down
+      const checkStop = setInterval(() => {
+        if (this._shuttingDown || this._stoppedAgents.has(name)) {
+          adapter.stop();
+          clearInterval(checkStop);
         }
+      }, 1000);
 
-        // Adaptive polling: 2s active, up to 15s idle
-        const delay = incoming.length > 0 ? 2000 : Math.min(2000 + idleCount * 1000, 15000);
-        await this._sleep(delay);
-      } catch (e) {
-        if (this._stoppedAgents.has(name) || this._shuttingDown) break;
-        info.lastError = (e.message || String(e)).slice(0, 200);
-        this._log(`${name} poll error: ${info.lastError}`);
-        await this._sleep(5000);
-      }
+      await adapter.run();
+      clearInterval(checkStop);
+    } catch (e) {
+      info.lastError = (e.message || String(e)).slice(0, 200);
+      this._log(`${name} adapter error: ${info.lastError}`);
     }
 
-    clearInterval(heartbeatInterval);
-
-    // Disconnect from workspace
-    try { await wsClient.disconnect(network.id, name, network.token); } catch {}
-
+    delete this._adapters[name];
     info.state = 'stopped';
     this._writeStatus();
     this._log(`${name} adapter stopped`);
   }
 
-  async _handleAdapterMessage(name, agentCfg, msg, network, wsClient, binary, env) {
-    const content = (msg.content || '').trim();
-    if (!content) return;
-
-    const channel = msg.sessionId || 'general';
-    const sender = msg.senderName || msg.senderType || 'user';
-    this._log(`${name} message from ${sender} in ${channel}: ${content.slice(0, 80)}`);
-
-    // Send "thinking..." status
-    try {
-      await wsClient.sendMessage(network.id, channel, network.token, 'thinking...', {
-        senderType: 'agent', senderName: name, messageType: 'status',
-      });
-    } catch {}
-
-    try {
-      let response;
-      if (binary) {
-        response = await this._runCliAgent(binary, content, channel, agentCfg, network, env);
-      } else {
-        response = `Agent type '${agentCfg.type}' has no CLI binary — cannot process message.`;
-      }
-
-      if (response) {
-        await wsClient.sendMessage(network.id, channel, network.token, response, {
-          senderType: 'agent', senderName: name,
-        });
-        this._log(`${name} responded in ${channel}: ${response.slice(0, 80)}...`);
-      }
-    } catch (e) {
-      const errMsg = `Error: ${(e.message || String(e)).slice(0, 200)}`;
-      this._log(`${name} error handling message: ${errMsg}`);
-      try {
-        await wsClient.sendMessage(network.id, channel, network.token, errMsg, {
-          senderType: 'agent', senderName: name,
-        });
-      } catch {}
-    }
-  }
-
-  /**
-   * Build workspace context preamble for CLI agents.
-   * Teaches the agent about shared workspace APIs (browser, files).
-   */
-  /**
-   * On Windows, resolve a .cmd shim to the underlying node script
-   * so we can spawn directly with node (avoiding cmd.exe argument limits).
-   */
-  _resolveWindowsBinary(binary, env) {
-    const { execSync } = require('child_process');
-    try {
-      // Find the .cmd shim
-      const cmdPath = execSync(`where ${binary}`, {
-        encoding: 'utf-8', timeout: 5000, env,
-      }).split(/\r?\n/)[0].trim();
-
-      if (cmdPath.endsWith('.cmd')) {
-        // Read the .cmd file to find the target JS script
-        const cmdContent = fs.readFileSync(cmdPath, 'utf-8');
-        // npm .cmd shims have: "%~dp0\node_modules\...\bin\cli.js" %*
-        // or: @IF EXIST "%~dp0\node.exe" ... "%~dp0\node_modules\...\cli.js" %*
-        const match = cmdContent.match(/"([^"]+\.js)"/);
-        if (match) {
-          const jsPath = match[1].replace('%~dp0\\', path.dirname(cmdPath) + '\\');
-          return { binary: process.execPath, prefix: [jsPath] };
-        }
-      }
-    } catch {}
-
-    // Fallback: use cmd.exe /C (may truncate long args)
-    return { binary: process.env.COMSPEC || 'cmd.exe', prefix: ['/C', binary] };
-  }
-
-  /**
-   * Install a SKILL.md into OpenClaw's workspace skills directory.
-   * OpenClaw auto-discovers skills from <workspace>/skills/ and injects
-   * them into the system prompt — same mechanism as the Python adapter.
-   */
-  _installWorkspaceSkill(agentCfg, network) {
-    const baseUrl = 'https://workspace-endpoint.openagents.org';
-    const h = `Authorization: Bearer ${network.token}`;
-    const wsId = network.id;
-    const name = agentCfg.name;
-    const agentId = agentCfg.openclaw_agent_id || 'main';
-
-    const home = IS_WINDOWS ? process.env.USERPROFILE : process.env.HOME;
-    const openclawDir = path.join(home, '.openclaw');
-    const wsDir = agentId && agentId !== 'main'
-      ? path.join(openclawDir, `workspace-${agentId}`)
-      : path.join(openclawDir, 'workspace');
-
-    if (!fs.existsSync(wsDir)) {
-      this._log(`OpenClaw workspace not found at ${wsDir}, skipping skill install`);
-      return;
-    }
-
-    const skillName = `openagents-workspace-${name}`;
-    const skillDir = path.join(wsDir, 'skills', skillName);
-    fs.mkdirSync(skillDir, { recursive: true });
-
-    const content = [
-      '---',
-      'name: openagents-workspace',
-      'description: "Share files, browse websites, and collaborate with other agents in an OpenAgents workspace. Use when: (1) sharing results or reports, (2) browsing a website, (3) reading shared files, (4) checking who else is in the workspace."',
-      'metadata:',
-      '  {"openclaw": {"always": true, "emoji": "\\U0001F310"}}',
-      '---',
-      '',
-      `You are agent "${name}" in workspace "${network.slug || network.name || wsId}".`,
-      '',
-      '## Workspace Tools (MANDATORY)',
-      '',
-      'Use your `exec` tool to run the `curl` commands below.',
-      'Do NOT use native browsing tools for workspace browser tasks — use `exec` + `curl`.',
-      'The workspace browser is a *shared* browser visible to all users and agents.',
-      '',
-      '### Shared Browser',
-      '',
-      '**To browse a website**, exec these steps:',
-      `Step 1 — open tab: curl -s -X POST ${baseUrl}/v1/browser/tabs -H "${h}" -H "Content-Type: application/json" -d '{"url":"https://example.com","network":"${wsId}","source":"openagents:${name}"}'`,
-      `Step 2 — read content: curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/snapshot`,
-      `Step 3 — close tab: curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID`,
-      '(Replace TAB_ID with the id from step 1 response)',
-      '',
-      `List tabs: \`curl -s -H "${h}" ${baseUrl}/v1/browser/tabs?network=${wsId}\``,
-      `Navigate: \`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/browser/tabs/{tab_id}/navigate -d '{"url":"URL"}'\``,
-      `Click: \`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/browser/tabs/{tab_id}/click -d '{"selector":"CSS"}'\``,
-      `Type: \`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/browser/tabs/{tab_id}/type -d '{"selector":"CSS","text":"TEXT"}'\``,
-      `Close: \`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}\``,
-      '',
-      '### Workspace Files',
-      '',
-      `List: \`curl -s -H "${h}" ${baseUrl}/v1/files?network=${wsId}\``,
-      `Read: \`curl -s -H "${h}" ${baseUrl}/v1/files/FILE_PATH?network=${wsId}\``,
-      `Write: \`curl -s -X PUT -H "${h}" -H "Content-Type: application/json" ${baseUrl}/v1/files/FILE_PATH -d '{"content":"...","network":"${wsId}"}'\``,
-      '',
-    ].join('\n');
-
-    const skillPath = path.join(skillDir, 'SKILL.md');
-    fs.writeFileSync(skillPath, content, 'utf-8');
-    this._log(`Installed workspace skill at ${skillPath}`);
-  }
-
-  _runCliAgent(binary, message, channel, agentCfg, network, env) {
-    return new Promise((resolve, reject) => {
-      const sessionKey = `openagents-${network.id.slice(0, 8)}-${channel.slice(-8)}`;
-      const agentId = agentCfg.openclaw_agent_id || 'main';
-
-      const args = ['agent', '--local', '--agent', agentId,
-        '--session-id', sessionKey, '--message', message, '--json'];
-
-      this._log(`${agentCfg.name} CLI: ${binary} ${args.slice(0, 5).join(' ')} ...`);
-
-      const spawnEnv = { ...env };
-      if (IS_WINDOWS) {
-        const npmBin = path.join(process.env.APPDATA || '', 'npm');
-        if (npmBin && !(spawnEnv.PATH || '').includes(npmBin)) {
-          spawnEnv.PATH = npmBin + ';' + (spawnEnv.PATH || process.env.PATH || '');
-        }
-      }
-
-      // On Windows, use cmd.exe /C for .cmd shim resolution
-      let spawnBinary = binary;
-      let spawnArgs = args;
-      const spawnOpts = {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: spawnEnv,
-        timeout: 600000,
-      };
-
-      if (IS_WINDOWS) {
-        spawnBinary = process.env.COMSPEC || 'cmd.exe';
-        const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
-        spawnArgs = ['/C', binary, ...quotedArgs];
-      }
-
-
-      const proc = spawn(spawnBinary, spawnArgs, spawnOpts);
-      let stdout = '';
-      let stderr = '';
-
-      if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
-      if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; });
-
-      proc.on('error', (err) => reject(err));
-      proc.on('exit', (code) => {
-        if (code !== 0) {
-          reject(new Error(`CLI exited ${code}: ${stderr.slice(0, 300)}`));
-          return;
-        }
-
-        stdout = stdout.trim();
-        if (!stdout) { resolve(''); return; }
-
-        // Parse JSON output — find first '{'
-        const jsonStart = stdout.indexOf('{');
-        if (jsonStart < 0) { resolve(stdout); return; }
-
-        try {
-          const data = JSON.parse(stdout.slice(jsonStart));
-          const payloads = data.payloads || [];
-          if (payloads.length > 0) {
-            const texts = payloads.filter((p) => p.text).map((p) => p.text);
-            resolve(texts.join('\n\n'));
-          } else {
-            resolve(stdout.slice(0, jsonStart).trim() || '');
-          }
-        } catch {
-          resolve(stdout);
-        }
-      });
-    });
-  }
+  // NOTE: Adapter-specific message handling (openclaw, claude, codex)
+  // has been moved to src/adapters/. The daemon delegates via createAdapter().
 
   _resolveAgentBinary(agentCfg) {
     const entry = this.registry.getEntry(agentCfg.type);

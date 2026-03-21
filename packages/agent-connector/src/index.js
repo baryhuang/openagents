@@ -195,4 +195,6 @@ class AgentConnector {
   }
 }
 
-module.exports = { AgentConnector, Daemon, WorkspaceClient };
+const adapters = require('./adapters');
+
+module.exports = { AgentConnector, Daemon, WorkspaceClient, adapters };
