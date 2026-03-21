@@ -182,7 +182,7 @@ class Daemon {
 
     try {
       if (IS_WINDOWS) {
-        execSync(`taskkill /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
+        execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
       } else {
         process.kill(pid, 'SIGTERM');
       }
@@ -196,8 +196,8 @@ class Daemon {
         return true;
       }
       // Busy-wait 500ms (sync, used only in CLI stop command)
-      execSync(IS_WINDOWS ? 'timeout /t 1 /nobreak >nul' : 'sleep 0.5', {
-        stdio: 'ignore', timeout: 2000,
+      execSync(IS_WINDOWS ? 'ping -n 2 127.0.0.1 >nul' : 'sleep 0.5', {
+        stdio: 'ignore', timeout: 5000,
       });
     }
 
@@ -264,6 +264,7 @@ class Daemon {
         info.state = 'starting';
         this._writeStatus();
 
+        this._log(`${name} launching: ${cmd.join(' ')}`);
         const proc = this._spawnAgent(cmd, { env, cwd });
         info.proc = proc;
         info.state = 'running';
@@ -328,8 +329,14 @@ class Daemon {
       cwd: opts.cwd,
     };
 
-    if (IS_WINDOWS && binary.toLowerCase().endsWith('.cmd')) {
+    if (IS_WINDOWS) {
+      // On Windows, always use shell so .cmd/.ps1 shims on PATH are found
       spawnOpts.shell = true;
+      // Ensure npm global bin is on PATH
+      const npmBin = path.join(process.env.APPDATA || '', 'npm');
+      if (npmBin && !(process.env.PATH || '').includes(npmBin)) {
+        spawnOpts.env = { ...spawnOpts.env, PATH: npmBin + ';' + (spawnOpts.env.PATH || process.env.PATH || '') };
+      }
     }
 
     const proc = spawn(binary, args, spawnOpts);
@@ -346,15 +353,48 @@ class Daemon {
 
   _getLaunchCommand(agentCfg) {
     const entry = this.registry.getEntry(agentCfg.type);
-    if (!entry || !entry.install || !entry.install.binary) return null;
 
-    const binary = entry.install.binary;
+    // Resolve binary name from registry (bundled or remote format)
+    let binary = (entry && entry.install && entry.install.binary);
+    // Fallback: known binary names for built-in types
+    if (!binary) {
+      const knownBinaries = {
+        openclaw: 'openclaw', claude: 'claude', codex: 'codex',
+        aider: 'aider', goose: 'goose', gemini: 'gemini',
+      };
+      binary = knownBinaries[agentCfg.type];
+    }
+    if (!binary) return null;
+
     const args = [];
 
     // Add launch args from registry
     if (entry.launch && entry.launch.args) {
       for (const arg of entry.launch.args) {
         args.push(arg.replace(/\{agent_name\}/g, agentCfg.name));
+      }
+    }
+
+    // Built-in launch profiles for known agent types
+    if (!args.length) {
+      const type = agentCfg.type || '';
+      if (type === 'openclaw') {
+        args.push('agent', '--local', '--agent', 'main');
+        // Add workspace connection if configured
+        if (agentCfg.network) {
+          const network = this.config.getNetworks().find(
+            n => n.slug === agentCfg.network || n.id === agentCfg.network
+          );
+          if (network) {
+            args.push('--workspace-id', network.id);
+            args.push('--workspace-token', network.token);
+            args.push('--agent-name', agentCfg.name);
+          }
+        }
+      } else if (type === 'claude') {
+        args.push('--print');
+      } else if (type === 'codex') {
+        args.push('--quiet');
       }
     }
 

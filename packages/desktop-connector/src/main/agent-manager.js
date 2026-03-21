@@ -191,6 +191,14 @@ class AgentManager {
   }
 
   getAllStatus() {
+    // Only trust status file if our daemon PID is alive
+    const pid = this._connector.getDaemonPid();
+    if (!pid) return {};
+    try {
+      process.kill(pid, 0); // throws if process doesn't exist
+    } catch {
+      return {};
+    }
     return this._connector.getDaemonStatus();
   }
 

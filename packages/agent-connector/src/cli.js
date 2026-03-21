@@ -63,17 +63,17 @@ function table(rows, headers) {
 // ---------------------------------------------------------------------------
 
 async function cmdUp(connector, flags) {
-  const pid = connector.getDaemonPid();
-  if (pid) {
-    print(`Daemon already running (PID ${pid})`);
-    return;
-  }
-
   if (flags.foreground) {
-    // Run in foreground (used by daemonize child)
+    // Run in foreground (used by daemonize child) — skip PID check
+    // because the parent already wrote our PID to the file.
     const daemon = connector.createDaemon();
     await daemon.start();
   } else {
+    const pid = connector.getDaemonPid();
+    if (pid) {
+      print(`Daemon already running (PID ${pid})`);
+      return;
+    }
     // Daemonize
     const foregroundArgs = [process.argv[1], 'up', '--foreground'];
     if (flags.config) foregroundArgs.push('--config', flags.config);
