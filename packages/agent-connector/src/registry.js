@@ -83,7 +83,16 @@ class Registry {
    */
   getEntry(agentType) {
     const catalog = this.getCatalogSync();
-    return catalog.find((e) => e.name === agentType) || null;
+    const entry = catalog.find((e) => e.name === agentType) || null;
+    // If the cached entry is missing install info, merge with bundled
+    if (entry && !entry.install) {
+      const bundled = this._loadBundled();
+      const bundledEntry = bundled.find((e) => e.name === agentType);
+      if (bundledEntry && bundledEntry.install) {
+        return { ...entry, install: bundledEntry.install };
+      }
+    }
+    return entry;
   }
 
   /**

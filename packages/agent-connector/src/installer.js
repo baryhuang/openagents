@@ -134,7 +134,18 @@ class Installer {
 
     try {
       const cmd = process.platform === 'win32' ? `where ${binary}` : `which ${binary}`;
-      const result = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const env = { ...process.env };
+      const extraPaths = ['/usr/local/bin', '/opt/homebrew/bin'];
+      if (process.platform === 'win32') {
+        const npmBin = path.join(process.env.APPDATA || '', 'npm');
+        if (npmBin) extraPaths.push(npmBin);
+      }
+      for (const p of extraPaths) {
+        if (p && !(env.PATH || '').includes(p)) {
+          env.PATH = p + (process.platform === 'win32' ? ';' : ':') + (env.PATH || '');
+        }
+      }
+      const result = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], env }).trim();
       return result.split('\n')[0] || null;
     } catch {
       return null;
@@ -206,11 +217,27 @@ class Installer {
 
   _execShell(cmd, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
+      // Ensure common binary paths are available (Electron may not inherit full PATH)
+      const env = { ...process.env };
+      const extraPaths = [
+        '/usr/local/bin', '/opt/homebrew/bin',
+        path.dirname(process.execPath),
+      ];
+      if (process.platform === 'win32') {
+        const npmBin = path.join(process.env.APPDATA || '', 'npm');
+        if (npmBin) extraPaths.push(npmBin);
+      }
+      for (const p of extraPaths) {
+        if (p && !(env.PATH || '').includes(p)) {
+          env.PATH = p + (process.platform === 'win32' ? ';' : ':') + (env.PATH || '');
+        }
+      }
+
       exec(cmd, {
         encoding: 'utf-8',
         timeout: timeoutMs,
         shell: true,
-        env: { ...process.env },
+        env,
       }, (error, stdout, stderr) => {
         const output = ((stdout || '') + '\n' + (stderr || '')).trim();
         if (error) {
