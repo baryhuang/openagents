@@ -109,20 +109,12 @@ async function refreshDashboard() {
   updateDaemonStatus();
 
   try {
-    const pyStatus = await window.api.pythonStatus();
+    const status = await window.api.pythonStatus();
     const banner = document.getElementById('setup-banner');
     const versionEl = document.getElementById('sdk-version');
-    if (!pyStatus.pythonFound) {
-      banner.style.display = 'block';
-      banner.querySelector('p').textContent = 'Python 3.10+ is not installed. Please install Python first.';
-      versionEl.textContent = 'No Python';
-    } else if (!pyStatus.sdkInstalled) {
-      banner.style.display = 'block';
-      versionEl.textContent = 'SDK not installed';
-    } else {
-      banner.style.display = 'none';
-      versionEl.textContent = `v${pyStatus.sdkVersion}`;
-    }
+    // Node.js native — always ready
+    banner.style.display = 'none';
+    versionEl.textContent = `v${status.sdkVersion}`;
   } catch {}
 }
 
@@ -629,29 +621,26 @@ async function removeAgent(name) {
 // ---- Install tab ----
 
 async function refreshInstallStatus() {
-  // Python
+  // Runtime status
   try {
-    const pyStatus = await window.api.pythonStatus();
+    const status = await window.api.pythonStatus();
 
     const pyEl = document.getElementById('python-status');
-    if (pyStatus.pythonFound) {
-      pyEl.textContent = pyStatus.pythonPath;
-      pyEl.style.color = 'var(--success)';
+    if (status.runtime === 'node') {
+      pyEl.textContent = 'Node.js (native)';
+    } else if (status.pythonPath) {
+      pyEl.textContent = status.pythonPath;
     } else {
-      pyEl.textContent = 'Not found — install Python 3.10+';
-      pyEl.style.color = 'var(--danger)';
+      pyEl.textContent = 'Not found';
     }
+    pyEl.style.color = 'var(--success)';
 
     const sdkEl = document.getElementById('sdk-status');
-    if (pyStatus.sdkInstalled) {
-      sdkEl.textContent = `v${pyStatus.sdkVersion}`;
-      sdkEl.style.color = 'var(--success)';
-    } else {
-      sdkEl.textContent = pyStatus.pythonFound ? 'Not installed' : 'Requires Python';
-      sdkEl.style.color = 'var(--warning)';
-    }
+    sdkEl.textContent = `v${status.sdkVersion}`;
+    sdkEl.style.color = 'var(--success)';
 
-    document.getElementById('btn-install-sdk').disabled = !pyStatus.pythonFound;
+    const sdkBtn = document.getElementById('btn-install-sdk');
+    if (sdkBtn) sdkBtn.disabled = true;
   } catch {}
 
   // Catalog
@@ -728,28 +717,7 @@ async function uninstallCatalogItem(name) {
   }
 }
 
-document.getElementById('btn-install-sdk').addEventListener('click', async () => {
-  const btn = document.getElementById('btn-install-sdk');
-  const output = document.getElementById('sdk-install-output');
-  btn.disabled = true;
-  btn.textContent = 'Installing...';
-  output.style.display = 'block';
-  output.textContent = 'Running: pip install --upgrade openagents\n\n';
-
-  try {
-    const result = await window.api.installSDK();
-    output.textContent += (result.output || '') + '\n\nInstalled successfully! Version: ' + (result.version || 'unknown');
-    showToast('SDK installed successfully', 'success');
-    refreshInstallStatus();
-    refreshDashboard();
-  } catch (err) {
-    output.textContent += '\nError: ' + err.message;
-    showToast('SDK install failed', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Install / Upgrade SDK';
-  }
-});
+// SDK install button removed — agent-connector is bundled with the app
 
 // ---- Logs tab ----
 

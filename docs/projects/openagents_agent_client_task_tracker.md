@@ -168,7 +168,7 @@ packages/agent-connector/
 | N14 | `autostart` — register as system service | Low | Pending | systemd (Linux), launchd (macOS), Task Scheduler (Windows) |
 | N15 | Tests — unit tests for all modules | High | In Progress | 65 tests passing (config, env, registry, installer, daemon, workspace-client, CLI) |
 | N16 | CI pipeline — lint, test, publish | Medium | Pending | GitHub Actions on ubuntu/macos/windows, publish to npm on tag |
-| N17 | Wire Electron app to use package directly | High | Pending | Replace `agent-manager.js` + `python-manager.js` with `require('@openagents-org/agent-connector')` |
+| N17 | Wire Electron app to use package directly | High | Done | Replaced agent-manager.js (690→210 lines), removed PythonManager, updated Install tab UI |
 | N18 | Global install CLI — `npm install -g @openagents-org/agent-connector` | Medium | Pending | Bin entry, aliases, test on clean machines all platforms |
 
 ### Desktop App Distribution

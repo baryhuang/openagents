@@ -1,14 +1,12 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require('electron');
 const path = require('path');
 const { AgentManager } = require('./agent-manager');
-const { PythonManager } = require('./python-manager');
 const { Store } = require('./store');
 
 const store = new Store();
 let mainWindow = null;
 let tray = null;
 let agentManager = null;
-let pythonManager = null;
 
 function createWindow() {
   if (mainWindow) {
@@ -126,9 +124,15 @@ function updateTrayMenu() {
 // ---- IPC Handlers ----
 
 function setupIPC() {
-  // Python / SDK status
-  ipcMain.handle('python:status', () => pythonManager.getStatus());
-  ipcMain.handle('python:install', () => pythonManager.installSDK());
+  // Runtime status (was Python, now Node.js agent-connector)
+  ipcMain.handle('python:status', () => ({
+    pythonPath: null,
+    pythonFound: true,  // No longer needed — always "found" since we're Node.js native
+    sdkInstalled: true,
+    sdkVersion: require('../../../agent-connector/package.json').version,
+    runtime: 'node',
+  }));
+  ipcMain.handle('python:install', () => ({ success: true, message: 'No installation needed — using Node.js agent-connector' }));
 
   // Agent CRUD
   ipcMain.handle('agents:list', () => agentManager.getAgents());
@@ -196,8 +200,7 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
   }
 
-  pythonManager = new PythonManager();
-  agentManager = new AgentManager(store, pythonManager);
+  agentManager = new AgentManager(store);
 
   // Periodically update tray menu with agent status
   setInterval(() => updateTrayMenu(), 5000);
