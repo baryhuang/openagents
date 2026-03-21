@@ -25,6 +25,7 @@
   "files": [
     "src/",
     "bin/",
-    "registry.json"
+    "registry.json",
+    "README.md"
   ]
 }
