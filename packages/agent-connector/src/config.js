@@ -135,15 +135,7 @@ class Config {
     try {
       if (!fs.existsSync(this.pidFile)) return null;
       const pid = parseInt(fs.readFileSync(this.pidFile, 'utf-8').trim(), 10);
-      if (isNaN(pid)) return null;
-      try {
-        process.kill(pid, 0);
-        return pid;
-      } catch {
-        // Stale PID file
-        try { fs.unlinkSync(this.pidFile); } catch {}
-        return null;
-      }
+      return isNaN(pid) ? null : pid;
     } catch {
       return null;
     }

@@ -191,14 +191,9 @@ class AgentManager {
   }
 
   getAllStatus() {
-    // Only trust status file if our daemon PID is alive
-    const pid = this._connector.getDaemonPid();
-    if (!pid) return {};
-    try {
-      process.kill(pid, 0); // throws if process doesn't exist
-    } catch {
-      return {};
-    }
+    // Read status file directly — PID validation is unreliable in Electron
+    // on Windows (cross-session process.kill, fs.existsSync races).
+    // The daemon cleans up its own status file on exit.
     return this._connector.getDaemonStatus();
   }
 

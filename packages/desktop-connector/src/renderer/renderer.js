@@ -68,11 +68,12 @@ document.addEventListener('keydown', (e) => {
 // ---- Dashboard ----
 
 async function refreshDashboard() {
+  let agents = [];
   try {
-    const agents = await window.api.listAgents();
+    agents = await window.api.listAgents() || [];
     const cardsEl = document.getElementById('agent-cards');
 
-    if (!agents || agents.length === 0) {
+    if (agents.length === 0) {
       cardsEl.innerHTML = `
         <div class="card empty-state">
           <p>No agents configured yet.</p>
@@ -106,7 +107,8 @@ async function refreshDashboard() {
     console.error('Dashboard refresh error:', err);
   }
 
-  updateDaemonStatus();
+  // Update daemon status bar using the same agents data (no extra IPC call)
+  updateDaemonStatusFromAgents(agents);
 
   try {
     const status = await window.api.pythonStatus();
@@ -118,23 +120,26 @@ async function refreshDashboard() {
   } catch {}
 }
 
+function updateDaemonStatusFromAgents(agents) {
+  const el = document.getElementById('daemon-status');
+  const hasOnline = agents.some((a) => a.state === 'online' || a.state === 'running');
+  const hasStarting = agents.some((a) => a.state === 'starting' || a.state === 'reconnecting');
+
+  if (hasOnline) {
+    el.innerHTML = '<span class="status-dot online"></span><span>Daemon: running</span>';
+  } else if (hasStarting) {
+    el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: starting</span>';
+  } else if (agents.length > 0) {
+    el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: idle</span>';
+  } else {
+    el.innerHTML = '<span class="status-dot offline"></span><span>Daemon: offline</span>';
+  }
+}
+
 async function updateDaemonStatus() {
   try {
-    const status = await window.api.agentStatus();
-    const el = document.getElementById('daemon-status');
-    const agents = Object.values(status);
-    const hasOnline = agents.some((s) => s.state === 'online' || s.state === 'running');
-    const hasStarting = agents.some((s) => s.state === 'starting' || s.state === 'reconnecting');
-
-    if (hasOnline) {
-      el.innerHTML = '<span class="status-dot online"></span><span>Daemon: running</span>';
-    } else if (hasStarting) {
-      el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: starting</span>';
-    } else if (agents.length > 0) {
-      el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: idle</span>';
-    } else {
-      el.innerHTML = '<span class="status-dot offline"></span><span>Daemon: offline</span>';
-    }
+    const agents = await window.api.listAgents() || [];
+    updateDaemonStatusFromAgents(agents);
   } catch {
     document.getElementById('daemon-status').innerHTML =
       '<span class="status-dot offline"></span><span>Daemon: offline</span>';

@@ -763,11 +763,7 @@ class Daemon {
     try {
       if (!fs.existsSync(pidFile)) return null;
       const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-      if (isNaN(pid)) return null;
-      if (Daemon._isAlive(pid)) return pid;
-      // Stale
-      try { fs.unlinkSync(pidFile); } catch {}
-      return null;
+      return isNaN(pid) ? null : pid;
     } catch {
       return null;
     }
@@ -777,7 +773,9 @@ class Daemon {
     try {
       process.kill(pid, 0);
       return true;
-    } catch {
+    } catch (e) {
+      // EPERM = process exists but cross-session on Windows
+      if (e.code === 'EPERM') return true;
       return false;
     }
   }

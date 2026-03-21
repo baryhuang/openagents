@@ -17,7 +17,7 @@
     "electron-builder": "^25.0.0"
   },
   "dependencies": {
-    "@openagents-org/agent-connector": "^0.1.0"
+    "@openagents-org/agent-connector": "^0.1.1"
   },
   "build": {
     "appId": "com.openagents.connector",
@@ -26,11 +26,15 @@
       "output": "dist"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "assets/icon.ico"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools"
     },
@@ -42,7 +46,9 @@
       {
         "from": "resources/",
         "to": "resources/",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ]
   }
