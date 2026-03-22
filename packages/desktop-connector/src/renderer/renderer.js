@@ -721,9 +721,20 @@ async function refreshCatalog() {
     `).join('');
 
     container.innerHTML = `<div class="catalog-list">${rows}</div>`;
+    // Apply any existing search filter
+    const searchInput = document.getElementById('catalog-search-input');
+    if (searchInput && searchInput.value) filterCatalog(searchInput.value);
   } catch (err) {
     container.innerHTML = `<p class="hint">Failed to load catalog: ${esc(err.message)}</p>`;
   }
+}
+
+function filterCatalog(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('.catalog-row').forEach((row) => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = text.includes(q) ? '' : 'none';
+  });
 }
 
 async function installCatalogItem(name, isInstalled) {
@@ -800,6 +811,7 @@ async function refreshLogs() {
 
 document.getElementById('btn-refresh-logs').addEventListener('click', refreshLogs);
 document.getElementById('log-agent-filter').addEventListener('change', refreshLogs);
+document.getElementById('catalog-search-input').addEventListener('input', (e) => filterCatalog(e.target.value));
 
 // ---- Settings tab ----
 

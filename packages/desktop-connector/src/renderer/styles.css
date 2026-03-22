@@ -609,6 +609,14 @@ h1 {
 /* ============================================
    Catalog
    ============================================ */
+.catalog-search {
+  margin-bottom: 12px;
+}
+
+.catalog-search .input {
+  width: 100%;
+}
+
 .catalog-list {
   display: flex;
   flex-direction: column;
