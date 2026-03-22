@@ -165,9 +165,9 @@ packages/agent-connector/
 | N11 | Agent health check — binary existence + version check | Medium | Done | healthCheck() returns { installed, binary, version } |
 | N12 | Log management — write, rotate, tail, filter | Medium | Done | Rotate at 10MB, tailLogs() with byte offset for incremental reads |
 | N13 | Config hot-reload — watch `daemon.yaml` for changes | Medium | Done | fs.watch + 1s debounce, diff agent names, start/stop as needed |
-| N14 | `autostart` — register as system service | Low | Pending | systemd (Linux), launchd (macOS), Task Scheduler (Windows) |
+| N14 | `autostart` — register as system service | Low | Done | systemd (Linux), launchd (macOS), Task Scheduler (Windows) |
 | N15 | Tests — unit tests for all modules | High | Done | 73 tests passing (config, env, registry, installer, daemon, workspace-client, CLI, paths) |
-| N16 | CI pipeline — lint, test, publish | Medium | Pending | GitHub Actions on ubuntu/macos/windows, publish to npm on tag |
+| N16 | CI pipeline — lint, test, publish | Medium | Done | GitHub Actions on ubuntu/macos/windows with Node 18/20/22, auto-publish on main |
 | N17 | Wire Electron app to use package directly | High | Done | Replaced agent-manager.js (690→210 lines), removed PythonManager, updated Install tab UI |
 | N18 | Global install CLI — `npm install -g @openagents-org/agent-connector` | Medium | Done | Tested on macOS + Windows, v0.2.7 published, .cmd shim works |
 
