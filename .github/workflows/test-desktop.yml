@@ -124,10 +124,12 @@ jobs:
           # Mount DMG
           hdiutil detach /Volumes/OpenAgents* 2>/dev/null || true
           hdiutil attach /tmp/launcher-test.dmg -nobrowse
-          # Copy to Applications
-          rm -rf "/Applications/OpenAgents Launcher.app" 2>/dev/null || true
-          cp -R /Volumes/OpenAgents*/OpenAgents\ Launcher.app /Applications/
-          hdiutil detach /Volumes/OpenAgents* 2>/dev/null || true
+          # Remove old app completely first
+          rm -rf "/Applications/OpenAgents Launcher.app"
+          # Copy new app
+          VOLUME=$(ls -d /Volumes/OpenAgents* | head -1)
+          cp -R "$VOLUME/OpenAgents Launcher.app" /Applications/
+          hdiutil detach "$VOLUME" 2>/dev/null || true
           # Remove quarantine
           xattr -cr "/Applications/OpenAgents Launcher.app"
           echo "Installed to /Applications"
