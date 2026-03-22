@@ -107,12 +107,17 @@ class Installer {
       throw new Error(`No install definition for agent type: ${agentType}`);
     }
 
-    const cmd = this._getInstallCommand(entry.install);
+    let cmd = this._getInstallCommand(entry.install);
     if (!cmd) {
       throw new Error(`No install command for ${agentType} on ${Installer.platform()}`);
     }
 
-    if (onData) onData(`$ ${cmd}\n`);
+    // Add verbose logging for npm so user sees progress
+    if (cmd.includes('npm install') && !cmd.includes('--loglevel')) {
+      cmd = cmd.replace('npm install', 'npm install --loglevel=notice');
+    }
+
+    if (onData) onData(`$ ${cmd}\n\n`);
 
     const env = this._buildShellEnv();
     const shell = process.platform === 'win32'

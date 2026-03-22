@@ -798,10 +798,27 @@ async function installCatalogItem(name, isInstalled) {
   logEl.textContent += `\n`;
 
   // Listen for streaming output
+  let lastOutputTime = Date.now();
   window.api.onInstallOutput((data) => {
     logEl.textContent += data;
     logEl.scrollTop = logEl.scrollHeight;
+    lastOutputTime = Date.now();
   });
+
+  // Show elapsed time while waiting for output
+  const timerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - lastOutputTime) / 1000);
+    if (elapsed > 3) {
+      const statusLine = document.getElementById('install-status-line');
+      if (statusLine) statusLine.textContent = `Downloading packages... (${elapsed}s)`;
+    }
+  }, 1000);
+
+  // Add status line element
+  const statusEl = document.createElement('div');
+  statusEl.id = 'install-status-line';
+  statusEl.style.cssText = 'color:var(--text-tertiary);font-size:12px;margin-top:8px;';
+  logEl.parentNode.insertBefore(statusEl, logEl.nextSibling);
 
   try {
     await window.api.installAgentTypeStreaming(name);
@@ -809,6 +826,9 @@ async function installCatalogItem(name, isInstalled) {
   } catch (err) {
     logEl.textContent += `\n✗ Error: ${err.message}\n`;
   }
+
+  clearInterval(timerInterval);
+  if (statusEl) statusEl.remove();
 
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
