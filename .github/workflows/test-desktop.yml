@@ -91,3 +91,87 @@ jobs:
         run: |
           Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
           Stop-Process -Name "electron" -Force -ErrorAction SilentlyContinue
+
+  test-macos:
+    runs-on: [self-hosted, macos, desktop-test]
+    timeout-minutes: 30
+    steps:
+      - name: Clean environment
+        run: |
+          pkill -f "OpenAgents Launcher" 2>/dev/null || true
+          pkill -f Electron 2>/dev/null || true
+          rm -rf ~/.openagents 2>/dev/null || true
+          echo "Environment cleaned"
+
+      - name: Download release
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          echo "Downloading $TAG..."
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "arm64" ]; then
+            PATTERN="mac-arm64.dmg"
+          else
+            PATTERN="mac-x64.dmg"
+          fi
+          API_URL="https://api.github.com/repos/openagents-org/openagents/releases/tags/$TAG"
+          DOWNLOAD_URL=$(curl -s "$API_URL" | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if '$PATTERN' in a['name']][0])")
+          echo "Downloading: $DOWNLOAD_URL"
+          curl -L -o /tmp/launcher-test.dmg "$DOWNLOAD_URL"
+          echo "Downloaded: /tmp/launcher-test.dmg"
+
+      - name: Install app
+        run: |
+          # Mount DMG
+          hdiutil detach /Volumes/OpenAgents* 2>/dev/null || true
+          hdiutil attach /tmp/launcher-test.dmg -nobrowse
+          # Copy to Applications
+          rm -rf "/Applications/OpenAgents Launcher.app" 2>/dev/null || true
+          cp -R /Volumes/OpenAgents*/OpenAgents\ Launcher.app /Applications/
+          hdiutil detach /Volumes/OpenAgents* 2>/dev/null || true
+          # Remove quarantine
+          xattr -cr "/Applications/OpenAgents Launcher.app"
+          echo "Installed to /Applications"
+
+      - name: Launch app with CDP
+        run: |
+          open "/Applications/OpenAgents Launcher.app" --args --remote-debugging-port=9333 --remote-allow-origins=*
+          # Wait for CDP
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -s http://127.0.0.1:9333/json > /dev/null 2>&1; then
+              echo "CDP ready after ${i}s"
+              break
+            fi
+          done
+
+      - name: Setup Node.js for Playwright
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Checkout test script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: infra/test_app.js
+          sparse-checkout-cone-mode: false
+
+      - name: Install Playwright and run tests
+        run: |
+          cd infra
+          npm init -y
+          npm install playwright
+          npx playwright install chromium
+          node test_app.js
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshots-macos
+          path: infra/screenshot_*.png
+
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -f "OpenAgents Launcher" 2>/dev/null || true
+          pkill -f Electron 2>/dev/null || true
