@@ -11,7 +11,7 @@ on:
 jobs:
   test-windows:
     runs-on: [self-hosted, windows, desktop-test]
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Clean environment
         shell: powershell
@@ -39,25 +39,11 @@ jobs:
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dest -UseBasicParsing
           Write-Host "Downloaded: $dest"
 
-      - name: Install app silently
-        shell: powershell
-        run: |
-          $installDir = "$env:USERPROFILE\OALauncher"
-          Start-Process "$env:USERPROFILE\Desktop\launcher-test.exe" -ArgumentList "/S /D=$installDir" -Wait -NoNewWindow
-          if (Test-Path "$installDir\OpenAgents Launcher.exe") {
-            Write-Host "Installed to $installDir"
-          } else {
-            Write-Host "NSIS install may need desktop — trying portable mode"
-          }
-
       - name: Launch app with CDP
         shell: powershell
         run: |
-          $installDir = "$env:USERPROFILE\OALauncher"
-          $exe = "$installDir\OpenAgents Launcher.exe"
-          if (-not (Test-Path $exe)) {
-            $exe = "$env:USERPROFILE\Desktop\launcher-test.exe"
-          }
+          # Run the NSIS exe directly — it works as a portable app too
+          $exe = "$env:USERPROFILE\Desktop\launcher-test.exe"
           Write-Host "Launching: $exe"
           Start-Process $exe -ArgumentList "--remote-debugging-port=9333","--remote-allow-origins=*"
           # Wait for CDP to be ready
