@@ -743,7 +743,25 @@ function filterCatalog(query) {
 }
 
 async function installCatalogItem(name, isInstalled) {
-  const verb = isInstalled ? 'Updating' : 'Installing';
+  const verb = isInstalled ? 'Update' : 'Install';
+
+  // Confirmation modal
+  const confirmed = await new Promise((resolve) => {
+    showModal(`
+      <div style="text-align:center;padding:8px 0;">
+        ${agentIcon(name, 40)}
+        <h3 style="margin-top:12px;">${verb} ${esc(name)}?</h3>
+        <p class="hint" style="margin:12px 0 20px;">This will run <code>npm install -g ${esc(name)}@latest</code> on your system.</p>
+        <div class="modal-button-row" style="justify-content:center;">
+          <button class="btn btn-primary" id="confirm-install-yes">${verb}</button>
+          <button class="btn" id="confirm-install-no">Cancel</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('confirm-install-yes').addEventListener('click', () => { closeModal(); resolve(true); });
+    document.getElementById('confirm-install-no').addEventListener('click', () => { closeModal(); resolve(false); });
+  });
+  if (!confirmed) return;
 
   // Switch to dedicated install view
   const content = document.getElementById('content');
@@ -850,6 +868,24 @@ async function installCatalogItem(name, isInstalled) {
 }
 
 async function uninstallCatalogItem(name) {
+  // Confirmation modal
+  const confirmed = await new Promise((resolve) => {
+    showModal(`
+      <div style="text-align:center;padding:8px 0;">
+        ${agentIcon(name, 40)}
+        <h3 style="margin-top:12px;">Uninstall ${esc(name)}?</h3>
+        <p class="hint" style="margin:12px 0 20px;">This will remove ${esc(name)} from your system.</p>
+        <div class="modal-button-row" style="justify-content:center;">
+          <button class="btn btn-danger" id="confirm-install-yes">Uninstall</button>
+          <button class="btn" id="confirm-install-no">Cancel</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('confirm-install-yes').addEventListener('click', () => { closeModal(); resolve(true); });
+    document.getElementById('confirm-install-no').addEventListener('click', () => { closeModal(); resolve(false); });
+  });
+  if (!confirmed) return;
+
   const content = document.getElementById('content');
   const savedHTML = content.innerHTML;
 
