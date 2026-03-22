@@ -1,0 +1,198 @@
+name: Test Desktop App
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to test (e.g. launcher-v0.2.0)'
+        required: true
+        default: 'launcher-v0.2.0'
+
+jobs:
+  test-windows:
+    runs-on: [self-hosted, windows, desktop-test]
+    timeout-minutes: 15
+    steps:
+      - name: Clean environment
+        shell: pwsh
+        run: |
+          # Kill any running launcher
+          Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
+          Stop-Process -Name "electron" -Force -ErrorAction SilentlyContinue
+          # Remove old .openagents config
+          Remove-Item -Recurse -Force "$env:USERPROFILE\.openagents" -ErrorAction SilentlyContinue
+          # Remove old launcher installs
+          Remove-Item -Recurse -Force "$env:USERPROFILE\OALauncher" -ErrorAction SilentlyContinue
+          Write-Host "Environment cleaned"
+
+      - name: Download release
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          Write-Host "Downloading $tag..."
+          gh release download $tag --pattern "*win-x64.exe" --dir "$env:TEMP\launcher-test" --clobber --repo openagents-org/openagents
+          $exe = Get-ChildItem "$env:TEMP\launcher-test\*.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName "$env:USERPROFILE\Desktop\launcher-test.exe"
+          Write-Host "Downloaded: $($exe.Name)"
+
+      - name: Install app silently
+        shell: pwsh
+        run: |
+          $installDir = "$env:USERPROFILE\OALauncher"
+          Start-Process "$env:USERPROFILE\Desktop\launcher-test.exe" -ArgumentList "/S /D=$installDir" -Wait -NoNewWindow
+          if (Test-Path "$installDir\OpenAgents Launcher.exe") {
+            Write-Host "Installed to $installDir"
+          } else {
+            Write-Host "NSIS install may need desktop — trying portable mode"
+          }
+
+      - name: Launch app with CDP
+        shell: pwsh
+        run: |
+          $installDir = "$env:USERPROFILE\OALauncher"
+          $exe = "$installDir\OpenAgents Launcher.exe"
+          if (-not (Test-Path $exe)) {
+            $exe = "$env:USERPROFILE\Desktop\launcher-test.exe"
+          }
+          Write-Host "Launching: $exe"
+          Start-Process $exe -ArgumentList "--remote-debugging-port=9333","--remote-allow-origins=*"
+          # Wait for CDP to be ready
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep 1
+            try {
+              $response = Invoke-WebRequest -Uri "http://127.0.0.1:9333/json" -UseBasicParsing -TimeoutSec 2
+              if ($response.StatusCode -eq 200) {
+                Write-Host "CDP ready after $($i+1)s"
+                break
+              }
+            } catch {}
+          }
+
+      - name: Setup Node.js for Playwright
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright
+        shell: pwsh
+        run: |
+          npm install -g playwright
+          npx playwright install chromium
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          # Get CDP WebSocket URL
+          $targets = Invoke-WebRequest -Uri "http://127.0.0.1:9333/json" -UseBasicParsing | ConvertFrom-Json
+          $wsUrl = ($targets | Where-Object { $_.type -eq "page" } | Select-Object -First 1).webSocketDebuggerUrl
+          Write-Host "WebSocket: $wsUrl"
+
+          # Write and run Playwright test
+          @"
+          const { chromium } = require('playwright');
+
+          (async () => {
+            const browser = await chromium.connectOverCDP('http://127.0.0.1:9333');
+            const contexts = browser.contexts();
+            const page = contexts[0].pages()[0];
+            const results = [];
+
+            // Test 1: App title
+            const title = await page.title();
+            results.push({ test: 'App launches', pass: title.includes('OpenAgents'), detail: title });
+
+            // Test 2: Dashboard tab
+            await page.click('[data-tab="dashboard"]');
+            await page.waitForTimeout(2000);
+            const dashText = await page.textContent('body');
+            results.push({ test: 'Dashboard works', pass: dashText.includes('Daemon'), detail: '' });
+            await page.screenshot({ path: 'screenshot_dashboard.png' });
+
+            // Test 3: Install tab
+            await page.click('[data-tab="install"]');
+            await page.waitForTimeout(2000);
+            const installText = await page.textContent('body');
+            results.push({ test: 'Install tab', pass: installText.includes('Claude Code') && installText.includes('OpenClaw'), detail: '' });
+            await page.screenshot({ path: 'screenshot_install.png' });
+
+            // Test 4: Click Install on OpenClaw
+            const rows = await page.$$('.catalog-row');
+            let clicked = false;
+            for (const row of rows) {
+              const text = await row.textContent();
+              if (text.includes('OpenClaw')) {
+                const btn = await row.$('button');
+                if (btn) {
+                  const btnText = await btn.textContent();
+                  if (btnText.trim() === 'Install') {
+                    await btn.click();
+                    await page.waitForTimeout(2000);
+                    // Click confirm
+                    const confirmBtn = await page.$('#confirm-install-yes');
+                    if (confirmBtn) await confirmBtn.click();
+                    clicked = true;
+                  }
+                }
+                break;
+              }
+            }
+            results.push({ test: 'OpenClaw install clicked', pass: clicked, detail: '' });
+
+            // Wait for install (up to 5 min)
+            if (clicked) {
+              for (let i = 0; i < 60; i++) {
+                await page.waitForTimeout(5000);
+                const bodyText = await page.textContent('body');
+                if (bodyText.includes('Done!') || bodyText.includes('Error')) {
+                  results.push({ test: 'OpenClaw install completes', pass: bodyText.includes('Done!'), detail: bodyText.slice(-200) });
+                  break;
+                }
+                if (i === 59) {
+                  results.push({ test: 'OpenClaw install completes', pass: false, detail: 'Timeout after 5 min' });
+                }
+              }
+              await page.screenshot({ path: 'screenshot_install_result.png' });
+            }
+
+            // Test 5: Logs tab
+            await page.click('[data-tab="logs"]');
+            await page.waitForTimeout(1000);
+            const logsText = await page.textContent('body');
+            results.push({ test: 'Logs tab', pass: logsText.includes('Logs'), detail: '' });
+
+            // Test 6: Settings tab
+            await page.click('[data-tab="settings"]');
+            await page.waitForTimeout(1000);
+            const settingsText = await page.textContent('body');
+            results.push({ test: 'Settings tab', pass: settingsText.includes('Settings'), detail: '' });
+            await page.screenshot({ path: 'screenshot_settings.png' });
+
+            // Print results
+            let passed = 0, failed = 0;
+            for (const r of results) {
+              const icon = r.pass ? '✅' : '❌';
+              console.log(icon + ' ' + r.test + (r.detail ? ' — ' + r.detail : ''));
+              if (r.pass) passed++; else failed++;
+            }
+            console.log('\nResults: ' + passed + '/' + results.length + ' passed, ' + failed + ' failed');
+
+            await browser.close();
+            process.exit(failed > 0 ? 1 : 0);
+          })();
+          "@ | Out-File -Encoding utf8 test_app.js
+
+          node test_app.js
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshots-windows
+          path: screenshot_*.png
+
+      - name: Cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
+          Stop-Process -Name "electron" -Force -ErrorAction SilentlyContinue
