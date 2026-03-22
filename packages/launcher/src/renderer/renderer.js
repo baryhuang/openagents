@@ -819,19 +819,45 @@ async function installCatalogItem(name, isInstalled) {
 }
 
 async function uninstallCatalogItem(name) {
-  const output = document.getElementById('catalog-install-output');
-  output.style.display = 'block';
-  output.textContent = `Uninstalling ${name}...\n`;
+  const content = document.getElementById('content');
+  const savedHTML = content.innerHTML;
+
+  content.innerHTML = `
+    <div class="install-progress-view">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+        ${agentIcon(name, 32)}
+        <div>
+          <h1 style="margin-bottom:2px;">Uninstalling ${esc(name)}</h1>
+          <p class="hint" style="margin:0;">Full uninstallation log is shown below.</p>
+        </div>
+      </div>
+      <pre class="log-viewer install-log" id="install-live-log" style="min-height:300px;max-height:calc(100vh - 200px);"></pre>
+      <div id="install-done-bar" style="display:none;margin-top:16px;">
+        <button class="btn btn-primary" id="install-back-btn">Back to Install</button>
+      </div>
+    </div>`;
+
+  const logEl = document.getElementById('install-live-log');
+  const doneBar = document.getElementById('install-done-bar');
+
+  window.api.onInstallOutput((data) => {
+    logEl.textContent += data;
+    logEl.scrollTop = logEl.scrollHeight;
+  });
 
   try {
-    const result = await window.api.uninstallAgentType(name);
-    output.textContent += (result.output || '') + `\n\nDone! ${name} has been uninstalled.`;
-    showToast(`${name} uninstalled`, 'success');
-    refreshCatalog();
+    await window.api.uninstallAgentTypeStreaming(name);
+    logEl.textContent += `\n✓ ${name} uninstalled successfully.\n`;
   } catch (err) {
-    output.textContent += '\nError: ' + err.message;
-    showToast(`Uninstall failed: ${err.message}`, 'error');
+    logEl.textContent += `\n✗ Error: ${err.message}\n`;
   }
+
+  window.api.removeInstallOutputListener();
+  doneBar.style.display = 'block';
+  document.getElementById('install-back-btn').addEventListener('click', () => {
+    content.innerHTML = savedHTML;
+    switchTab('install');
+  });
 }
 
 // SDK install button removed — agent-connector is bundled with the app

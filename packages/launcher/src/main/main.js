@@ -161,6 +161,13 @@ function setupIPC() {
     });
   });
   ipcMain.handle('agents:uninstall-type', (_e, agentType) => agentManager.uninstallAgentType(agentType));
+  ipcMain.handle('agents:uninstall-type-streaming', async (_e, agentType) => {
+    return agentManager.uninstallAgentTypeStreaming(agentType, (data) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('install:output', data);
+      }
+    });
+  });
   ipcMain.handle('agents:check-type', (_e, agentType) => agentManager.checkAgentType(agentType));
   ipcMain.handle('agents:catalog', () => agentManager.getCatalog());
 

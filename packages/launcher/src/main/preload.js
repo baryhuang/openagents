@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
   onInstallOutput: (callback) => ipcRenderer.on('install:output', (_e, data) => callback(data)),
   removeInstallOutputListener: () => ipcRenderer.removeAllListeners('install:output'),
   uninstallAgentType: (type) => ipcRenderer.invoke('agents:uninstall-type', type),
+  uninstallAgentTypeStreaming: (type) => ipcRenderer.invoke('agents:uninstall-type-streaming', type),
   checkAgentType: (type) => ipcRenderer.invoke('agents:check-type', type),
   getCatalog: () => ipcRenderer.invoke('agents:catalog'),
 

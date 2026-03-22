@@ -159,6 +159,10 @@ class AgentManager {
     return this._connector.uninstall(agentType);
   }
 
+  async uninstallAgentTypeStreaming(agentType, onData) {
+    return this._connector.installer.uninstallStreaming(agentType, onData);
+  }
+
   // ------------------------------------------------------------------
   // Daemon lifecycle
   // ------------------------------------------------------------------

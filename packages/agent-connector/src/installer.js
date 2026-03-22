@@ -165,6 +165,53 @@ class Installer {
   }
 
   /**
+   * Uninstall with streaming output via callback.
+   */
+  async uninstallStreaming(agentType, onData) {
+    const { spawn } = require('child_process');
+    const entry = this.registry.getEntry(agentType);
+    if (!entry || !entry.install) {
+      throw new Error(`No install definition for agent type: ${agentType}`);
+    }
+
+    const installCmd = this._getInstallCommand(entry.install);
+    const cmd = this._deriveUninstallCommand(installCmd);
+    if (!cmd) {
+      throw new Error(`Cannot derive uninstall command for ${agentType}`);
+    }
+
+    if (onData) onData(`$ ${cmd}\n`);
+
+    const env = this._buildShellEnv();
+    const shell = process.platform === 'win32'
+      ? (process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe')
+      : true;
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(cmd, [], { shell, env, stdio: ['ignore', 'pipe', 'pipe'] });
+
+      if (proc.stdout) proc.stdout.setEncoding('utf-8');
+      if (proc.stderr) proc.stderr.setEncoding('utf-8');
+
+      if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d); });
+      if (proc.stderr) proc.stderr.on('data', (d) => { if (onData) onData(d); });
+
+      proc.on('error', (err) => reject(err));
+      proc.on('close', (code) => {
+        if (code === 0) {
+          this._markUninstalled(agentType);
+          if (onData) onData(`\nDone! ${agentType} has been uninstalled.\n`);
+          resolve({ success: true, command: cmd });
+        } else {
+          const msg = `Uninstall failed with exit code ${code}`;
+          if (onData) onData(`\n${msg}\n`);
+          reject(new Error(msg));
+        }
+      });
+    });
+  }
+
+  /**
    * Get install command for current platform.
    */
   _getInstallCommand(installCfg) {
