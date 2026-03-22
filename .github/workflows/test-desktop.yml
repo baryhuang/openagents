@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Clean environment
-        shell: pwsh
+        shell: powershell
         run: |
           # Kill any running launcher
           Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
@@ -26,7 +26,7 @@ jobs:
           Write-Host "Environment cleaned"
 
       - name: Download release
-        shell: pwsh
+        shell: powershell
         run: |
           $tag = "${{ github.event.inputs.tag }}"
           Write-Host "Downloading $tag..."
@@ -36,7 +36,7 @@ jobs:
           Write-Host "Downloaded: $($exe.Name)"
 
       - name: Install app silently
-        shell: pwsh
+        shell: powershell
         run: |
           $installDir = "$env:USERPROFILE\OALauncher"
           Start-Process "$env:USERPROFILE\Desktop\launcher-test.exe" -ArgumentList "/S /D=$installDir" -Wait -NoNewWindow
@@ -47,7 +47,7 @@ jobs:
           }
 
       - name: Launch app with CDP
-        shell: pwsh
+        shell: powershell
         run: |
           $installDir = "$env:USERPROFILE\OALauncher"
           $exe = "$installDir\OpenAgents Launcher.exe"
@@ -74,13 +74,13 @@ jobs:
           node-version: '22'
 
       - name: Install Playwright
-        shell: pwsh
+        shell: powershell
         run: |
           npm install -g playwright
           npx playwright install chromium
 
       - name: Run tests
-        shell: pwsh
+        shell: powershell
         run: |
           # Get CDP WebSocket URL
           $targets = Invoke-WebRequest -Uri "http://127.0.0.1:9333/json" -UseBasicParsing | ConvertFrom-Json
@@ -192,7 +192,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: pwsh
+        shell: powershell
         run: |
           Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
           Stop-Process -Name "electron" -Force -ErrorAction SilentlyContinue
