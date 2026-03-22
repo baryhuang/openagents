@@ -56,6 +56,10 @@ class AgentConnector {
     return this.installer.isInstalled(agentType);
   }
 
+  healthCheck(agentType) {
+    return this.installer.healthCheck(agentType);
+  }
+
   // -- Agent CRUD --
 
   listAgents() {

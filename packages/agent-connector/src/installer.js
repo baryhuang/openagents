@@ -47,6 +47,34 @@ class Installer {
   }
 
   /**
+   * Health check — binary existence + version.
+   * @returns {{ installed: boolean, binary: string|null, version: string|null }}
+   */
+  healthCheck(agentType) {
+    const binary = this._whichBinary(agentType);
+    if (!binary) return { installed: false, binary: null, version: null };
+
+    const entry = this.registry.getEntry(agentType);
+    const checkCmd = entry && entry.install ? entry.install.check_command : null;
+    const versionCmd = checkCmd || `${entry && entry.install && entry.install.binary || agentType} --version`;
+
+    let version = null;
+    try {
+      const raw = execSync(versionCmd, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: getEnhancedEnv(),
+        timeout: 10000,
+      }).trim();
+      // Extract version number (e.g. "openclaw 2024.1.5" → "2024.1.5")
+      const match = raw.match(/(\d+[\d.]+\d+)/);
+      version = match ? match[1] : raw.split('\n')[0];
+    } catch {}
+
+    return { installed: true, binary, version };
+  }
+
+  /**
    * Install an agent runtime.
    * @returns {Promise<{success: boolean, output: string}>}
    */
