@@ -12,7 +12,10 @@
     "build:all": "electron-builder --win --mac --linux --publish never",
     "dist": "electron-builder --publish always"
   },
-  "author": "OpenAgents",
+  "author": {
+    "name": "OpenAgents",
+    "email": "team@openagents.org"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
