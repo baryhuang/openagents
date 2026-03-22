@@ -62,7 +62,11 @@ class Daemon {
       this._processCommands();
     }, 5000);
 
+    // Watch config file for hot-reload
+    this._watchConfig();
+
     this._writeStatus();
+    this._cachedAgentNames = new Set(agents.map(a => a.name));
     this._log(`Daemon started with ${agents.length} agent(s)`);
 
     // Block until shutdown
@@ -81,6 +85,7 @@ class Daemon {
 
     if (this._statusInterval) clearInterval(this._statusInterval);
     if (this._cmdInterval) clearInterval(this._cmdInterval);
+    if (this._configWatcher) { try { this._configWatcher.close(); } catch {} }
 
     // Kill all child processes
     const kills = Object.keys(this._processes).map((name) =>
@@ -554,28 +559,41 @@ class Daemon {
     } catch {}
   }
 
+  _watchConfig() {
+    try {
+      let debounce = null;
+      this._configWatcher = fs.watch(this.config.configFile, () => {
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(() => this._reload(), 1000);
+      });
+      this._configWatcher.on('error', () => {});
+    } catch {}
+  }
+
   _reload() {
     this._log('Reloading config...');
-    const oldAgents = new Map(this.config.getAgents().map((a) => [a.name, a]));
-    // Re-read config from disk (Config reads fresh on each call)
-    const newAgents = new Map(this.config.getAgents().map((a) => [a.name, a]));
+    const oldNames = this._cachedAgentNames || new Set();
+    // Re-read config from disk
+    const newAgents = this.config.getAgents();
+    const newNames = new Set(newAgents.map(a => a.name));
 
     // Stop removed agents
-    for (const name of oldAgents.keys()) {
-      if (!newAgents.has(name)) {
+    for (const name of oldNames) {
+      if (!newNames.has(name)) {
         this.stopAgent(name);
         this._log(`Reload: stopped removed agent '${name}'`);
       }
     }
 
     // Start new agents
-    for (const [name, agent] of newAgents) {
-      if (!oldAgents.has(name)) {
+    for (const agent of newAgents) {
+      if (!oldNames.has(agent.name)) {
         this._launchAgent(agent);
-        this._log(`Reload: started new agent '${name}'`);
+        this._log(`Reload: started new agent '${agent.name}'`);
       }
     }
 
+    this._cachedAgentNames = newNames;
     this._writeStatus();
   }
 
