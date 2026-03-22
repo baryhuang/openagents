@@ -112,9 +112,9 @@ class Installer {
       throw new Error(`No install command for ${agentType} on ${Installer.platform()}`);
     }
 
-    // Add verbose logging for npm so user sees progress
+    // Add verbose logging for npm so user sees download progress on stderr
     if (cmd.includes('npm install') && !cmd.includes('--loglevel')) {
-      cmd = cmd.replace('npm install', 'npm install --loglevel=notice');
+      cmd = cmd.replace('npm install', 'npm install --loglevel=verbose');
     }
 
     if (onData) onData(`$ ${cmd}\n\n`);
@@ -185,9 +185,9 @@ class Installer {
       throw new Error(`Cannot derive uninstall command for ${agentType}`);
     }
 
-    // Add verbose logging for npm so user sees progress
+    // Add verbose logging for npm so user sees progress on stderr
     if (cmd.includes('npm uninstall') && !cmd.includes('--loglevel')) {
-      cmd = cmd.replace('npm uninstall', 'npm uninstall --loglevel=notice');
+      cmd = cmd.replace('npm uninstall', 'npm uninstall --loglevel=verbose');
     }
 
     if (onData) onData(`$ ${cmd}\n\n`);
