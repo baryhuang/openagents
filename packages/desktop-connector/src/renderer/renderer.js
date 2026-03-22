@@ -47,6 +47,26 @@ function showToast(message, type = 'info') {
 
 // ---- Modal system ----
 
+// ---- Agent icon helper ----
+
+const AGENT_ICON_MAP = {
+  openclaw: 'icons/openclaw.svg',
+  claude: 'icons/claude.svg',
+  codex: 'icons/codex.svg',
+  aider: 'icons/aider.svg',
+  goose: 'icons/goose.svg',
+  gemini: 'icons/gemini.svg',
+  openai: 'icons/openai.svg',
+  amp: 'icons/amp.svg',
+  cline: 'icons/cline.svg',
+  copilot: 'icons/copilot.svg',
+};
+
+function agentIconHtml(type, size = 24) {
+  const src = AGENT_ICON_MAP[type] || 'icons/default.svg';
+  return `<img class="agent-icon" src="${src}" width="${size}" height="${size}" alt="${esc(type)}" onerror="this.src='icons/default.svg'">`;
+}
+
 function showModal(html) {
   document.getElementById('modal-content').innerHTML = html;
   document.getElementById('modal-overlay').style.display = 'flex';
@@ -64,6 +84,13 @@ document.getElementById('modal-overlay').addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeModal();
 });
+
+// ---- Agent Icon Helper ----
+
+function agentIcon(type, size = 24) {
+  const slug = (type || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return `<img class="agent-icon" src="icons/${slug}.svg" width="${size}" height="${size}" alt="${esc(type)}" onerror="this.src='icons/default.svg'">`;
+}
 
 // ---- Dashboard ----
 
@@ -86,6 +113,7 @@ async function refreshDashboard() {
         return `
         <div class="agent-card">
           <div class="agent-card-header">
+            ${agentIcon(a.type)}
             <span class="agent-card-name">${esc(a.name)}</span>
             <span class="agent-card-type">${esc(a.type)}</span>
           </div>
@@ -672,8 +700,11 @@ async function refreshCatalog() {
     const rows = catalog.map((c) => `
       <div class="catalog-row ${c.installed ? 'installed' : ''}" data-name="${esc(c.name)}">
         <div class="catalog-info">
-          <span class="catalog-name">${esc(c.label || c.name)}</span>
-          <span class="catalog-desc">${esc(c.description || '')}</span>
+          ${agentIcon(c.name, 28)}
+          <div class="catalog-text">
+            <span class="catalog-name">${esc(c.label || c.name)}</span>
+            <span class="catalog-desc">${esc(c.description || '')}</span>
+          </div>
         </div>
         <div class="catalog-status">
           ${c.installed

@@ -252,6 +252,12 @@ h1 {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
+  gap: 10px;
+}
+
+.agent-icon {
+  flex-shrink: 0;
+  border-radius: 4px;
 }
 
 .agent-card-name {
@@ -631,6 +637,14 @@ h1 {
 }
 
 .catalog-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.catalog-text {
   flex: 1;
   min-width: 0;
 }
