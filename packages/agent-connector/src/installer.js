@@ -235,13 +235,18 @@ class Installer {
         env.PATH = execDir + sep + (env.PATH || '');
       }
 
-      // On Windows, force UTF-8 codepage to avoid GBK garbled output
-      const shellCmd = process.platform === 'win32' ? `chcp 65001 >nul && ${cmd}` : cmd;
+      // On Windows, use cmd.exe explicitly with UTF-8 codepage
+      let shellCmd = cmd;
+      let shellOpt = true;
+      if (process.platform === 'win32') {
+        shellCmd = `cmd.exe /C "chcp 65001 >nul & ${cmd}"`;
+        shellOpt = false; // we're specifying the shell ourselves
+      }
 
       exec(shellCmd, {
         encoding: 'utf-8',
         timeout: timeoutMs,
-        shell: true,
+        shell: shellOpt,
         env,
       }, (error, stdout, stderr) => {
         const output = ((stdout || '') + '\n' + (stderr || '')).trim();
