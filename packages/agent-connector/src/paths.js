@@ -172,6 +172,7 @@ function _addUnixPaths(dirs) {
 
   // npm global (varies by install method)
   _push(dirs, path.join(HOME, '.npm-global', 'bin'));
+  _push(dirs, path.join(HOME, '.openagents', 'npm-global', 'bin'));
 
   // nvm
   const nvmDir = process.env.NVM_DIR || path.join(HOME, '.nvm');

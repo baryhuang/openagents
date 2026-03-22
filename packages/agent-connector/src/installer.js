@@ -540,9 +540,21 @@ class Installer {
    */
   _resolveNpmCommand(args) {
     const systemNpm = whichBinary('npm');
-    if (systemNpm) return `"${systemNpm}" ${args}`;
-    // Last resort — npm should be on PATH after installNodejs()
-    return `npm ${args}`;
+    const npmBin = systemNpm ? `"${systemNpm}"` : 'npm';
+
+    // On macOS/Linux, use a user-writable prefix to avoid sudo for global installs
+    if (process.platform !== 'win32' && args.includes('-g')) {
+      const globalDir = path.join(this.configDir, 'npm-global');
+      fs.mkdirSync(globalDir, { recursive: true });
+      // Add the bin dir to PATH so installed binaries are found
+      const binDir = path.join(globalDir, 'bin');
+      if (!(process.env.PATH || '').includes(binDir)) {
+        process.env.PATH = binDir + ':' + (process.env.PATH || '');
+      }
+      return `${npmBin} --prefix "${globalDir}" ${args}`;
+    }
+
+    return `${npmBin} ${args}`;
   }
 
   _execShell(cmd, timeoutMs = 300000) {
