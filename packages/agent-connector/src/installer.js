@@ -459,44 +459,24 @@ class Installer {
         process.env.PATH = npmGlobal + sep + process.env.PATH;
       }
 
-    } else if (plat === 'macos') {
-      // Download pkg and install
-      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}.pkg`;
-      const pkgPath = path.join(os.tmpdir(), `node-${nodeVersion}.pkg`);
-
-      if (onData) onData(`Downloading ${url}...\n`);
-      await this._downloadFile(url, pkgPath, onData);
-
-      if (onData) onData(`\nInstalling Node.js...\n`);
-      await new Promise((resolve, reject) => {
-        const proc = spawnProc('sudo', ['installer', '-pkg', pkgPath, '-target', '/'], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d.toString()); });
-        if (proc.stderr) proc.stderr.on('data', (d) => { if (onData) onData(d.toString()); });
-        proc.on('error', reject);
-        proc.on('close', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`Installer exited with code ${code}`));
-        });
-      });
-
-      // Add to PATH
-      if (!(process.env.PATH || '').includes('/usr/local/bin')) {
-        process.env.PATH = '/usr/local/bin:' + (process.env.PATH || '');
-      }
-
     } else {
-      // Linux: use NodeSource setup script
-      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-linux-x64.tar.xz`;
-      const tarPath = path.join(os.tmpdir(), `node-${nodeVersion}.tar.xz`);
+      // macOS / Linux: download portable tar.gz/tar.xz, extract to ~/.openagents/nodejs/
+      const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+      const ext = plat === 'macos' ? 'tar.gz' : 'tar.xz';
+      const platName = plat === 'macos' ? 'darwin' : 'linux';
+      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-${platName}-${arch}.${ext}`;
+      const tarPath = path.join(os.tmpdir(), `node-${nodeVersion}.${ext}`);
 
       if (onData) onData(`Downloading ${url}...\n`);
       await this._downloadFile(url, tarPath, onData);
 
-      if (onData) onData(`\nExtracting to /usr/local...\n`);
+      const nodeDir = path.join(this.config.configDir, 'nodejs');
+      fs.mkdirSync(nodeDir, { recursive: true });
+
+      if (onData) onData(`\nExtracting to ${nodeDir}...\n`);
+      const tarFlag = ext === 'tar.gz' ? '-xzf' : '-xJf';
       await new Promise((resolve, reject) => {
-        const proc = spawnProc('sudo', ['tar', '-xJf', tarPath, '-C', '/usr/local', '--strip-components=1'], {
+        const proc = spawnProc('tar', [tarFlag, tarPath, '-C', nodeDir, '--strip-components=1'], {
           stdio: ['ignore', 'pipe', 'pipe'],
         });
         if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d.toString()); });
@@ -507,6 +487,12 @@ class Installer {
           else reject(new Error(`Extraction failed with code ${code}`));
         });
       });
+
+      // Add portable node bin to PATH
+      const nodeBin = path.join(nodeDir, 'bin');
+      if (!(process.env.PATH || '').includes(nodeBin)) {
+        process.env.PATH = nodeBin + ':' + (process.env.PATH || '');
+      }
     }
 
     if (onData) onData(`\nNode.js ${nodeVersion} installed successfully.\n\n`);
