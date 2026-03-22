@@ -1,7 +1,7 @@
 {
-  "name": "openagents-connector",
-  "version": "0.1.0",
-  "description": "OpenAgents Desktop Connector — install, configure, and manage agents",
+  "name": "openagents-launcher",
+  "version": "0.1.1",
+  "description": "OpenAgents Launcher — install, configure, and manage your AI agents",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
@@ -20,7 +20,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/openagents-org/openagents.git",
-    "directory": "packages/desktop-connector"
+    "directory": "packages/launcher"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -30,8 +30,8 @@
     "@openagents-org/agent-connector": "^0.2.7"
   },
   "build": {
-    "appId": "com.openagents.connector",
-    "productName": "OpenAgents Connector",
+    "appId": "com.openagents.launcher",
+    "productName": "OpenAgents Launcher",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist"

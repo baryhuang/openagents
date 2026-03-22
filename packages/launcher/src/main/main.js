@@ -20,7 +20,7 @@ function createWindow() {
     height: 650,
     minWidth: 700,
     minHeight: 500,
-    title: 'OpenAgents Connector',
+    title: 'OpenAgents Launcher',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -61,7 +61,7 @@ function createTray() {
   }
 
   tray = new Tray(trayIcon.isEmpty() ? createPlaceholderIcon() : trayIcon);
-  tray.setToolTip('OpenAgents Connector');
+  tray.setToolTip('OpenAgents Launcher');
 
   updateTrayMenu();
 

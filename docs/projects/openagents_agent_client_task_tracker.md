@@ -9,7 +9,7 @@ openagents/
 ├── src/openagents/              # Python SDK (backend, ONM, adapters)
 ├── packages/
 │   ├── agent-connector/         # @openagents-org/agent-connector (Node.js library + CLI)
-│   └── desktop-connector/       # Electron desktop app (Windows/macOS)
+│   └── launcher/       # OpenAgents Launcher — desktop app (Windows/macOS/Linux)
 └── workspace/
     ├── backend/                 # workspace backend (FastAPI)
     └── frontend/                # workspace frontend
@@ -110,7 +110,7 @@ openagents/
 | D27 | Loading states — spinners during async operations | Low | Done | Spinner animation on buttons during async ops |
 | D28 | Auto-refresh logs — scroll to bottom, periodic refresh on logs tab | Low | Done | 3s auto-refresh with toggle checkbox |
 | D29 | Workspace URL display — show full URL, not just slug | Low | Done | Full URLs with tokens in Settings tab |
-| D30 | Move app from `workspace/apps/desktop-connector/` to `packages/desktop-connector/` | High | Done | Already moved in repo restructure |
+| D30 | Move app from `workspace/apps/launcher/` to `packages/launcher/` | High | Done | Already moved in repo restructure |
 
 ---
 

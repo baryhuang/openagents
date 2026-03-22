@@ -1,4 +1,4 @@
-# Agent Connector App — Test Checklist
+# OpenAgents Launcher — Test Checklist
 
 ## 1. Installation & Launch
 - [ ] App launches without errors

@@ -25,7 +25,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: packages/desktop-connector
+        working-directory: packages/launcher
 
     steps:
       - name: Checkout
@@ -47,11 +47,11 @@ jobs:
         with:
           name: desktop-${{ matrix.os }}
           path: |
-            packages/desktop-connector/dist/*.exe
-            packages/desktop-connector/dist/*.dmg
-            packages/desktop-connector/dist/*.AppImage
-            packages/desktop-connector/dist/*.deb
-            packages/desktop-connector/dist/*.zip
+            packages/launcher/dist/*.exe
+            packages/launcher/dist/*.dmg
+            packages/launcher/dist/*.AppImage
+            packages/launcher/dist/*.deb
+            packages/launcher/dist/*.zip
           if-no-files-found: warn
 
   release:

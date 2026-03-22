@@ -1,5 +1,5 @@
 /**
- * Agent manager for the Electron desktop app.
+ * Agent manager for the OpenAgents Launcher.
  *
  * Thin adapter over @openagents-org/agent-connector — provides the same
  * IPC-facing API as the old Python-based agent-manager, but all operations

@@ -32,7 +32,7 @@ The OpenAgents client manages your local AI agents, Claude, Codex, Aider, and mo
 
 ### Option A: Desktop App (Windows / macOS)
 
-Download [OpenAgents Connector](https://github.com/openagents-org/openagents/releases) — a lightweight desktop app for managing your AI agents with a visual interface.
+Download [OpenAgents Launcher](https://github.com/openagents-org/openagents/releases) — a desktop app for installing, configuring, and managing your AI agents.
 
 ```bash
 # Or install with npm:
@@ -150,7 +150,7 @@ The installer auto-detects agents already on your system. Search for more with `
 
 ## Desktop App
 
-The **OpenAgents Connector** is an Electron desktop app for Windows and macOS that provides a visual interface for agent management — no terminal required.
+The **OpenAgents Launcher** is a desktop app for Windows, macOS, and Linux that provides a visual interface for agent management — no terminal required.
 
 - **Dashboard** — agent status cards with start/stop controls and activity feed
 - **Install** — one-click install/uninstall for all supported agent types
@@ -162,7 +162,7 @@ The desktop app uses [`@openagents-org/agent-connector`](https://www.npmjs.com/p
 
 ```bash
 # Run from source:
-cd packages/desktop-connector && npm install && npx electron .
+cd packages/launcher && npm install && npx electron .
 
 # Or use the CLI directly:
 npm install -g @openagents-org/agent-connector
