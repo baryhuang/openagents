@@ -1,6 +1,6 @@
 {
   "name": "openagents-launcher",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "OpenAgents Launcher — install, configure, and manage your AI agents",
   "main": "src/main/main.js",
   "scripts": {
@@ -27,8 +27,7 @@
     "electron-builder": "^25.0.0"
   },
   "dependencies": {
-    "@openagents-org/agent-connector": "^0.3.1",
-    "npm": "^10.9.2"
+    "@openagents-org/agent-connector": "^0.3.2"
   },
   "build": {
     "appId": "com.openagents.launcher",

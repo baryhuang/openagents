@@ -118,7 +118,12 @@ class Installer {
       throw new Error(`No install command for ${agentType} on ${Installer.platform()}`);
     }
 
-    // Resolve npm to use bundled node if system npm is not available
+    // Auto-install Node.js if this is an npm-based agent and Node.js is missing
+    if (rawCmd.startsWith('npm install') && !this.hasNodejs()) {
+      await this.installNodejs(onData);
+    }
+
+    // Resolve npm command
     let cmd = rawCmd;
     if (rawCmd.startsWith('npm install')) {
       const args = rawCmd.replace('npm install', 'install --loglevel=verbose');
@@ -366,48 +371,158 @@ class Installer {
   }
 
   /**
-   * Resolve the npm CLI path. Prefers system npm, falls back to bundled
-   * npm module run via Electron's node. Works on machines without Node.js.
+   * Check if Node.js/npm is available on the system.
+   */
+  hasNodejs() {
+    return !!whichBinary('node') && !!whichBinary('npm');
+  }
+
+  /**
+   * Download and install Node.js LTS. Streams progress via onData callback.
+   * After install, updates PATH so npm is available for subsequent commands.
+   * @param {function(string)} onData
+   * @returns {Promise<void>}
+   */
+  async installNodejs(onData) {
+    const { spawn: spawnProc } = require('child_process');
+    const https = require('https');
+    const os = require('os');
+    const nodeVersion = 'v22.14.0';
+    const plat = Installer.platform();
+
+    if (onData) onData(`Node.js not found. Installing Node.js ${nodeVersion}...\n\n`);
+
+    if (plat === 'windows') {
+      // Download MSI installer and run silently
+      const arch = os.arch() === 'x64' ? 'x64' : 'x86';
+      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-${arch}.msi`;
+      const msiPath = path.join(os.tmpdir(), `node-${nodeVersion}.msi`);
+
+      if (onData) onData(`Downloading ${url}...\n`);
+      await this._downloadFile(url, msiPath, onData);
+
+      if (onData) onData(`\nInstalling Node.js (this may take a minute)...\n`);
+      await new Promise((resolve, reject) => {
+        const proc = spawnProc('msiexec', ['/i', msiPath, '/quiet', '/norestart'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d.toString()); });
+        if (proc.stderr) proc.stderr.on('data', (d) => { if (onData) onData(d.toString()); });
+        proc.on('error', reject);
+        proc.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`MSI installer exited with code ${code}`));
+        });
+      });
+
+      // Add to PATH for this session
+      const nodejsDir = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs');
+      const sep = ';';
+      if (!(process.env.PATH || '').includes(nodejsDir)) {
+        process.env.PATH = nodejsDir + sep + (process.env.PATH || '');
+      }
+      const npmGlobal = path.join(process.env.APPDATA || '', 'npm');
+      if (npmGlobal && !(process.env.PATH || '').includes(npmGlobal)) {
+        process.env.PATH = npmGlobal + sep + process.env.PATH;
+      }
+
+    } else if (plat === 'macos') {
+      // Download pkg and install
+      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}.pkg`;
+      const pkgPath = path.join(os.tmpdir(), `node-${nodeVersion}.pkg`);
+
+      if (onData) onData(`Downloading ${url}...\n`);
+      await this._downloadFile(url, pkgPath, onData);
+
+      if (onData) onData(`\nInstalling Node.js...\n`);
+      await new Promise((resolve, reject) => {
+        const proc = spawnProc('sudo', ['installer', '-pkg', pkgPath, '-target', '/'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d.toString()); });
+        if (proc.stderr) proc.stderr.on('data', (d) => { if (onData) onData(d.toString()); });
+        proc.on('error', reject);
+        proc.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`Installer exited with code ${code}`));
+        });
+      });
+
+      // Add to PATH
+      if (!(process.env.PATH || '').includes('/usr/local/bin')) {
+        process.env.PATH = '/usr/local/bin:' + (process.env.PATH || '');
+      }
+
+    } else {
+      // Linux: use NodeSource setup script
+      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-linux-x64.tar.xz`;
+      const tarPath = path.join(os.tmpdir(), `node-${nodeVersion}.tar.xz`);
+
+      if (onData) onData(`Downloading ${url}...\n`);
+      await this._downloadFile(url, tarPath, onData);
+
+      if (onData) onData(`\nExtracting to /usr/local...\n`);
+      await new Promise((resolve, reject) => {
+        const proc = spawnProc('sudo', ['tar', '-xJf', tarPath, '-C', '/usr/local', '--strip-components=1'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d.toString()); });
+        if (proc.stderr) proc.stderr.on('data', (d) => { if (onData) onData(d.toString()); });
+        proc.on('error', reject);
+        proc.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`Extraction failed with code ${code}`));
+        });
+      });
+    }
+
+    if (onData) onData(`\nNode.js ${nodeVersion} installed successfully.\n\n`);
+  }
+
+  /**
+   * Download a file with progress reporting.
+   */
+  _downloadFile(url, destPath, onData) {
+    const https = require('https');
+    const http = require('http');
+    return new Promise((resolve, reject) => {
+      const get = url.startsWith('https') ? https.get : http.get;
+      get(url, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          // Follow redirect
+          return this._downloadFile(res.headers.location, destPath, onData).then(resolve, reject);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+        }
+        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+        let downloaded = 0;
+        let lastPercent = -1;
+        const file = fs.createWriteStream(destPath);
+        res.on('data', (chunk) => {
+          downloaded += chunk.length;
+          if (totalBytes > 0) {
+            const pct = Math.floor((downloaded / totalBytes) * 100);
+            if (pct !== lastPercent && pct % 10 === 0) {
+              lastPercent = pct;
+              if (onData) onData(`  ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)\n`);
+            }
+          }
+        });
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+        file.on('error', reject);
+      }).on('error', reject);
+    });
+  }
+
+  /**
+   * Resolve the npm CLI command. Uses system npm if available.
    */
   _resolveNpmCommand(args) {
-    // 1. Try system npm
-    const { whichBinary } = require('./paths');
     const systemNpm = whichBinary('npm');
     if (systemNpm) return `"${systemNpm}" ${args}`;
-
-    // 2. Find bundled npm-cli.js (npm is a dependency of the Launcher)
-    const nodeExe = process.execPath;
-    const candidates = [];
-
-    // Try require.resolve first — works when npm is in node_modules
-    try {
-      candidates.push(require.resolve('npm/bin/npm-cli.js'));
-    } catch {}
-
-    // Search common locations relative to the app
-    const searchRoots = [
-      path.join(path.dirname(nodeExe), 'resources', 'app'),  // packaged Electron
-      path.join(path.dirname(nodeExe), 'resources', 'app.asar.unpacked'), // asar unpacked
-      path.join(path.dirname(nodeExe), '..'),  // portable exe temp dir
-      process.cwd(),  // dev mode
-    ];
-    for (const root of searchRoots) {
-      candidates.push(path.join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js'));
-    }
-
-    // Also check system node_modules
-    candidates.push(path.join(path.dirname(nodeExe), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'));
-    candidates.push(path.join(path.dirname(nodeExe), 'node_modules', 'npm', 'bin', 'npm-cli.js'));
-
-    for (const p of candidates) {
-      try {
-        if (p && fs.existsSync(p)) {
-          return `"${nodeExe}" "${p}" ${args}`;
-        }
-      } catch {}
-    }
-
-    // 3. Last resort
+    // Last resort — npm should be on PATH after installNodejs()
     return `npm ${args}`;
   }
 

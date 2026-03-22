@@ -1,6 +1,6 @@
 {
   "name": "@openagents-org/agent-connector",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Agent management CLI and library for OpenAgents — install, configure, and run AI coding agents",
   "main": "src/index.js",
   "bin": {
