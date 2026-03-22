@@ -84,9 +84,15 @@ class Installer {
       throw new Error(`No install definition for agent type: ${agentType}`);
     }
 
-    const cmd = this._getInstallCommand(entry.install);
+    let cmd = this._getInstallCommand(entry.install);
     if (!cmd) {
       throw new Error(`No install command for ${agentType} on ${Installer.platform()}`);
+    }
+
+    // Use bundled node/npm if system npm not available
+    if (cmd.startsWith('npm install')) {
+      const args = cmd.replace('npm install', 'install');
+      cmd = this._resolveNpmCommand(args);
     }
 
     const output = await this._execShell(cmd);
@@ -107,14 +113,18 @@ class Installer {
       throw new Error(`No install definition for agent type: ${agentType}`);
     }
 
-    let cmd = this._getInstallCommand(entry.install);
-    if (!cmd) {
+    let rawCmd = this._getInstallCommand(entry.install);
+    if (!rawCmd) {
       throw new Error(`No install command for ${agentType} on ${Installer.platform()}`);
     }
 
-    // Add verbose logging for npm so user sees download progress on stderr
-    if (cmd.includes('npm install') && !cmd.includes('--loglevel')) {
-      cmd = cmd.replace('npm install', 'npm install --loglevel=verbose');
+    // Resolve npm to use bundled node if system npm is not available
+    let cmd = rawCmd;
+    if (rawCmd.startsWith('npm install')) {
+      const args = rawCmd.replace('npm install', 'install --loglevel=verbose');
+      cmd = this._resolveNpmCommand(args);
+    } else if (rawCmd.startsWith('pip install') || rawCmd.startsWith('pipx install')) {
+      cmd = rawCmd; // pip commands stay as-is
     }
 
     if (onData) onData(`$ ${cmd}\n\n`);
@@ -180,14 +190,16 @@ class Installer {
     }
 
     const installCmd = this._getInstallCommand(entry.install);
-    let cmd = this._deriveUninstallCommand(installCmd);
-    if (!cmd) {
+    let rawCmd = this._deriveUninstallCommand(installCmd);
+    if (!rawCmd) {
       throw new Error(`Cannot derive uninstall command for ${agentType}`);
     }
 
-    // Add verbose logging for npm so user sees progress on stderr
-    if (cmd.includes('npm uninstall') && !cmd.includes('--loglevel')) {
-      cmd = cmd.replace('npm uninstall', 'npm uninstall --loglevel=verbose');
+    // Resolve npm to use bundled node if system npm is not available
+    let cmd = rawCmd;
+    if (rawCmd.startsWith('npm uninstall')) {
+      const args = rawCmd.replace('npm uninstall', 'uninstall --loglevel=verbose');
+      cmd = this._resolveNpmCommand(args);
     }
 
     if (onData) onData(`$ ${cmd}\n\n`);
@@ -351,6 +363,44 @@ class Installer {
       }
     }
     return env;
+  }
+
+  /**
+   * Resolve the npm CLI path. Prefers system npm, falls back to Electron's
+   * bundled node + npm-cli.js so installs work on machines without Node.js.
+   */
+  _resolveNpmCommand(args) {
+    // 1. Try system npm
+    const { whichBinary } = require('./paths');
+    const systemNpm = whichBinary('npm');
+    if (systemNpm) return `npm ${args}`;
+
+    // 2. Use Electron's bundled node to run npm-cli.js
+    const nodeExe = process.execPath;
+    // Look for npm-cli.js relative to the node binary
+    const candidates = [
+      // Electron on Windows: resources/app/node_modules/npm/bin/npm-cli.js
+      path.join(path.dirname(nodeExe), 'resources', 'app', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      // npm installed alongside node
+      path.join(path.dirname(nodeExe), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      path.join(path.dirname(nodeExe), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    ];
+    // Also check if npm is available as a module from the current process
+    try {
+      const npmCliPath = require.resolve('npm/bin/npm-cli.js');
+      if (npmCliPath) candidates.unshift(npmCliPath);
+    } catch {}
+
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) {
+          return `"${nodeExe}" "${p}" ${args}`;
+        }
+      } catch {}
+    }
+
+    // 3. Last resort: just try npm and hope for the best
+    return `npm ${args}`;
   }
 
   _execShell(cmd, timeoutMs = 300000) {
