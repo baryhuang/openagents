@@ -800,25 +800,34 @@ async function installCatalogItem(name, isInstalled) {
   // Listen for streaming output
   let lastOutputTime = Date.now();
   window.api.onInstallOutput((data) => {
+    // Remove progress spinner before appending real output
+    if (progressLine && logEl.textContent.endsWith(progressLine)) {
+      logEl.textContent = logEl.textContent.slice(0, -progressLine.length);
+    }
     logEl.textContent += data;
     logEl.scrollTop = logEl.scrollHeight;
     lastOutputTime = Date.now();
   });
 
-  // Show elapsed time while waiting for output
+  // Show progress inside the log panel while npm is silent
+  const spinChars = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  let spinIdx = 0;
+  let progressLine = '';
+  const startTime = Date.now();
   const timerInterval = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - lastOutputTime) / 1000);
-    if (elapsed > 3) {
-      const statusLine = document.getElementById('install-status-line');
-      if (statusLine) statusLine.textContent = `Downloading packages... (${elapsed}s)`;
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const silentFor = Math.floor((Date.now() - lastOutputTime) / 1000);
+    if (silentFor > 2) {
+      // Remove previous progress line if present
+      if (progressLine && logEl.textContent.endsWith(progressLine)) {
+        logEl.textContent = logEl.textContent.slice(0, -progressLine.length);
+      }
+      spinIdx = (spinIdx + 1) % spinChars.length;
+      progressLine = `${spinChars[spinIdx]} Downloading and installing packages... (${elapsed}s elapsed)`;
+      logEl.textContent += progressLine;
+      logEl.scrollTop = logEl.scrollHeight;
     }
-  }, 1000);
-
-  // Add status line element
-  const statusEl = document.createElement('div');
-  statusEl.id = 'install-status-line';
-  statusEl.style.cssText = 'color:var(--text-tertiary);font-size:12px;margin-top:8px;';
-  logEl.parentNode.insertBefore(statusEl, logEl.nextSibling);
+  }, 200);
 
   try {
     await window.api.installAgentTypeStreaming(name);
@@ -828,7 +837,9 @@ async function installCatalogItem(name, isInstalled) {
   }
 
   clearInterval(timerInterval);
-  if (statusEl) statusEl.remove();
+  if (progressLine && logEl.textContent.endsWith(progressLine)) {
+    logEl.textContent = logEl.textContent.slice(0, -progressLine.length);
+  }
 
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
@@ -862,23 +873,32 @@ async function uninstallCatalogItem(name) {
 
   let lastOutputTime = Date.now();
   window.api.onInstallOutput((data) => {
+    // Remove progress line before appending real output
+    if (progressLine && logEl.textContent.endsWith(progressLine)) {
+      logEl.textContent = logEl.textContent.slice(0, -progressLine.length);
+    }
     logEl.textContent += data;
     logEl.scrollTop = logEl.scrollHeight;
     lastOutputTime = Date.now();
   });
 
+  const spinChars = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  let spinIdx = 0;
+  let progressLine = '';
+  const startTime = Date.now();
   const timerInterval = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - lastOutputTime) / 1000);
-    if (elapsed > 3) {
-      const statusLine = document.getElementById('install-status-line');
-      if (statusLine) statusLine.textContent = `Removing packages... (${elapsed}s)`;
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const silentFor = Math.floor((Date.now() - lastOutputTime) / 1000);
+    if (silentFor > 2) {
+      if (progressLine && logEl.textContent.endsWith(progressLine)) {
+        logEl.textContent = logEl.textContent.slice(0, -progressLine.length);
+      }
+      spinIdx = (spinIdx + 1) % spinChars.length;
+      progressLine = `${spinChars[spinIdx]} Removing packages... (${elapsed}s elapsed)`;
+      logEl.textContent += progressLine;
+      logEl.scrollTop = logEl.scrollHeight;
     }
-  }, 1000);
-
-  const statusEl = document.createElement('div');
-  statusEl.id = 'install-status-line';
-  statusEl.style.cssText = 'color:var(--text-tertiary);font-size:12px;margin-top:8px;';
-  logEl.parentNode.insertBefore(statusEl, logEl.nextSibling);
+  }, 200);
 
   try {
     await window.api.uninstallAgentTypeStreaming(name);
@@ -888,7 +908,9 @@ async function uninstallCatalogItem(name) {
   }
 
   clearInterval(timerInterval);
-  if (statusEl) statusEl.remove();
+  if (progressLine && logEl.textContent.endsWith(progressLine)) {
+    logEl.textContent = logEl.textContent.slice(0, -progressLine.length);
+  }
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
   document.getElementById('install-back-btn').addEventListener('click', () => {
