@@ -50,17 +50,20 @@ function createWindow() {
 }
 
 function createTray() {
-  // Use a simple 16x16 tray icon (placeholder — replace with real icon)
-  const iconPath = path.join(__dirname, '..', '..', 'assets', 'tray-icon.png');
+  const assetsDir = path.join(__dirname, '..', '..', 'assets');
   let trayIcon;
-  try {
-    trayIcon = nativeImage.createFromPath(iconPath);
-  } catch {
-    // Fallback: create a simple colored icon
-    trayIcon = nativeImage.createEmpty();
+
+  if (process.platform === 'darwin') {
+    // macOS: use Template icon (auto-adapts to dark/light menu bar)
+    trayIcon = nativeImage.createFromPath(path.join(assetsDir, 'tray-iconTemplate.png'));
+  } else {
+    // Windows/Linux: use color icon
+    trayIcon = nativeImage.createFromPath(path.join(assetsDir, 'tray-icon.png'));
   }
 
-  tray = new Tray(trayIcon.isEmpty() ? createPlaceholderIcon() : trayIcon);
+  if (!trayIcon || trayIcon.isEmpty()) trayIcon = createPlaceholderIcon();
+
+  tray = new Tray(trayIcon);
   tray.setToolTip('OpenAgents Launcher');
 
   updateTrayMenu();
