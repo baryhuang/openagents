@@ -327,6 +327,17 @@ async function cmdLogs(connector, flags, positional) {
   }
 }
 
+async function cmdAutostart(connector, flags) {
+  const autostart = require('./autostart');
+  if (flags.disable) {
+    autostart.disable();
+    print('Autostart disabled.');
+  } else {
+    const result = autostart.enable(connector._config ? connector._config.configDir : require('path').join(require('os').homedir(), '.openagents'));
+    print(`Autostart enabled.${result.path ? ` Config: ${result.path}` : ''}`);
+  }
+}
+
 async function cmdWorkspace(connector, flags, positional) {
   const sub = positional[0] || 'list';
   const subArgs = positional.slice(1);
@@ -461,6 +472,7 @@ Commands:
   connect <agent> <token>     Connect agent to workspace
   disconnect <agent>          Disconnect agent from workspace
   env <type> [--set K=V]      View/set env vars for agent type
+  autostart [--disable]       Enable/disable auto-start on login
   test-llm <type>             Test LLM connection
   logs [agent] [--lines N]    View daemon logs
   workspace create [name]     Create a new workspace
@@ -502,6 +514,7 @@ async function main() {
     connect: () => cmdConnect(connector, flags, positional),
     disconnect: () => cmdDisconnect(connector, flags, positional),
     logs: () => cmdLogs(connector, flags, positional),
+    autostart: () => cmdAutostart(connector, flags),
     workspace: () => cmdWorkspace(connector, flags, positional),
     env: () => cmdEnv(connector, flags, positional),
     'test-llm': () => cmdTestLLM(connector, flags, positional),
