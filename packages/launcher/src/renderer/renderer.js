@@ -801,7 +801,7 @@ async function installCatalogItem(name, isInstalled) {
             logEl.textContent += `NOT FOUND\n\n⚠ Please install ${dep} first.\n`;
             doneBar.style.display = 'block';
             document.getElementById('install-back-btn').addEventListener('click', () => {
-              content.innerHTML = savedHTML;
+              // Refresh catalog to show updated install status
               switchTab('install');
             });
             return;
@@ -862,7 +862,7 @@ async function installCatalogItem(name, isInstalled) {
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
   document.getElementById('install-back-btn').addEventListener('click', () => {
-    content.innerHTML = savedHTML;
+    // Refresh catalog to show updated install status
     switchTab('install');
   });
 }
@@ -950,7 +950,7 @@ async function uninstallCatalogItem(name) {
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
   document.getElementById('install-back-btn').addEventListener('click', () => {
-    content.innerHTML = savedHTML;
+    // Refresh catalog to show updated install status
     switchTab('install');
   });
 }
