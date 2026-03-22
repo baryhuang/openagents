@@ -1,9 +1,10 @@
-name: Build Desktop App
+name: Build OpenAgents Launcher
 
 on:
   workflow_dispatch:
   push:
     tags:
+      - 'launcher-v*'
       - 'desktop-v*'
 
 permissions:
@@ -45,7 +46,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.os }}
+          name: launcher-${{ matrix.os }}
           path: |
             packages/launcher/dist/*.exe
             packages/launcher/dist/*.dmg
@@ -57,7 +58,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    if: startsWith(github.ref, 'refs/tags/launcher-v') || startsWith(github.ref, 'refs/tags/desktop-v')
 
     steps:
       - name: Download all artifacts
@@ -69,7 +70,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Desktop App ${{ github.ref_name }}"
+          name: "OpenAgents Launcher ${{ github.ref_name }}"
           draft: false
           prerelease: false
           files: artifacts/*
