@@ -743,50 +743,79 @@ function filterCatalog(query) {
 }
 
 async function installCatalogItem(name, isInstalled) {
-  const output = document.getElementById('catalog-install-output');
-  output.style.display = 'block';
   const verb = isInstalled ? 'Updating' : 'Installing';
-  output.textContent = `${verb} ${name}...\n`;
 
-  // D22: Check dependencies before install
+  // Switch to dedicated install view
+  const content = document.getElementById('content');
+  const savedHTML = content.innerHTML;
+
+  content.innerHTML = `
+    <div class="install-progress-view">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+        ${agentIcon(name, 32)}
+        <div>
+          <h1 style="margin-bottom:2px;">${verb} ${esc(name)}</h1>
+          <p class="hint" style="margin:0;">Full installation log is shown below.</p>
+        </div>
+      </div>
+      <pre class="log-viewer install-log" id="install-live-log" style="min-height:300px;max-height:calc(100vh - 200px);"></pre>
+      <div id="install-done-bar" style="display:none;margin-top:16px;">
+        <button class="btn btn-primary" id="install-back-btn">Back to Install</button>
+      </div>
+    </div>`;
+
+  const logEl = document.getElementById('install-live-log');
+  const doneBar = document.getElementById('install-done-bar');
+
+  // D22: Check dependencies
   try {
     const catalog = await window.api.getCatalog();
     const entry = catalog.find(c => c.name === name);
     if (entry && entry.requires) {
       for (const dep of entry.requires) {
         const depName = dep === 'nodejs' ? 'node' : dep;
-        output.textContent += `Checking dependency: ${dep}... `;
+        logEl.textContent += `Checking dependency: ${dep}... `;
         try {
           const check = await window.api.healthCheck(depName);
           if (check && check.installed) {
-            output.textContent += `OK (${check.version || 'found'})\n`;
+            logEl.textContent += `OK (${check.version || 'found'})\n`;
           } else {
-            output.textContent += `NOT FOUND — please install ${dep} first.\n`;
-            showToast(`Missing dependency: ${dep}. Install it first.`, 'warning');
+            logEl.textContent += `NOT FOUND\n\n⚠ Please install ${dep} first.\n`;
+            doneBar.style.display = 'block';
+            document.getElementById('install-back-btn').addEventListener('click', () => {
+              content.innerHTML = savedHTML;
+              switchTab('install');
+            });
             return;
           }
         } catch {
-          output.textContent += `OK (assumed)\n`;
+          logEl.textContent += `OK (assumed)\n`;
         }
       }
     }
   } catch {}
 
-  // D27: Show loading state on button
-  const btn = document.querySelector(`[data-action="install-catalog"][data-name="${name}"]`);
-  if (btn) { btn.classList.add('btn-loading'); btn.disabled = true; }
+  logEl.textContent += `\n`;
+
+  // Listen for streaming output
+  window.api.onInstallOutput((data) => {
+    logEl.textContent += data;
+    logEl.scrollTop = logEl.scrollHeight;
+  });
 
   try {
-    const result = await window.api.installAgentType(name);
-    output.textContent += (result.output || '') + `\n\nDone! ${name} is now installed.`;
-    showToast(`${name} installed`, 'success');
-    refreshCatalog();
+    await window.api.installAgentTypeStreaming(name);
+    logEl.textContent += `\n✓ ${name} installed successfully.\n`;
   } catch (err) {
-    output.textContent += '\nError: ' + err.message;
-    showToast(`Install failed: ${err.message}`, 'error');
-  } finally {
-    if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
+    logEl.textContent += `\n✗ Error: ${err.message}\n`;
   }
+
+  window.api.removeInstallOutputListener();
+  doneBar.style.display = 'block';
+  document.getElementById('install-back-btn').addEventListener('click', () => {
+    content.innerHTML = savedHTML;
+    switchTab('install');
+  });
 }
 
 async function uninstallCatalogItem(name) {

@@ -151,6 +151,10 @@ class AgentManager {
     return this._connector.install(agentType);
   }
 
+  async installAgentTypeStreaming(agentType, onData) {
+    return this._connector.installer.installStreaming(agentType, onData);
+  }
+
   async uninstallAgentType(agentType) {
     return this._connector.uninstall(agentType);
   }
