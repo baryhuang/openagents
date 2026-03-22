@@ -30,10 +30,14 @@ jobs:
         run: |
           $tag = "${{ github.event.inputs.tag }}"
           Write-Host "Downloading $tag..."
-          gh release download $tag --pattern "*win-x64.exe" --dir "$env:TEMP\launcher-test" --clobber --repo openagents-org/openagents
-          $exe = Get-ChildItem "$env:TEMP\launcher-test\*.exe" | Select-Object -First 1
-          Copy-Item $exe.FullName "$env:USERPROFILE\Desktop\launcher-test.exe"
-          Write-Host "Downloaded: $($exe.Name)"
+          $headers = @{ "Accept" = "application/vnd.github.v3+json" }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/openagents-org/openagents/releases/tags/$tag" -Headers $headers
+          $asset = $release.assets | Where-Object { $_.name -like "*win-x64.exe" } | Select-Object -First 1
+          if (-not $asset) { throw "No win-x64.exe asset found in release $tag" }
+          Write-Host "Downloading $($asset.name) ($([math]::Round($asset.size/1MB, 1)) MB)..."
+          $dest = "$env:USERPROFILE\Desktop\launcher-test.exe"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dest -UseBasicParsing
+          Write-Host "Downloaded: $dest"
 
       - name: Install app silently
         shell: powershell
