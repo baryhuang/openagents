@@ -423,10 +423,15 @@ class Daemon {
 
     if (IS_WINDOWS) {
       // On Windows, always use shell so .cmd/.ps1 shims on PATH are found
+      // Use cmd /c with chcp 65001 to force UTF-8 output (fixes GBK garbled text)
       spawnOpts.shell = true;
     }
 
     const proc = spawn(binary, args, spawnOpts);
+
+    // Force UTF-8 decoding on stdout/stderr
+    if (proc.stdout) proc.stdout.setEncoding('utf-8');
+    if (proc.stderr) proc.stderr.setEncoding('utf-8');
 
     // Merge stderr into stdout handler
     if (proc.stderr) {

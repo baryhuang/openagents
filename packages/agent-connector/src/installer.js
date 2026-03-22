@@ -207,7 +207,10 @@ class Installer {
         env.PATH = execDir + sep + (env.PATH || '');
       }
 
-      exec(cmd, {
+      // On Windows, force UTF-8 codepage to avoid GBK garbled output
+      const shellCmd = process.platform === 'win32' ? `chcp 65001 >nul && ${cmd}` : cmd;
+
+      exec(shellCmd, {
         encoding: 'utf-8',
         timeout: timeoutMs,
         shell: true,

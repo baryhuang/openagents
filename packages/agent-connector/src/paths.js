@@ -69,6 +69,13 @@ function getEnhancedEnv(baseEnv) {
   if (extra.length > 0) {
     env.PATH = extra.join(SEP) + SEP + (env.PATH || '');
   }
+  if (IS_WINDOWS) {
+    // Force UTF-8 output from child processes on non-English Windows locales
+    // (prevents GBK/Shift-JIS garbled text in error messages)
+    env.PYTHONIOENCODING = env.PYTHONIOENCODING || 'utf-8';
+    env.PYTHONUTF8 = env.PYTHONUTF8 || '1';
+    env.LANG = env.LANG || 'en_US.UTF-8';
+  }
   return env;
 }
 
