@@ -101,7 +101,7 @@ openagents/
 
 | # | Task | Priority | Status | Notes |
 |---|------|----------|--------|-------|
-| D21 | Fix GBK encoding — garbled error messages on Chinese locale Windows | Medium | Pending | Handle stderr encoding on non-UTF8 locale machines |
+| D21 | Fix GBK encoding — garbled error messages on Chinese locale Windows | Medium | Done | chcp 65001, PYTHONIOENCODING=utf-8, setEncoding('utf-8') on streams |
 | D22 | Auto-install dependencies — Node.js, Git, etc. when installing agent type | Low | Pending | TUI does this; desktop app delegates to SDK install but doesn't handle deps |
 | D23 | Login for agent types — agent-specific login (e.g. `claude login`) | Low | Pending | TUI supports `l` key for login; desktop app has no login flow |
 | D24 | Daemon start/stop toggle — explicit daemon on/off button | Low | Pending | TUI has `u` key; desktop app has start/stop all but no daemon toggle |
@@ -161,15 +161,15 @@ packages/agent-connector/
 | N7 | `daemon.js` — agent process lifecycle management | High | Done | Spawn, auto-restart + backoff, PID file, status, cmd protocol, signals, daemonize |
 | N8 | `workspace-client.js` — workspace API HTTP client | High | Done | Register, create, join, resolve, heartbeat, disconnect, events, messages |
 | N9 | `cli.js` — CLI commands for Linux/headless use | High | Done | 18 commands: up, down, status, list, create, remove, start, stop, install, uninstall, search, runtimes, connect, disconnect, env, test-llm, logs, workspace. Zero dependencies. |
-| N10 | Cross-platform PATH detection | Medium | Pending | System PATH, nvm/fnm/volta, `~/.local/bin`, `%APPDATA%\npm`, Homebrew |
-| N11 | Agent health check — binary existence + version check | Medium | Pending | Check binary, run `--version`, compare against registry latest |
-| N12 | Log management — write, rotate, tail, filter | Medium | Pending | Timestamped logs, agent prefix, `--follow`, rotate at 10MB |
-| N13 | Config hot-reload — watch `daemon.yaml` for changes | Medium | Pending | `fs.watch` + debounce. Start/stop/restart agents on config change |
+| N10 | Cross-platform PATH detection | Medium | Done | paths.js: nvm/fnm/volta, Homebrew, pip, cargo, npm global, Windows Program Files |
+| N11 | Agent health check — binary existence + version check | Medium | Done | healthCheck() returns { installed, binary, version } |
+| N12 | Log management — write, rotate, tail, filter | Medium | Done | Rotate at 10MB, tailLogs() with byte offset for incremental reads |
+| N13 | Config hot-reload — watch `daemon.yaml` for changes | Medium | Done | fs.watch + 1s debounce, diff agent names, start/stop as needed |
 | N14 | `autostart` — register as system service | Low | Pending | systemd (Linux), launchd (macOS), Task Scheduler (Windows) |
-| N15 | Tests — unit tests for all modules | High | In Progress | 65 tests passing (config, env, registry, installer, daemon, workspace-client, CLI) |
+| N15 | Tests — unit tests for all modules | High | Done | 73 tests passing (config, env, registry, installer, daemon, workspace-client, CLI, paths) |
 | N16 | CI pipeline — lint, test, publish | Medium | Pending | GitHub Actions on ubuntu/macos/windows, publish to npm on tag |
 | N17 | Wire Electron app to use package directly | High | Done | Replaced agent-manager.js (690→210 lines), removed PythonManager, updated Install tab UI |
-| N18 | Global install CLI — `npm install -g @openagents-org/agent-connector` | Medium | Pending | Bin entry, aliases, test on clean machines all platforms |
+| N18 | Global install CLI — `npm install -g @openagents-org/agent-connector` | Medium | Done | Tested on macOS + Windows, v0.2.7 published, .cmd shim works |
 
 ### Desktop App Distribution
 
