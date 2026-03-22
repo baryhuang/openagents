@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync, exec } = require('child_process');
+const { whichBinary, getEnhancedEnv } = require('./paths');
 
 /**
  * Manages installation and uninstallation of agent runtimes.
@@ -125,32 +126,12 @@ class Installer {
   }
 
   /**
-   * Find a binary on PATH.
+   * Find a binary on PATH (delegates to paths.js for cross-platform detection).
    */
   _whichBinary(agentType) {
     const entry = this.registry.getEntry(agentType);
     const binary = entry && entry.install ? entry.install.binary : agentType;
-    if (!binary) return null;
-
-    try {
-      const cmd = process.platform === 'win32' ? `where ${binary}` : `which ${binary}`;
-      const env = { ...process.env };
-      const extraPaths = ['/usr/local/bin', '/opt/homebrew/bin'];
-      if (process.platform === 'win32') {
-        const npmBin = path.join(process.env.APPDATA || '', 'npm');
-        if (npmBin) extraPaths.push(npmBin);
-        extraPaths.push('C:\\Program Files\\nodejs');
-      }
-      for (const p of extraPaths) {
-        if (p && !(env.PATH || '').includes(p)) {
-          env.PATH = p + (process.platform === 'win32' ? ';' : ':') + (env.PATH || '');
-        }
-      }
-      const result = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], env }).trim();
-      return result.split('\n')[0] || null;
-    } catch {
-      return null;
-    }
+    return whichBinary(binary);
   }
 
   // -- Markers --
@@ -218,32 +199,12 @@ class Installer {
 
   _execShell(cmd, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
-      // Ensure common binary paths are available (Electron may not inherit full PATH)
-      const env = { ...process.env };
-      const extraPaths = [
-        '/usr/local/bin', '/opt/homebrew/bin',
-        path.dirname(process.execPath),
-      ];
-      if (process.platform === 'win32') {
-        const npmBin = path.join(process.env.APPDATA || '', 'npm');
-        if (npmBin) extraPaths.push(npmBin);
-        // Common binary locations on Windows
-        extraPaths.push('C:\\Program Files\\nodejs');
-        extraPaths.push('C:\\Program Files (x86)\\nodejs');
-        extraPaths.push('C:\\Program Files\\Git\\cmd');
-        extraPaths.push('C:\\Program Files (x86)\\Git\\cmd');
-        // Also try to find node/git via where
-        for (const bin of ['node', 'git']) {
-          try {
-            const p = execSync(`where ${bin}`, { encoding: 'utf-8', timeout: 3000 }).split(/\r?\n/)[0].trim();
-            if (p) extraPaths.push(path.dirname(p));
-          } catch {}
-        }
-      }
-      for (const p of extraPaths) {
-        if (p && !(env.PATH || '').includes(p)) {
-          env.PATH = p + (process.platform === 'win32' ? ';' : ':') + (env.PATH || '');
-        }
+      const env = getEnhancedEnv();
+      // Also include Electron's own binary dir
+      const execDir = path.dirname(process.execPath);
+      if (execDir && !(env.PATH || '').includes(execDir)) {
+        const sep = process.platform === 'win32' ? ';' : ':';
+        env.PATH = execDir + sep + (env.PATH || '');
       }
 
       exec(cmd, {

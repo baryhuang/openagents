@@ -5,8 +5,7 @@ const path = require('path');
 const { spawn, execSync, execFileSync } = require('child_process');
 const os = require('os');
 const { WorkspaceClient } = require('./workspace-client');
-
-const IS_WINDOWS = process.platform === 'win32';
+const { getEnhancedEnv, whichBinary, IS_WINDOWS } = require('./paths');
 
 /**
  * Agent process lifecycle manager.
@@ -418,18 +417,13 @@ class Daemon {
     const [binary, ...args] = cmd;
     const spawnOpts = {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: opts.env,
+      env: getEnhancedEnv(opts.env),
       cwd: opts.cwd,
     };
 
     if (IS_WINDOWS) {
       // On Windows, always use shell so .cmd/.ps1 shims on PATH are found
       spawnOpts.shell = true;
-      // Ensure npm global bin is on PATH
-      const npmBin = path.join(process.env.APPDATA || '', 'npm');
-      if (npmBin && !(process.env.PATH || '').includes(npmBin)) {
-        spawnOpts.env = { ...spawnOpts.env, PATH: npmBin + ';' + (spawnOpts.env.PATH || process.env.PATH || '') };
-      }
     }
 
     const proc = spawn(binary, args, spawnOpts);
