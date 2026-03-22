@@ -52,9 +52,9 @@ const { chromium } = require('playwright');
   if (clicked) {
     results.push({ test: 'OpenClaw install clicked', pass: true, detail: '' });
 
-    // Wait for install (up to 10 min — Node.js download + npm install)
+    // Wait for install (up to 15 min — Node.js download + npm install can be slow)
     let installDone = false;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 180; i++) {
       await page.waitForTimeout(5000);
       const bodyText = await page.textContent('body');
       if (bodyText.includes('Done!') || bodyText.includes('Error')) {
@@ -66,7 +66,7 @@ const { chromium } = require('playwright');
       if (i % 6 === 0) console.log('  ... waiting ' + ((i + 1) * 5) + 's');
     }
     if (!installDone) {
-      results.push({ test: 'OpenClaw install completes', pass: false, detail: 'Timeout after 10 min' });
+      results.push({ test: 'OpenClaw install completes', pass: false, detail: 'Timeout after 15 min' });
     }
     await page.screenshot({ path: 'screenshot_install_result.png' });
   }

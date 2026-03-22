@@ -94,7 +94,7 @@ jobs:
 
   test-macos:
     runs-on: [self-hosted, macos, desktop-test]
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Clean environment
         run: |
