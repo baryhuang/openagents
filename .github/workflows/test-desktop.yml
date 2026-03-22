@@ -63,28 +63,27 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Playwright
-        shell: powershell
-        run: |
-          npm install -g playwright
-          npx playwright install chromium
-
       - name: Checkout test script
         uses: actions/checkout@v4
         with:
           sparse-checkout: infra/test_app.js
           sparse-checkout-cone-mode: false
 
-      - name: Run tests
+      - name: Install Playwright and run tests
         shell: powershell
-        run: node infra/test_app.js
+        run: |
+          cd infra
+          npm init -y
+          npm install playwright
+          npx playwright install chromium
+          node test_app.js
 
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-screenshots-windows
-          path: screenshot_*.png
+          path: infra/screenshot_*.png
 
       - name: Cleanup
         if: always()
