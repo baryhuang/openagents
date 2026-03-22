@@ -30,32 +30,28 @@ The OpenAgents client manages your local AI agents, Claude, Codex, Aider, and mo
 
 ## Quick Start
 
-Install OpenAgents and launch the interactive setup:
+### Option A: Desktop App (Windows / macOS)
 
-**Linux/macOS:**
+Download [OpenAgents Connector](https://github.com/openagents-org/openagents/releases) — a lightweight desktop app for managing your AI agents with a visual interface.
+
 ```bash
+# Or install with npm:
+npm install -g @openagents-org/agent-connector
+agent-connector up
+```
+
+### Option B: CLI (Linux / headless)
+
+```bash
+# Python CLI:
 curl -fsSL https://openagents.org/install.sh | bash
 openagents
+
+# Or Node.js CLI (no Python required):
+npx @openagents-org/agent-connector up
 ```
 
-**Windows (PowerShell):**
-```powershell
-irm https://openagents.org/install.ps1 | iex
-openagents
-```
-
-Running `openagents` with no arguments opens the **Interactive Setup**, a terminal dashboard where you can:
-
-- See all your agents, their status, and workspace connections at a glance
-- Install new agent runtimes from the registry
-- Start agents with a name and working directory
-- Connect agents to workspaces (create new or join with a token)
-- Stop, disconnect, or remove agents
-
-<!-- TODO: Replace with actual screenshot of the Interactive Setup TUI -->
-![Interactive Setup](docs/assets/images/placeholder_tui_screenshot.png)
-
-You can also use individual commands directly:
+### Option C: One-liner
 
 ```bash
 openagents start openclaw                                  # start an agent
@@ -63,6 +59,11 @@ openagents start claude                                    # or Claude Code
 openagents start openclaw --create-workspace "my-team"     # create and connect
 openagents start openclaw --join-workspace <token>          # join and connect
 ```
+
+Running `openagents` with no arguments opens the **Interactive Setup**, a terminal dashboard where you can see all your agents, install new runtimes, start agents, and connect them to workspaces.
+
+<!-- TODO: Replace with actual screenshot of the Interactive Setup TUI -->
+![Interactive Setup](docs/assets/images/placeholder_tui_screenshot.png)
 
 ## Features
 
@@ -146,6 +147,29 @@ Developers can build self-hosted agent networks with the [OpenAgents SDK](https:
 | Custom YAML | ✅ | `openagents start ./my-agent/` |
 
 The installer auto-detects agents already on your system. Search for more with `openagents search coding`.
+
+## Desktop App
+
+The **OpenAgents Connector** is an Electron desktop app for Windows and macOS that provides a visual interface for agent management — no terminal required.
+
+- **Dashboard** — agent status cards with start/stop controls and activity feed
+- **Install** — one-click install/uninstall for all supported agent types
+- **Workspace** — connect agents to workspaces, view workspace URLs
+- **Logs** — real-time daemon log viewer with agent filtering
+- **Settings** — autostart, system tray, workspace management
+
+The desktop app uses [`@openagents-org/agent-connector`](https://www.npmjs.com/package/@openagents-org/agent-connector) internally — a zero-dependency Node.js library that replaces the Python SDK for agent lifecycle management.
+
+```bash
+# Run from source:
+cd packages/desktop-connector && npm install && npx electron .
+
+# Or use the CLI directly:
+npm install -g @openagents-org/agent-connector
+agent-connector status
+agent-connector install openclaw
+agent-connector up
+```
 
 ## CLI Reference
 
@@ -274,6 +298,16 @@ We welcome contributions! See our [issue templates](https://github.com/openagent
 </div>
 
 ## Changelog
+
+### v0.9.3
+- **Node.js Agent Connector**, `@openagents-org/agent-connector` npm package — zero-dependency CLI + library for agent management without Python
+- **Desktop App**, Electron app with dashboard, install, logs, settings, and workspace management
+- **Adapter system**, ported Python adapters (OpenClaw, Claude, Codex) to Node.js with workspace prompt injection
+- **Cross-platform PATH detection**, finds binaries across nvm, fnm, volta, Homebrew, pip, cargo
+- **Config hot-reload**, daemon watches `daemon.yaml` and starts/stops agents on changes
+- **Log rotation**, daemon.log rotates at 10MB with incremental tail support
+- **GBK encoding fix**, proper UTF-8 handling on non-English Windows locales
+- **Light theme UI**, Things-inspired design with agent type icons
 
 ### v0.9.2
 - **Workspace skills for all agents**, OpenClaw, Codex, and other non-MCP agents now receive workspace API skills (shared files, shared browser, tunnels) via system prompt injection
