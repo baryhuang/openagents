@@ -366,40 +366,48 @@ class Installer {
   }
 
   /**
-   * Resolve the npm CLI path. Prefers system npm, falls back to Electron's
-   * bundled node + npm-cli.js so installs work on machines without Node.js.
+   * Resolve the npm CLI path. Prefers system npm, falls back to bundled
+   * npm module run via Electron's node. Works on machines without Node.js.
    */
   _resolveNpmCommand(args) {
     // 1. Try system npm
     const { whichBinary } = require('./paths');
     const systemNpm = whichBinary('npm');
-    if (systemNpm) return `npm ${args}`;
+    if (systemNpm) return `"${systemNpm}" ${args}`;
 
-    // 2. Use Electron's bundled node to run npm-cli.js
+    // 2. Find bundled npm-cli.js (npm is a dependency of the Launcher)
     const nodeExe = process.execPath;
-    // Look for npm-cli.js relative to the node binary
-    const candidates = [
-      // Electron on Windows: resources/app/node_modules/npm/bin/npm-cli.js
-      path.join(path.dirname(nodeExe), 'resources', 'app', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-      // npm installed alongside node
-      path.join(path.dirname(nodeExe), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-      path.join(path.dirname(nodeExe), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-    ];
-    // Also check if npm is available as a module from the current process
+    const candidates = [];
+
+    // Try require.resolve first — works when npm is in node_modules
     try {
-      const npmCliPath = require.resolve('npm/bin/npm-cli.js');
-      if (npmCliPath) candidates.unshift(npmCliPath);
+      candidates.push(require.resolve('npm/bin/npm-cli.js'));
     } catch {}
+
+    // Search common locations relative to the app
+    const searchRoots = [
+      path.join(path.dirname(nodeExe), 'resources', 'app'),  // packaged Electron
+      path.join(path.dirname(nodeExe), 'resources', 'app.asar.unpacked'), // asar unpacked
+      path.join(path.dirname(nodeExe), '..'),  // portable exe temp dir
+      process.cwd(),  // dev mode
+    ];
+    for (const root of searchRoots) {
+      candidates.push(path.join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js'));
+    }
+
+    // Also check system node_modules
+    candidates.push(path.join(path.dirname(nodeExe), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'));
+    candidates.push(path.join(path.dirname(nodeExe), 'node_modules', 'npm', 'bin', 'npm-cli.js'));
 
     for (const p of candidates) {
       try {
-        if (fs.existsSync(p)) {
+        if (p && fs.existsSync(p)) {
           return `"${nodeExe}" "${p}" ${args}`;
         }
       } catch {}
     }
 
-    // 3. Last resort: just try npm and hope for the best
+    // 3. Last resort
     return `npm ${args}`;
   }
 
