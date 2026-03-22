@@ -182,7 +182,20 @@ function setupIPC() {
   ipcMain.handle('shell:exec', (_e, cmd) => {
     const { execSync } = require('child_process');
     const { getEnhancedEnv } = require('@openagents-org/agent-connector').paths;
-    return execSync(cmd, { encoding: 'utf-8', timeout: 30000, env: getEnhancedEnv() });
+    const env = getEnhancedEnv();
+    // Use ComSpec directly — guaranteed to be the correct path on this system
+    const shell = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : true;
+    return execSync(cmd, { encoding: 'utf-8', timeout: 30000, shell, env });
+  });
+
+  // Debug: expose env for troubleshooting
+  ipcMain.handle('debug:env', () => {
+    return {
+      ComSpec: process.env.ComSpec,
+      SystemRoot: process.env.SystemRoot,
+      PATH: (process.env.PATH || '').slice(0, 500),
+      platform: process.platform,
+    };
   });
 }
 

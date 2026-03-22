@@ -36,11 +36,19 @@ function getExtraBinDirs() {
   // Common: ~/.local/bin (pipx, user installs)
   _push(dirs, path.join(HOME, '.local', 'bin'));
 
+  // Also add the directory containing the current node binary
+  try {
+    const nodeDir = path.dirname(process.execPath);
+    if (nodeDir) _push(dirs, nodeDir);
+  } catch {}
+
   // Filter to existing directories only, deduplicate
   const seen = new Set();
   const currentPATH = process.env.PATH || '';
   return dirs.filter(d => {
-    if (!d || seen.has(d) || currentPATH.includes(d)) return false;
+    if (!d || seen.has(d)) return false;
+    // Skip if already in PATH (case-insensitive on Windows)
+    if (IS_WINDOWS ? currentPATH.toLowerCase().includes(d.toLowerCase()) : currentPATH.includes(d)) return false;
     seen.add(d);
     try {
       return fs.statSync(d).isDirectory();
@@ -71,10 +79,14 @@ function getEnhancedEnv(baseEnv) {
   }
   if (IS_WINDOWS) {
     // Force UTF-8 output from child processes on non-English Windows locales
-    // (prevents GBK/Shift-JIS garbled text in error messages)
     env.PYTHONIOENCODING = env.PYTHONIOENCODING || 'utf-8';
     env.PYTHONUTF8 = env.PYTHONUTF8 || '1';
     env.LANG = env.LANG || 'en_US.UTF-8';
+    // Ensure ComSpec points to cmd.exe (Electron may not set it)
+    if (!env.ComSpec) {
+      const sysRoot = env.SystemRoot || 'C:\\Windows';
+      env.ComSpec = path.join(sysRoot, 'System32', 'cmd.exe');
+    }
   }
   return env;
 }
@@ -104,6 +116,10 @@ function _addWindowsPaths(dirs) {
   const appData = process.env.APPDATA || '';
   const localAppData = process.env.LOCALAPPDATA || '';
   const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const sysRoot = process.env.SystemRoot || 'C:\\Windows';
+
+  // System32 (cmd.exe, powershell, etc) — Electron may not have it
+  _push(dirs, path.join(sysRoot, 'System32'));
 
   // npm global bin
   if (appData) _push(dirs, path.join(appData, 'npm'));

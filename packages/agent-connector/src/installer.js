@@ -227,26 +227,41 @@ class Installer {
 
   _execShell(cmd, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
-      const env = getEnhancedEnv();
-      // Also include Electron's own binary dir
-      const execDir = path.dirname(process.execPath);
-      if (execDir && !(env.PATH || '').includes(execDir)) {
-        const sep = process.platform === 'win32' ? ';' : ':';
-        env.PATH = execDir + sep + (env.PATH || '');
-      }
+      // Build env with all known binary dirs
+      const env = { ...process.env };
+      const sep = process.platform === 'win32' ? ';' : ':';
 
-      // On Windows, use cmd.exe explicitly with UTF-8 codepage
-      let shellCmd = cmd;
-      let shellOpt = true;
+      // Collect all extra dirs we know about
+      const extraDirs = [];
+      // Current node binary's directory (has npm, npx)
+      try { extraDirs.push(path.dirname(process.execPath)); } catch {}
+      // Standard locations
       if (process.platform === 'win32') {
-        shellCmd = `cmd.exe /C "chcp 65001 >nul & ${cmd}"`;
-        shellOpt = false; // we're specifying the shell ourselves
+        const appData = env.APPDATA || '';
+        if (appData) extraDirs.push(path.join(appData, 'npm'));
+        extraDirs.push(env.ProgramFiles ? path.join(env.ProgramFiles, 'nodejs') : 'C:\\Program Files\\nodejs');
+        extraDirs.push(env.SystemRoot ? path.join(env.SystemRoot, 'System32') : 'C:\\Windows\\System32');
+        extraDirs.push(env.ProgramFiles ? path.join(env.ProgramFiles, 'Git', 'cmd') : 'C:\\Program Files\\Git\\cmd');
+      } else {
+        extraDirs.push('/usr/local/bin', '/opt/homebrew/bin');
+      }
+      // Prepend to PATH
+      for (const d of extraDirs) {
+        if (d && !(env.PATH || '').includes(d)) {
+          env.PATH = d + sep + (env.PATH || '');
+        }
       }
 
-      exec(shellCmd, {
+      // On Windows, use ComSpec as shell
+      let shell = true;
+      if (process.platform === 'win32') {
+        shell = env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
+      }
+
+      exec(cmd, {
         encoding: 'utf-8',
         timeout: timeoutMs,
-        shell: shellOpt,
+        shell,
         env,
       }, (error, stdout, stderr) => {
         const output = ((stdout || '') + '\n' + (stderr || '')).trim();
