@@ -191,12 +191,16 @@ async function toggleAgent(name, currentState) {
 }
 
 document.getElementById('btn-start-all').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-start-all');
+  btn.classList.add('btn-loading');
   try {
     const result = await window.api.startAll();
     showToast(result.message || 'Starting all agents...', 'success');
     setTimeout(() => refreshDashboard(), 2000);
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
+  } finally {
+    btn.classList.remove('btn-loading');
   }
 });
 
@@ -223,6 +227,7 @@ function showAgentActions(name, type, state, network) {
   }
 
   actions.push(`<button class="btn modal-action-btn" data-action="configure" data-type="${esc(type)}">Configure</button>`);
+  actions.push(`<button class="btn modal-action-btn" data-action="agent-login" data-type="${esc(type)}">Login</button>`);
 
   if (network) {
     actions.push(`<button class="btn modal-action-btn" data-action="disconnect" data-name="${esc(name)}">Disconnect from Workspace</button>`);
@@ -743,6 +748,34 @@ async function installCatalogItem(name, isInstalled) {
   const verb = isInstalled ? 'Updating' : 'Installing';
   output.textContent = `${verb} ${name}...\n`;
 
+  // D22: Check dependencies before install
+  try {
+    const catalog = await window.api.getCatalog();
+    const entry = catalog.find(c => c.name === name);
+    if (entry && entry.requires) {
+      for (const dep of entry.requires) {
+        const depName = dep === 'nodejs' ? 'node' : dep;
+        output.textContent += `Checking dependency: ${dep}... `;
+        try {
+          const check = await window.api.healthCheck(depName);
+          if (check && check.installed) {
+            output.textContent += `OK (${check.version || 'found'})\n`;
+          } else {
+            output.textContent += `NOT FOUND — please install ${dep} first.\n`;
+            showToast(`Missing dependency: ${dep}. Install it first.`, 'warning');
+            return;
+          }
+        } catch {
+          output.textContent += `OK (assumed)\n`;
+        }
+      }
+    }
+  } catch {}
+
+  // D27: Show loading state on button
+  const btn = document.querySelector(`[data-action="install-catalog"][data-name="${name}"]`);
+  if (btn) { btn.classList.add('btn-loading'); btn.disabled = true; }
+
   try {
     const result = await window.api.installAgentType(name);
     output.textContent += (result.output || '') + `\n\nDone! ${name} is now installed.`;
@@ -751,6 +784,8 @@ async function installCatalogItem(name, isInstalled) {
   } catch (err) {
     output.textContent += '\nError: ' + err.message;
     showToast(`Install failed: ${err.message}`, 'error');
+  } finally {
+    if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
   }
 }
 
@@ -851,6 +886,94 @@ function statusClass(state) {
   return 'offline';
 }
 
+// ---- D25: Activity log ----
+
+const activityEntries = [];
+const MAX_ACTIVITY = 50;
+
+function addActivity(msg) {
+  const now = new Date();
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  activityEntries.unshift({ time, msg });
+  if (activityEntries.length > MAX_ACTIVITY) activityEntries.length = MAX_ACTIVITY;
+  renderActivity();
+}
+
+function renderActivity() {
+  const el = document.getElementById('activity-log');
+  if (!el) return;
+  if (activityEntries.length === 0) {
+    el.innerHTML = '<span class="hint">No activity yet. Start an agent to see events.</span>';
+    return;
+  }
+  el.innerHTML = activityEntries.map(e =>
+    `<div class="activity-log-entry"><span class="activity-log-time">${esc(e.time)}</span><span class="activity-log-msg">${esc(e.msg)}</span></div>`
+  ).join('');
+}
+
+// Override showToast to also add to activity log
+const _origShowToast = showToast;
+showToast = function(message, type) {
+  _origShowToast(message, type);
+  addActivity(message);
+};
+
+// ---- D28: Auto-refresh logs ----
+
+let logAutoRefreshInterval = null;
+
+function startLogAutoRefresh() {
+  stopLogAutoRefresh();
+  logAutoRefreshInterval = setInterval(() => {
+    const autoEl = document.getElementById('log-auto-refresh');
+    const activeTab = document.querySelector('.nav-item.active');
+    if (autoEl && autoEl.checked && activeTab && activeTab.dataset.tab === 'logs') {
+      refreshLogs();
+    }
+  }, 3000);
+}
+
+function stopLogAutoRefresh() {
+  if (logAutoRefreshInterval) { clearInterval(logAutoRefreshInterval); logAutoRefreshInterval = null; }
+}
+
+startLogAutoRefresh();
+
+// ---- D29: Workspace URL display in Settings ----
+
+async function refreshSettingsWorkspaces() {
+  const el = document.getElementById('settings-workspaces');
+  if (!el) return;
+  try {
+    const workspaces = await window.api.listWorkspaces();
+    if (!workspaces || workspaces.length === 0) {
+      el.innerHTML = '<span class="hint">No workspaces configured.</span>';
+      return;
+    }
+    el.innerHTML = `<ul class="workspace-url-list">${workspaces.map(w => {
+      const slug = w.slug || w.id;
+      const name = w.name || slug;
+      const url = `https://workspace.openagents.org/${slug}`;
+      return `<li class="workspace-url-item">
+        <span class="workspace-url-name">${esc(name)}</span>
+        <span class="workspace-url-link" data-action="open-external" data-url="${esc(url)}${w.token ? '?token=' + encodeURIComponent(w.token) : ''}">${esc(url)}</span>
+      </li>`;
+    }).join('')}</ul>`;
+  } catch {
+    el.innerHTML = '<span class="hint">Failed to load workspaces.</span>';
+  }
+}
+
+// ---- Update About version ----
+
+(async () => {
+  try {
+    const status = await window.api.pythonStatus();
+    const aboutEl = document.getElementById('about-version');
+    if (aboutEl) aboutEl.textContent = `v${status.sdkVersion}`;
+  } catch {}
+})();
+
 // ---- Periodic refresh ----
 
 setInterval(() => {
@@ -858,7 +981,7 @@ setInterval(() => {
   if (activeTab) {
     const tab = activeTab.dataset.tab;
     if (tab === 'dashboard') refreshDashboard();
-    else if (tab === 'logs') refreshLogs();
+    if (tab === 'settings') refreshSettingsWorkspaces();
   }
   updateDaemonStatus();
 }, 5000);
@@ -905,9 +1028,58 @@ document.addEventListener('click', (e) => {
     case 'close-modal': closeModal(); break;
     case 'install-catalog': installCatalogItem(name, btn.dataset.installed === 'true'); break;
     case 'uninstall-catalog': uninstallCatalogItem(name); break;
+    case 'open-external': window.api.openExternal(btn.dataset.url); break;
+    // D23: Login flow
+    case 'agent-login': agentLogin(type); break;
+    // D24: Daemon toggle
+    case 'toggle-daemon': toggleDaemon(); break;
   }
 });
+
+// ---- D23: Agent login flow ----
+
+async function agentLogin(agentType) {
+  const loginCommands = {
+    claude: 'claude login',
+    openclaw: 'openclaw login',
+    codex: 'codex login',
+    copilot: 'github-copilot login',
+  };
+  const cmd = loginCommands[agentType];
+  if (!cmd) {
+    showToast(`No login command for ${agentType}. Configure API key instead.`, 'info');
+    openConfigureScreen(agentType);
+    return;
+  }
+  showToast(`Opening ${agentType} login...`, 'info');
+  try {
+    await window.api.shellExec(cmd);
+    showToast(`${agentType} login complete`, 'success');
+  } catch (err) {
+    showToast(`Login failed: ${err.message}`, 'error');
+  }
+}
+
+// ---- D24: Daemon toggle ----
+
+async function toggleDaemon() {
+  const el = document.getElementById('daemon-status');
+  const isRunning = el && el.textContent.includes('running');
+  try {
+    if (isRunning) {
+      await window.api.stopAll();
+      showToast('Daemon stopped', 'info');
+    } else {
+      await window.api.startAll();
+      showToast('Daemon starting...', 'info');
+    }
+    setTimeout(() => refreshDashboard(), 2000);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
 
 // ---- Initial load ----
 
 refreshDashboard();
+renderActivity();

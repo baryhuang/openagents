@@ -33,7 +33,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <div class="daemon-status" id="daemon-status">
+        <div class="daemon-status" id="daemon-status" data-action="toggle-daemon" style="cursor:pointer;" title="Click to toggle daemon">
           <span class="status-dot offline"></span>
           <span>Daemon: offline</span>
         </div>
@@ -62,6 +62,12 @@
         <div class="actions-bar">
           <button class="btn btn-primary" id="btn-start-all">Start All</button>
           <button class="btn btn-danger" id="btn-stop-all">Stop All</button>
+        </div>
+
+        <!-- D25: Activity log panel -->
+        <div class="card" id="activity-log-card" style="margin-top:20px;">
+          <h3>Activity</h3>
+          <div id="activity-log" class="activity-log"></div>
         </div>
       </section>
 
@@ -112,6 +118,9 @@
             <option value="">All agents</option>
           </select>
           <button class="btn" id="btn-refresh-logs">Refresh</button>
+          <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="log-auto-refresh" checked> Auto-refresh
+          </label>
         </div>
         <pre class="log-viewer" id="log-viewer">No logs available.</pre>
       </section>
@@ -133,8 +142,12 @@
           </div>
         </div>
         <div class="card">
+          <h3>Workspaces</h3>
+          <div id="settings-workspaces" class="hint">Loading...</div>
+        </div>
+        <div class="card">
           <h3>About</h3>
-          <p>OpenAgents Connector v0.1.0</p>
+          <p>OpenAgents Connector <span id="about-version">--</span></p>
           <p><a href="#" id="link-docs">Documentation</a></p>
         </div>
       </section>

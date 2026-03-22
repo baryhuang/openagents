@@ -898,3 +898,134 @@ h1 {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   D25: Activity log panel
+   ============================================ */
+.activity-log {
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.activity-log-entry {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+
+.activity-log-entry:last-child {
+  border-bottom: none;
+}
+
+.activity-log-time {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  flex-shrink: 0;
+  min-width: 50px;
+}
+
+.activity-log-msg {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* ============================================
+   D26: Responsive agent cards
+   ============================================ */
+@media (min-width: 700px) {
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+@media (max-width: 500px) {
+  #sidebar {
+    width: 54px;
+  }
+  .sidebar-header h2,
+  .sidebar-header .version,
+  .nav-item span:not(.nav-icon) {
+    display: none;
+  }
+  .nav-item { justify-content: center; }
+  .nav-icon { margin: 0; }
+  #content { padding: 20px 16px; }
+  .agent-card-header { flex-wrap: wrap; }
+  .agent-list-item { flex-direction: column; }
+  .agent-list-actions { justify-content: flex-start; }
+}
+
+/* ============================================
+   D27: Loading spinner
+   ============================================ */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.btn-loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.btn-loading::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* ============================================
+   D29: Workspace URL in Settings
+   ============================================ */
+.workspace-url-list {
+  list-style: none;
+  padding: 0;
+}
+
+.workspace-url-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.workspace-url-item:last-child {
+  border-bottom: none;
+}
+
+.workspace-url-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workspace-url-link {
+  color: var(--text-link);
+  cursor: pointer;
+  font-size: 11px;
+}

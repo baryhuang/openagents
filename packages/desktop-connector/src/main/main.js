@@ -171,8 +171,16 @@ function setupIPC() {
   ipcMain.handle('settings:get', (_e, key) => store.get(key));
   ipcMain.handle('settings:set', (_e, key, value) => store.set(key, value));
 
+  // Health check
+  ipcMain.handle('agents:health-check', (_e, type) => mgr.healthCheck(type));
+
   // Shell
   ipcMain.handle('shell:open-external', (_e, url) => shell.openExternal(url));
+  ipcMain.handle('shell:exec', (_e, cmd) => {
+    const { execSync } = require('child_process');
+    const { getEnhancedEnv } = require('@openagents-org/agent-connector').paths;
+    return execSync(cmd, { encoding: 'utf-8', timeout: 30000, env: getEnhancedEnv() });
+  });
 }
 
 // ---- App lifecycle ----

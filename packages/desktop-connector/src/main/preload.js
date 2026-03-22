@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld('api', {
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
 
+  // Health check
+  healthCheck: (type) => ipcRenderer.invoke('agents:health-check', type),
+
   // Shell
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
+  shellExec: (cmd) => ipcRenderer.invoke('shell:exec', cmd),
 });

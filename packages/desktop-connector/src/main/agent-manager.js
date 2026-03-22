@@ -202,6 +202,10 @@ class AgentManager {
     return { lines: logLines };
   }
 
+  healthCheck(type) {
+    return this._connector.healthCheck(type);
+  }
+
   // ------------------------------------------------------------------
   // Internal
   // ------------------------------------------------------------------
