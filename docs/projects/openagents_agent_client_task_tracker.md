@@ -102,15 +102,15 @@ openagents/
 | # | Task | Priority | Status | Notes |
 |---|------|----------|--------|-------|
 | D21 | Fix GBK encoding — garbled error messages on Chinese locale Windows | Medium | Done | chcp 65001, PYTHONIOENCODING=utf-8, setEncoding('utf-8') on streams |
-| D22 | Auto-install dependencies — Node.js, Git, etc. when installing agent type | Low | Pending | TUI does this; desktop app delegates to SDK install but doesn't handle deps |
-| D23 | Login for agent types — agent-specific login (e.g. `claude login`) | Low | Pending | TUI supports `l` key for login; desktop app has no login flow |
-| D24 | Daemon start/stop toggle — explicit daemon on/off button | Low | Pending | TUI has `u` key; desktop app has start/stop all but no daemon toggle |
-| D25 | Activity log panel — live action feed on dashboard | Low | Pending | TUI has live activity log; desktop app only shows daemon.log file |
-| D26 | Responsive agent cards — adapt layout to window size | Low | Pending | |
-| D27 | Loading states — spinners during async operations | Low | Pending | |
-| D28 | Auto-refresh logs — scroll to bottom, periodic refresh on logs tab | Low | Pending | |
-| D29 | Workspace URL display — show full URL, not just slug | Low | Pending | |
-| D30 | Move app from `workspace/apps/desktop-connector/` to `packages/desktop-connector/` | High | Pending | Part of repo restructure to consolidate Node.js packages |
+| D22 | Auto-install dependencies — Node.js, Git, etc. when installing agent type | Low | Done | Checks required deps before install, warns if missing |
+| D23 | Login for agent types — agent-specific login (e.g. `claude login`) | Low | Done | Login button in agent actions modal, runs agent-specific login commands |
+| D24 | Daemon start/stop toggle — explicit daemon on/off button | Low | Done | Clickable daemon status bar toggles start/stop |
+| D25 | Activity log panel — live action feed on dashboard | Low | Done | Captures toast events as activity feed on dashboard |
+| D26 | Responsive agent cards — adapt layout to window size | Low | Done | CSS grid on wide screens, collapsed sidebar on narrow |
+| D27 | Loading states — spinners during async operations | Low | Done | Spinner animation on buttons during async ops |
+| D28 | Auto-refresh logs — scroll to bottom, periodic refresh on logs tab | Low | Done | 3s auto-refresh with toggle checkbox |
+| D29 | Workspace URL display — show full URL, not just slug | Low | Done | Full URLs with tokens in Settings tab |
+| D30 | Move app from `workspace/apps/desktop-connector/` to `packages/desktop-connector/` | High | Done | Already moved in repo restructure |
 
 ---
 
