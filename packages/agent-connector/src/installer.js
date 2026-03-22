@@ -353,7 +353,18 @@ class Installer {
     const sep = process.platform === 'win32' ? ';' : ':';
     const extraDirs = [];
     try { extraDirs.push(path.dirname(process.execPath)); } catch {}
+
+    // Check for bundled Node.js in ~/.openagents/nodejs/
     if (process.platform === 'win32') {
+      try {
+        const bundledDir = path.join(this.configDir, 'nodejs');
+        if (fs.existsSync(bundledDir)) {
+          const entries = fs.readdirSync(bundledDir).filter(e => e.startsWith('node-'));
+          if (entries.length > 0) {
+            extraDirs.push(path.join(bundledDir, entries[0]));
+          }
+        }
+      } catch {}
       const appData = env.APPDATA || '';
       if (appData) extraDirs.push(path.join(appData, 'npm'));
       extraDirs.push(env.ProgramFiles ? path.join(env.ProgramFiles, 'nodejs') : 'C:\\Program Files\\nodejs');
@@ -374,7 +385,21 @@ class Installer {
    * Check if Node.js/npm is available on the system.
    */
   hasNodejs() {
-    return !!whichBinary('node') && !!whichBinary('npm');
+    if (whichBinary('node') && whichBinary('npm')) return true;
+    // Check bundled Node.js in ~/.openagents/nodejs/
+    if (process.platform === 'win32') {
+      try {
+        const bundledDir = path.join(this.configDir, 'nodejs');
+        if (fs.existsSync(bundledDir)) {
+          const entries = fs.readdirSync(bundledDir).filter(e => e.startsWith('node-'));
+          if (entries.length > 0) {
+            const nodeExe = path.join(bundledDir, entries[0], 'node.exe');
+            return fs.existsSync(nodeExe);
+          }
+        }
+      } catch {}
+    }
+    return false;
   }
 
   /**
@@ -393,34 +418,42 @@ class Installer {
     if (onData) onData(`Node.js not found. Installing Node.js ${nodeVersion}...\n\n`);
 
     if (plat === 'windows') {
-      // Download MSI installer and run silently
+      // Download portable zip — no admin required
       const arch = os.arch() === 'x64' ? 'x64' : 'x86';
-      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-${arch}.msi`;
-      const msiPath = path.join(os.tmpdir(), `node-${nodeVersion}.msi`);
+      const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-win-${arch}.zip`;
+      const zipPath = path.join(os.tmpdir(), `node-${nodeVersion}.zip`);
 
       if (onData) onData(`Downloading ${url}...\n`);
-      await this._downloadFile(url, msiPath, onData);
+      await this._downloadFile(url, zipPath, onData);
 
-      if (onData) onData(`\nInstalling Node.js (this may take a minute)...\n`);
+      // Extract to ~/.openagents/nodejs/
+      const nodejsDir = path.join(this.configDir, 'nodejs');
+      fs.mkdirSync(nodejsDir, { recursive: true });
+
+      if (onData) onData(`\nExtracting Node.js to ${nodejsDir}...\n`);
       await new Promise((resolve, reject) => {
-        const proc = spawnProc('msiexec', ['/i', msiPath, '/quiet', '/norestart'], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
+        const proc = spawnProc('powershell', [
+          '-NoProfile', '-Command',
+          `Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force`
+        ], { stdio: ['ignore', 'pipe', 'pipe'] });
         if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d.toString()); });
         if (proc.stderr) proc.stderr.on('data', (d) => { if (onData) onData(d.toString()); });
         proc.on('error', reject);
         proc.on('close', (code) => {
           if (code === 0) resolve();
-          else reject(new Error(`MSI installer exited with code ${code}`));
+          else reject(new Error(`Extraction failed with code ${code}`));
         });
       });
 
-      // Add to PATH for this session
-      const nodejsDir = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs');
+      // The zip extracts to node-vX.X.X-win-x64/ subfolder
+      const extractedDir = path.join(nodejsDir, `node-${nodeVersion}-win-${arch}`);
       const sep = ';';
-      if (!(process.env.PATH || '').includes(nodejsDir)) {
-        process.env.PATH = nodejsDir + sep + (process.env.PATH || '');
+
+      // Add extracted node dir to PATH for this session
+      if (!(process.env.PATH || '').includes(extractedDir)) {
+        process.env.PATH = extractedDir + sep + (process.env.PATH || '');
       }
+      // npm global installs go to %APPDATA%\npm
       const npmGlobal = path.join(process.env.APPDATA || '', 'npm');
       if (npmGlobal && !(process.env.PATH || '').includes(npmGlobal)) {
         process.env.PATH = npmGlobal + sep + process.env.PATH;
