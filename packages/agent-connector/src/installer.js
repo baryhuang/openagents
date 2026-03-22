@@ -470,7 +470,7 @@ class Installer {
       if (onData) onData(`Downloading ${url}...\n`);
       await this._downloadFile(url, tarPath, onData);
 
-      const nodeDir = path.join(this.config.configDir, 'nodejs');
+      const nodeDir = path.join(this.configDir, 'nodejs');
       fs.mkdirSync(nodeDir, { recursive: true });
 
       if (onData) onData(`\nExtracting to ${nodeDir}...\n`);
