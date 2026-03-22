@@ -153,10 +153,9 @@ describe('Daemon', () => {
     assert.equal(Daemon.readDaemonPid(tmpDir), process.pid);
   });
 
-  it('readDaemonPid cleans stale pid', () => {
+  it('readDaemonPid returns pid without validating liveness', () => {
     fs.writeFileSync(path.join(tmpDir, 'daemon.pid'), '99999999', 'utf-8');
-    assert.equal(Daemon.readDaemonPid(tmpDir), null);
-    // PID file should be cleaned up
-    assert.equal(fs.existsSync(path.join(tmpDir, 'daemon.pid')), false);
+    // PID validation removed — returns raw value (liveness checked elsewhere)
+    assert.equal(Daemon.readDaemonPid(tmpDir), 99999999);
   });
 });

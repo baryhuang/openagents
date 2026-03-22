@@ -40,7 +40,8 @@ describe('CLI', () => {
   it('version', () => {
     const out = run('version');
     assert.ok(out.includes('@openagents-org/agent-connector'));
-    assert.ok(out.includes('0.1.0'));
+    const pkg = require('../package.json');
+    assert.ok(out.includes(pkg.version));
   });
 
   it('search returns catalog entries', () => {
