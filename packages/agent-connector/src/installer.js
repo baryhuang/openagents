@@ -180,12 +180,17 @@ class Installer {
     }
 
     const installCmd = this._getInstallCommand(entry.install);
-    const cmd = this._deriveUninstallCommand(installCmd);
+    let cmd = this._deriveUninstallCommand(installCmd);
     if (!cmd) {
       throw new Error(`Cannot derive uninstall command for ${agentType}`);
     }
 
-    if (onData) onData(`$ ${cmd}\n`);
+    // Add verbose logging for npm so user sees progress
+    if (cmd.includes('npm uninstall') && !cmd.includes('--loglevel')) {
+      cmd = cmd.replace('npm uninstall', 'npm uninstall --loglevel=notice');
+    }
+
+    if (onData) onData(`$ ${cmd}\n\n`);
 
     const env = this._buildShellEnv();
     const shell = process.platform === 'win32'

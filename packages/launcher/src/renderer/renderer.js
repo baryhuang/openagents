@@ -860,10 +860,25 @@ async function uninstallCatalogItem(name) {
   const logEl = document.getElementById('install-live-log');
   const doneBar = document.getElementById('install-done-bar');
 
+  let lastOutputTime = Date.now();
   window.api.onInstallOutput((data) => {
     logEl.textContent += data;
     logEl.scrollTop = logEl.scrollHeight;
+    lastOutputTime = Date.now();
   });
+
+  const timerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - lastOutputTime) / 1000);
+    if (elapsed > 3) {
+      const statusLine = document.getElementById('install-status-line');
+      if (statusLine) statusLine.textContent = `Removing packages... (${elapsed}s)`;
+    }
+  }, 1000);
+
+  const statusEl = document.createElement('div');
+  statusEl.id = 'install-status-line';
+  statusEl.style.cssText = 'color:var(--text-tertiary);font-size:12px;margin-top:8px;';
+  logEl.parentNode.insertBefore(statusEl, logEl.nextSibling);
 
   try {
     await window.api.uninstallAgentTypeStreaming(name);
@@ -872,6 +887,8 @@ async function uninstallCatalogItem(name) {
     logEl.textContent += `\n✗ Error: ${err.message}\n`;
   }
 
+  clearInterval(timerInterval);
+  if (statusEl) statusEl.remove();
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
   document.getElementById('install-back-btn').addEventListener('click', () => {
