@@ -1,6 +1,6 @@
 {
   "name": "@openagents-org/agent-connector",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Agent management CLI and library for OpenAgents — install, configure, and run AI coding agents",
   "main": "src/index.js",
   "bin": {
@@ -11,7 +11,13 @@
     "build:registry": "node scripts/build-registry.js",
     "lint": "eslint src/"
   },
-  "keywords": ["openagents", "ai", "agent", "coding", "cli"],
+  "keywords": [
+    "openagents",
+    "ai",
+    "agent",
+    "coding",
+    "cli"
+  ],
   "author": "OpenAgents",
   "license": "MIT",
   "repository": {
