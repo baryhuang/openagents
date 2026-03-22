@@ -595,11 +595,24 @@ class Daemon {
     const line = `${ts} INFO daemon: ${msg}`;
     try {
       fs.appendFileSync(this.config.logFile, line + '\n', 'utf-8');
+      this._maybeRotateLog();
     } catch {}
     if (!this._shuttingDown) {
-      // Also log to console when running in foreground
       console.log(line);
     }
+  }
+
+  _maybeRotateLog() {
+    // Rotate at 10MB, keep 1 backup
+    const MAX_SIZE = 10 * 1024 * 1024;
+    try {
+      const stat = fs.statSync(this.config.logFile);
+      if (stat.size > MAX_SIZE) {
+        const backup = this.config.logFile + '.1';
+        try { fs.unlinkSync(backup); } catch {}
+        fs.renameSync(this.config.logFile, backup);
+      }
+    } catch {}
   }
 
   _sleep(ms) {

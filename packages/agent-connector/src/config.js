@@ -149,7 +149,7 @@ class Config {
     try {
       if (!fs.existsSync(this.logFile)) return [];
       const content = fs.readFileSync(this.logFile, 'utf-8');
-      let allLines = content.split('\n');
+      let allLines = content.split('\n').filter(Boolean);
       if (agentName) {
         allLines = allLines.filter(
           (l) => l.includes(agentName) || l.includes('daemon') || l.includes('Daemon')
@@ -158,6 +158,37 @@ class Config {
       return allLines.slice(-lines);
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Tail log file with optional filter. Returns { lines, size }.
+   * @param {Object} opts - { agent, lines, offset }
+   * @param {string} [opts.agent] - Filter by agent name
+   * @param {number} [opts.lines=100] - Number of lines to return
+   * @param {number} [opts.offset=0] - Byte offset for incremental reads (0 = from end)
+   */
+  tailLogs(opts = {}) {
+    const { agent, lines = 100, offset = 0 } = opts;
+    try {
+      if (!fs.existsSync(this.logFile)) return { lines: [], size: 0 };
+      const stat = fs.statSync(this.logFile);
+      if (offset > 0 && offset < stat.size) {
+        // Incremental read from offset
+        const fd = fs.openSync(this.logFile, 'r');
+        const buf = Buffer.alloc(stat.size - offset);
+        fs.readSync(fd, buf, 0, buf.length, offset);
+        fs.closeSync(fd);
+        let newLines = buf.toString('utf-8').split('\n').filter(Boolean);
+        if (agent) {
+          newLines = newLines.filter(l => l.includes(agent) || l.includes('Daemon'));
+        }
+        return { lines: newLines, size: stat.size };
+      }
+      // Full read, return last N
+      return { lines: this.getLogs(agent, lines), size: stat.size };
+    } catch {
+      return { lines: [], size: 0 };
     }
   }
 }
