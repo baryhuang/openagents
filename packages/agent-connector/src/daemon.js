@@ -161,7 +161,7 @@ class Daemon {
     const opts = {
       detached: true,
       stdio: ['ignore', logFd, logFd],
-      env: { ...process.env },
+      env: getEnhancedEnv(),
     };
     if (IS_WINDOWS) opts.windowsHide = true;
 
