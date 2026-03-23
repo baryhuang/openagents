@@ -159,22 +159,23 @@ jobs:
               await waitFor('Agent Runtimes', 10000);
             });
 
-            // 4. Install OpenClaw by clicking the Install button in the catalog
-            await step('Click Install on OpenClaw', async () => {
+            // 4+5. Install OpenClaw via UI (skip if already installed)
+            let ocInstalled = false;
+            await step('Install OpenClaw via UI', async () => {
               const text = await bodyText();
-              if (text.includes('OpenClaw') && text.includes('INSTALLED')) { console.log('(skip) '); return; }
+              if (text.includes('OpenClaw') && text.includes('INSTALLED')) {
+                ocInstalled = true; console.log('(already installed) '); return;
+              }
               // Find OpenClaw row and click its Install button
               await run(`(function(){var rows=document.querySelectorAll('.catalog-row');for(var i=0;i<rows.length;i++){if(rows[i].textContent.includes('OpenClaw')){rows[i].querySelector('button').click();return}}throw new Error('OpenClaw not in catalog')})()`);
               await sleep(2000);
               // Confirm dialog
               try { await clickBtn('Install'); } catch {}
-            });
-
-            // 5. Wait for OpenClaw installation to complete
-            await step('Wait for OpenClaw install to finish', async () => {
-              await waitFor('Back to Install', 300000); // up to 5 min
+              // Wait for install to complete (up to 5 min)
+              await waitFor('Back to Install', 300000);
               await clickBtn('Back to Install');
               await sleep(2000);
+              ocInstalled = true;
             });
 
             // 6. Go to Dashboard, create a new agent
