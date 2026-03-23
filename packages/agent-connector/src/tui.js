@@ -639,14 +639,14 @@ function createTUI() {
     const nameInput = blessed.textbox({
       parent: dialog, top: 2, left: 2, width: 50, height: 3,
       border: { type: 'line' }, inputOnFocus: true,
-      style: { focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
+      style: { fg: 'white', bg: COLORS.surface, focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
     });
 
-    blessed.text({ parent: dialog, top: 5, left: 2, tags: true, content: `{bold}Working directory:{/bold} {gray-fg}(default: cwd){/gray-fg}` });
+    blessed.text({ parent: dialog, top: 5, left: 2, tags: true, content: `{bold}Working directory:{/bold} {gray-fg}(default: ${defaultPath}){/gray-fg}` });
     const pathInput = blessed.textbox({
       parent: dialog, top: 6, left: 2, width: 50, height: 3,
       border: { type: 'line' }, inputOnFocus: true,
-      style: { focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
+      style: { fg: 'white', bg: COLORS.surface, focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
     });
 
     blessed.text({
@@ -724,7 +724,7 @@ function createTUI() {
         border: { type: 'line' }, inputOnFocus: true,
         value: current,
         censor: field.password || false,
-        style: { focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
+        style: { fg: 'white', bg: COLORS.surface, focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
       });
       input._fieldName = field.name;
       inputs.push(input);
@@ -981,7 +981,7 @@ function createTUI() {
       top: 1, left: 2, width: '100%-6', height: 3,
       border: { type: 'line' }, inputOnFocus: true,
       value: defaultValue || '',
-      style: { focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
+      style: { fg: 'white', bg: COLORS.surface, focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
     });
 
     blessed.text({
