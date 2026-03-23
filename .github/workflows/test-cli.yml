@@ -3,9 +3,6 @@ on: workflow_dispatch
 jobs:
   test-macos:
     runs-on: [self-hosted, macos, desktop-test]
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
     steps:
       - name: Clean previous install
         run: |
@@ -14,10 +11,12 @@ jobs:
         continue-on-error: true
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Check install.sh exists
-        run: ls -la install.sh
       - name: Run install.sh
-        run: bash install.sh
+        working-directory: ${{ github.workspace }}
+        run: |
+          pwd
+          ls -la install.sh
+          bash install.sh
       - name: Verify CLI installed
         run: |
           export PATH="/usr/local/bin:$HOME/.npm-global/bin:$PATH"
@@ -44,14 +43,13 @@ jobs:
         continue-on-error: true
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Check Node.js available
-        run: |
-          try { node --version } catch { echo "Node.js not found" }
-          try { npm --version } catch { echo "npm not found" }
-        shell: powershell
-        continue-on-error: true
       - name: Run install.ps1
-        run: powershell -ExecutionPolicy Bypass -File install.ps1
+        working-directory: ${{ github.workspace }}
+        run: |
+          Get-Location
+          Get-ChildItem install.ps1
+          powershell -ExecutionPolicy Bypass -File install.ps1
+        shell: powershell
         continue-on-error: true
       - name: Verify CLI installed
         run: |
