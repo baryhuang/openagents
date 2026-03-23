@@ -65,6 +65,10 @@ jobs:
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
           openagents list
           type "%USERPROFILE%\.openagents\daemon.yaml"
+          echo === ENV FILE ===
+          type "%USERPROFILE%\.openagents\env\openclaw.env" 2>nul || echo No env file
+          echo === ENV DISPLAY ===
+          openagents env openclaw
 
       - name: Start daemon
         shell: cmd
