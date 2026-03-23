@@ -1386,6 +1386,21 @@ function createTUI() {
   agentList.focus();
   refreshAgentTable();
   log('Welcome to {bold}OpenAgents{/bold}. Press {cyan-fg}i{/cyan-fg} to install agents, {cyan-fg}n{/cyan-fg} to create one.');
+
+  // Show installed runtimes that don't have any agent instances yet
+  try {
+    const catalog = loadCatalog(connector);
+    const installed = catalog.filter(e => e.installed).map(e => e.name);
+    const configuredTypes = new Set(agentRows.map(r => r.type));
+    const unused = installed.filter(t => !configuredTypes.has(t));
+    if (unused.length > 0) {
+      log(`{green-fg}\u2713{/green-fg} Installed: {bold}${unused.join(', ')}{/bold} — press {cyan-fg}n{/cyan-fg} to create an agent`);
+    }
+    if (installed.length === 0) {
+      log('{yellow-fg}!{/yellow-fg} No agent runtimes installed. Press {cyan-fg}i{/cyan-fg} to install one.');
+    }
+  } catch {}
+
   setInterval(refreshAgentTable, 5000);
   screen.render();
 }
