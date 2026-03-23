@@ -91,7 +91,11 @@ jobs:
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           $env:NODE_PATH = "$env:USERPROFILE\Desktop\launcher-e2e\node_modules"
-          node $env:GITHUB_WORKSPACE\e2e-launcher-test.js
+          # Copy test script to launcher dir where ws module is available
+          Copy-Item "$env:GITHUB_WORKSPACE\e2e-launcher-test.js" "$env:USERPROFILE\Desktop\launcher-e2e\e2e-test.js"
+          Push-Location "$env:USERPROFILE\Desktop\launcher-e2e"
+          node e2e-test.js
+          Pop-Location
 
       - name: Collect logs
         if: always()
