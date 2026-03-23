@@ -7,7 +7,7 @@
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$VERSION = "1.0.1"
+$VERSION = "1.0.2"
 $NPM_PACKAGE = "@openagents-org/agent-launcher"
 $MIN_NODE_MAJOR = 18
 
@@ -180,16 +180,38 @@ Write-Host ""
 Write-Host "  Installation complete!" -ForegroundColor Green
 Write-Host ""
 
-# Check if openagents needs PATH hint
-$needsPath = ""
-if (-not (Get-Command openagents -ErrorAction SilentlyContinue) -and $oaBin) {
-    $needsPath = Split-Path $oaBin
+# Auto-configure PATH if needed
+$needsPath = @()
+# Check if openagents bin dir is on user PATH
+if ($oaBin) {
+    $oaDir = Split-Path $oaBin
+    $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($userPath -notlike "*$oaDir*") {
+        $needsPath += $oaDir
+    }
+}
+# Check if portable nodejs needs to be on PATH
+$nodejsDir = Join-Path $env:USERPROFILE ".openagents\nodejs"
+if (Test-Path (Join-Path $nodejsDir "node.exe")) {
+    $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($userPath -notlike "*$nodejsDir*") {
+        $needsPath += $nodejsDir
+    }
 }
 
-if ($needsPath) {
-    Write-Host "  Add to your PATH:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "    `$env:PATH = `"$needsPath;`$env:PATH`"" -ForegroundColor White
+if ($needsPath.Count -gt 0) {
+    $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    $additions = ($needsPath -join ";")
+    if ($userPath) {
+        $newPath = "$additions;$userPath"
+    } else {
+        $newPath = $additions
+    }
+    [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+    # Also update current session
+    $env:PATH = "$additions;$env:PATH"
+    Ok "PATH configured for: $($needsPath -join ', ')"
+    Write-Host "  Restart your terminal for PATH changes to take effect." -ForegroundColor DarkGray
     Write-Host ""
 }
 
