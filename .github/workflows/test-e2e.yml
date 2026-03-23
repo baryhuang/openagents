@@ -178,23 +178,26 @@ jobs:
               ocInstalled = true;
             });
 
-            // 6. Go to Dashboard, create a new agent
-            await step('Create new agent via Dashboard', async () => {
+            // 6. Create a new agent
+            await step('Create new agent', async () => {
+              // Check dashboard first for existing agents
               await clickTab('dashboard');
               await sleep(2000);
-              const text = await bodyText();
-              // Check if any agent card already exists
-              if (text.includes('stopped') || text.includes('running') || text.includes('Actions')) {
+              const dashText = await bodyText();
+              if (dashText.includes('stopped') || dashText.includes('running') || dashText.includes('Actions')) {
                 console.log('(agent exists) '); return;
               }
-              // Click whichever button is available
-              const clicked = await run(`(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){var t=b[i].textContent.trim();if(t==='New Agent'||t==='Add Agent'||t==='New'){b[i].click();return t}}return 'none'})()`);
-              if (clicked === 'none') throw new Error('No New Agent button found');
+              // Go to Agents tab where the create form is
+              await clickTab('agents');
+              await sleep(2000);
+              // The Agents tab should have a form with name input and type selector
+              // Click the Create button (data-action="do-add-agent")
+              const r = await run(`(function(){var b=document.querySelector('[data-action="do-add-agent"]');if(b){b.click();return 'ok'}var btns=document.querySelectorAll('button');for(var i=0;i<btns.length;i++){if(btns[i].textContent.trim()==='Create'){btns[i].click();return 'ok'}}return 'none'})()`);
+              if (r === 'none') throw new Error('No Create button on Agents tab');
               await sleep(3000);
-              // Click Create in the dialog (might be "Create", "Add", or "OK")
-              const created = await run(`(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){var t=b[i].textContent.trim();if(t==='Create'||t==='Add'||t==='OK'){b[i].click();return t}}return 'none'})()`);
-              if (created === 'none') throw new Error('No Create button in dialog');
-              await sleep(3000);
+              // Go back to dashboard to verify
+              await clickTab('dashboard');
+              await sleep(2000);
             });
 
             // 7. Configure LLM via the Configure dialog
