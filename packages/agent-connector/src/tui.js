@@ -19,7 +19,7 @@ function getConnector() {
 }
 
 function loadAgentRows(connector) {
-  const config = connector.getConfig();
+  const config = connector.config.load();
   const agents = config.agents || [];
   const status = connector.getDaemonStatus() || {};
   const agentStatuses = status.agents || {};
@@ -38,13 +38,13 @@ function loadAgentRows(connector) {
 }
 
 function loadCatalog(connector) {
-  const registry = connector.getRegistry();
-  return registry.list().map(e => {
+  const entries = connector.registry.getCatalogSync();
+  return entries.map(e => {
     let installed = false;
     try { const { whichBinary } = require('./paths'); installed = !!whichBinary(e.install?.binary || e.name); } catch {}
     if (!installed) {
       try {
-        const f = path.join(connector.config?.configDir || '', 'installed_agents.json');
+        const f = path.join(connector._configDir, 'installed_agents.json');
         if (fs.existsSync(f)) installed = !!JSON.parse(fs.readFileSync(f, 'utf-8'))[e.name];
       } catch {}
     }
@@ -244,60 +244,30 @@ function createTUI() {
   function doInstall(entry, statusBar, list, catalog, renderList) {
     statusBar.setContent(`  Installing ${entry.name}...`);
     screen.render();
+    log('Installing ' + entry.name + '...');
 
-    const installer = connector.getInstaller();
-    const cmd = installer._resolveInstallCommand(entry.name);
-    if (!cmd) {
-      statusBar.setContent(`  Error: No install command for ${entry.name}`);
-      screen.render();
-      list.focus();
-      return;
-    }
-
-    log('$ ' + cmd);
-    statusBar.setContent('  Running: ' + cmd.substring(0, 70));
-    screen.render();
-
-    const env = { ...process.env, npm_config_yes: 'true', CI: '1' };
-    const extra = getExtraBinDirs();
-    if (extra.length) {
-      env.PATH = extra.join(IS_WINDOWS ? ';' : ':') + (IS_WINDOWS ? ';' : ':') + (env.PATH || '');
-    }
-
-    const proc = spawn(cmd, [], { shell: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
-    let lines = 0;
-
-    const onData = (data) => {
-      data.toString().split('\n').filter(l => l.trim()).forEach(line => {
-        lines++;
+    connector.installer.installStreaming(entry.name, (chunk) => {
+      const lines = chunk.split('\n').filter(l => l.trim());
+      for (const line of lines) {
         const clean = line.trim().substring(0, 90);
         log('  ' + clean);
-        statusBar.setContent(`  [${lines}] ${clean.substring(0, 70)}`);
+        statusBar.setContent('  ' + clean.substring(0, 70));
         screen.render();
-      });
-    };
-    proc.stdout.on('data', onData);
-    proc.stderr.on('data', onData);
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        statusBar.setContent(`  Done! ${entry.name} installed successfully.`);
-        statusBar.style.fg = 'green';
-        log(entry.name + ' installed successfully');
-        try {
-          const f = path.join(connector.config?.configDir || '', 'installed_agents.json');
-          let m = {}; try { m = JSON.parse(fs.readFileSync(f, 'utf-8')); } catch {}
-          m[entry.name] = { installed_at: new Date().toISOString() };
-          fs.writeFileSync(f, JSON.stringify(m, null, 2));
-        } catch {}
-        const idx = catalog.findIndex(c => c.name === entry.name);
-        if (idx >= 0) catalog[idx].installed = true;
-        renderList();
-      } else {
-        statusBar.setContent(`  Failed (exit ${code})`);
-        statusBar.style.fg = 'red';
-        log(entry.name + ' install failed (exit ' + code + ')');
       }
+    }).then(() => {
+      statusBar.setContent(`  Done! ${entry.name} installed successfully.`);
+      statusBar.style.fg = 'green';
+      log(entry.name + ' installed successfully');
+      const idx = catalog.findIndex(c => c.name === entry.name);
+      if (idx >= 0) catalog[idx].installed = true;
+      renderList();
+      setTimeout(() => { statusBar.style.fg = 'white'; }, 5000);
+      list.focus();
+      screen.render();
+    }).catch((e) => {
+      statusBar.setContent(`  Failed: ${e.message.substring(0, 60)}`);
+      statusBar.style.fg = 'red';
+      log('Install failed: ' + e.message);
       setTimeout(() => { statusBar.style.fg = 'white'; }, 5000);
       list.focus();
       screen.render();
@@ -336,7 +306,7 @@ function createTUI() {
       if (!name) { msg.setContent('Name is required'); screen.render(); return; }
       if (!type) { msg.setContent('Type is required'); screen.render(); return; }
       try {
-        connector.createAgent(name, type);
+        connector.addAgent({ name, type });
         log('Agent ' + name + ' (' + type + ') created');
       } catch (e) { msg.setContent(e.message); screen.render(); return; }
       screen.remove(dialog); dialog.destroy();
@@ -367,14 +337,14 @@ function createTUI() {
   screen.key('s', () => {
     if (currentView !== 'main' || !agentRows[agentList.selected]) return;
     const a = agentRows[agentList.selected];
-    try { connector.startAgent(a.name); log('Starting ' + a.name + '...'); } catch (e) { log('Error: ' + e.message); }
+    try { connector.sendDaemonCommand('start:' + a.name); log('Starting ' + a.name + '...'); } catch (e) { log('Error: ' + e.message); }
     setTimeout(refreshAgentTable, 2000);
   });
 
   screen.key('x', () => {
     if (currentView !== 'main' || !agentRows[agentList.selected]) return;
     const a = agentRows[agentList.selected];
-    try { connector.stopAgent(a.name); log('Stopped ' + a.name); } catch (e) { log('Error: ' + e.message); }
+    try { connector.sendDaemonCommand('stop:' + a.name); log('Stopped ' + a.name); } catch (e) { log('Error: ' + e.message); }
     setTimeout(refreshAgentTable, 1000);
   });
 
@@ -393,7 +363,7 @@ function createTUI() {
   screen.key('d', () => {
     if (currentView !== 'main' || !agentRows[agentList.selected]) return;
     const a = agentRows[agentList.selected];
-    try { connector.disconnectAgent(a.name); log('Disconnected ' + a.name); } catch (e) { log('Error: ' + e.message); }
+    try { connector.disconnectWorkspace(a.name); log('Disconnected ' + a.name); } catch (e) { log('Error: ' + e.message); }
     refreshAgentTable();
   });
 
