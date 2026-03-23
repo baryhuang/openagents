@@ -861,7 +861,7 @@ function createTUI() {
       parent: box, bottom: 0, left: 0, width: '100%', height: 1,
       tags: true,
       style: { bg: COLORS.footerBg, fg: COLORS.footerFg },
-      content: ' {cyan-fg}Enter{/cyan-fg} Next field  {cyan-fg}Ctrl+S{/cyan-fg} Save  {cyan-fg}Ctrl+T{/cyan-fg} Test  {cyan-fg}Esc{/cyan-fg} Back',
+      content: ' {cyan-fg}Tab{/cyan-fg} Next  {cyan-fg}Ctrl+U{/cyan-fg} Clear  {cyan-fg}Ctrl+S{/cyan-fg} Save  {cyan-fg}Ctrl+T{/cyan-fg} Test  {cyan-fg}Esc{/cyan-fg} Back',
     });
 
     screen.append(box);
@@ -879,7 +879,7 @@ function createTUI() {
       });
     }
 
-    // Override _listener on textboxes to intercept Tab
+    // Override _listener on textboxes to intercept Tab and Escape
     for (let i = 0; i < inputs.length; i++) {
       const orig = inputs[i]._listener.bind(inputs[i]);
       const idx = i;
@@ -889,6 +889,21 @@ function createTUI() {
           inputs[(idx + 1) % inputs.length].focus();
           return;
         }
+        if (key.name === 'escape') {
+          inputs[idx]._done(null, inputs[idx].value);
+          closeConfig();
+          return;
+        }
+        // Ctrl+U to clear field
+        if (key.ctrl && key.name === 'u') {
+          inputs[idx].value = '';
+          inputs[idx].setValue('');
+          screen.render();
+          return;
+        }
+        // Ctrl+S to save, Ctrl+T to test
+        if (key.ctrl && key.name === 's') { inputs[idx]._done(null, inputs[idx].value); doSave(); return; }
+        if (key.ctrl && key.name === 't') { inputs[idx]._done(null, inputs[idx].value); doTest(); return; }
         return orig(ch, key);
       };
     }
