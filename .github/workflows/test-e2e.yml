@@ -91,7 +91,7 @@ jobs:
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           $env:NODE_PATH = "$env:USERPROFILE\Desktop\launcher-e2e\node_modules"
-          node $env:GITHUB_WORKSPACE\infra\e2e-launcher-test.js
+          node $env:GITHUB_WORKSPACE\e2e-launcher-test.js
 
       - name: Collect logs
         if: always()
