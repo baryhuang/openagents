@@ -21,17 +21,17 @@ const COLORS = {
   primary: 'blue',
   accent: 'cyan',
   surface: 'black',
-  headerBg: '#1a1a2e',
+  headerBg: 'blue',
   headerFg: 'white',
-  footerBg: '#16213e',
+  footerBg: 'blue',
   footerFg: 'white',
   panelBorder: 'cyan',
   logBorder: 'blue',
-  colHeaderBg: '#0f3460',
-  colHeaderFg: 'white',
-  selected: { bg: '#1a1a6e', fg: 'white' },
+  colHeaderBg: 'grey',
+  colHeaderFg: 'black',
+  selected: { bg: 'blue', fg: 'white' },
   stateRunning: 'green',
-  stateStopped: 'grey',
+  stateStopped: 'gray',
   stateError: 'red',
   stateStarting: 'yellow',
 };
@@ -151,7 +151,7 @@ function createTUI() {
   const titleBox = blessed.box({
     top: 1, left: 0, width: '100%', height: 1,
     tags: true,
-    content: `  {bold}OpenAgents{/bold} {grey-fg}v${pkg.version}{/grey-fg}`,
+    content: `  {bold}OpenAgents{/bold} {gray-fg}v${pkg.version}{/gray-fg}`,
     style: { fg: 'white' },
   });
 
@@ -218,7 +218,7 @@ function createTUI() {
   // ── Log helper ──
   function log(msg) {
     const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    logContent.log(`{grey-fg}${ts}{/grey-fg}  ${msg}`);
+    logContent.log(`{gray-fg}${ts}{/gray-fg}  ${msg}`);
     screen.render();
   }
 
@@ -261,12 +261,12 @@ function createTUI() {
     try { agentRows = loadAgentRows(connector); } catch { agentRows = []; }
 
     if (agentRows.length === 0) {
-      agentList.setItems(['  {grey-fg}No agents configured. Press {bold}i{/bold} to install, {bold}n{/bold} to create.{/grey-fg}']);
+      agentList.setItems(['  {gray-fg}No agents configured. Press {bold}i{/bold} to install, {bold}n{/bold} to create.{/gray-fg}']);
     } else {
       const items = agentRows.map(r => {
         const state = stateMarkup(r.state);
-        const ws = r.workspace || '{grey-fg}-{/grey-fg}';
-        const pathInfo = r.path ? `{grey-fg} ${r.path}{/grey-fg}` : '';
+        const ws = r.workspace || '{gray-fg}-{/gray-fg}';
+        const pathInfo = r.path ? `{gray-fg} ${r.path}{/gray-fg}` : '';
         return `  ${r.name.padEnd(22)} ${r.type.padEnd(14)} ${state.padEnd(30)} ${ws}${pathInfo}`;
       });
       agentList.setItems(items);
@@ -284,10 +284,10 @@ function createTUI() {
 
   function updateHeader() {
     const pid = connector.getDaemonPid();
-    const dot = pid ? `{green-fg}\u25CF{/green-fg}` : `{grey-fg}\u25CB{/grey-fg}`;
+    const dot = pid ? `{green-fg}\u25CF{/green-fg}` : `{gray-fg}\u25CB{/gray-fg}`;
     const state = pid ? 'Daemon running' : 'Daemon idle';
     const count = agentRows.length;
-    header.setContent(`  ${dot} ${state}  {grey-fg}|{/grey-fg}  ${count} agent${count !== 1 ? 's' : ''} configured`);
+    header.setContent(`  ${dot} ${state}  {gray-fg}|{/gray-fg}  ${count} agent${count !== 1 ? 's' : ''} configured`);
   }
 
   // Update footer when selection changes
@@ -396,7 +396,7 @@ function createTUI() {
       parent: box, top: 0, left: 0, width: '100%', height: 1,
       tags: true,
       style: { bg: COLORS.headerBg, fg: COLORS.headerFg, bold: true },
-      content: '  {bold}Install Agent Runtimes{/bold}  {grey-fg}\u2014  Enter to install, Esc to go back{/grey-fg}',
+      content: '  {bold}Install Agent Runtimes{/bold}  {gray-fg}\u2014  Enter to install, Esc to go back{/gray-fg}',
     });
 
     blessed.box({
@@ -440,7 +440,7 @@ function createTUI() {
           ? `{green-fg}\u25CF installed{/green-fg}`
           : `{yellow-fg}\u25CB available{/yellow-fg}`;
         const desc = e.description ? e.description.substring(0, 40) : '';
-        return `  ${e.label.padEnd(25)} ${st.padEnd(30)} {grey-fg}${desc}{/grey-fg}`;
+        return `  ${e.label.padEnd(25)} ${st.padEnd(30)} {gray-fg}${desc}{/gray-fg}`;
       }));
     }
     renderList();
@@ -486,8 +486,8 @@ function createTUI() {
       const lines = chunk.split('\n').filter(l => l.trim());
       for (const line of lines) {
         const clean = line.trim().substring(0, 90);
-        log(`  {grey-fg}${clean}{/grey-fg}`);
-        installLog.setContent(`  {grey-fg}${clean.substring(0, 80)}{/grey-fg}`);
+        log(`  {gray-fg}${clean}{/gray-fg}`);
+        installLog.setContent(`  {gray-fg}${clean.substring(0, 80)}{/gray-fg}`);
         screen.render();
       }
     }).then(() => {
@@ -542,14 +542,14 @@ function createTUI() {
         selected: { bg: COLORS.selected.bg, fg: COLORS.selected.fg, bold: true },
         item: { fg: 'white' },
       },
-      items: installed.map(e => `  {green-fg}\u2713{/green-fg} ${e.label} {grey-fg}(${e.name}){/grey-fg}`),
+      items: installed.map(e => `  {green-fg}\u2713{/green-fg} ${e.label} {gray-fg}(${e.name}){/gray-fg}`),
     });
 
     blessed.box({
       parent: dialog,
       bottom: 0, left: 0, width: '100%-2', height: 1,
       tags: true,
-      content: ' {grey-fg}Enter to select, Esc to cancel{/grey-fg}',
+      content: ' {gray-fg}Enter to select, Esc to cancel{/gray-fg}',
     });
 
     screen.append(dialog);
@@ -609,7 +609,7 @@ function createTUI() {
     blessed.text({
       parent: dialog, top: 10, left: 2,
       tags: true,
-      content: '{grey-fg}Enter to confirm, Escape to cancel{/grey-fg}',
+      content: '{gray-fg}Enter to confirm, Escape to cancel{/gray-fg}',
     });
 
     const msg = blessed.text({ parent: dialog, top: 11, left: 2, tags: true, content: '' });
@@ -647,7 +647,7 @@ function createTUI() {
     currentView = 'configure';
     const envFields = connector.registry.getEnvFields(agent.type);
     if (!envFields || envFields.length === 0) {
-      log('{grey-fg}No configuration required for this agent type.{/grey-fg}');
+      log('{gray-fg}No configuration required for this agent type.{/gray-fg}');
       return;
     }
 
@@ -659,7 +659,7 @@ function createTUI() {
       parent: box, top: 0, left: 0, width: '100%', height: 1,
       tags: true,
       style: { bg: COLORS.headerBg, fg: COLORS.headerFg, bold: true },
-      content: `  {bold}Configure ${agent.type}{/bold}  {grey-fg}\u2014  Saved to ~/.openagents/env/{/grey-fg}`,
+      content: `  {bold}Configure ${agent.type}{/bold}  {gray-fg}\u2014  Saved to ~/.openagents/env/{/gray-fg}`,
     });
 
     const inputs = [];
@@ -762,7 +762,7 @@ function createTUI() {
         return;
       }
 
-      testResult.setContent('{grey-fg}Testing...{/grey-fg}');
+      testResult.setContent('{gray-fg}Testing...{/gray-fg}');
       screen.render();
 
       connector.testLLM(effective).then(result => {
@@ -809,7 +809,7 @@ function createTUI() {
       parent: box, top: 0, left: 0, width: '100%', height: 1,
       tags: true,
       style: { bg: COLORS.headerBg, fg: COLORS.headerFg, bold: true },
-      content: `  {bold}Connect '${agentName}' to Workspace{/bold}  {grey-fg}\u2014  Select a workspace and press Enter{/grey-fg}`,
+      content: `  {bold}Connect '${agentName}' to Workspace{/bold}  {gray-fg}\u2014  Select a workspace and press Enter{/gray-fg}`,
     });
 
     blessed.box({
@@ -827,7 +827,7 @@ function createTUI() {
       const slug = net.slug || net.id;
       const isLocal = (net.endpoint || '').includes('localhost') || (net.endpoint || '').includes('127.0.0.1');
       const url = isLocal ? `${net.endpoint}/${slug}` : `https://workspace.openagents.org/${slug}`;
-      items.push(`  ${name.padEnd(30)} {grey-fg}${url}{/grey-fg}`);
+      items.push(`  ${name.padEnd(30)} {gray-fg}${url}{/gray-fg}`);
       rowActions.push(`existing:${slug}`);
     }
 
@@ -907,7 +907,7 @@ function createTUI() {
       border: { type: 'line' },
       tags: true,
       style: { border: { fg: COLORS.accent }, bg: COLORS.surface },
-      content: `\n  ${message}\n  {grey-fg}y = yes, n = no{/grey-fg}`,
+      content: `\n  ${message}\n  {gray-fg}y = yes, n = no{/gray-fg}`,
     });
     screen.append(dialog);
     screen.render();
@@ -942,7 +942,7 @@ function createTUI() {
     blessed.text({
       parent: dialog, top: 4, left: 2,
       tags: true,
-      content: '{grey-fg}Enter to confirm, Escape to cancel{/grey-fg}',
+      content: '{gray-fg}Enter to confirm, Escape to cancel{/gray-fg}',
     });
 
     screen.append(dialog);
@@ -1091,7 +1091,7 @@ function createTUI() {
       tags: true,
       label: ' {bold}Workspace URL{/bold} ',
       style: { border: { fg: COLORS.accent }, bg: COLORS.surface },
-      content: `\n  ${url}\n\n  {grey-fg}${opened ? 'Opened in browser.' : 'Copy the URL above.'} Press Esc to close.{/grey-fg}`,
+      content: `\n  ${url}\n\n  {gray-fg}${opened ? 'Opened in browser.' : 'Copy the URL above.'} Press Esc to close.{/gray-fg}`,
     });
 
     screen.append(dialog);
@@ -1232,7 +1232,7 @@ function createTUI() {
     const pid = connector.getDaemonPid();
     if (pid) {
       showConfirmDialog('Stop daemon? This will disconnect ALL agents.', (yes) => {
-        if (!yes) { log('{grey-fg}Cancelled{/grey-fg}'); return; }
+        if (!yes) { log('{gray-fg}Cancelled{/gray-fg}'); return; }
         try {
           connector.stopDaemon();
           log('{green-fg}\u2713{/green-fg} Daemon stopped');
