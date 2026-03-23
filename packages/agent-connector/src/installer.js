@@ -36,7 +36,12 @@ class Installer {
    */
   isInstalled(agentType) {
     if (this._whichBinary(agentType)) return true;
-    return this._hasMarker(agentType);
+    if (this._hasMarker(agentType)) {
+      // Marker exists but binary not found — stale marker, clean it up
+      this._markUninstalled(agentType);
+      return false;
+    }
+    return false;
   }
 
   /**
