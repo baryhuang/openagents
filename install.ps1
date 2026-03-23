@@ -107,14 +107,13 @@ if (-not $npmCmd) {
 # Check if already installed (ignore old Python openagents)
 $existing = Get-Command openagents -ErrorAction SilentlyContinue
 if ($existing) {
-    try {
-        $currentVer = & openagents --version 2>$null | Select-Object -First 1
-        if ($currentVer -and $currentVer -match 'agent-launcher|agent-connector') {
-            Ok "openagents already installed ($currentVer)"
-            Info "Upgrading to latest..."
-        }
-    } catch {
-        # Old Python version or broken install — ignore
+    $savedPref = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    $currentVer = & openagents --version 2>&1 | Select-Object -First 1
+    $ErrorActionPreference = $savedPref
+    if ($currentVer -and "$currentVer" -match 'agent-launcher|agent-connector') {
+        Ok "openagents already installed ($currentVer)"
+        Info "Upgrading to latest..."
     }
 }
 
