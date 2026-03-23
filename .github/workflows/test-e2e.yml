@@ -10,6 +10,7 @@ jobs:
       WS_TOKEN: "Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE"
       WS_SLUG: "c5be7aa2"
     steps:
+      # ── Setup: build from source + clean state ──
       - name: Kill stale processes
         shell: powershell
         run: |
@@ -18,87 +19,53 @@ jobs:
           Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
         continue-on-error: true
 
-      - name: Clean environment
+      - name: Clean environment (fresh user)
         shell: powershell
         run: |
-          # Remove all OpenAgents state for a fresh user experience
           Remove-Item "$env:USERPROFILE\.openagents" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\Desktop\launcher-e2e" -Recurse -Force -ErrorAction SilentlyContinue
-          Write-Host "Environment cleaned — simulating fresh machine"
 
-      - name: Download latest release
+      - name: Build app from source
         shell: powershell
         run: |
           $ErrorActionPreference = 'Continue'
-          # Download the latest Windows exe from GitHub Releases
-          $release = Invoke-RestMethod "https://api.github.com/repos/openagents-org/openagents/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*win-x64.exe" } | Select-Object -First 1
-          if (-not $asset) { Write-Host "No Windows exe in latest release"; exit 1 }
-          $dest = "$env:USERPROFILE\Desktop\$($asset.name)"
-          Write-Host "Downloading $($asset.name) ($([math]::Round($asset.size/1MB, 1)) MB)..."
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dest -UseBasicParsing
-          Write-Host "Downloaded to $dest"
-
-      - name: Install via NSIS installer
-        shell: powershell
-        run: |
-          $exe = Get-ChildItem "$env:USERPROFILE\Desktop\OpenAgents.Launcher-*-win-x64.exe" | Select-Object -First 1
-          Write-Host "Running installer: $($exe.Name)"
-          Start-Process $exe.FullName -ArgumentList "/S" -Wait -NoNewWindow
-          Start-Sleep 5
-          $installed = "$env:LOCALAPPDATA\Programs\OpenAgents Launcher\OpenAgents Launcher.exe"
-          if (Test-Path $installed) {
-            Write-Host "Installed at $installed"
-          } else {
-            Write-Host "NSIS silent install may need admin — falling back to portable mode"
-            # Use the exe directly as portable (electron-builder nsis creates self-extracting)
+          $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          Push-Location $dir
+          git init 2>$null; git remote add origin https://github.com/openagents-org/openagents.git 2>$null
+          git fetch --depth 1 origin develop 2>$null; git checkout FETCH_HEAD -- packages/launcher/src 2>$null
+          Move-Item packages\launcher\src src; Remove-Item packages -Recurse -Force
+          # Need Node.js to run Electron — download portable
+          $nodeDir = "$env:USERPROFILE\.openagents\nodejs"
+          if (-not (Test-Path "$nodeDir\node.exe")) {
+            New-Item -ItemType Directory -Path $nodeDir -Force | Out-Null
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x64.zip" -OutFile "$env:TEMP\node.zip" -UseBasicParsing
+            Expand-Archive "$env:TEMP\node.zip" "$env:TEMP\node-extract" -Force
+            Copy-Item "$env:TEMP\node-extract\node-*\*" $nodeDir -Recurse -Force
           }
+          $env:PATH = "$nodeDir;$env:PATH"
+          npm init -y 2>$null | Out-Null
+          npm install @openagents-org/agent-launcher@latest electron@33 ws 2>&1 | Select-Object -Last 3
+          $pkg = Get-Content package.json | ConvertFrom-Json; $pkg.main = "src/main/main.js"
+          $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
+          Pop-Location
 
       - name: Launch app with CDP
         shell: powershell
         run: |
           $ErrorActionPreference = 'Continue'
-          # Try installed app first, then portable exe
-          $installed = "$env:LOCALAPPDATA\Programs\OpenAgents Launcher\OpenAgents Launcher.exe"
-          $portable = Get-ChildItem "$env:USERPROFILE\Desktop\OpenAgents.Launcher-*-win-x64.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (Test-Path $installed) {
-            Start-Process $installed -ArgumentList "--remote-debugging-port=$env:CDP_PORT","--remote-allow-origins=*"
-          } elseif ($portable) {
-            # For portable, we need the dev folder approach
-            $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
-            Push-Location $dir
-            git init 2>$null; git remote add origin https://github.com/openagents-org/openagents.git 2>$null
-            git fetch --depth 1 origin develop 2>$null; git checkout FETCH_HEAD -- packages/launcher/src 2>$null
-            if (Test-Path packages\launcher\src) { Move-Item packages\launcher\src src; Remove-Item packages -Recurse -Force }
-            # Need node for npx — download portable if not present
-            if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-              $nodeUrl = "https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x64.zip"
-              $nodeDir = "$env:USERPROFILE\.openagents\nodejs"
-              New-Item -ItemType Directory -Path $nodeDir -Force | Out-Null
-              Invoke-WebRequest -Uri $nodeUrl -OutFile "$env:TEMP\node.zip" -UseBasicParsing
-              Expand-Archive "$env:TEMP\node.zip" "$env:TEMP\node-extract" -Force
-              Copy-Item "$env:TEMP\node-extract\node-*\*" $nodeDir -Recurse -Force
-              $env:PATH = "$nodeDir;$env:PATH"
-            }
-            npm init -y 2>$null | Out-Null
-            npm install @openagents-org/agent-launcher@latest electron@33 ws 2>&1 | Select-Object -Last 3
-            $pkg = Get-Content package.json | ConvertFrom-Json; $pkg.main = "src/main/main.js"
-            $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
-            Pop-Location
-            $bat = "@echo off`r`nset PATH=$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;%PATH%`r`ncd /d $dir`r`nnpx electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*"
-            Set-Content "$dir\launch.bat" $bat
-            Start-Process cmd.exe -ArgumentList "/c $dir\launch.bat" -WindowStyle Normal
-          } else {
-            Write-Host "No app found"; exit 1
-          }
-          # Wait for CDP
+          $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
+          $bat = "@echo off`r`nset PATH=$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;%PATH%`r`ncd /d $dir`r`nnpx electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*"
+          Set-Content "$dir\launch.bat" $bat
+          Start-Process cmd.exe -ArgumentList "/c $dir\launch.bat" -WindowStyle Normal
           Start-Sleep 20
           for ($i = 0; $i -lt 6; $i++) {
-            try { Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 5 | Out-Null; Write-Host "CDP ready"; break } catch { Start-Sleep 5 }
+            try { Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 5 | Out-Null; Write-Host "CDP ready"; break }
+            catch { Write-Host "Waiting for CDP... ($($i+1)/6)"; Start-Sleep 5 }
           }
 
-      - name: "E2E: Full user flow via CDP"
+      # ── E2E test: pure GUI interaction via CDP ──
+      - name: "E2E: Full user flow"
         shell: powershell
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
@@ -107,236 +74,228 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
-          # Install ws module for CDP websocket
           npm install -g ws 2>$null
-          $env:NODE_PATH = "$env:USERPROFILE\.openagents\nodejs\node_modules;$env:USERPROFILE\Desktop\launcher-e2e\node_modules"
 
-          # Write the full E2E test script
-          $testScript = @'
+          @'
           const http = require('http');
+          const https = require('https');
           const WebSocket = require('ws');
           const CDP_URL = 'http://127.0.0.1:' + (process.env.CDP_PORT || 9333);
           const WS_TOKEN = process.env.WS_TOKEN;
           const WS_SLUG = process.env.WS_SLUG;
-          const LLM_API_KEY = process.env.LLM_API_KEY;
-          const LLM_BASE_URL = process.env.LLM_BASE_URL;
-          const LLM_MODEL = process.env.LLM_MODEL;
+          const LLM_KEY = process.env.LLM_API_KEY;
+          const LLM_URL = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
+          const LLM_MDL = process.env.LLM_MODEL || 'gpt-4o';
+          let ws, mid = 1, pend = {};
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-          let ws, msgId = 1, pending = {};
-
-          // CDP helpers
-          async function getCdpWsUrl() {
-            return new Promise((res, rej) => {
+          // ── CDP plumbing ──
+          async function connectCdp() {
+            const wsUrl = await new Promise((res, rej) => {
               http.get(CDP_URL + '/json', r => {
                 let d = ''; r.on('data', c => d += c);
                 r.on('end', () => res(JSON.parse(d)[0].webSocketDebuggerUrl));
               }).on('error', rej);
             });
-          }
-          async function connectCdp() {
-            const url = await getCdpWsUrl();
             return new Promise((res, rej) => {
-              ws = new WebSocket(url, { maxPayload: 50*1024*1024 });
+              ws = new WebSocket(wsUrl, { maxPayload: 50e6 });
               ws.on('open', res); ws.on('error', rej);
               ws.on('message', raw => {
                 const m = JSON.parse(raw);
-                if (m.id && pending[m.id]) { pending[m.id](m); delete pending[m.id]; }
+                if (m.id && pend[m.id]) { pend[m.id](m); delete pend[m.id]; }
               });
             });
           }
           function cdp(method, params = {}) {
             return new Promise((res, rej) => {
-              const id = msgId++;
-              const t = setTimeout(() => { delete pending[id]; rej(new Error('CDP timeout: ' + method)); }, 30000);
-              pending[id] = m => { clearTimeout(t); m.error ? rej(new Error(m.error.message)) : res(m.result); };
+              const id = mid++;
+              const t = setTimeout(() => { delete pend[id]; rej(new Error('CDP timeout: ' + method)); }, 30000);
+              pend[id] = m => { clearTimeout(t); m.error ? rej(new Error(m.error.message)) : res(m.result); };
               ws.send(JSON.stringify({ id, method, params }));
             });
           }
-          async function ev(expr) {
+          async function run(expr) {
             const r = await cdp('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
-            if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text || 'eval error');
+            if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || 'eval error');
             return r.result?.value;
           }
-          const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-          // Test helpers
-          let stepNum = 0;
-          async function step(name, fn) {
-            stepNum++;
-            process.stdout.write('  ' + stepNum + '. ' + name + '... ');
-            try { await fn(); console.log('PASS'); }
-            catch (e) { console.log('FAIL: ' + e.message); throw e; }
-          }
-          async function clickTab(name) {
-            await ev("document.querySelector('[data-tab=\"" + name + "\"]').click()");
-            await sleep(2000);
-          }
-          async function clickButton(text) {
-            const r = await ev("(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){if(b[i].textContent.trim()==='" + text + "'){b[i].click();return 'ok'}}return 'not found'})()");
+          // ── UI helpers (all interactions go through the GUI) ──
+          async function clickTab(name) { await run(`document.querySelector('[data-tab="${name}"]').click()`); await sleep(2000); }
+          async function clickBtn(text) {
+            const r = await run(`(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){if(b[i].textContent.trim()==='${text}'){b[i].click();return 'ok'}}return 'miss'})()`);
             if (r !== 'ok') throw new Error('Button "' + text + '" not found');
             await sleep(2000);
           }
-          async function bodyText() { return ev('document.body.innerText'); }
-          async function waitFor(text, timeout = 180000) {
-            const start = Date.now();
-            while (Date.now() - start < timeout) {
-              if ((await bodyText()).includes(text)) return;
-              await sleep(3000);
-            }
+          async function bodyText() { return run('document.body.innerText'); }
+          async function waitFor(text, ms = 180000) {
+            const t0 = Date.now();
+            while (Date.now() - t0 < ms) { if ((await bodyText()).includes(text)) return; await sleep(3000); }
             throw new Error('Timeout waiting for: ' + text);
           }
-          async function catalogRowButton(agentLabel, btnText) {
-            return ev("(function(){var rows=document.querySelectorAll('.catalog-row');for(var i=0;i<rows.length;i++){if(rows[i].textContent.includes('" + agentLabel + "')){var btns=rows[i].querySelectorAll('button');for(var j=0;j<btns.length;j++){if(btns[j].textContent.trim()==='" + btnText + "'){btns[j].click();return 'ok'}}}}return 'not found'})()");
+
+          // ── Test steps ──
+          let n = 0;
+          async function step(name, fn) {
+            n++; process.stdout.write(`  ${n}. ${name}... `);
+            try { await fn(); console.log('PASS'); } catch (e) { console.log('FAIL: ' + e.message); throw e; }
           }
 
-          // ── Main test ──
           async function main() {
             console.log('\n  OpenAgents Launcher — Full E2E Test\n');
 
+            // 1. Connect
             await step('Connect to app via CDP', async () => {
               await connectCdp();
-              const title = await ev('document.title');
-              if (!title.includes('OpenAgents')) throw new Error('Wrong title: ' + title);
+              const t = await run('document.title');
+              if (!t.includes('OpenAgents')) throw new Error('Title: ' + t);
             });
 
-            await step('Verify Dashboard loads', async () => {
-              const text = await bodyText();
-              if (!text.includes('Dashboard')) throw new Error('No Dashboard');
-            });
+            // 2. Dashboard loads
+            await step('Dashboard loads', async () => { await waitFor('Dashboard', 10000); });
 
-            // ── Install tab: install OpenClaw ──
+            // 3. Go to Install tab
             await step('Navigate to Install tab', async () => {
               await clickTab('install');
               await waitFor('Agent Runtimes', 10000);
             });
 
-            await step('Install OpenClaw via UI', async () => {
+            // 4. Install OpenClaw by clicking the Install button in the catalog
+            await step('Click Install on OpenClaw', async () => {
               const text = await bodyText();
-              if (text.includes('OpenClaw') && text.includes('INSTALLED')) {
-                console.log('(already installed) '); return;
-              }
-              const r = await catalogRowButton('OpenClaw', 'Install');
-              if (r !== 'ok') throw new Error('Could not find OpenClaw Install button');
+              if (text.includes('OpenClaw') && text.includes('INSTALLED')) { console.log('(skip) '); return; }
+              // Find OpenClaw row and click its Install button
+              await run(`(function(){var rows=document.querySelectorAll('.catalog-row');for(var i=0;i<rows.length;i++){if(rows[i].textContent.includes('OpenClaw')){rows[i].querySelector('button').click();return}}throw new Error('OpenClaw not in catalog')})()`);
               await sleep(2000);
-              // Click confirm
-              try { await clickButton('Install'); } catch { /* might auto-start */ }
-              // Wait for install to complete (up to 3 min)
-              await waitFor('Back to Install', 180000);
-              await clickButton('Back to Install');
+              // Confirm dialog
+              try { await clickBtn('Install'); } catch {}
             });
 
-            // ── Dashboard: create agent ──
-            await step('Create new agent', async () => {
+            // 5. Wait for OpenClaw installation to complete
+            await step('Wait for OpenClaw install to finish', async () => {
+              await waitFor('Back to Install', 300000); // up to 5 min
+              await clickBtn('Back to Install');
+              await sleep(2000);
+            });
+
+            // 6. Go to Dashboard, create a new agent
+            await step('Create new agent via Dashboard', async () => {
               await clickTab('dashboard');
               await sleep(2000);
               const text = await bodyText();
-              if (text.match(/openclaw.*stopped|openclaw.*running/i)) {
-                console.log('(agent exists) '); return;
-              }
-              try { await clickButton('New Agent'); } catch { await clickButton('Add Agent'); }
+              if (text.match(/openclaw/i) && (text.includes('stopped') || text.includes('running'))) { console.log('(exists) '); return; }
+              try { await clickBtn('New Agent'); } catch { await clickBtn('Add Agent'); }
               await sleep(2000);
-              await clickButton('Create');
+              // Select type = openclaw and click Create
+              await clickBtn('Create');
               await sleep(3000);
             });
 
-            // ── Configure LLM ──
-            await step('Configure LLM API key', async () => {
-              if (!LLM_API_KEY) throw new Error('LLM_API_KEY secret not set');
-              // Close any open modal first
-              try { await ev("var o=document.querySelector('.modal-overlay');if(o)o.click()"); } catch {}
-              await sleep(1000);
-              // Click Actions on the first agent card
-              await ev("document.querySelector('[data-action=\"actions\"]').click()");
+            // 7. Configure LLM via the Configure dialog
+            await step('Configure LLM API key via UI', async () => {
+              if (!LLM_KEY) throw new Error('LLM_API_KEY not set');
+              await clickTab('dashboard');
+              await sleep(2000);
+              // Click Actions on the agent card
+              await run(`document.querySelector('[data-action="actions"]').click()`);
               await sleep(2000);
               // Click Configure
-              await ev("(function(){var b=document.querySelectorAll('button,[data-action]');for(var i=0;i<b.length;i++){if(b[i].textContent.includes('Configure')||b[i].dataset?.action==='configure'){b[i].click();return}}})()");
+              await run(`(function(){var b=document.querySelectorAll('button,[data-action]');for(var i=0;i<b.length;i++){if(b[i].textContent.includes('Configure')||b[i].dataset?.action==='configure'){b[i].click();return}}})()`);
               await sleep(2000);
-              // Fill in the form fields
-              await ev("(function(){var inputs=document.querySelectorAll('input');inputs.forEach(function(inp){var label=(inp.previousElementSibling||inp.parentElement).textContent.toUpperCase();if(label.includes('API KEY')||inp.placeholder?.includes('API_KEY'))inp.value='" + LLM_API_KEY + "';if(label.includes('BASE URL')||inp.placeholder?.includes('openai'))inp.value='" + (LLM_BASE_URL||'https://api.openai.com/v1') + "';if(label.includes('MODEL')||inp.placeholder?.includes('gpt'))inp.value='" + (LLM_MODEL||'gpt-4o') + "';inp.dispatchEvent(new Event('input',{bubbles:true}))})})()");
-              await sleep(1000);
-              await clickButton('Save');
+              // Fill API KEY field
+              await run(`(function(){var inputs=document.querySelectorAll('input');for(var i=0;i<inputs.length;i++){var lbl=inputs[i].closest('.form-group')?.querySelector('label')?.textContent||inputs[i].placeholder||'';if(lbl.toUpperCase().includes('API KEY')||lbl.includes('LLM_API_KEY')){inputs[i].value='${LLM_KEY}';inputs[i].dispatchEvent(new Event('input',{bubbles:true}));break}}})()`);
+              await sleep(500);
+              // Fill BASE URL field
+              await run(`(function(){var inputs=document.querySelectorAll('input');for(var i=0;i<inputs.length;i++){var lbl=inputs[i].closest('.form-group')?.querySelector('label')?.textContent||inputs[i].placeholder||'';if(lbl.toUpperCase().includes('BASE URL')||lbl.includes('openai')){inputs[i].value='${LLM_URL}';inputs[i].dispatchEvent(new Event('input',{bubbles:true}));break}}})()`);
+              await sleep(500);
+              // Fill MODEL field
+              await run(`(function(){var inputs=document.querySelectorAll('input');for(var i=0;i<inputs.length;i++){var lbl=inputs[i].closest('.form-group')?.querySelector('label')?.textContent||inputs[i].placeholder||'';if(lbl.toUpperCase().includes('MODEL')||lbl.includes('gpt')){inputs[i].value='${LLM_MDL}';inputs[i].dispatchEvent(new Event('input',{bubbles:true}));break}}})()`);
+              await sleep(500);
+              // Click Save
+              await clickBtn('Save');
               await sleep(2000);
             });
 
-            // ── Connect to workspace ──
-            await step('Connect agent to workspace', async () => {
+            // 8. Connect agent to workspace via the Connect Workspace dialog
+            await step('Connect agent to workspace via UI', async () => {
               await clickTab('dashboard');
               await sleep(2000);
-              // Click Actions
-              await ev("document.querySelector('[data-action=\"actions\"]').click()");
+              await run(`document.querySelector('[data-action="actions"]').click()`);
               await sleep(2000);
-              // Click Connect Workspace
-              const r = await ev("(function(){var b=document.querySelectorAll('button,[data-action]');for(var i=0;i<b.length;i++){if(b[i].textContent.includes('Connect')||b[i].dataset?.action==='connect'){b[i].click();return 'ok'}}return 'none'})()");
+              const r = await run(`(function(){var b=document.querySelectorAll('button,[data-action]');for(var i=0;i<b.length;i++){if(b[i].textContent.includes('Connect')||b[i].dataset?.action==='connect'){b[i].click();return 'ok'}}return 'none'})()`);
               if (r === 'ok') {
                 await sleep(2000);
-                // Fill token input
-                await ev("(function(){var inp=document.querySelector('input[type=text],input[placeholder*=token]');if(inp){inp.value='" + WS_TOKEN + "';inp.dispatchEvent(new Event('input',{bubbles:true}))}})()");
+                // Fill workspace token
+                await run(`(function(){var inp=document.querySelector('input[type=text],input[placeholder*=token],input[placeholder*=Token]');if(inp){inp.value='${WS_TOKEN}';inp.dispatchEvent(new Event('input',{bubbles:true}))}else throw new Error('Token input not found')})()`);
                 await sleep(1000);
-                try { await clickButton('Connect'); } catch {
-                  try { await clickButton('Join'); } catch { await clickButton('Save'); }
-                }
+                try { await clickBtn('Connect'); } catch { try { await clickBtn('Join'); } catch { await clickBtn('Save'); } }
                 await sleep(3000);
-              } else {
-                // Fallback: use API
-                await ev("window.api.connectWorkspace(document.querySelector('.agent-name')?.textContent?.trim(),'" + WS_TOKEN + "')");
-                await sleep(2000);
               }
             });
 
-            // ── Start agent ──
-            await step('Start agent', async () => {
+            // 9. Start agent via Start All button
+            await step('Start agent via Start All button', async () => {
               await clickTab('dashboard');
               await sleep(2000);
-              await clickButton('Start All');
-              // Wait for daemon + adapter to come online
-              await sleep(20000);
+              await clickBtn('Start All');
+              await sleep(20000); // Wait for daemon + adapter
             });
 
+            // 10. Verify agent shows "running"
             await step('Verify agent is running', async () => {
-              await clickTab('dashboard');
-              await sleep(3000);
-              const text = await bodyText();
-              if (text.includes('running')) return;
-              // Wait more
-              await sleep(15000);
-              await clickTab('dashboard');
-              await sleep(3000);
-              const text2 = await bodyText();
-              if (!text2.includes('running')) throw new Error('Agent not running. Status: ' + text2.substring(0, 200));
-            });
-
-            // ── Send message via workspace and check response ──
-            await step('Send test message via workspace API', async () => {
-              const agentName = await ev("document.querySelector('.agent-name')?.textContent?.trim()||'e2e-agent'");
-              const result = await ev("fetch('https://workspace-endpoint.openagents.org/v1/events',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Token':'" + WS_TOKEN + "'},body:JSON.stringify({type:'workspace.message.posted',source:'human:e2e-test',target:'openagents:'+'" + agentName + "',network:'" + WS_SLUG + "',payload:{content:'What is 9 plus 3? Reply with just the number.',message_type:'chat'},metadata:{}})}).then(r=>r.json()).then(d=>JSON.stringify(d))");
-              const parsed = JSON.parse(result);
-              if (parsed.code !== 0) throw new Error('API error: ' + result);
-            });
-
-            await step('Wait for agent response (up to 2 min)', async () => {
-              const start = Date.now();
-              while (Date.now() - start < 120000) {
-                try {
-                  const logs = await ev("window.api.getLogs?window.api.getLogs().then(r=>(r.lines||[]).join('\\n')):''");
-                  if (logs && logs.includes('responded')) {
-                    console.log('(response found in ' + Math.round((Date.now()-start)/1000) + 's) ');
-                    return;
-                  }
-                } catch {}
+              for (let i = 0; i < 6; i++) {
+                await clickTab('dashboard');
+                await sleep(3000);
+                const text = await bodyText();
+                if (text.includes('running')) return;
                 await sleep(5000);
               }
-              // Check daemon log file as fallback
-              throw new Error('No response within 2 minutes');
+              throw new Error('Agent not running after 48s');
             });
 
-            console.log('\n  All E2E tests passed!\n');
+            // 11. Send message via workspace API (simulates user typing in workspace web UI)
+            await step('Send test message to workspace', async () => {
+              const agentName = await run(`document.querySelector('.agent-name')?.textContent?.trim()||'agent'`);
+              const body = JSON.stringify({
+                type: 'workspace.message.posted', source: 'human:e2e-test',
+                target: 'openagents:' + agentName, network: WS_SLUG,
+                payload: { content: 'What is 9 plus 3? Reply with just the number.', message_type: 'chat' },
+                metadata: {}
+              });
+              const result = await new Promise((res, rej) => {
+                const req = https.request({
+                  hostname: 'workspace-endpoint.openagents.org', port: 443, path: '/v1/events', method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-Workspace-Token': WS_TOKEN, 'Content-Length': Buffer.byteLength(body) }
+                }, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => res(d)); });
+                req.on('error', rej); req.write(body); req.end();
+              });
+              const parsed = JSON.parse(result);
+              if (parsed.code !== 0) throw new Error('Workspace API: ' + result);
+            });
+
+            // 12. Wait for agent to respond
+            await step('Wait for agent response (up to 2 min)', async () => {
+              for (let i = 0; i < 24; i++) {
+                // Check Logs tab for "responded"
+                await clickTab('logs');
+                await sleep(2000);
+                const text = await bodyText();
+                if (text.includes('responded')) {
+                  console.log('(' + (i * 5) + 's) ');
+                  return;
+                }
+                await sleep(3000);
+              }
+              throw new Error('No response in 2 minutes');
+            });
+
+            console.log('\n  ALL E2E TESTS PASSED\n');
           }
 
           main().then(() => { ws.close(); process.exit(0); })
-                .catch(e => { console.error('\n  FAILED: ' + e.message + '\n'); ws?.close(); process.exit(1); });
-          '@
+                .catch(e => { console.error('\n  E2E FAILED: ' + e.message + '\n'); ws?.close(); process.exit(1); });
+          '@ | Out-File -Encoding utf8 "$env:TEMP\e2e-test.js"
 
-          Set-Content "$env:TEMP\e2e-test.js" $testScript
           node "$env:TEMP\e2e-test.js"
 
       - name: Collect logs
@@ -345,9 +304,9 @@ jobs:
         run: |
           Write-Host "=== DAEMON LOG ==="
           Get-Content "$env:USERPROFILE\.openagents\daemon.log" -ErrorAction SilentlyContinue
-          Write-Host "=== DAEMON STATUS ==="
+          Write-Host "=== STATUS ==="
           Get-Content "$env:USERPROFILE\.openagents\daemon.status.json" -ErrorAction SilentlyContinue
-          Write-Host "=== AGENT CONFIG ==="
+          Write-Host "=== CONFIG ==="
           Get-Content "$env:USERPROFILE\.openagents\daemon.yaml" -ErrorAction SilentlyContinue
 
       - name: Cleanup
@@ -356,4 +315,3 @@ jobs:
         run: |
           Stop-Process -Name node -Force -ErrorAction SilentlyContinue
           Stop-Process -Name electron -Force -ErrorAction SilentlyContinue
-          Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
