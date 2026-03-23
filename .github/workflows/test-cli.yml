@@ -1,0 +1,47 @@
+name: Test CLI Install
+on: workflow_dispatch
+jobs:
+  test-macos:
+    runs-on: [self-hosted, macos, desktop-test]
+    steps:
+      - name: Clean previous install
+        run: |
+          npm uninstall -g @openagents-org/agent-connector 2>/dev/null || true
+          rm -rf ~/.openagents 2>/dev/null || true
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run install.sh
+        run: bash install.sh 2>&1
+      - name: Verify CLI
+        run: |
+          which agent-connector
+          agent-connector --version
+          agent-connector status
+      - name: Test install openclaw
+        run: agent-connector install openclaw 2>&1 || true
+      - name: Test list
+        run: agent-connector list 2>&1 || true
+  test-windows:
+    runs-on: [self-hosted, windows, desktop-test]
+    steps:
+      - name: Clean previous install
+        run: npm uninstall -g @openagents-org/agent-connector 2>$null; Remove-Item -Recurse -Force "$env:USERPROFILE\.openagents" 2>$null; echo "cleaned"
+        shell: powershell
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run install.ps1
+        run: powershell -ExecutionPolicy Bypass -File install.ps1
+      - name: Verify CLI
+        run: |
+          where agent-connector
+          agent-connector --version
+          agent-connector status
+        shell: cmd
+      - name: Test install openclaw
+        run: agent-connector install openclaw 2>&1
+        shell: cmd
+        continue-on-error: true
+      - name: Test list
+        run: agent-connector list
+        shell: cmd
+        continue-on-error: true
