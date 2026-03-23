@@ -328,7 +328,20 @@ function createTUI() {
     const dot = pid ? `{green-fg}\u25CF{/green-fg}` : `{gray-fg}\u25CB{/gray-fg}`;
     const state = pid ? 'Daemon running' : 'Daemon idle';
     const count = agentRows.length;
-    header.setContent(`  ${dot} ${state}  {gray-fg}|{/gray-fg}  ${count} agent${count !== 1 ? 's' : ''} configured`);
+
+    // Show installed runtimes
+    let installed = [];
+    try {
+      const catalog = loadCatalog(connector);
+      installed = catalog.filter(e => e.installed).map(e => e.name);
+    } catch {}
+    const installedStr = installed.length
+      ? `  {gray-fg}|{/gray-fg}  {green-fg}${installed.join(', ')}{/green-fg} installed`
+      : '';
+
+    header.setContent(
+      `  ${dot} ${state}  {gray-fg}|{/gray-fg}  ${count} agent${count !== 1 ? 's' : ''} configured${installedStr}`
+    );
   }
 
   // Update footer when selection changes
@@ -542,6 +555,8 @@ function createTUI() {
     }).then(() => {
       installLog.log('');
       installLog.log(`{green-fg}\u2713 ${entry.name} installed successfully!{/green-fg}`);
+      installLog.log('');
+      installLog.log(`{cyan-fg}Press c to create a ${entry.name} agent, or Esc to go back.{/cyan-fg}`);
       logPanel.setLabel(` {bold}{green-fg}Install Complete{/green-fg}{/bold} `);
       log(`{green-fg}\u2713{/green-fg} ${entry.name} installed`);
       const idx = catalog.findIndex(c => c.name === entry.name);
@@ -550,6 +565,36 @@ function createTUI() {
       onDone();
       list.focus();
       screen.render();
+
+      // Listen for 'c' to create agent from just-installed type
+      const onCreateKey = (ch) => {
+        if (ch === 'c') {
+          screen.unkey(['c', 'escape'], onCreateKey);
+          // Go back to main and start agent creation flow
+          list.emit('keypress', null, { name: 'escape' });
+          setTimeout(() => {
+            showStartAgentScreen(entry.name, (result) => {
+              try {
+                connector.addAgent({ name: result.name, type: result.type, path: result.path });
+                log(`{green-fg}\u2713{/green-fg} Created agent {cyan-fg}${result.name}{/cyan-fg} (${result.type})`);
+                const pid = connector.getDaemonPid();
+                if (!pid) {
+                  connector.startDaemon();
+                  log('{green-fg}\u2713{/green-fg} Daemon starting...');
+                } else {
+                  signalDaemonReload();
+                }
+              } catch (e) {
+                log(`{red-fg}\u2717{/red-fg} ${e.message}`);
+              }
+              setTimeout(refreshAgentTable, 3000);
+            });
+          }, 200);
+        } else {
+          screen.unkey(['c', 'escape'], onCreateKey);
+        }
+      };
+      screen.key(['c', 'escape'], onCreateKey);
     }).catch((e) => {
       installLog.log('');
       installLog.log(`{red-fg}\u2717 Failed: ${e.message}{/red-fg}`);
