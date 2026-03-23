@@ -183,11 +183,17 @@ jobs:
               await clickTab('dashboard');
               await sleep(2000);
               const text = await bodyText();
-              if (text.match(/openclaw/i) && (text.includes('stopped') || text.includes('running'))) { console.log('(exists) '); return; }
-              try { await clickBtn('New Agent'); } catch { await clickBtn('Add Agent'); }
-              await sleep(2000);
-              // Select type = openclaw and click Create
-              await clickBtn('Create');
+              // Check if any agent card already exists
+              if (text.includes('stopped') || text.includes('running') || text.includes('Actions')) {
+                console.log('(agent exists) '); return;
+              }
+              // Click whichever button is available
+              const clicked = await run(`(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){var t=b[i].textContent.trim();if(t==='New Agent'||t==='Add Agent'||t==='New'){b[i].click();return t}}return 'none'})()`);
+              if (clicked === 'none') throw new Error('No New Agent button found');
+              await sleep(3000);
+              // Click Create in the dialog (might be "Create", "Add", or "OK")
+              const created = await run(`(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){var t=b[i].textContent.trim();if(t==='Create'||t==='Add'||t==='OK'){b[i].click();return t}}return 'none'})()`);
+              if (created === 'none') throw new Error('No Create button in dialog');
               await sleep(3000);
             });
 
