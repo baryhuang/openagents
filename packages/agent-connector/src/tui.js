@@ -37,18 +37,24 @@ const COLORS = {
 };
 
 const STATE_DISPLAY = {
-  online:        { sym: '\u25CF', color: COLORS.stateRunning },
-  running:       { sym: '\u25CF', color: COLORS.stateRunning },
-  starting:      { sym: '\u25D0', color: COLORS.stateStarting },
-  reconnecting:  { sym: '\u25D0', color: COLORS.stateStarting },
-  stopped:       { sym: '\u25CB', color: COLORS.stateStopped },
-  'not configured': { sym: '\u25CB', color: COLORS.stateStopped },
-  error:         { sym: '\u2717', color: COLORS.stateError },
+  online:        { sym: '\u25CF', color: COLORS.stateRunning, label: 'connected' },
+  running:       { sym: '\u25CF', color: COLORS.stateRunning, label: 'connected' },
+  idle:          { sym: '\u25CB', color: COLORS.stateStarting, label: 'ready' },
+  starting:      { sym: '\u25D0', color: COLORS.stateStarting, label: 'starting' },
+  reconnecting:  { sym: '\u25D0', color: COLORS.stateStarting, label: 'reconnecting' },
+  stopped:       { sym: '\u25CB', color: COLORS.stateStopped, label: 'stopped' },
+  'not configured': { sym: '\u25CB', color: COLORS.stateStopped, label: 'not configured' },
+  error:         { sym: '\u2717', color: COLORS.stateError, label: 'error' },
 };
 
-function stateMarkup(state) {
-  const d = STATE_DISPLAY[state] || { sym: '?', color: 'white' };
-  return `{${d.color}-fg}${d.sym} ${state}{/${d.color}-fg}`;
+function stateMarkup(state, hasWorkspace) {
+  const d = STATE_DISPLAY[state] || { sym: '?', color: 'white', label: state };
+  let label = d.label;
+  // For running/connected agents, clarify workspace status
+  if ((state === 'running' || state === 'online') && !hasWorkspace) {
+    label = 'running';
+  }
+  return `{${d.color}-fg}${d.sym} ${label}{/${d.color}-fg}`;
 }
 
 // ── Data helpers ────────────────────────────────────────────────────────────
@@ -299,7 +305,7 @@ function createTUI() {
       agentList.setItems(['  {gray-fg}No agents configured. Press {bold}i{/bold} to install, {bold}n{/bold} to create.{/gray-fg}']);
     } else {
       const items = agentRows.map(r => {
-        const state = stateMarkup(r.state);
+        const state = stateMarkup(r.state, !!r.workspace);
         const ws = r.workspace || '{gray-fg}-{/gray-fg}';
         const pathInfo = r.path ? `{gray-fg} ${r.path}{/gray-fg}` : '';
         return `  ${r.name.padEnd(22)} ${r.type.padEnd(14)} ${state.padEnd(30)} ${ws}${pathInfo}`;
