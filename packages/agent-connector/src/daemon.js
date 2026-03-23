@@ -67,6 +67,8 @@ class Daemon {
 
     this._writeStatus();
     this._cachedAgentNames = new Set(agents.map(a => a.name));
+    this._cachedAgentConfigs = {};
+    for (const a of agents) this._cachedAgentConfigs[a.name] = a.network || '';
     this._log(`Daemon started with ${agents.length} agent(s)`);
 
     // Block until shutdown
@@ -577,9 +579,12 @@ class Daemon {
   _reload() {
     this._log('Reloading config...');
     const oldNames = this._cachedAgentNames || new Set();
+    const oldConfigs = this._cachedAgentConfigs || {};
     // Re-read config from disk
     const newAgents = this.config.getAgents();
     const newNames = new Set(newAgents.map(a => a.name));
+    const newConfigs = {};
+    for (const a of newAgents) newConfigs[a.name] = a.network || '';
 
     // Stop removed agents
     for (const name of oldNames) {
@@ -589,15 +594,21 @@ class Daemon {
       }
     }
 
-    // Start new agents
+    // Start new agents or restart agents whose network changed
     for (const agent of newAgents) {
       if (!oldNames.has(agent.name)) {
         this._launchAgent(agent);
         this._log(`Reload: started new agent '${agent.name}'`);
+      } else if ((oldConfigs[agent.name] || '') !== (agent.network || '')) {
+        // Network config changed — restart agent
+        this.stopAgent(agent.name);
+        this._launchAgent(agent);
+        this._log(`Reload: restarted '${agent.name}' (network changed)`);
       }
     }
 
     this._cachedAgentNames = newNames;
+    this._cachedAgentConfigs = newConfigs;
     this._writeStatus();
   }
 
