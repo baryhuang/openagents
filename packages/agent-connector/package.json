@@ -1,9 +1,10 @@
 {
-  "name": "@openagents-org/agent-connector",
-  "version": "0.3.8",
-  "description": "Agent management CLI and library for OpenAgents — install, configure, and run AI coding agents",
+  "name": "@openagents-org/agent-launcher",
+  "version": "0.1.0",
+  "description": "OpenAgents Launcher — install, configure, and run AI coding agents from your terminal",
   "main": "src/index.js",
   "bin": {
+    "openagents": "bin/agent-connector.js",
     "agent-connector": "bin/agent-connector.js"
   },
   "scripts": {
@@ -16,7 +17,8 @@
     "ai",
     "agent",
     "coding",
-    "cli"
+    "cli",
+    "launcher"
   ],
   "author": "OpenAgents",
   "license": "MIT",

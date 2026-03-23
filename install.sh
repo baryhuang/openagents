@@ -5,12 +5,12 @@ set -euo pipefail
 # OpenAgents Installer
 # Usage: curl -fsSL https://openagents.org/install.sh | bash
 #
-# Installs the OpenAgents CLI (agent-connector), detects local AI agents,
+# Installs the OpenAgents CLI (openagents), detects local AI agents,
 # and gets you running. Works on macOS, Linux, and Windows (WSL/Git Bash).
 # =============================================================================
 
 VERSION="1.0.0"
-NPM_PACKAGE="@openagents-org/agent-connector"
+NPM_PACKAGE="@openagents-org/agent-launcher"
 MIN_NODE_MAJOR=18
 
 # --- Colors (safe for pipes) ---
@@ -123,7 +123,7 @@ else
 fi
 
 # =========================================================================
-# Step 2: Install/upgrade agent-connector
+# Step 2: Install/upgrade openagents
 # =========================================================================
 step "Installing OpenAgents CLI..."
 
@@ -139,9 +139,9 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 # Check if already installed
-if command -v agent-connector >/dev/null 2>&1; then
-    current=$(agent-connector --version 2>/dev/null | head -1 || echo "unknown")
-    ok "agent-connector already installed ($current)"
+if command -v openagents >/dev/null 2>&1; then
+    current=$(openagents --version 2>/dev/null | head -1 || echo "unknown")
+    ok "openagents already installed ($current)"
     info "Upgrading to latest..."
 fi
 
@@ -155,17 +155,17 @@ else
     $NPM install -g "$NPM_PACKAGE@latest" 2>&1 | tail -5
 fi
 
-if command -v agent-connector >/dev/null 2>&1; then
-    new_version=$(agent-connector --version 2>/dev/null | head -1 || echo "unknown")
-    ok "agent-connector $new_version installed"
+if command -v openagents >/dev/null 2>&1; then
+    new_version=$(openagents --version 2>/dev/null | head -1 || echo "unknown")
+    ok "openagents $new_version installed"
 else
     # Check in --prefix bin
-    if [ -x "$GLOBAL_DIR/bin/agent-connector" ]; then
-        new_version=$("$GLOBAL_DIR/bin/agent-connector" --version 2>/dev/null | head -1 || echo "unknown")
-        ok "agent-connector $new_version installed"
+    if [ -x "$GLOBAL_DIR/bin/openagents" ]; then
+        new_version=$("$GLOBAL_DIR/bin/openagents" --version 2>/dev/null | head -1 || echo "unknown")
+        ok "openagents $new_version installed"
         warn "Add to PATH: export PATH=\"$GLOBAL_DIR/bin:\$PATH\""
     else
-        fail "Failed to install agent-connector.
+        fail "Failed to install openagents.
   Try manually: npm install -g $NPM_PACKAGE"
     fi
 fi
@@ -204,19 +204,19 @@ if [ "$agent_count" -eq 0 ]; then
     echo ""
     warn "No AI agents found. Install one to get started:"
     echo ""
-    echo "  ${BOLD}agent-connector install openclaw${RESET}"
-    echo "  ${BOLD}agent-connector install claude${RESET}"
-    echo "  ${BOLD}agent-connector install codex${RESET}"
+    echo "  ${BOLD}openagents install openclaw${RESET}"
+    echo "  ${BOLD}openagents install claude${RESET}"
+    echo "  ${BOLD}openagents install codex${RESET}"
     echo ""
 fi
 
 # =========================================================================
 # Step 4: Show status
 # =========================================================================
-if command -v agent-connector >/dev/null 2>&1; then
+if command -v openagents >/dev/null 2>&1; then
     step "Agent status"
     echo ""
-    agent-connector status 2>/dev/null || true
+    openagents status 2>/dev/null || true
 fi
 
 # =========================================================================
@@ -229,17 +229,17 @@ echo ""
 if [ "$agent_count" -gt 0 ]; then
     echo "  Quick start:"
     echo ""
-    echo "    ${BOLD}agent-connector status${RESET}         Show all agents"
-    echo "    ${BOLD}agent-connector up${RESET}             Start the daemon"
-    echo "    ${BOLD}agent-connector search${RESET}         Browse agent catalog"
+    echo "    ${BOLD}openagents status${RESET}         Show all agents"
+    echo "    ${BOLD}openagents up${RESET}             Start the daemon"
+    echo "    ${BOLD}openagents search${RESET}         Browse agent catalog"
     echo ""
 else
     echo "  Next steps:"
     echo ""
     echo "    1. Install an AI agent:"
-    echo "       ${BOLD}agent-connector install openclaw${RESET}"
+    echo "       ${BOLD}openagents install openclaw${RESET}"
     echo ""
     echo "    2. Start the daemon:"
-    echo "       ${BOLD}agent-connector up${RESET}"
+    echo "       ${BOLD}openagents up${RESET}"
     echo ""
 fi

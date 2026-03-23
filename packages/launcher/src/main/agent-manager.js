@@ -1,7 +1,7 @@
 /**
  * Agent manager for the OpenAgents Launcher.
  *
- * Thin adapter over @openagents-org/agent-connector — provides the same
+ * Thin adapter over @openagents-org/agent-launcher — provides the same
  * IPC-facing API as the old Python-based agent-manager, but all operations
  * are now pure Node.js (no Python subprocess calls).
  */
@@ -9,7 +9,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { AgentConnector, Daemon } = require('@openagents-org/agent-connector');
+const { AgentConnector, Daemon } = require('@openagents-org/agent-launcher');
 
 const CONFIG_DIR = path.join(os.homedir(), '.openagents');
 
@@ -226,7 +226,7 @@ class AgentManager {
     // Use the Node.js agent-connector CLI to start the daemon.
     // We must use the system 'node' binary, NOT process.execPath (which is
     // electron.exe inside a packaged app and would spawn another Electron).
-    const cliPath = require.resolve('@openagents-org/agent-connector/bin/agent-connector.js');
+    const cliPath = require.resolve('@openagents-org/agent-launcher/bin/agent-connector.js');
 
     // Find system node binary
     const { execSync } = require('child_process');

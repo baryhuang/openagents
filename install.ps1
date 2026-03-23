@@ -2,13 +2,13 @@
 # OpenAgents Installer for Windows
 # Usage: irm https://openagents.org/install.ps1 | iex
 #
-# Installs the OpenAgents CLI (agent-connector), detects local AI agents,
+# Installs the OpenAgents CLI (openagents), detects local AI agents,
 # and gets you running. Requires PowerShell 5.1+ (built into Windows 10/11).
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
 $VERSION = "1.0.0"
-$NPM_PACKAGE = "@openagents-org/agent-connector"
+$NPM_PACKAGE = "@openagents-org/agent-launcher"
 $MIN_NODE_MAJOR = 18
 
 # --- Helpers ---
@@ -91,7 +91,7 @@ if ($node) {
 }
 
 # =========================================================================
-# Step 2: Install/upgrade agent-connector
+# Step 2: Install/upgrade openagents
 # =========================================================================
 Step "Installing OpenAgents CLI..."
 
@@ -105,10 +105,10 @@ if (-not $npmCmd) {
 }
 
 # Check if already installed
-$existing = Get-Command agent-connector -ErrorAction SilentlyContinue
+$existing = Get-Command openagents -ErrorAction SilentlyContinue
 if ($existing) {
-    $currentVer = & agent-connector --version 2>$null
-    Ok "agent-connector already installed ($currentVer)"
+    $currentVer = & openagents --version 2>$null
+    Ok "openagents already installed ($currentVer)"
     Info "Upgrading to latest..."
 }
 
@@ -124,20 +124,20 @@ try {
 }
 
 # Verify
-$acCmd = Get-Command agent-connector -ErrorAction SilentlyContinue
+$acCmd = Get-Command openagents -ErrorAction SilentlyContinue
 if ($acCmd) {
-    $newVer = & agent-connector --version 2>$null
-    Ok "agent-connector $newVer installed"
+    $newVer = & openagents --version 2>$null
+    Ok "openagents $newVer installed"
 } else {
     # Check npm global bin
     $npmBin = Join-Path $env:APPDATA "npm"
-    if (Test-Path (Join-Path $npmBin "agent-connector.cmd")) {
+    if (Test-Path (Join-Path $npmBin "openagents.cmd")) {
         $env:PATH = "$npmBin;$env:PATH"
-        $newVer = & agent-connector --version 2>$null
-        Ok "agent-connector $newVer installed"
+        $newVer = & openagents --version 2>$null
+        Ok "openagents $newVer installed"
         Warn "Add to PATH: $npmBin"
     } else {
-        Fail "Failed to install agent-connector. Try: npm install -g $NPM_PACKAGE"
+        Fail "Failed to install openagents. Try: npm install -g $NPM_PACKAGE"
     }
 }
 
@@ -173,20 +173,20 @@ if ($agentCount -eq 0) {
     Write-Host ""
     Warn "No AI agents found. Install one to get started:"
     Write-Host ""
-    Write-Host "  agent-connector install openclaw" -ForegroundColor White
-    Write-Host "  agent-connector install claude" -ForegroundColor White
-    Write-Host "  agent-connector install codex" -ForegroundColor White
+    Write-Host "  openagents install openclaw" -ForegroundColor White
+    Write-Host "  openagents install claude" -ForegroundColor White
+    Write-Host "  openagents install codex" -ForegroundColor White
     Write-Host ""
 }
 
 # =========================================================================
 # Step 4: Show status
 # =========================================================================
-$acExists = Get-Command agent-connector -ErrorAction SilentlyContinue
+$acExists = Get-Command openagents -ErrorAction SilentlyContinue
 if ($acExists) {
     Step "Agent status"
     Write-Host ""
-    & agent-connector status 2>$null
+    & openagents status 2>$null
 }
 
 # =========================================================================
@@ -199,17 +199,17 @@ Write-Host ""
 if ($agentCount -gt 0) {
     Write-Host "  Quick start:"
     Write-Host ""
-    Write-Host "    agent-connector status" -ForegroundColor White -NoNewline; Write-Host "         Show all agents"
-    Write-Host "    agent-connector up" -ForegroundColor White -NoNewline; Write-Host "             Start the daemon"
-    Write-Host "    agent-connector search" -ForegroundColor White -NoNewline; Write-Host "         Browse agent catalog"
+    Write-Host "    openagents status" -ForegroundColor White -NoNewline; Write-Host "         Show all agents"
+    Write-Host "    openagents up" -ForegroundColor White -NoNewline; Write-Host "             Start the daemon"
+    Write-Host "    openagents search" -ForegroundColor White -NoNewline; Write-Host "         Browse agent catalog"
     Write-Host ""
 } else {
     Write-Host "  Next steps:"
     Write-Host ""
     Write-Host "    1. Install an AI agent:"
-    Write-Host "       agent-connector install openclaw" -ForegroundColor White
+    Write-Host "       openagents install openclaw" -ForegroundColor White
     Write-Host ""
     Write-Host "    2. Start the daemon:"
-    Write-Host "       agent-connector up" -ForegroundColor White
+    Write-Host "       openagents up" -ForegroundColor White
     Write-Host ""
 }

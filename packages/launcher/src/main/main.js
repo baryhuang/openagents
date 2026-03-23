@@ -132,7 +132,7 @@ function setupIPC() {
     pythonPath: null,
     pythonFound: true,  // No longer needed — always "found" since we're Node.js native
     sdkInstalled: true,
-    sdkVersion: require('@openagents-org/agent-connector/package.json').version,
+    sdkVersion: require('@openagents-org/agent-launcher/package.json').version,
     runtime: 'node',
   }));
   ipcMain.handle('python:install', () => ({ success: true, message: 'No installation needed — using Node.js agent-connector' }));
@@ -195,7 +195,7 @@ function setupIPC() {
   ipcMain.handle('shell:open-external', (_e, url) => shell.openExternal(url));
   ipcMain.handle('shell:exec', (_e, cmd) => {
     const { execSync } = require('child_process');
-    const { getEnhancedEnv } = require('@openagents-org/agent-connector').paths;
+    const { getEnhancedEnv } = require('@openagents-org/agent-launcher').paths;
     const env = getEnhancedEnv();
     // Use ComSpec directly — guaranteed to be the correct path on this system
     const shell = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : true;
