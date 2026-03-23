@@ -1,0 +1,96 @@
+name: E2E Agent Test
+on: workflow_dispatch
+
+jobs:
+  test-windows:
+    runs-on: [self-hosted, windows, desktop-test]
+    timeout-minutes: 10
+    env:
+      OPENAGENTS_DIR: ${{ github.workspace }}
+      NODE_PATH: ${{ env.USERPROFILE }}\.openagents\nodejs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Kill stale processes
+        shell: cmd
+        run: |
+          taskkill /F /IM node.exe 2>nul
+          echo Killed stale node processes
+        continue-on-error: true
+
+      - name: Clean state
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          del "%USERPROFILE%\.openagents\daemon.pid" 2>nul
+          del "%USERPROFILE%\.openagents\daemon.status.json" 2>nul
+          del "%USERPROFILE%\.openagents\daemon.log" 2>nul
+          echo State cleaned
+
+      - name: Verify openagents CLI
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openagents --version
+          openagents search
+
+      - name: Verify openclaw installed
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openclaw --version
+
+      - name: Check agent config
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openagents list
+          openagents status
+
+      - name: Start daemon
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openagents up
+          timeout /t 5 /nobreak >nul
+          openagents status
+
+      - name: Wait for adapter online
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          timeout /t 15 /nobreak >nul
+          openagents status
+          type "%USERPROFILE%\.openagents\daemon.log"
+
+      - name: Send test message via workspace API
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          node -e "const https=require('https');const data=JSON.stringify({content:'What is 9 plus 3? Reply with just the number.',type:'workspace.message'});const opts={hostname:'workspace-endpoint.openagents.org',port:443,path:'/v1/events?network=c5be7aa2&token=Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE',method:'POST',headers:{'Content-Type':'application/json','Content-Length':data.length}};const req=https.request(opts,res=>{let b='';res.on('data',d=>b+=d);res.on('end',()=>console.log('Response:',res.statusCode,b))});req.write(data);req.end()"
+
+      - name: Wait for agent response
+        shell: cmd
+        run: |
+          timeout /t 45 /nobreak >nul
+          echo Waited 45 seconds for agent to process
+
+      - name: Check daemon log for response
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          type "%USERPROFILE%\.openagents\daemon.log"
+
+      - name: Check agent status
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openagents status
+
+      - name: Stop daemon
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openagents down
+        continue-on-error: true
