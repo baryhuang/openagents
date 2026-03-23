@@ -182,8 +182,14 @@ function createTUI() {
     title: 'OpenAgents',
     fullUnicode: true,
     tags: true,
-    style: { bg: 'black', fg: 'white' },
   });
+
+  // Full-screen background to ensure dark bg on all terminal themes
+  const bgFill = blessed.box({
+    top: 0, left: 0, width: '100%', height: '100%',
+    style: { bg: 'black' },
+  });
+  screen.append(bgFill);
   const connector = getConnector();
   let pkg;
   try { pkg = require('../package.json'); } catch { pkg = { version: '?' }; }
@@ -239,7 +245,7 @@ function createTUI() {
 
   // ── Log Panel (bordered) ──
   const logPanel = blessed.box({
-    top: '60%+1', left: 0, width: '100%', height: '40%-3',
+    top: '60%+1', left: 0, width: '100%', height: '40%-2',
     border: { type: 'line' },
     label: ' {bold}Activity Log{/bold} ',
     tags: true,
