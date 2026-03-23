@@ -129,6 +129,7 @@ function generateAgentName(type) {
 function createTUI() {
   const screen = blessed.screen({
     smartCSR: true,
+    mouse: true,
     title: 'OpenAgents',
     fullUnicode: true,
     tags: true,
