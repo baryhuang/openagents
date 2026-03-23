@@ -24,15 +24,15 @@ jobs:
           del "%USERPROFILE%\.openagents\daemon.status.json" 2>nul
           del "%USERPROFILE%\.openagents\daemon.log" 2>nul
           del "%USERPROFILE%\.openagents\daemon.yaml" 2>nul
-          echo State cleaned
+          rmdir /S /Q "%USERPROFILE%\.openagents\nodejs" 2>nul
+          echo State cleaned (nodejs removed for fresh install)
 
-      - name: Upgrade and verify openagents CLI
-        shell: cmd
+      - name: Install Node.js and openagents CLI
+        shell: powershell
         run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          npm install -g @openagents-org/agent-launcher@latest
-          openagents --version
-          openagents search
+          # Run the install script which handles Node.js + CLI setup
+          $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
+          irm https://raw.githubusercontent.com/openagents-org/openagents/develop/install.ps1 | iex
 
       - name: Install openclaw if needed
         shell: cmd
