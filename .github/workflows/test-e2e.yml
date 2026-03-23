@@ -56,14 +56,28 @@ jobs:
           $pkg.main = "src/main/main.js"
           $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
           Pop-Location
-          # Launch with CDP
-          Start-Process -FilePath "npx" -ArgumentList "electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*" -WorkingDirectory $dir -WindowStyle Normal
-          Start-Sleep -Seconds 15
-          try {
-            $r = Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 10
-            Write-Host "CDP ready"
-          } catch {
-            Write-Host "CDP failed: $_"
+          # Create a launch script with full PATH
+          $launchScript = "@echo off`r`nset PATH=$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;%PATH%`r`ncd /d $dir`r`nnpx electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*"
+          Set-Content "$dir\launch.bat" $launchScript
+          # Launch Electron via the batch file
+          Start-Process cmd.exe -ArgumentList "/c $dir\launch.bat" -WindowStyle Normal
+          Start-Sleep -Seconds 20
+          # Verify CDP
+          $retries = 5
+          $cdpOk = $false
+          for ($i = 0; $i -lt $retries; $i++) {
+            try {
+              $r = Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 5
+              Write-Host "CDP ready"
+              $cdpOk = $true
+              break
+            } catch {
+              Write-Host "CDP attempt $($i+1)/$retries failed, waiting..."
+              Start-Sleep -Seconds 5
+            }
+          }
+          if (-not $cdpOk) {
+            Write-Host "CDP failed after $retries attempts"
             exit 1
           }
 
