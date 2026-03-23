@@ -407,7 +407,7 @@ function createTUI() {
     });
 
     const list = blessed.list({
-      parent: box, top: 2, left: 0, width: '100%', height: '100%-5',
+      parent: box, top: 2, left: 0, width: '100%', height: '50%-1',
       keys: true, vi: true, mouse: true,
       tags: true,
       style: {
@@ -416,14 +416,21 @@ function createTUI() {
       },
     });
 
-    const statusBar = blessed.box({
-      parent: box, bottom: 2, left: 0, width: '100%', height: 1,
+    // Install log panel — shows full streaming output
+    const logPanel = blessed.box({
+      parent: box, top: '50%+1', left: 0, width: '100%', height: '50%-2',
+      border: { type: 'line' },
+      label: ' {bold}Install Log{/bold} ',
       tags: true,
+      style: { border: { fg: COLORS.panelBorder }, label: { fg: COLORS.accent } },
     });
 
-    const installLog = blessed.box({
-      parent: box, bottom: 1, left: 0, width: '100%', height: 1,
+    const installLog = blessed.log({
+      parent: logPanel,
+      top: 0, left: 0, width: '100%-2', height: '100%-2',
+      scrollable: true, scrollOnInput: true,
       tags: true,
+      padding: { left: 1 },
       style: { fg: 'grey' },
     });
 
@@ -457,7 +464,7 @@ function createTUI() {
       showConfirmDialog(`${verb} ${entry.label}?`, (yes) => {
         if (yes) {
           installing = true;
-          doInstall(entry, statusBar, installLog, list, catalog, renderList, () => { installing = false; });
+          doInstall(entry, logPanel, installLog, list, catalog, renderList, () => { installing = false; });
         }
         list.focus();
         screen.render();
@@ -477,33 +484,36 @@ function createTUI() {
     screen.render();
   }
 
-  function doInstall(entry, statusBar, installLog, list, catalog, renderList, onDone) {
-    statusBar.setContent(`  {cyan-fg}Installing ${entry.name}...{/cyan-fg}`);
+  function doInstall(entry, logPanel, installLog, list, catalog, renderList, onDone) {
+    logPanel.setLabel(` {bold}Installing ${entry.name}...{/bold} `);
+    installLog.setContent('');
+    installLog.log(`{cyan-fg}>>> Installing ${entry.name}...{/cyan-fg}`);
     screen.render();
     log(`Installing {cyan-fg}${entry.name}{/cyan-fg}...`);
 
     connector.installer.installStreaming(entry.name, (chunk) => {
       const lines = chunk.split('\n').filter(l => l.trim());
       for (const line of lines) {
-        const clean = line.trim().substring(0, 90);
-        log(`  {gray-fg}${clean}{/gray-fg}`);
-        installLog.setContent(`  {gray-fg}${clean.substring(0, 80)}{/gray-fg}`);
+        const clean = line.trim().substring(0, 120);
+        installLog.log(clean);
         screen.render();
       }
     }).then(() => {
-      statusBar.setContent(`  {green-fg}\u2713 ${entry.name} installed successfully{/green-fg}`);
+      installLog.log('');
+      installLog.log(`{green-fg}\u2713 ${entry.name} installed successfully!{/green-fg}`);
+      logPanel.setLabel(` {bold}{green-fg}Install Complete{/green-fg}{/bold} `);
       log(`{green-fg}\u2713{/green-fg} ${entry.name} installed`);
       const idx = catalog.findIndex(c => c.name === entry.name);
       if (idx >= 0) catalog[idx].installed = true;
       renderList();
-      installLog.setContent('');
       onDone();
       list.focus();
       screen.render();
     }).catch((e) => {
-      statusBar.setContent(`  {red-fg}\u2717 Failed: ${e.message.substring(0, 60)}{/red-fg}`);
+      installLog.log('');
+      installLog.log(`{red-fg}\u2717 Failed: ${e.message}{/red-fg}`);
+      logPanel.setLabel(` {bold}{red-fg}Install Failed{/red-fg}{/bold} `);
       log(`{red-fg}\u2717 Install failed:{/red-fg} ${e.message}`);
-      installLog.setContent('');
       onDone();
       list.focus();
       screen.render();
