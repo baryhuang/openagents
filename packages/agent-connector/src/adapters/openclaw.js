@@ -223,8 +223,9 @@ class OpenClawAdapter extends BaseAdapter {
       let stdout = '';
       let stderr = '';
 
+      // OpenClaw writes --json output to stderr, so capture both
       if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
-      if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; });
+      if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; stdout += d; });
 
       proc.on('error', (err) => reject(err));
       proc.on('exit', (code) => {
