@@ -720,6 +720,8 @@ function createTUI() {
     };
 
     nameInput.key('enter', () => pathInput.focus());
+    nameInput.key('tab', () => pathInput.focus());
+    pathInput.key('tab', () => nameInput.focus());
     pathInput.key('enter', () => {
       const name = nameInput.getValue().trim() || defaultName;
       const agentPath = pathInput.getValue().trim() || defaultPath;
@@ -820,7 +822,7 @@ function createTUI() {
     if (inputs.length > 0) inputs[0].focus();
     screen.render();
 
-    // Enter moves to next field, last field triggers save
+    // Enter/Tab moves to next field, last field triggers save on Enter
     for (let i = 0; i < inputs.length; i++) {
       inputs[i].key('enter', () => {
         if (i < inputs.length - 1) {
@@ -828,6 +830,9 @@ function createTUI() {
         } else {
           doSave();
         }
+      });
+      inputs[i].key('tab', () => {
+        inputs[(i + 1) % inputs.length].focus();
       });
     }
 
