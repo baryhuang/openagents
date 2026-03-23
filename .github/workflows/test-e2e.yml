@@ -114,7 +114,7 @@ jobs:
       - name: Install Node.js and openagents CLI
         run: |
           export PATH="$HOME/.openagents/nodejs/bin:/usr/local/bin:$PATH"
-          bash "$GITHUB_WORKSPACE/install.sh"
+          curl -fsSL https://raw.githubusercontent.com/openagents-org/openagents/develop/install.sh | bash
 
       - name: Setup and launch Launcher
         run: |
