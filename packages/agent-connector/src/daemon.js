@@ -260,7 +260,10 @@ class Daemon {
     if (network) {
       this._adapterLoop(name, agentCfg, info, network);
     } else {
-      this._spawnLoop(name, agentCfg, info);
+      // No workspace connected — nothing to do, mark as idle
+      info.state = 'stopped';
+      this._writeStatus();
+      this._log(`${name} idle (no workspace connected)`);
     }
   }
 
