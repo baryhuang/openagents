@@ -5,9 +5,6 @@ jobs:
   test-windows:
     runs-on: [self-hosted, windows, desktop-test]
     timeout-minutes: 10
-    env:
-      OPENAGENTS_DIR: ${{ github.workspace }}
-      NODE_PATH: ${{ env.USERPROFILE }}\.openagents\nodejs
     steps:
       - name: Checkout
         uses: actions/checkout@v4
