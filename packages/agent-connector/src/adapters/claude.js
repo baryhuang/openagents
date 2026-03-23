@@ -288,7 +288,7 @@ class ClaudeAdapter extends BaseAdapter {
     }
 
     // Clean env
-    const cleanEnv = { ...process.env };
+    const cleanEnv = { ...(this.agentEnv || process.env) };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE_SESSION;
 

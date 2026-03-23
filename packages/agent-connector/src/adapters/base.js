@@ -31,12 +31,13 @@ class BaseAdapter {
    * @param {string} opts.agentName
    * @param {string} [opts.endpoint]
    */
-  constructor({ workspaceId, channelName, token, agentName, endpoint }) {
+  constructor({ workspaceId, channelName, token, agentName, endpoint, agentEnv }) {
     this.workspaceId = workspaceId;
     this.channelName = channelName;
     this.token = token;
     this.agentName = agentName;
     this.endpoint = endpoint || DEFAULT_ENDPOINT;
+    this.agentEnv = agentEnv || process.env;
     this.client = new WorkspaceClient(this.endpoint);
     this._lastEventId = null;
     this._running = false;

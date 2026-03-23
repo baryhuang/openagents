@@ -357,6 +357,7 @@ class Daemon {
         endpoint,
         openclawAgentId: agentCfg.openclaw_agent_id || 'main',
         disabledModules: new Set(),
+        agentEnv: this._buildAgentEnv(agentCfg),
       });
     } catch (e) {
       this._log(`${name} failed to create ${agentType} adapter: ${e.message}`);
