@@ -41,7 +41,7 @@ jobs:
           $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
           Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $dir -Force | Out-Null
-          Copy-Item -Path "packages\launcher\src" -Destination "$dir\src" -Recurse
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\packages\launcher\src" -Destination "$dir\src" -Recurse
           Push-Location $dir
           npm init -y 2>$null | Out-Null
           npm install @openagents-org/agent-launcher@latest electron@33 2>&1 | Select-Object -Last 3
@@ -67,11 +67,11 @@ jobs:
             exit 1
           }
 
-      - name: Install Playwright
+      - name: Install test dependencies
         shell: powershell
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
-          npm install -g playwright@latest 2>&1 | Select-Object -Last 3
+          npm install -g ws 2>&1 | Select-Object -Last 3
 
       - name: Run E2E test via Playwright
         shell: powershell
