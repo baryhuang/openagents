@@ -77,8 +77,9 @@ else
             if command -v brew >/dev/null 2>&1; then
                 info "Installing Node.js via Homebrew..."
                 brew install node 2>/dev/null || true
-            else
-                info "Downloading Node.js..."
+            fi
+            if ! command -v node >/dev/null 2>&1; then
+                info "Downloading Node.js portable..."
                 if [ "$ARCH" = "arm64" ]; then
                     NODE_URL="https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-arm64.tar.gz"
                 else
