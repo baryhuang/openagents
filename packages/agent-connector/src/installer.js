@@ -429,7 +429,7 @@ class Installer {
     const { spawn: spawnProc } = require('child_process');
     const https = require('https');
     const os = require('os');
-    const nodeVersion = 'v22.14.0';
+    const nodeVersion = 'v22.16.0';
     const plat = Installer.platform();
 
     if (onData) onData(`Node.js not found. Installing Node.js ${nodeVersion}...\n\n`);

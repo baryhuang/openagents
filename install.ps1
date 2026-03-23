@@ -56,7 +56,7 @@ if ($node) {
 } else {
     Warn "Node.js $MIN_NODE_MAJOR+ not found - installing portable Node.js..."
 
-    $nodeVersion = "v22.14.0"
+    $nodeVersion = "v22.16.0"
     $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
     $url = "https://nodejs.org/dist/$nodeVersion/node-$nodeVersion-win-$arch.zip"
     $zipPath = Join-Path $env:TEMP "node-$nodeVersion.zip"

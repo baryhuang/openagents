@@ -80,9 +80,9 @@ else
             else
                 info "Downloading Node.js..."
                 if [ "$ARCH" = "arm64" ]; then
-                    NODE_URL="https://nodejs.org/dist/v22.14.0/node-v22.14.0-darwin-arm64.tar.gz"
+                    NODE_URL="https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-arm64.tar.gz"
                 else
-                    NODE_URL="https://nodejs.org/dist/v22.14.0/node-v22.14.0-darwin-x64.tar.gz"
+                    NODE_URL="https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-x64.tar.gz"
                 fi
                 mkdir -p "$HOME/.openagents/nodejs"
                 curl -fsSL "$NODE_URL" | tar xz -C "$HOME/.openagents/nodejs" --strip-components=1
@@ -99,7 +99,7 @@ else
                 sudo dnf install -y nodejs 2>/dev/null || true
             else
                 info "Downloading Node.js portable..."
-                NODE_URL="https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz"
+                NODE_URL="https://nodejs.org/dist/v22.16.0/node-v22.16.0-linux-x64.tar.xz"
                 mkdir -p "$HOME/.openagents/nodejs"
                 curl -fsSL "$NODE_URL" | tar xJ -C "$HOME/.openagents/nodejs" --strip-components=1
                 export PATH="$HOME/.openagents/nodejs/bin:$PATH"
