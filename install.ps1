@@ -2,14 +2,14 @@
 # OpenAgents Installer for Windows
 # Usage: irm https://openagents.org/install.ps1 | iex
 #
-# Installs the OpenAgents CLI, detects local AI agents, and gets you running.
-# Requires PowerShell 5.1+ (built into Windows 10/11).
+# Installs the OpenAgents CLI (agent-connector), detects local AI agents,
+# and gets you running. Requires PowerShell 5.1+ (built into Windows 10/11).
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$VERSION = "0.9.3"
-$MIN_PYTHON_MAJOR = 3
-$MIN_PYTHON_MINOR = 10
+$VERSION = "1.0.0"
+$NPM_PACKAGE = "@openagents-org/agent-connector"
+$MIN_NODE_MAJOR = 18
 
 # --- Helpers ---
 function Info($msg)  { Write-Host ">>> " -ForegroundColor Cyan -NoNewline; Write-Host $msg }
@@ -26,147 +26,119 @@ Write-Host "  Multi-agent orchestration for your local machine" -ForegroundColor
 Write-Host ""
 
 # =========================================================================
-# Step 1: Python
+# Step 1: Node.js
 # =========================================================================
-Step "Checking Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+..."
+Step "Checking Node.js $MIN_NODE_MAJOR+..."
 
-function Find-Python {
-    foreach ($cmd in @("python", "python3", "py")) {
-        $exe = Get-Command $cmd -ErrorAction SilentlyContinue
-        if ($exe) {
-            try {
-                $ver = & $exe.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>$null
-                $major = & $exe.Source -c "import sys; print(sys.version_info.major)" 2>$null
-                $minor = & $exe.Source -c "import sys; print(sys.version_info.minor)" 2>$null
-                if ([int]$major -ge $MIN_PYTHON_MAJOR -and [int]$minor -ge $MIN_PYTHON_MINOR) {
-                    return @{ Path = $exe.Source; Version = $ver }
-                }
-            } catch {}
-        }
+function Find-Node {
+    $exe = Get-Command node -ErrorAction SilentlyContinue
+    if ($exe) {
+        try {
+            $ver = & $exe.Source --version 2>$null
+            $major = [int]($ver -replace '^v','').Split('.')[0]
+            if ($major -ge $MIN_NODE_MAJOR) {
+                return @{ Path = $exe.Source; Version = $ver }
+            }
+        } catch {}
+    }
+    # Check bundled Node.js
+    $bundled = Join-Path $env:USERPROFILE ".openagents\nodejs\node.exe"
+    if (Test-Path $bundled) {
+        $ver = & $bundled --version 2>$null
+        return @{ Path = $bundled; Version = $ver }
     }
     return $null
 }
 
-$python = Find-Python
-
-if ($python) {
-    Ok "Python $($python.Version) ($($python.Path))"
+$node = Find-Node
+if ($node) {
+    Ok "Node.js $($node.Version) ($($node.Path))"
 } else {
-    Warn "Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+ not found - attempting install..."
+    Warn "Node.js $MIN_NODE_MAJOR+ not found - installing portable Node.js..."
 
-    $installed = $false
+    $nodeVersion = "v22.14.0"
+    $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
+    $url = "https://nodejs.org/dist/$nodeVersion/node-$nodeVersion-win-$arch.zip"
+    $zipPath = Join-Path $env:TEMP "node-$nodeVersion.zip"
+    $nodejsDir = Join-Path $env:USERPROFILE ".openagents\nodejs"
 
-    # Try winget first (Windows 10+)
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Info "Installing Python via winget..."
-        try {
-            winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements 2>$null
-            $installed = $true
-        } catch {
-            Warn "winget install failed, trying alternatives..."
-        }
+    Info "Downloading $url..."
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
+
+    Info "Extracting to $nodejsDir..."
+    New-Item -ItemType Directory -Force -Path $nodejsDir | Out-Null
+    Expand-Archive -Path $zipPath -DestinationPath $nodejsDir -Force
+
+    # Move contents from nested folder
+    $nested = Get-ChildItem $nodejsDir -Directory | Where-Object { $_.Name -like "node-*" } | Select-Object -First 1
+    if ($nested) {
+        Get-ChildItem $nested.FullName | Move-Item -Destination $nodejsDir -Force -ErrorAction SilentlyContinue
+        Remove-Item $nested.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # Try Chocolatey
-    if (-not $installed -and (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Info "Installing Python via Chocolatey..."
-        try {
-            choco install python --version=3.12 -y 2>$null
-            $installed = $true
-        } catch {
-            Warn "Chocolatey install failed..."
-        }
-    }
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
 
-    # Try Scoop
-    if (-not $installed -and (Get-Command scoop -ErrorAction SilentlyContinue)) {
-        Info "Installing Python via Scoop..."
-        try {
-            scoop install python 2>$null
-            $installed = $true
-        } catch {
-            Warn "Scoop install failed..."
-        }
-    }
+    # Add to PATH for this session
+    $env:PATH = "$nodejsDir;$env:PATH"
 
-    if ($installed) {
-        # Refresh PATH
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-    }
-
-    $python = Find-Python
-    if ($python) {
-        Ok "Python $($python.Version) installed"
+    $node = Find-Node
+    if ($node) {
+        Ok "Node.js $($node.Version) installed (portable)"
     } else {
-        Fail "Python installation did not succeed.`n  Please install Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+ from: https://www.python.org/downloads/"
+        Fail "Node.js installation failed. Please install from https://nodejs.org"
     }
 }
 
-$PYTHON = $python.Path
-
 # =========================================================================
-# Step 2: Install/upgrade openagents
+# Step 2: Install/upgrade agent-connector
 # =========================================================================
 Step "Installing OpenAgents CLI..."
 
+# Find npm
+$npmCmd = Get-Command npm -ErrorAction SilentlyContinue
+if (-not $npmCmd) {
+    $bundledNpm = Join-Path $env:USERPROFILE ".openagents\nodejs\npm.cmd"
+    if (Test-Path $bundledNpm) {
+        $env:PATH = (Join-Path $env:USERPROFILE ".openagents\nodejs") + ";$env:PATH"
+    }
+}
+
 # Check if already installed
+$existing = Get-Command agent-connector -ErrorAction SilentlyContinue
+if ($existing) {
+    $currentVer = & agent-connector --version 2>$null
+    Ok "agent-connector already installed ($currentVer)"
+    Info "Upgrading to latest..."
+}
+
+# Install globally
 try {
-    $current = & $PYTHON -c "from openagents import __version__; print(__version__)" 2>$null
-    if ($current) {
-        Ok "openagents already installed (v$current)"
-        Info "Upgrading to latest..."
-    }
-} catch {}
-
-# Install
-$installed = $false
-try {
-    & $PYTHON -m pip install --quiet --no-cache-dir --upgrade openagents 2>$null
-    $installed = $true
-} catch {}
-
-if (-not $installed) {
-    try {
-        & $PYTHON -m pip install --quiet --no-cache-dir --upgrade --user openagents 2>$null
-        $installed = $true
-    } catch {}
+    & npm install -g "$NPM_PACKAGE@latest" 2>&1 | Select-Object -Last 5
+} catch {
+    Warn "Global install failed, trying with --prefix..."
+    $globalDir = Join-Path $env:USERPROFILE ".openagents\npm-global"
+    New-Item -ItemType Directory -Force -Path $globalDir | Out-Null
+    & npm install --prefix $globalDir -g "$NPM_PACKAGE@latest" 2>&1 | Select-Object -Last 5
+    $env:PATH = "$globalDir;$env:PATH"
 }
 
-if ($installed) {
-    $newVersion = & $PYTHON -c "from openagents import __version__; print(__version__)" 2>$null
-    Ok "openagents v$newVersion installed"
+# Verify
+$acCmd = Get-Command agent-connector -ErrorAction SilentlyContinue
+if ($acCmd) {
+    $newVer = & agent-connector --version 2>$null
+    Ok "agent-connector $newVer installed"
 } else {
-    Fail "Failed to install openagents.`n  Try manually: pip install openagents"
-}
-
-# Ensure openagents is on PATH
-$oaCmd = Get-Command openagents -ErrorAction SilentlyContinue
-if (-not $oaCmd) {
-    # Check common locations
-    $scriptsDir = & $PYTHON -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
-    $userScripts = & $PYTHON -c "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))" 2>$null
-
-    foreach ($dir in @($scriptsDir, $userScripts)) {
-        if ($dir -and (Test-Path "$dir\openagents.exe")) {
-            # Add to current session
-            $env:Path = "$dir;$env:Path"
-
-            # Persist to user PATH so it survives terminal restarts
-            $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
-            if ($userPath -notlike "*$dir*") {
-                [System.Environment]::SetEnvironmentVariable("Path", "$dir;$userPath", "User")
-                Ok "Added $dir to user PATH (persistent)"
-            }
-            break
-        }
+    # Check npm global bin
+    $npmBin = Join-Path $env:APPDATA "npm"
+    if (Test-Path (Join-Path $npmBin "agent-connector.cmd")) {
+        $env:PATH = "$npmBin;$env:PATH"
+        $newVer = & agent-connector --version 2>$null
+        Ok "agent-connector $newVer installed"
+        Warn "Add to PATH: $npmBin"
+    } else {
+        Fail "Failed to install agent-connector. Try: npm install -g $NPM_PACKAGE"
     }
-}
-
-if (Get-Command openagents -ErrorAction SilentlyContinue) {
-    Ok "openagents CLI is ready"
-} else {
-    Warn "openagents installed but not found on PATH"
-    Warn "Restart your terminal, or run: python -m openagents"
 }
 
 # =========================================================================
@@ -176,62 +148,45 @@ Step "Detecting local AI agents..."
 
 $agentCount = 0
 
-# Claude Code
-if (Get-Command claude -ErrorAction SilentlyContinue) {
-    $claudeVer = & claude --version 2>$null | Select-Object -First 1
-    Ok "Claude Code ($claudeVer)"
-    $agentCount++
-} else {
-    Write-Host "  Claude Code - not installed" -ForegroundColor DarkGray
+function Detect-Agent($name, $binary) {
+    $cmd = Get-Command $binary -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $ver = try { & $binary --version 2>$null | Select-Object -First 1 } catch { "" }
+        if ($ver) { Ok "$name ($ver)" } else { Ok $name }
+        $script:agentCount++
+    } else {
+        Write-Host "  $name - not installed" -ForegroundColor DarkGray
+    }
 }
 
-# OpenAI Codex
-if (Get-Command codex -ErrorAction SilentlyContinue) {
-    Ok "OpenAI Codex CLI"
-    $agentCount++
-} else {
-    Write-Host "  OpenAI Codex - not installed" -ForegroundColor DarkGray
-}
-
-# Aider
-if (Get-Command aider -ErrorAction SilentlyContinue) {
-    Ok "Aider"
-    $agentCount++
-} else {
-    Write-Host "  Aider - not installed" -ForegroundColor DarkGray
-}
-
-# Goose
-if (Get-Command goose -ErrorAction SilentlyContinue) {
-    Ok "Goose"
-    $agentCount++
-} else {
-    Write-Host "  Goose - not installed" -ForegroundColor DarkGray
-}
+Detect-Agent "Claude Code"    "claude"
+Detect-Agent "OpenClaw"       "openclaw"
+Detect-Agent "OpenAI Codex"   "codex"
+Detect-Agent "Aider"          "aider"
+Detect-Agent "Goose"          "goose"
+Detect-Agent "Gemini CLI"     "gemini"
+Detect-Agent "Copilot CLI"    "copilot"
+Detect-Agent "Amp"            "amp"
+Detect-Agent "OpenCode"       "opencode"
 
 if ($agentCount -eq 0) {
     Write-Host ""
     Warn "No AI agents found. Install one to get started:"
     Write-Host ""
-    Write-Host "  Claude Code" -ForegroundColor White -NoNewline
-    Write-Host "  (recommended)" -ForegroundColor DarkGray
-    Write-Host "    npm install -g @anthropic-ai/claude-code"
-    Write-Host ""
-    Write-Host "  OpenAI Codex" -ForegroundColor White
-    Write-Host "    npm install -g @openai/codex"
-    Write-Host ""
-    Write-Host "  Aider" -ForegroundColor White
-    Write-Host "    pip install aider-chat"
+    Write-Host "  agent-connector install openclaw" -ForegroundColor White
+    Write-Host "  agent-connector install claude" -ForegroundColor White
+    Write-Host "  agent-connector install codex" -ForegroundColor White
     Write-Host ""
 }
 
 # =========================================================================
-# Step 4: Run scan (if CLI is available)
+# Step 4: Show status
 # =========================================================================
-if (Get-Command openagents -ErrorAction SilentlyContinue) {
-    Step "Running agent scan..."
+$acExists = Get-Command agent-connector -ErrorAction SilentlyContinue
+if ($acExists) {
+    Step "Agent status"
     Write-Host ""
-    try { & openagents 2>$null } catch {}
+    & agent-connector status 2>$null
 }
 
 # =========================================================================
@@ -244,23 +199,17 @@ Write-Host ""
 if ($agentCount -gt 0) {
     Write-Host "  Quick start:"
     Write-Host ""
-    if (Get-Command claude -ErrorAction SilentlyContinue) {
-        Write-Host "    openagents start claude" -ForegroundColor White -NoNewline
-        Write-Host "    Start a Claude agent" -ForegroundColor DarkGray
-    } elseif (Get-Command codex -ErrorAction SilentlyContinue) {
-        Write-Host "    openagents start codex" -ForegroundColor White -NoNewline
-        Write-Host "    Start a Codex agent" -ForegroundColor DarkGray
-    }
-    Write-Host "    openagents" -ForegroundColor White -NoNewline
-    Write-Host "                Show all agents & status" -ForegroundColor DarkGray
+    Write-Host "    agent-connector status" -ForegroundColor White -NoNewline; Write-Host "         Show all agents"
+    Write-Host "    agent-connector up" -ForegroundColor White -NoNewline; Write-Host "             Start the daemon"
+    Write-Host "    agent-connector search" -ForegroundColor White -NoNewline; Write-Host "         Browse agent catalog"
     Write-Host ""
 } else {
     Write-Host "  Next steps:"
     Write-Host ""
-    Write-Host "    1. Install an AI agent (e.g. Claude Code):"
-    Write-Host "       openagents install claude" -ForegroundColor White
+    Write-Host "    1. Install an AI agent:"
+    Write-Host "       agent-connector install openclaw" -ForegroundColor White
     Write-Host ""
-    Write-Host "    2. Start it:"
-    Write-Host "       openagents start claude" -ForegroundColor White
+    Write-Host "    2. Start the daemon:"
+    Write-Host "       agent-connector up" -ForegroundColor White
     Write-Host ""
 }
