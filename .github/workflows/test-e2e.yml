@@ -34,53 +34,39 @@ jobs:
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           irm https://raw.githubusercontent.com/openagents-org/openagents/develop/install.ps1 | iex
 
-      - name: Debug checkout
-        shell: powershell
-        run: |
-          Write-Host "GITHUB_WORKSPACE: $env:GITHUB_WORKSPACE"
-          Get-ChildItem "$env:GITHUB_WORKSPACE\packages" -ErrorAction SilentlyContinue
-          Get-ChildItem "$env:GITHUB_WORKSPACE\packages\launcher" -ErrorAction SilentlyContinue
-
-      - name: Setup Electron dev folder
+      - name: Setup and launch Launcher dev folder
         shell: powershell
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
           Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $dir -Force | Out-Null
-          Copy-Item -Path "$env:GITHUB_WORKSPACE\packages\launcher\src" -Destination "$dir\src" -Recurse
+          # Use git to get the launcher source directly
           Push-Location $dir
+          git init
+          git remote add origin https://github.com/openagents-org/openagents.git
+          git fetch --depth 1 origin develop
+          git checkout FETCH_HEAD -- packages/launcher/src
+          Move-Item packages\launcher\src src
+          Remove-Item packages -Recurse -Force
           npm init -y 2>$null | Out-Null
-          npm install @openagents-org/agent-launcher@latest electron@33 2>&1 | Select-Object -Last 3
+          npm install @openagents-org/agent-launcher@latest electron@33 ws 2>&1 | Select-Object -Last 3
           $pkg = Get-Content package.json | ConvertFrom-Json
           $pkg.main = "src/main/main.js"
           $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
           Pop-Location
-          Write-Host "Launcher dev folder ready at $dir"
-
-      - name: Launch Electron with CDP
-        shell: powershell
-        run: |
-          $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
-          $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
+          # Launch with CDP
           Start-Process -FilePath "npx" -ArgumentList "electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*" -WorkingDirectory $dir -WindowStyle Normal
-          Start-Sleep -Seconds 10
-          # Verify CDP is up
+          Start-Sleep -Seconds 15
           try {
-            $response = Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 10
-            Write-Host "CDP ready: $($response.Content.Substring(0, 100))..."
+            $r = Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 10
+            Write-Host "CDP ready"
           } catch {
-            Write-Host "CDP not ready: $_"
+            Write-Host "CDP failed: $_"
             exit 1
           }
 
-      - name: Install test dependencies
-        shell: powershell
-        run: |
-          $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
-          npm install -g ws 2>&1 | Select-Object -Last 3
-
-      - name: Run E2E test via Playwright
+      - name: Run E2E test
         shell: powershell
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
@@ -89,7 +75,8 @@ jobs:
           WS_TOKEN: "Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE"
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
-          node infra/e2e-launcher-test.js
+          $env:NODE_PATH = "$env:USERPROFILE\Desktop\launcher-e2e\node_modules"
+          node $env:GITHUB_WORKSPACE\infra\e2e-launcher-test.js
 
       - name: Collect logs
         if: always()
