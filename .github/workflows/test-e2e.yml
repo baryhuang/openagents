@@ -53,6 +53,12 @@ jobs:
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
           openagents connect e2e-test Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE
 
+      - name: Configure LLM API key
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openagents env openclaw LLM_API_KEY=${{ secrets.LLM_API_KEY }} LLM_BASE_URL=${{ secrets.LLM_BASE_URL }} LLM_MODEL=${{ secrets.LLM_MODEL }}
+
       - name: Verify agent config
         shell: cmd
         run: |
