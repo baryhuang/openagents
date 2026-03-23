@@ -498,7 +498,24 @@ async function main() {
 
   const connector = getConnector(flags);
 
+  // Launch TUI if command is 'tui' or no command with interactive terminal
+  if (cmd === 'tui' || (cmd === 'status' && process.argv.length <= 2 && process.stdin.isTTY)) {
+    try {
+      const { run } = require('./tui');
+      run();
+      return;
+    } catch (e) {
+      // Fall through to text-based status if blessed not available
+      if (e.code !== 'MODULE_NOT_FOUND') {
+        print(`TUI error: ${e.message}`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+  }
+
   const commands = {
+    tui: () => { const { run } = require('./tui'); run(); },
     up: () => cmdUp(connector, flags),
     down: () => cmdDown(connector),
     status: () => cmdStatus(connector),
