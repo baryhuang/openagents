@@ -360,6 +360,7 @@ class Daemon {
         token: network.token,
         agentName: name,
         endpoint,
+        agentType,
         openclawAgentId: agentCfg.openclaw_agent_id || 'main',
         disabledModules: new Set(),
         agentEnv: this._buildAgentEnv(agentCfg),

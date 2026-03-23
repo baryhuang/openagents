@@ -1134,15 +1134,17 @@ function createTUI() {
       opened = true;
     } catch {}
 
-    // Show URL in a dialog
+    // Show URL in a dialog — full width, auto-height for long URLs
+    const innerW = screen.width - 4;
+    const urlLines = Math.ceil(url.length / innerW);
     const dialog = blessed.box({
-      top: 'center', left: 'center',
-      width: 70, height: 7,
+      top: 'center', left: 0,
+      width: '100%', height: 4 + urlLines + 2,
       border: { type: 'line' },
       tags: true,
       label: ' {bold}Workspace URL{/bold} ',
       style: { border: { fg: COLORS.accent }, bg: COLORS.surface },
-      content: `\n  ${url}\n\n  {gray-fg}${opened ? 'Opened in browser.' : 'Copy the URL above.'} Press Esc to close.{/gray-fg}`,
+      content: `\n {bold}${url}{/bold}\n\n {gray-fg}${opened ? 'Opened in browser.' : 'Copy the URL above.'} Press Esc to close.{/gray-fg}`,
     });
 
     screen.append(dialog);

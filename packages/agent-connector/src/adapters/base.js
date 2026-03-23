@@ -31,13 +31,14 @@ class BaseAdapter {
    * @param {string} opts.agentName
    * @param {string} [opts.endpoint]
    */
-  constructor({ workspaceId, channelName, token, agentName, endpoint, agentEnv }) {
+  constructor({ workspaceId, channelName, token, agentName, endpoint, agentEnv, agentType }) {
     this.workspaceId = workspaceId;
     this.channelName = channelName;
     this.token = token;
     this.agentName = agentName;
     this.endpoint = endpoint || DEFAULT_ENDPOINT;
     this.agentEnv = agentEnv || process.env;
+    this.agentType = agentType;
     this.client = new WorkspaceClient(this.endpoint);
     this._lastEventId = null;
     this._running = false;
@@ -60,6 +61,18 @@ class BaseAdapter {
 
   async run() {
     this._running = true;
+
+    // Announce agent to workspace
+    try {
+      await this.client.joinNetwork(this.agentName, this.token, {
+        network: this.workspaceId,
+        agentType: this.agentType || 'agent',
+      });
+      this._log(`Joined workspace ${this.workspaceId}`);
+    } catch (e) {
+      this._log(`Warning: join failed: ${e.message}`);
+    }
+
     await this._skipExistingEvents();
 
     const heartbeatInterval = setInterval(() => this._heartbeat(), 30000);

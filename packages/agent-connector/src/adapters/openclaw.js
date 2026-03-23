@@ -59,7 +59,8 @@ class OpenClawAdapter extends BaseAdapter {
   _findOpenclawBinary() {
     try {
       const cmd = IS_WINDOWS ? 'where openclaw' : 'which openclaw';
-      const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 })
+      const { getEnhancedEnv } = require('../paths');
+      const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000, env: getEnhancedEnv() })
         .split(/\r?\n/)[0].trim();
       if (result) return result;
     } catch {}
@@ -69,6 +70,9 @@ class OpenClawAdapter extends BaseAdapter {
     if (IS_WINDOWS) {
       const appdata = process.env.APPDATA || '';
       if (appdata) dirs.push(path.join(appdata, 'npm'));
+      // Portable Node.js installed by OpenAgents Launcher
+      const home = process.env.USERPROFILE || process.env.HOME || '';
+      if (home) dirs.push(path.join(home, '.openagents', 'nodejs'));
     } else {
       const home = process.env.HOME || '';
       dirs.push(path.join(home, '.npm-global', 'bin'), '/usr/local/bin');
