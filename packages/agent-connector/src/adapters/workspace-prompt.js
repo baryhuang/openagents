@@ -282,6 +282,41 @@ function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channel
   return frontmatter + identity + '\n' + collab + '\n' + body;
 }
 
+/**
+ * Build system prompt for OpenCode adapter.
+ */
+function buildOpenCodeSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules }) {
+  const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, mode);
+  const collab = buildCollaborationPrompt();
+  const modePrompt = buildModePrompt(mode);
+  const api = buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channelName, disabledModules, mode });
+  return identity + '\n' + collab + '\n' + modePrompt + '\n' + api;
+}
+
+/**
+ * Build workspace skill markdown for OpenCode (written to .opencode/skills/).
+ */
+function buildOpenCodeSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules }) {
+  const api = buildApiSkillsPrompt({
+    endpoint, workspaceId, token, agentName,
+    channelName: channelName || 'general',
+    disabledModules,
+    mode: 'execute',
+  });
+
+  const frontmatter =
+    '---\n' +
+    'name: openagents-workspace\n' +
+    'description: OpenAgents Workspace API — shared files, browser, and agent collaboration\n' +
+    '---\n\n';
+
+  const identity =
+    `You are agent '${agentName}' connected to OpenAgents workspace ${workspaceId}.\n` +
+    'Use these APIs via bash + curl to interact with the workspace.\n\n';
+
+  return frontmatter + identity + api;
+}
+
 module.exports = {
   buildWorkspaceIdentity,
   buildCollaborationPrompt,
@@ -290,4 +325,6 @@ module.exports = {
   buildClaudeSystemPrompt,
   buildOpenclawSystemPrompt,
   buildOpenclawSkillMd,
+  buildOpenCodeSystemPrompt,
+  buildOpenCodeSkillMd,
 };

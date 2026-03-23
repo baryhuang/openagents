@@ -8,11 +8,13 @@ const BaseAdapter = require('./base');
 const OpenClawAdapter = require('./openclaw');
 const ClaudeAdapter = require('./claude');
 const CodexAdapter = require('./codex');
+const OpenCodeAdapter = require('./opencode');
 
 const ADAPTER_MAP = {
   openclaw: OpenClawAdapter,
   claude: ClaudeAdapter,
   codex: CodexAdapter,
+  opencode: OpenCodeAdapter,
 };
 
 /**
@@ -34,6 +36,7 @@ module.exports = {
   OpenClawAdapter,
   ClaudeAdapter,
   CodexAdapter,
+  OpenCodeAdapter,
   createAdapter,
   ADAPTER_MAP,
 };

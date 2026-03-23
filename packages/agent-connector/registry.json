@@ -433,6 +433,7 @@
       "cli",
       "terminal"
     ],
+    "builtin": true,
     "install": {
       "binary": "opencode",
       "requires": [
@@ -441,6 +442,55 @@
       "macos": "npm install -g opencode-ai@latest",
       "linux": "npm install -g opencode-ai@latest",
       "windows": "npm install -g opencode-ai@latest"
+    },
+    "adapter": {
+      "module": "openagents.adapters.opencode",
+      "class": "OpenCodeAdapter"
+    },
+    "env_config": [
+      {
+        "name": "LLM_API_KEY",
+        "description": "API key",
+        "required": true,
+        "password": true
+      },
+      {
+        "name": "LLM_BASE_URL",
+        "description": "API base URL (OpenAI-compatible endpoint)",
+        "required": false,
+        "default": "https://api.openai.com/v1",
+        "placeholder": "https://api.openai.com/v1"
+      },
+      {
+        "name": "LLM_MODEL",
+        "description": "Model name",
+        "required": false,
+        "placeholder": "gpt-4o, claude-sonnet-4-20250514, etc."
+      }
+    ],
+    "resolve_env": {
+      "rules": [
+        {
+          "from": "LLM_API_KEY",
+          "to": "OPENAI_API_KEY"
+        },
+        {
+          "from": "LLM_BASE_URL",
+          "to": "OPENAI_BASE_URL"
+        },
+        {
+          "from": "LLM_MODEL",
+          "to": "OPENCODE_MODEL"
+        }
+      ]
+    },
+    "check_ready": {
+      "env_vars": [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY"
+      ],
+      "saved_env_key": "LLM_API_KEY",
+      "not_ready_message": "Not configured — press e to configure"
     }
   },
   {
