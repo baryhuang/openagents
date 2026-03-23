@@ -182,6 +182,7 @@ function createTUI() {
     title: 'OpenAgents',
     fullUnicode: true,
     tags: true,
+    style: { bg: 'black', fg: 'white' },
   });
   const connector = getConnector();
   let pkg;
@@ -202,7 +203,7 @@ function createTUI() {
     top: 1, left: 0, width: '100%', height: 1,
     tags: true,
     content: `  {bold}OpenAgents{/bold} {gray-fg}v${pkg.version}{/gray-fg}`,
-    style: { fg: 'white' },
+    style: { fg: 'white', bg: 'black' },
   });
 
   // ── Agent Panel (bordered) ──
@@ -211,7 +212,7 @@ function createTUI() {
     border: { type: 'line' },
     label: ' {bold}Agents{/bold} ',
     tags: true,
-    style: { border: { fg: COLORS.panelBorder }, label: { fg: COLORS.accent } },
+    style: { bg: 'black', border: { fg: COLORS.panelBorder }, label: { fg: COLORS.accent } },
   });
 
   // ── Column Headers ──
@@ -230,8 +231,9 @@ function createTUI() {
     keys: true, vi: true, mouse: true,
     tags: true,
     style: {
+      bg: 'black',
       selected: { bg: COLORS.selected.bg, fg: COLORS.selected.fg, bold: true },
-      item: { fg: 'white' },
+      item: { fg: 'white', bg: 'black' },
     },
   });
 
@@ -241,7 +243,7 @@ function createTUI() {
     border: { type: 'line' },
     label: ' {bold}Activity Log{/bold} ',
     tags: true,
-    style: { border: { fg: COLORS.logBorder }, label: { fg: COLORS.primary } },
+    style: { bg: 'black', border: { fg: COLORS.logBorder }, label: { fg: COLORS.primary } },
   });
 
   const logContent = blessed.log({
@@ -249,7 +251,7 @@ function createTUI() {
     top: 0, left: 0, width: '100%-2', height: '100%-2',
     scrollable: true, scrollOnInput: true,
     tags: true,
-    style: { fg: 'white' },
+    style: { fg: 'white', bg: 'black' },
   });
 
   // ── Footer (clickable buttons) ──
