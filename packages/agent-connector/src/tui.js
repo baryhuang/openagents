@@ -225,14 +225,6 @@ function createTUI() {
   }
 
   // ── Footer rendering (context-aware, clickable) ──
-  // Maps footer action labels to the key they simulate
-  const footerKeyMap = {
-    'Install': 'i', 'New': 'n', 'Start': 's', 'Stop': 'x',
-    'Configure': 'e', 'Connect': 'c', 'Disconnect': 'd',
-    'Workspace': 'w', 'Remove': 'delete', 'Daemon': 'u',
-    'Refresh': 'r', 'Quit': 'q',
-  };
-
   function updateFooter() {
     const agent = agentRows[agentList.selected];
     const items = [];
@@ -278,9 +270,9 @@ function createTUI() {
         content: `{cyan-fg}${item.key}{/cyan-fg} ${item.label}`,
         style: { bg: COLORS.footerBg, fg: COLORS.footerFg, hover: { bg: 'cyan', fg: 'black' } },
       });
-      const actionKey = footerKeyMap[item.label];
-      if (actionKey) {
-        btn.on('click', () => { screen.emit('keypress', null, { full: actionKey, name: actionKey }); });
+      const action = footerActions[item.label];
+      if (action) {
+        btn.on('click', () => action());
       }
       footerButtons.push(btn);
       left += text.length + 2;
@@ -1221,115 +1213,112 @@ function createTUI() {
   // Key bindings
   // ────────────────────────────────────────────────────────────────────────
 
-  screen.key('q', () => { if (currentView === 'main') process.exit(0); });
-  screen.key('C-c', () => process.exit(0));
-
-  screen.key('i', () => { if (currentView === 'main') showInstallScreen(); });
-
-  screen.key('n', () => {
-    if (currentView !== 'main') return;
-    showSelectAgentTypeScreen((type) => {
-      showStartAgentScreen(type, (result) => {
-        try {
-          connector.addAgent({ name: result.name, type: result.type, path: result.path });
-          log(`{green-fg}\u2713{/green-fg} Created agent {cyan-fg}${result.name}{/cyan-fg} (${result.type})`);
-
-          // Start daemon if not running
-          const pid = connector.getDaemonPid();
-          if (!pid) {
-            connector.startDaemon();
-            log('{green-fg}\u2713{/green-fg} Daemon starting...');
-          } else {
-            signalDaemonReload();
+  // ── Action handlers (shared by keys and clickable footer) ──
+  const footerActions = {
+    Install() { if (currentView === 'main') showInstallScreen(); },
+    New() {
+      if (currentView !== 'main') return;
+      showSelectAgentTypeScreen((type) => {
+        showStartAgentScreen(type, (result) => {
+          try {
+            connector.addAgent({ name: result.name, type: result.type, path: result.path });
+            log(`{green-fg}\u2713{/green-fg} Created agent {cyan-fg}${result.name}{/cyan-fg} (${result.type})`);
+            const pid = connector.getDaemonPid();
+            if (!pid) {
+              connector.startDaemon();
+              log('{green-fg}\u2713{/green-fg} Daemon starting...');
+            } else {
+              signalDaemonReload();
+            }
+          } catch (e) {
+            log(`{red-fg}\u2717{/red-fg} ${e.message}`);
           }
+          setTimeout(refreshAgentTable, 3000);
+        });
+      });
+    },
+    Start() {
+      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+      const a = agentRows[agentList.selected];
+      if (a.configured) doStart(a.name);
+    },
+    Stop() {
+      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+      const a = agentRows[agentList.selected];
+      if (a.configured) doStop(a.name);
+    },
+    Configure() {
+      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+      const a = agentRows[agentList.selected];
+      if (a.configured) showConfigureScreen(a);
+    },
+    Connect() {
+      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+      const a = agentRows[agentList.selected];
+      if (a.configured && !a.workspace) showConnectWorkspaceScreen(a.name);
+    },
+    Disconnect() {
+      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+      const a = agentRows[agentList.selected];
+      if (a.configured && a.workspace) doDisconnect(a.name);
+    },
+    Workspace() {
+      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+      const a = agentRows[agentList.selected];
+      if (a.configured && a.workspace) doOpenWorkspace(a);
+    },
+    Remove() {
+      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+      const a = agentRows[agentList.selected];
+      if (a.configured) doRemove(a.name);
+    },
+    Daemon() {
+      if (currentView !== 'main') return;
+      const pid = connector.getDaemonPid();
+      if (pid) {
+        showConfirmDialog('Stop daemon? This will disconnect ALL agents.', (yes) => {
+          if (!yes) { log('{gray-fg}Cancelled{/gray-fg}'); return; }
+          try {
+            connector.stopDaemon();
+            log('{green-fg}\u2713{/green-fg} Daemon stopped');
+          } catch (e) {
+            log(`{red-fg}\u2717{/red-fg} ${e.message}`);
+          }
+          setTimeout(refreshAgentTable, 1000);
+        });
+      } else {
+        try {
+          connector.startDaemon();
+          log('{green-fg}\u2713{/green-fg} Daemon starting...');
         } catch (e) {
           log(`{red-fg}\u2717{/red-fg} ${e.message}`);
         }
         setTimeout(refreshAgentTable, 3000);
-      });
-    });
-  });
-
-  screen.key('r', () => {
-    if (currentView === 'main') {
-      refreshAgentTable();
-      log('{green-fg}\u2713{/green-fg} Refreshed');
-    }
-  });
-
-  screen.key('s', () => {
-    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-    const a = agentRows[agentList.selected];
-    if (!a.configured) return;
-    doStart(a.name);
-  });
-
-  screen.key('x', () => {
-    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-    const a = agentRows[agentList.selected];
-    if (!a.configured) return;
-    doStop(a.name);
-  });
-
-  screen.key('u', () => {
-    if (currentView !== 'main') return;
-    const pid = connector.getDaemonPid();
-    if (pid) {
-      showConfirmDialog('Stop daemon? This will disconnect ALL agents.', (yes) => {
-        if (!yes) { log('{gray-fg}Cancelled{/gray-fg}'); return; }
-        try {
-          connector.stopDaemon();
-          log('{green-fg}\u2713{/green-fg} Daemon stopped');
-        } catch (e) {
-          log(`{red-fg}\u2717{/red-fg} ${e.message}`);
-        }
-        setTimeout(refreshAgentTable, 1000);
-      });
-    } else {
-      try {
-        connector.startDaemon();
-        log('{green-fg}\u2713{/green-fg} Daemon starting...');
-      } catch (e) {
-        log(`{red-fg}\u2717{/red-fg} ${e.message}`);
       }
-      setTimeout(refreshAgentTable, 3000);
-    }
-  });
+    },
+    Refresh() {
+      if (currentView === 'main') {
+        refreshAgentTable();
+        log('{green-fg}\u2713{/green-fg} Refreshed');
+      }
+    },
+    Quit() { if (currentView === 'main') process.exit(0); },
+  };
 
-  screen.key('c', () => {
-    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-    const a = agentRows[agentList.selected];
-    if (!a.configured || a.workspace) return;
-    showConnectWorkspaceScreen(a.name);
-  });
-
-  screen.key('d', () => {
-    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-    const a = agentRows[agentList.selected];
-    if (!a.configured || !a.workspace) return;
-    doDisconnect(a.name);
-  });
-
-  screen.key('w', () => {
-    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-    const a = agentRows[agentList.selected];
-    if (!a.configured || !a.workspace) return;
-    doOpenWorkspace(a);
-  });
-
-  screen.key('e', () => {
-    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-    const a = agentRows[agentList.selected];
-    if (!a.configured) return;
-    showConfigureScreen(a);
-  });
-
-  screen.key('delete', () => {
-    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-    const a = agentRows[agentList.selected];
-    if (!a.configured) return;
-    doRemove(a.name);
-  });
+  // Bind keyboard shortcuts
+  screen.key('q', footerActions.Quit);
+  screen.key('C-c', () => process.exit(0));
+  screen.key('i', footerActions.Install);
+  screen.key('n', footerActions.New);
+  screen.key('r', footerActions.Refresh);
+  screen.key('s', footerActions.Start);
+  screen.key('x', footerActions.Stop);
+  screen.key('u', footerActions.Daemon);
+  screen.key('c', footerActions.Connect);
+  screen.key('d', footerActions.Disconnect);
+  screen.key('w', footerActions.Workspace);
+  screen.key('e', footerActions.Configure);
+  screen.key('delete', footerActions.Remove);
 
   // ── Init ──
   agentList.focus();
