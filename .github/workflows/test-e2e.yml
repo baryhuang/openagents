@@ -34,6 +34,13 @@ jobs:
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           irm https://raw.githubusercontent.com/openagents-org/openagents/develop/install.ps1 | iex
 
+      - name: Debug checkout
+        shell: powershell
+        run: |
+          Write-Host "GITHUB_WORKSPACE: $env:GITHUB_WORKSPACE"
+          Get-ChildItem "$env:GITHUB_WORKSPACE\packages" -ErrorAction SilentlyContinue
+          Get-ChildItem "$env:GITHUB_WORKSPACE\packages\launcher" -ErrorAction SilentlyContinue
+
       - name: Setup Electron dev folder
         shell: powershell
         run: |
