@@ -74,7 +74,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
-          npm install -g ws 2>$null
 
           @'
           const http = require('http');
@@ -294,9 +293,11 @@ jobs:
 
           main().then(() => { ws.close(); process.exit(0); })
                 .catch(e => { console.error('\n  E2E FAILED: ' + e.message + '\n'); ws?.close(); process.exit(1); });
-          '@ | Out-File -Encoding utf8 "$env:TEMP\e2e-test.js"
+          '@ | Out-File -Encoding utf8 "$env:USERPROFILE\Desktop\launcher-e2e\e2e-test.js"
 
-          node "$env:TEMP\e2e-test.js"
+          Push-Location "$env:USERPROFILE\Desktop\launcher-e2e"
+          node e2e-test.js
+          Pop-Location
 
       - name: Collect logs
         if: always()
