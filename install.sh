@@ -12,6 +12,9 @@ set -euo pipefail
 # Redirect all output to stderr so it's visible even when piped (curl | bash)
 exec 3>&1 1>&2
 
+# Save original PATH to detect if openagents needs PATH setup
+ORIGINAL_PATH="$PATH"
+
 VERSION="1.0.2"
 NPM_PACKAGE="@openagents-org/agent-launcher"
 MIN_NODE_MAJOR=18
@@ -211,23 +214,32 @@ echo ""
 echo "${BOLD}${GREEN}  Installation complete!${RESET}"
 echo ""
 
-# Check if openagents is on PATH for future shells
+# Check if openagents is on the user's original PATH (not our modified one)
 NEEDS_PATH=""
-if ! command -v openagents >/dev/null 2>&1 && [ -n "$OA_BIN" ]; then
-    NEEDS_PATH=$(dirname "$OA_BIN")
+if [ -n "$OA_BIN" ]; then
+    OA_DIR=$(dirname "$OA_BIN")
+    # Check if it was already on PATH before we modified it
+    case ":${ORIGINAL_PATH}:" in
+        *":${OA_DIR}:"*) ;;  # already on PATH
+        *) NEEDS_PATH="$OA_DIR" ;;
+    esac
 fi
 
 if [ -n "$NEEDS_PATH" ]; then
-    echo "  ${YELLOW}Add to your shell profile:${RESET}"
+    echo "  ${YELLOW}To use openagents, add to your shell profile (~/.bashrc, ~/.zshrc):${RESET}"
     echo ""
     echo "    ${BOLD}export PATH=\"$NEEDS_PATH:\$PATH\"${RESET}"
     echo ""
+    echo "  ${DIM}Or run it now with:${RESET}"
+    echo ""
+    echo "    ${BOLD}$OA_BIN${RESET}"
+    echo ""
+else
+    echo "  Get started:"
+    echo ""
+    echo "    ${BOLD}openagents${RESET}                  Launch the interactive dashboard"
+    echo ""
 fi
-
-echo "  Get started:"
-echo ""
-echo "    ${BOLD}openagents${RESET}                  Launch the interactive dashboard"
-echo ""
 
 if [ "$agent_count" -eq 0 ]; then
     echo "  ${DIM}No AI agents found. The dashboard will help you install one.${RESET}"
