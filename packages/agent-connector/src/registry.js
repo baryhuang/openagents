@@ -54,9 +54,22 @@ class Registry {
   getCatalogSync() {
     if (this._catalog) return this._catalog;
     const cached = this._loadCache();
-    if (cached) { this._catalog = cached; return cached; }
-    this._catalog = this._loadBundled();
-    return this._catalog;
+    const bundled = this._loadBundled();
+    if (cached) {
+      // Merge bundled env_config/resolve_env into cached entries (cache may be stale)
+      for (const entry of cached) {
+        const b = bundled.find(x => x.name === entry.name);
+        if (b) {
+          if (!entry.env_config && b.env_config) entry.env_config = b.env_config;
+          if (!entry.resolve_env && b.resolve_env) entry.resolve_env = b.resolve_env;
+          if (!entry.install && b.install) entry.install = b.install;
+        }
+      }
+      this._catalog = cached;
+      return cached;
+    }
+    this._catalog = bundled;
+    return bundled;
   }
 
   /**

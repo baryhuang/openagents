@@ -16,15 +16,11 @@ CDP_PORT = 9333
 def find_app():
     """Find the OpenAgents Launcher executable."""
     candidates = [
-        # Dev mode
+        # Dev mode (launcher takes priority)
         os.path.join(HOME, 'Desktop', 'launcher'),
-        os.path.join(HOME, 'Desktop', 'openagents-connector'),
         # Installed via NSIS
         os.path.join(HOME, 'AppData', 'Local', 'Programs', 'OpenAgents Launcher'),
     ]
-    # Also check for portable exe on Desktop
-    for exe in glob.glob(os.path.join(HOME, 'Desktop', 'OpenAgents.Launcher-*.exe')):
-        return ('exe', exe)
 
     for d in candidates:
         if os.path.isdir(d) and os.path.exists(os.path.join(d, 'node_modules')):
@@ -147,7 +143,6 @@ def process_command(cmd):
     if cmd == 'restart':
         kill_electron()
         start_electron()
-        # Wait for CDP to be ready
         for i in range(30):
             time.sleep(1)
             if get_cdp_ws():
@@ -155,6 +150,35 @@ def process_command(cmd):
                 return
         write_result('Electron restarted, CDP not ready after 30s')
         return
+
+    if cmd == 'clean-restart':
+        # Kill electron, remove stale Desktop files, then exit (loop restarts us)
+        kill_electron()
+        time.sleep(2)
+        import glob as g
+        stale = [
+            os.path.join(HOME, 'Desktop', 'openagents-connector'),
+            os.path.join(HOME, 'Desktop', 'launcher.exe'),
+            os.path.join(HOME, 'Desktop', 'launcher-test.exe'),
+        ]
+        # Remove NSIS exe files
+        for f in g.glob(os.path.join(HOME, 'Desktop', 'OpenAgents.Launcher-*.exe')):
+            stale.append(f)
+        removed = []
+        for p in stale:
+            try:
+                if os.path.isdir(p):
+                    import shutil
+                    shutil.rmtree(p, ignore_errors=True)
+                    removed.append(p)
+                elif os.path.isfile(p):
+                    os.remove(p)
+                    removed.append(p)
+            except Exception as e:
+                removed.append(f'{p}: {e}')
+        write_result('Cleaned: ' + ', '.join(removed) + '. Exiting for restart...')
+        time.sleep(1)
+        sys.exit(0)  # Loop will restart us
 
     if cmd == 'screenshot':
         write_result(cdp_screenshot())
