@@ -590,19 +590,17 @@ function createTUI() {
       style: { border: { fg: COLORS.accent }, bg: COLORS.surface },
     });
 
-    blessed.text({ parent: dialog, top: 1, left: 2, tags: true, content: '{bold}Agent name:{/bold}' });
+    blessed.text({ parent: dialog, top: 1, left: 2, tags: true, content: `{bold}Agent name:{/bold} {gray-fg}(default: ${defaultName}){/gray-fg}` });
     const nameInput = blessed.textbox({
       parent: dialog, top: 2, left: 2, width: 50, height: 3,
       border: { type: 'line' }, inputOnFocus: true,
-      value: defaultName,
       style: { focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
     });
 
-    blessed.text({ parent: dialog, top: 5, left: 2, tags: true, content: '{bold}Working directory:{/bold}' });
+    blessed.text({ parent: dialog, top: 5, left: 2, tags: true, content: `{bold}Working directory:{/bold} {gray-fg}(default: cwd){/gray-fg}` });
     const pathInput = blessed.textbox({
       parent: dialog, top: 6, left: 2, width: 50, height: 3,
       border: { type: 'line' }, inputOnFocus: true,
-      value: defaultPath,
       style: { focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
     });
 
@@ -627,9 +625,8 @@ function createTUI() {
 
     nameInput.key('enter', () => pathInput.focus());
     pathInput.key('enter', () => {
-      const name = nameInput.getValue().trim();
-      const agentPath = pathInput.getValue().trim();
-      if (!name) { msg.setContent('{red-fg}Name is required{/red-fg}'); screen.render(); return; }
+      const name = nameInput.getValue().trim() || defaultName;
+      const agentPath = pathInput.getValue().trim() || defaultPath;
       close();
       callback({ name, type: agentType, path: agentPath });
     });
@@ -720,18 +717,21 @@ function createTUI() {
       parent: box, bottom: 0, left: 0, width: '100%', height: 1,
       tags: true,
       style: { bg: COLORS.footerBg, fg: COLORS.footerFg },
-      content: ' {cyan-fg}Tab{/cyan-fg} Next field  {cyan-fg}Ctrl+S{/cyan-fg} Save  {cyan-fg}Ctrl+T{/cyan-fg} Test  {cyan-fg}Esc{/cyan-fg} Back',
+      content: ' {cyan-fg}Enter{/cyan-fg} Next field  {cyan-fg}Ctrl+S{/cyan-fg} Save  {cyan-fg}Ctrl+T{/cyan-fg} Test  {cyan-fg}Esc{/cyan-fg} Back',
     });
 
     screen.append(box);
     if (inputs.length > 0) inputs[0].focus();
     screen.render();
 
-    // Tab between fields
+    // Enter moves to next field, last field triggers save
     for (let i = 0; i < inputs.length; i++) {
-      inputs[i].key('tab', () => {
-        const next = (i + 1) % inputs.length;
-        inputs[next].focus();
+      inputs[i].key('enter', () => {
+        if (i < inputs.length - 1) {
+          inputs[i + 1].focus();
+        } else {
+          doSave();
+        }
       });
     }
 
