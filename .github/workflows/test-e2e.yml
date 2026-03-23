@@ -85,8 +85,8 @@ jobs:
       - name: Wait for agent response
         shell: cmd
         run: |
-          ping -n 46 127.0.0.1 >nul
-          echo Waited 45 seconds for agent to process
+          ping -n 91 127.0.0.1 >nul
+          echo Waited 90 seconds for agent to process
 
       - name: Check daemon log for response
         shell: cmd
