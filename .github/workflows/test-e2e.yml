@@ -41,13 +41,24 @@ jobs:
           openclaw --version 2>nul || (echo Installing openclaw... && npm install -g openclaw@latest)
           openclaw --version
 
-      - name: Create agent and connect to workspace
+      - name: Create agent
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
           openagents create e2e-test --type openclaw
+
+      - name: Connect agent to workspace
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
           openagents connect e2e-test Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE
+
+      - name: Verify agent config
+        shell: cmd
+        run: |
+          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
           openagents list
+          type "%USERPROFILE%\.openagents\daemon.yaml"
 
       - name: Start daemon
         shell: cmd
