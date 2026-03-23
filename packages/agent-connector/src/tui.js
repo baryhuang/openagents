@@ -93,10 +93,19 @@ function loadAgentRows(connector) {
 }
 
 function loadCatalog(connector) {
+  const { execSync } = require('child_process');
   const entries = connector.registry.getCatalogSync();
   return entries.map(e => {
     let installed = false;
-    try { const { whichBinary } = require('./paths'); installed = !!whichBinary((e.install && e.install.binary) || e.name); } catch {}
+
+    // If a verify command exists, use it for accurate detection
+    const verifyCmd = IS_WINDOWS ? (e.install && e.install.verify_win) : (e.install && e.install.verify);
+    if (verifyCmd) {
+      try { execSync(verifyCmd, { stdio: 'ignore', timeout: 5000 }); installed = true; } catch {}
+    } else {
+      try { const { whichBinary } = require('./paths'); installed = !!whichBinary((e.install && e.install.binary) || e.name); } catch {}
+    }
+
     if (!installed) {
       try {
         const f = path.join(connector._configDir, 'installed_agents.json');

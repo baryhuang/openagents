@@ -35,6 +35,18 @@ class Installer {
    * Checks binary on PATH first, then marker files.
    */
   isInstalled(agentType) {
+    // Use verify command if available for accurate detection
+    const entry = this.registry.getEntry(agentType);
+    const IS_WINDOWS = process.platform === 'win32';
+    const verifyCmd = entry && entry.install
+      ? (IS_WINDOWS ? entry.install.verify_win : entry.install.verify)
+      : null;
+    if (verifyCmd) {
+      try {
+        require('child_process').execSync(verifyCmd, { stdio: 'ignore', timeout: 5000 });
+        return true;
+      } catch { return false; }
+    }
     if (this._whichBinary(agentType)) return true;
     if (this._hasMarker(agentType)) {
       // Marker exists but binary not found — stale marker, clean it up

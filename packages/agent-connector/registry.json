@@ -88,6 +88,8 @@
     ],
     "install": {
       "binary": "code",
+      "verify": "code --list-extensions 2>/dev/null | grep -qi claude-dev",
+      "verify_win": "code --list-extensions 2>nul | findstr /i claude-dev",
       "macos": "code --install-extension saoudrizwan.claude-dev",
       "linux": "code --install-extension saoudrizwan.claude-dev",
       "windows": "code --install-extension saoudrizwan.claude-dev"
@@ -166,6 +168,8 @@
     ],
     "install": {
       "binary": "gh",
+      "verify": "gh copilot --version >/dev/null 2>&1",
+      "verify_win": "gh copilot --version >nul 2>nul",
       "macos": "gh extension install github/gh-copilot",
       "linux": "gh extension install github/gh-copilot",
       "windows": "gh extension install github/gh-copilot"
@@ -185,6 +189,8 @@
     "builtin": true,
     "install": {
       "binary": "cursor",
+      "verify": "cursor --version 2>/dev/null | grep -qi cursor",
+      "verify_win": "cursor --version 2>nul | findstr /i cursor",
       "requires": [
         null
       ],
