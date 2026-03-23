@@ -91,10 +91,9 @@ jobs:
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           $env:NODE_PATH = "$env:USERPROFILE\Desktop\launcher-e2e\node_modules"
-          # Copy test script to launcher dir where ws module is available
-          Copy-Item "$env:GITHUB_WORKSPACE\e2e-launcher-test.js" "$env:USERPROFILE\Desktop\launcher-e2e\e2e-test.js"
           Push-Location "$env:USERPROFILE\Desktop\launcher-e2e"
-          node e2e-test.js
+          # Write test inline (avoids checkout file issues)
+          node -e "const http=require('http'),WebSocket=require('ws');const CDP='http://127.0.0.1:'+($env:CDP_PORT||9333);let ws,mid=1,p={};async function connect(){const t=await new Promise((r,j)=>http.get(CDP+'/json',s=>{let d='';s.on('data',c=>d+=c);s.on('end',()=>r(JSON.parse(d)[0].webSocketDebuggerUrl))}).on('error',j));return new Promise((r,j)=>{ws=new WebSocket(t);ws.on('open',r);ws.on('error',j);ws.on('message',d=>{const m=JSON.parse(d);if(m.id&&p[m.id]){p[m.id](m);delete p[m.id]}})})}function send(m,a={}){return new Promise((r,j)=>{const i=mid++;const t=setTimeout(()=>{delete p[i];j(new Error('timeout'))},30000);p[i]=msg=>{clearTimeout(t);msg.error?j(new Error(msg.error.message)):r(msg.result)};ws.send(JSON.stringify({id:i,method:m,params:a}))})}async function ev(e){const r=await send('Runtime.evaluate',{expression:e,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.text||'err');return r.result?.value}async function main(){console.log('Connecting to CDP...');await connect();const title=await ev('document.title');console.log('Title:',title);if(!title.includes('OpenAgents'))throw new Error('Bad title');console.log('PASS: App launched');const body=await ev('document.body.innerText');if(body.includes('Dashboard'))console.log('PASS: Dashboard loaded');else throw new Error('No dashboard')}main().then(()=>{console.log('E2E basic test passed');ws.close();process.exit(0)}).catch(e=>{console.error('FAIL:',e.message);ws?.close();process.exit(1)})"
           Pop-Location
 
       - name: Collect logs
