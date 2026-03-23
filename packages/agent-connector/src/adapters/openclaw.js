@@ -36,10 +36,6 @@ class OpenClawAdapter extends BaseAdapter {
     this.openclawAgentId = opts.openclawAgentId || 'main';
     this.disabledModules = opts.disabledModules || new Set();
 
-    // Conversation history for multi-turn context
-    this._conversationHistory = [];
-    this._maxHistory = 50;
-
     // Find the openclaw binary
     this._openclawBinary = this._findOpenclawBinary();
     if (this._openclawBinary) {
@@ -157,11 +153,6 @@ class OpenClawAdapter extends BaseAdapter {
       const responseText = await this._runCliAgent(content, msgChannel);
 
       if (responseText) {
-        this._conversationHistory.push({ role: 'user', content });
-        this._conversationHistory.push({ role: 'assistant', content: responseText });
-        if (this._conversationHistory.length > this._maxHistory * 2) {
-          this._conversationHistory = this._conversationHistory.slice(-this._maxHistory * 2);
-        }
         await this.sendResponse(msgChannel, responseText);
       } else {
         await this.sendResponse(msgChannel, 'No response generated. Please try again.');

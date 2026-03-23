@@ -106,6 +106,7 @@ class ClaudeAdapter extends BaseAdapter {
   }
 
   _findClaudeBinary() {
+    // Tier 1: PATH search
     try {
       if (IS_WINDOWS) {
         const r = execSync('where claude.cmd 2>nul || where claude.exe 2>nul || where claude 2>nul', {
@@ -115,9 +116,29 @@ class ClaudeAdapter extends BaseAdapter {
       } else {
         return execSync('which claude', { encoding: 'utf-8', timeout: 5000 }).trim();
       }
-    } catch {
-      return null;
+    } catch {}
+
+    // Tier 2: Next to current Node.js interpreter (npm global)
+    const nodeBinDir = path.dirname(process.execPath);
+    const ext = IS_WINDOWS ? '.cmd' : '';
+    const nearNode = path.join(nodeBinDir, `claude${ext}`);
+    if (fs.existsSync(nearNode)) return nearNode;
+
+    // Tier 3: Common install locations
+    const home = os.homedir();
+    const candidates = IS_WINDOWS ? [
+      path.join(process.env.APPDATA || '', 'npm', 'claude.cmd'),
+    ] : [
+      path.join(home, '.local', 'bin', 'claude'),
+      path.join(home, '.npm-global', 'bin', 'claude'),
+      '/opt/homebrew/bin/claude',
+      '/usr/local/bin/claude',
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
     }
+
+    return null;
   }
 
   _buildClaudeCmd(prompt, channelName) {
@@ -197,8 +218,9 @@ class ClaudeAdapter extends BaseAdapter {
     if (this.disabledModules.has('files')) mcpArgs.push('--disable-files');
     if (this.disabledModules.has('browser')) mcpArgs.push('--disable-browser');
 
-    // Find openagents binary
-    let oaBin;
+    // Find openagents binary (multi-tier)
+    let oaBin = null;
+    // Tier 1: PATH
     try {
       if (IS_WINDOWS) {
         oaBin = execSync('where openagents.cmd 2>nul || where openagents.exe 2>nul || where openagents 2>nul', {
@@ -207,7 +229,31 @@ class ClaudeAdapter extends BaseAdapter {
       } else {
         oaBin = execSync('which openagents', { encoding: 'utf-8', timeout: 5000 }).trim();
       }
-    } catch {
+    } catch {}
+    // Tier 2: Next to Node.js
+    if (!oaBin) {
+      const nodeBinDir2 = path.dirname(process.execPath);
+      const oaExt = IS_WINDOWS ? '.cmd' : '';
+      const nearNode2 = path.join(nodeBinDir2, `openagents${oaExt}`);
+      if (fs.existsSync(nearNode2)) oaBin = nearNode2;
+    }
+    // Tier 3: Common locations
+    if (!oaBin) {
+      const home2 = os.homedir();
+      const oaCandidates = IS_WINDOWS ? [
+        path.join(process.env.APPDATA || '', 'npm', 'openagents.cmd'),
+      ] : [
+        path.join(home2, '.openagents', 'npm-global', 'bin', 'openagents'),
+        path.join(home2, '.local', 'bin', 'openagents'),
+        path.join(home2, '.npm-global', 'bin', 'openagents'),
+        '/opt/homebrew/bin/openagents',
+        '/usr/local/bin/openagents',
+      ];
+      for (const c of oaCandidates) {
+        if (fs.existsSync(c)) { oaBin = c; break; }
+      }
+    }
+    if (!oaBin) {
       oaBin = 'openagents';
       this._log('Could not find openagents binary — MCP tools may not be available');
     }
@@ -309,15 +355,47 @@ class ClaudeAdapter extends BaseAdapter {
       const lastResponseText = [];
       let hasToolUseSinceLastText = false;
       let postedThinking = false;
+      let stderrBuf = '';
 
-      // Read stream-json output line by line
-      let buffer = '';
-      proc.stdout.on('data', (chunk) => { buffer += chunk.toString('utf-8'); });
+      // Capture stderr for diagnostics
+      if (proc.stderr) {
+        proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString('utf-8'); });
+      }
 
       await new Promise((resolve, reject) => {
+        let consecutiveTimeouts = 0;
+        let lastDataTime = Date.now();
+        let timeoutTimer = null;
+
+        const resetTimeout = () => {
+          consecutiveTimeouts = 0;
+          lastDataTime = Date.now();
+        };
+
+        // 15-second idle timeout monitoring
+        const startTimeoutMonitor = () => {
+          timeoutTimer = setInterval(async () => {
+            const elapsed = Date.now() - lastDataTime;
+            if (elapsed >= 15000) {
+              consecutiveTimeouts++;
+              lastDataTime = Date.now(); // reset for next interval
+              if (consecutiveTimeouts === 2) {
+                try { await this.sendStatus(msgChannel, 'Compacting conversation...'); } catch {}
+              }
+              // Kill after 20 consecutive timeouts (~5 minutes of no output)
+              if (consecutiveTimeouts >= 20) {
+                this._log(`Process idle for ${consecutiveTimeouts * 15}s, killing...`);
+                await this._stopProcess(proc);
+              }
+            }
+          }, 15000);
+        };
+        startTimeoutMonitor();
+
         const processLine = async (line) => {
           line = line.trim();
           if (!line) return;
+          resetTimeout();
 
           let event;
           try { event = JSON.parse(line); } catch { return; }
@@ -363,10 +441,14 @@ class ClaudeAdapter extends BaseAdapter {
             if (subtype.includes('compact') || String(message).toLowerCase().includes('compact')) {
               await this.sendStatus(msgChannel, String(message) || 'Compacting conversation...');
             }
+          } else if (eventType === 'rate_limit_event') {
+            this._log(`Rate limited: ${JSON.stringify(event).slice(0, 200)}`);
           }
         };
 
         proc.on('exit', async (code) => {
+          if (timeoutTimer) clearInterval(timeoutTimer);
+
           // Process remaining buffer
           const lines = buffer.split('\n');
           for (const line of lines) {
@@ -377,6 +459,9 @@ class ClaudeAdapter extends BaseAdapter {
 
           if (code !== 0) {
             this._log(`CLI exited with code ${code}`);
+            if (stderrBuf.trim()) {
+              this._log(`stderr: ${stderrBuf.trim().slice(0, 500)}`);
+            }
           }
 
           if (lastResponseText.length > 0) {
@@ -390,12 +475,16 @@ class ClaudeAdapter extends BaseAdapter {
           resolve();
         });
 
-        proc.on('error', (err) => reject(err));
+        proc.on('error', (err) => {
+          if (timeoutTimer) clearInterval(timeoutTimer);
+          reject(err);
+        });
 
         // Process lines as they arrive
         let lineBuffer = '';
         proc.stdout.on('data', (chunk) => {
           lineBuffer += chunk.toString('utf-8');
+          resetTimeout();
           const lines = lineBuffer.split('\n');
           lineBuffer = lines.pop(); // keep incomplete line
           for (const line of lines) {
