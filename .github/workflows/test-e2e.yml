@@ -187,11 +187,19 @@ jobs:
               await clickTab('dashboard');
               await sleep(2000);
               const dashText = await bodyText();
-              if (dashText.includes('Actions')) { console.log('(exists) '); return; }
-              // Go to agents tab and click Create
+              if (dashText.includes('Actions') || dashText.includes('stopped') || dashText.includes('running')) {
+                console.log('(exists) '); return;
+              }
+              // Click "+ New Agent" button (on Agents tab)
               await clickTab('agents');
               await sleep(2000);
-              await run("(function(){var b=document.querySelectorAll('button,[data-action]');for(var i=0;i<b.length;i++){var t=b[i].textContent.trim();var a=b[i].dataset?.action||'';if(t==='Create'||a==='do-add-agent'){b[i].click();return 'ok'}}throw new Error('No create button. Buttons: '+Array.from(document.querySelectorAll('button')).map(b=>b.textContent.trim()).join(','))})()");
+              await run("(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){if(b[i].textContent.includes('New Agent')){b[i].click();return}}throw new Error('No New Agent button')})()");
+              await sleep(2000);
+              await screenshot('05b-new-agent-form');
+              const btns2 = await allButtons();
+              console.log('    [form buttons: ' + btns2 + ']');
+              // Now click Create
+              await run("(function(){var b=document.querySelectorAll('button');for(var i=0;i<b.length;i++){if(b[i].textContent.trim()==='Create'){b[i].click();return}}throw new Error('No Create button')})()");
               await sleep(3000);
             });
             await screenshot('06-agent-created');
