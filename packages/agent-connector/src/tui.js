@@ -712,6 +712,18 @@ function createTUI() {
     nameInput.focus();
     screen.render();
 
+    // Override _listener on textboxes to intercept Tab before it's inserted
+    const origNameListener = nameInput._listener.bind(nameInput);
+    nameInput._listener = function(ch, key) {
+      if (key.name === 'tab') { nameInput._done(null, nameInput.value); pathInput.focus(); return; }
+      return origNameListener(ch, key);
+    };
+    const origPathListener = pathInput._listener.bind(pathInput);
+    pathInput._listener = function(ch, key) {
+      if (key.name === 'tab') { pathInput._done(null, pathInput.value); nameInput.focus(); return; }
+      return origPathListener(ch, key);
+    };
+
     const close = () => {
       screen.remove(dialog);
       dialog.destroy();
@@ -720,8 +732,6 @@ function createTUI() {
     };
 
     nameInput.key('enter', () => pathInput.focus());
-    nameInput.key('tab', () => pathInput.focus());
-    pathInput.key('tab', () => nameInput.focus());
     pathInput.key('enter', () => {
       const name = nameInput.getValue().trim() || defaultName;
       const agentPath = pathInput.getValue().trim() || defaultPath;
@@ -822,7 +832,7 @@ function createTUI() {
     if (inputs.length > 0) inputs[0].focus();
     screen.render();
 
-    // Enter/Tab moves to next field, last field triggers save on Enter
+    // Enter moves to next field, last field triggers save
     for (let i = 0; i < inputs.length; i++) {
       inputs[i].key('enter', () => {
         if (i < inputs.length - 1) {
@@ -831,9 +841,20 @@ function createTUI() {
           doSave();
         }
       });
-      inputs[i].key('tab', () => {
-        inputs[(i + 1) % inputs.length].focus();
-      });
+    }
+
+    // Override _listener on textboxes to intercept Tab
+    for (let i = 0; i < inputs.length; i++) {
+      const orig = inputs[i]._listener.bind(inputs[i]);
+      const idx = i;
+      inputs[i]._listener = function(ch, key) {
+        if (key.name === 'tab' && inputs.length > 1) {
+          inputs[idx]._done(null, inputs[idx].value);
+          inputs[(idx + 1) % inputs.length].focus();
+          return;
+        }
+        return orig(ch, key);
+      };
     }
 
     function gatherEnv() {
