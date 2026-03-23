@@ -9,17 +9,21 @@ const OpenClawAdapter = require('./openclaw');
 const ClaudeAdapter = require('./claude');
 const CodexAdapter = require('./codex');
 const OpenCodeAdapter = require('./opencode');
+const NanoClawAdapter = require('./nanoclaw');
+const CursorAdapter = require('./cursor');
 
 const ADAPTER_MAP = {
   openclaw: OpenClawAdapter,
   claude: ClaudeAdapter,
   codex: CodexAdapter,
   opencode: OpenCodeAdapter,
+  nanoclaw: NanoClawAdapter,
+  cursor: CursorAdapter,
 };
 
 /**
  * Create an adapter instance for the given agent type.
- * @param {string} type - Agent type (openclaw, claude, codex)
+ * @param {string} type - Agent type (openclaw, claude, codex, opencode, nanoclaw, cursor)
  * @param {object} opts - Adapter constructor options
  * @returns {BaseAdapter}
  */
@@ -37,6 +41,8 @@ module.exports = {
   ClaudeAdapter,
   CodexAdapter,
   OpenCodeAdapter,
+  NanoClawAdapter,
+  CursorAdapter,
   createAdapter,
   ADAPTER_MAP,
 };
