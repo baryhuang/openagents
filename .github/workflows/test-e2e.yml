@@ -4,119 +4,98 @@ on: workflow_dispatch
 jobs:
   test-windows:
     runs-on: [self-hosted, windows, desktop-test]
-    timeout-minutes: 10
+    timeout-minutes: 15
+    env:
+      CDP_PORT: "9333"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Kill stale processes
-        shell: cmd
+        shell: powershell
         run: |
-          taskkill /F /IM node.exe 2>nul
-          echo Killed stale node processes
+          Stop-Process -Name node -Force -ErrorAction SilentlyContinue
+          Stop-Process -Name electron -Force -ErrorAction SilentlyContinue
+          Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
+          Write-Host "Killed stale processes"
         continue-on-error: true
 
       - name: Clean state
-        shell: cmd
+        shell: powershell
         run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          del "%USERPROFILE%\.openagents\daemon.pid" 2>nul
-          del "%USERPROFILE%\.openagents\daemon.status.json" 2>nul
-          del "%USERPROFILE%\.openagents\daemon.log" 2>nul
-          del "%USERPROFILE%\.openagents\daemon.yaml" 2>nul
-          rmdir /S /Q "%USERPROFILE%\.openagents\nodejs" 2>nul
-          echo State cleaned (nodejs removed for fresh install)
+          Remove-Item "$env:USERPROFILE\.openagents\daemon.*" -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:USERPROFILE\.openagents\daemon.yaml" -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:USERPROFILE\.openagents\nodejs" -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host "State cleaned"
 
       - name: Install Node.js and openagents CLI
         shell: powershell
         run: |
-          # Run the install script which handles Node.js + CLI setup
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           irm https://raw.githubusercontent.com/openagents-org/openagents/develop/install.ps1 | iex
 
-      - name: Install openclaw if needed
-        shell: cmd
-        run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openclaw --version 2>nul || (echo Installing openclaw... && npm install -g openclaw@latest)
-          openclaw --version
-
-      - name: Create agent
-        shell: cmd
-        run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openagents create e2e-test --type openclaw
-
-      - name: Connect agent to workspace
-        shell: cmd
-        run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openagents connect e2e-test Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE
-
-      - name: Configure LLM API key
+      - name: Setup Electron dev folder
         shell: powershell
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
-          openagents env openclaw "LLM_API_KEY=${{ secrets.LLM_API_KEY }}" "LLM_BASE_URL=${{ secrets.LLM_BASE_URL }}" "LLM_MODEL=${{ secrets.LLM_MODEL }}"
-          openagents env openclaw
+          $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
+          Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          Copy-Item -Path "packages\launcher\src" -Destination "$dir\src" -Recurse
+          Push-Location $dir
+          npm init -y 2>$null | Out-Null
+          npm install @openagents-org/agent-launcher@latest electron@33 2>&1 | Select-Object -Last 3
+          $pkg = Get-Content package.json | ConvertFrom-Json
+          $pkg.main = "src/main/main.js"
+          $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
+          Pop-Location
+          Write-Host "Launcher dev folder ready at $dir"
 
-      - name: Verify agent config
-        shell: cmd
+      - name: Launch Electron with CDP
+        shell: powershell
         run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openagents list
-          type "%USERPROFILE%\.openagents\daemon.yaml"
-          echo === ENV FILE ===
-          type "%USERPROFILE%\.openagents\env\openclaw.env" 2>nul || echo No env file
-          echo === ENV DISPLAY ===
-          openagents env openclaw
+          $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
+          $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
+          Start-Process -FilePath "npx" -ArgumentList "electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*" -WorkingDirectory $dir -WindowStyle Normal
+          Start-Sleep -Seconds 10
+          # Verify CDP is up
+          try {
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 10
+            Write-Host "CDP ready: $($response.Content.Substring(0, 100))..."
+          } catch {
+            Write-Host "CDP not ready: $_"
+            exit 1
+          }
 
-      - name: Start daemon
-        shell: cmd
+      - name: Install Playwright
+        shell: powershell
         run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openagents up
-          ping -n 6 127.0.0.1 >nul
-          openagents status
+          $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
+          npm install -g playwright@latest 2>&1 | Select-Object -Last 3
 
-      - name: Wait for adapter online
-        shell: cmd
+      - name: Run E2E test via Playwright
+        shell: powershell
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          WS_TOKEN: "Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE"
         run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          ping -n 16 127.0.0.1 >nul
-          openagents status
-          type "%USERPROFILE%\.openagents\daemon.log" 2>nul || echo No log yet
+          $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
+          node infra/e2e-launcher-test.js
 
-      - name: Send test message via workspace API
-        shell: cmd
+      - name: Collect logs
+        if: always()
+        shell: powershell
         run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          node -e "const https=require('https');const data=JSON.stringify({type:'workspace.message.posted',source:'human:e2e-tester',target:'openagents:e2e-test',network:'c5be7aa2',payload:{content:'What is 9 plus 3? Reply with just the number.',message_type:'chat'},metadata:{}});const opts={hostname:'workspace-endpoint.openagents.org',port:443,path:'/v1/events',method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Token':'Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE','Content-Length':Buffer.byteLength(data)}};const req=https.request(opts,res=>{let b='';res.on('data',d=>b+=d);res.on('end',()=>{console.log('Status:',res.statusCode);console.log('Body:',b);if(res.statusCode>=400)process.exit(1)})});req.on('error',e=>{console.error(e);process.exit(1)});req.write(data);req.end()"
+          Write-Host "=== DAEMON LOG ==="
+          Get-Content "$env:USERPROFILE\.openagents\daemon.log" -ErrorAction SilentlyContinue
+          Write-Host "=== STATUS ==="
+          Get-Content "$env:USERPROFILE\.openagents\daemon.status.json" -ErrorAction SilentlyContinue
 
-      - name: Wait for agent response
-        shell: cmd
+      - name: Cleanup
+        if: always()
+        shell: powershell
         run: |
-          ping -n 91 127.0.0.1 >nul
-          echo Waited 90 seconds for agent to process
-
-      - name: Check daemon log for response
-        shell: cmd
-        run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          type "%USERPROFILE%\.openagents\daemon.log" 2>nul || echo No log
-          echo ---
-          openagents status
-
-      - name: Verify response contains answer
-        shell: cmd
-        run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          findstr /C:"responded" "%USERPROFILE%\.openagents\daemon.log" && (echo PASS: Agent responded) || (echo FAIL: No response found in log && exit /b 1)
-          type "%USERPROFILE%\.openagents\daemon.status.json" 2>nul
-
-      - name: Stop daemon
-        shell: cmd
-        run: |
-          set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openagents down
-        continue-on-error: true
+          Stop-Process -Name node -Force -ErrorAction SilentlyContinue
+          Stop-Process -Name electron -Force -ErrorAction SilentlyContinue
