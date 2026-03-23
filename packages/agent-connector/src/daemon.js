@@ -160,17 +160,31 @@ class Daemon {
     fs.mkdirSync(configDir, { recursive: true });
     const logFd = fs.openSync(logFile, 'a');
 
+    // Build env with enhanced PATH (ensures node/npm are findable)
+    const env = getEnhancedEnv();
+    // Ensure the directory containing the node binary is on PATH
+    const nodeBinDir = path.dirname(bin);
+    if (env.PATH && !env.PATH.includes(nodeBinDir)) {
+      env.PATH = nodeBinDir + path.delimiter + env.PATH;
+    }
+
     const opts = {
       detached: true,
       stdio: ['ignore', logFd, logFd],
-      env: getEnhancedEnv(),
+      env,
+      cwd: configDir,
     };
     if (IS_WINDOWS) opts.windowsHide = true;
 
     const proc = spawn(bin, foregroundArgs, opts);
     proc.unref();
     fs.writeFileSync(pidFile, String(proc.pid), 'utf-8');
-    fs.closeSync(logFd);
+
+    // Give child a moment to start before closing the log fd
+    setTimeout(() => {
+      try { fs.closeSync(logFd); } catch {}
+    }, 1000);
+
     console.log(`Daemon started (PID ${proc.pid})`);
     console.log(`Logs: ${logFile}`);
     console.log('Stop: agent-connector down');
