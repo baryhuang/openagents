@@ -6,10 +6,10 @@ set -euo pipefail
 # Usage: curl -fsSL https://openagents.org/install.sh | bash
 #
 # Installs the OpenAgents CLI (openagents), detects local AI agents,
-# and gets you running. Works on macOS, Linux, and Windows (WSL/Git Bash).
+# and tells the user how to get started.
 # =============================================================================
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 NPM_PACKAGE="@openagents-org/agent-launcher"
 MIN_NODE_MAJOR=18
 
@@ -27,9 +27,9 @@ else
 fi
 
 info()  { echo "${BOLD}${CYAN}>>>${RESET} $*"; }
-ok()    { echo "${BOLD}${GREEN} ✓${RESET} $*"; }
+ok()    { echo "${BOLD}${GREEN} +${RESET} $*"; }
 warn()  { echo "${BOLD}${YELLOW} !${RESET} $*"; }
-fail()  { echo "${BOLD}${RED} ✗${RESET} $*"; exit 1; }
+fail()  { echo "${BOLD}${RED} X${RESET} $*"; exit 1; }
 step()  { echo ""; info "$*"; }
 
 # --- Header ---
@@ -146,6 +146,7 @@ if command -v openagents >/dev/null 2>&1; then
 fi
 
 # Install globally — use --prefix on macOS/Linux to avoid sudo
+GLOBAL_DIR=""
 if [ "$OS" != "windows" ]; then
     GLOBAL_DIR="$HOME/.openagents/npm-global"
     mkdir -p "$GLOBAL_DIR"
@@ -155,19 +156,18 @@ else
     $NPM install -g "$NPM_PACKAGE@latest" 2>&1 | tail -5
 fi
 
+OA_BIN=""
 if command -v openagents >/dev/null 2>&1; then
     new_version=$(openagents --version 2>/dev/null | head -1 || echo "unknown")
+    OA_BIN=$(command -v openagents)
+    ok "openagents $new_version installed"
+elif [ -n "$GLOBAL_DIR" ] && [ -x "$GLOBAL_DIR/bin/openagents" ]; then
+    new_version=$("$GLOBAL_DIR/bin/openagents" --version 2>/dev/null | head -1 || echo "unknown")
+    OA_BIN="$GLOBAL_DIR/bin/openagents"
     ok "openagents $new_version installed"
 else
-    # Check in --prefix bin
-    if [ -x "$GLOBAL_DIR/bin/openagents" ]; then
-        new_version=$("$GLOBAL_DIR/bin/openagents" --version 2>/dev/null | head -1 || echo "unknown")
-        ok "openagents $new_version installed"
-        warn "Add to PATH: export PATH=\"$GLOBAL_DIR/bin:\$PATH\""
-    else
-        fail "Failed to install openagents.
+    fail "Failed to install openagents.
   Try manually: npm install -g $NPM_PACKAGE"
-    fi
 fi
 
 # =========================================================================
@@ -200,25 +200,6 @@ detect_agent "Copilot CLI"    copilot
 detect_agent "Amp"            amp
 detect_agent "OpenCode"       opencode
 
-if [ "$agent_count" -eq 0 ]; then
-    echo ""
-    warn "No AI agents found. Install one to get started:"
-    echo ""
-    echo "  ${BOLD}openagents install openclaw${RESET}"
-    echo "  ${BOLD}openagents install claude${RESET}"
-    echo "  ${BOLD}openagents install codex${RESET}"
-    echo ""
-fi
-
-# =========================================================================
-# Step 4: Show status
-# =========================================================================
-if command -v openagents >/dev/null 2>&1; then
-    step "Agent status"
-    echo ""
-    openagents status 2>/dev/null || true
-fi
-
 # =========================================================================
 # Done
 # =========================================================================
@@ -226,27 +207,25 @@ echo ""
 echo "${BOLD}${GREEN}  Installation complete!${RESET}"
 echo ""
 
-if [ "$agent_count" -gt 0 ]; then
-    echo "  Quick start:"
+# Check if openagents is on PATH for future shells
+NEEDS_PATH=""
+if ! command -v openagents >/dev/null 2>&1 && [ -n "$OA_BIN" ]; then
+    NEEDS_PATH=$(dirname "$OA_BIN")
+fi
+
+if [ -n "$NEEDS_PATH" ]; then
+    echo "  ${YELLOW}Add to your shell profile:${RESET}"
     echo ""
-    echo "    ${BOLD}openagents status${RESET}         Show all agents"
-    echo "    ${BOLD}openagents up${RESET}             Start the daemon"
-    echo "    ${BOLD}openagents search${RESET}         Browse agent catalog"
-    echo ""
-else
-    echo "  Next steps:"
-    echo ""
-    echo "    1. Install an AI agent:"
-    echo "       ${BOLD}openagents install openclaw${RESET}"
-    echo ""
-    echo "    2. Start the daemon:"
-    echo "       ${BOLD}openagents up${RESET}"
+    echo "    ${BOLD}export PATH=\"$NEEDS_PATH:\$PATH\"${RESET}"
     echo ""
 fi
 
-# Launch TUI if interactive terminal
-if [ -t 0 ] && [ -t 1 ]; then
-    info "Launching OpenAgents..."
+echo "  Get started:"
+echo ""
+echo "    ${BOLD}openagents${RESET}                  Launch the interactive dashboard"
+echo ""
+
+if [ "$agent_count" -eq 0 ]; then
+    echo "  ${DIM}No AI agents found. The dashboard will help you install one.${RESET}"
     echo ""
-    exec openagents
 fi

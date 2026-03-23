@@ -3,11 +3,11 @@
 # Usage: irm https://openagents.org/install.ps1 | iex
 #
 # Installs the OpenAgents CLI (openagents), detects local AI agents,
-# and gets you running. Requires PowerShell 5.1+ (built into Windows 10/11).
+# and tells the user how to get started.
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$VERSION = "1.0.0"
+$VERSION = "1.0.1"
 $NPM_PACKAGE = "@openagents-org/agent-launcher"
 $MIN_NODE_MAJOR = 18
 
@@ -126,9 +126,11 @@ try {
 }
 
 # Verify
+$oaBin = ""
 $acCmd = Get-Command openagents -ErrorAction SilentlyContinue
 if ($acCmd) {
     $newVer = & openagents --version 2>$null
+    $oaBin = $acCmd.Source
     Ok "openagents $newVer installed"
 } else {
     # Check npm global bin
@@ -136,8 +138,8 @@ if ($acCmd) {
     if (Test-Path (Join-Path $npmBin "openagents.cmd")) {
         $env:PATH = "$npmBin;$env:PATH"
         $newVer = & openagents --version 2>$null
+        $oaBin = Join-Path $npmBin "openagents.cmd"
         Ok "openagents $newVer installed"
-        Warn "Add to PATH: $npmBin"
     } else {
         Fail "Failed to install openagents. Try: npm install -g $NPM_PACKAGE"
     }
@@ -171,26 +173,6 @@ Detect-Agent "Copilot CLI"    "copilot"
 Detect-Agent "Amp"            "amp"
 Detect-Agent "OpenCode"       "opencode"
 
-if ($agentCount -eq 0) {
-    Write-Host ""
-    Warn "No AI agents found. Install one to get started:"
-    Write-Host ""
-    Write-Host "  openagents install openclaw" -ForegroundColor White
-    Write-Host "  openagents install claude" -ForegroundColor White
-    Write-Host "  openagents install codex" -ForegroundColor White
-    Write-Host ""
-}
-
-# =========================================================================
-# Step 4: Show status
-# =========================================================================
-$acExists = Get-Command openagents -ErrorAction SilentlyContinue
-if ($acExists) {
-    Step "Agent status"
-    Write-Host ""
-    & openagents status 2>$null
-}
-
 # =========================================================================
 # Done
 # =========================================================================
@@ -198,25 +180,26 @@ Write-Host ""
 Write-Host "  Installation complete!" -ForegroundColor Green
 Write-Host ""
 
-if ($agentCount -gt 0) {
-    Write-Host "  Quick start:"
+# Check if openagents needs PATH hint
+$needsPath = ""
+if (-not (Get-Command openagents -ErrorAction SilentlyContinue) -and $oaBin) {
+    $needsPath = Split-Path $oaBin
+}
+
+if ($needsPath) {
+    Write-Host "  Add to your PATH:" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "    openagents status" -ForegroundColor White -NoNewline; Write-Host "         Show all agents"
-    Write-Host "    openagents up" -ForegroundColor White -NoNewline; Write-Host "             Start the daemon"
-    Write-Host "    openagents search" -ForegroundColor White -NoNewline; Write-Host "         Browse agent catalog"
-    Write-Host ""
-} else {
-    Write-Host "  Next steps:"
-    Write-Host ""
-    Write-Host "    1. Install an AI agent:"
-    Write-Host "       openagents install openclaw" -ForegroundColor White
-    Write-Host ""
-    Write-Host "    2. Start the daemon:"
-    Write-Host "       openagents up" -ForegroundColor White
+    Write-Host "    `$env:PATH = `"$needsPath;`$env:PATH`"" -ForegroundColor White
     Write-Host ""
 }
 
-# Launch TUI
-Write-Host "  Launching OpenAgents..." -ForegroundColor Cyan
+Write-Host "  Get started:" -ForegroundColor White
 Write-Host ""
-& openagents
+Write-Host "    openagents" -ForegroundColor White -NoNewline
+Write-Host "                  Launch the interactive dashboard"
+Write-Host ""
+
+if ($agentCount -eq 0) {
+    Write-Host "  No AI agents found. The dashboard will help you install one." -ForegroundColor DarkGray
+    Write-Host ""
+}
