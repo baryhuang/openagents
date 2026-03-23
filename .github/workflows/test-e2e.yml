@@ -26,10 +26,11 @@ jobs:
           del "%USERPROFILE%\.openagents\daemon.yaml" 2>nul
           echo State cleaned
 
-      - name: Verify openagents CLI
+      - name: Upgrade and verify openagents CLI
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          npm install -g @openagents-org/agent-launcher@latest
           openagents --version
           openagents search
 

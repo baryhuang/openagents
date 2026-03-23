@@ -124,6 +124,9 @@ function _addWindowsPaths(dirs) {
   // npm global bin
   if (appData) _push(dirs, path.join(appData, 'npm'));
 
+  // Portable Node.js installed by OpenAgents Launcher
+  _push(dirs, path.join(HOME, '.openagents', 'nodejs'));
+
   // Node.js install
   _push(dirs, path.join(programFiles, 'nodejs'));
 
