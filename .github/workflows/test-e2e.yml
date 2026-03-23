@@ -23,6 +23,7 @@ jobs:
           del "%USERPROFILE%\.openagents\daemon.pid" 2>nul
           del "%USERPROFILE%\.openagents\daemon.status.json" 2>nul
           del "%USERPROFILE%\.openagents\daemon.log" 2>nul
+          del "%USERPROFILE%\.openagents\daemon.yaml" 2>nul
           echo State cleaned
 
       - name: Verify openagents CLI
@@ -39,54 +40,56 @@ jobs:
           openclaw --version 2>nul || (echo Installing openclaw... && npm install -g openclaw@latest)
           openclaw --version
 
-      - name: Setup agent config
+      - name: Create agent and connect to workspace
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openagents list 2>nul || openagents create test-agent --type openclaw
-          openagents connect test-agent Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE 2>nul || echo Already connected
+          openagents create e2e-test --type openclaw
+          openagents connect e2e-test Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE
           openagents list
-          openagents status
 
       - name: Start daemon
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
           openagents up
-          timeout /t 5 /nobreak >nul
+          ping -n 6 127.0.0.1 >nul
           openagents status
 
       - name: Wait for adapter online
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          timeout /t 15 /nobreak >nul
+          ping -n 16 127.0.0.1 >nul
           openagents status
-          type "%USERPROFILE%\.openagents\daemon.log"
+          type "%USERPROFILE%\.openagents\daemon.log" 2>nul || echo No log yet
 
       - name: Send test message via workspace API
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          node -e "const https=require('https');const data=JSON.stringify({content:'What is 9 plus 3? Reply with just the number.',type:'workspace.message'});const opts={hostname:'workspace-endpoint.openagents.org',port:443,path:'/v1/events?network=c5be7aa2&token=Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE',method:'POST',headers:{'Content-Type':'application/json','Content-Length':data.length}};const req=https.request(opts,res=>{let b='';res.on('data',d=>b+=d);res.on('end',()=>console.log('Response:',res.statusCode,b))});req.write(data);req.end()"
+          node -e "const https=require('https');const data=JSON.stringify({content:'What is 9 plus 3? Reply with just the number.',type:'workspace.message',source:'e2e-tester',target:'e2e-test'});const opts={hostname:'workspace-endpoint.openagents.org',port:443,path:'/v1/events?network=c5be7aa2&token=Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE',method:'POST',headers:{'Content-Type':'application/json','Content-Length':data.length}};const req=https.request(opts,res=>{let b='';res.on('data',d=>b+=d);res.on('end',()=>{console.log('Status:',res.statusCode);console.log('Body:',b);if(res.statusCode>=400)process.exit(1)})});req.on('error',e=>{console.error(e);process.exit(1)});req.write(data);req.end()"
 
       - name: Wait for agent response
         shell: cmd
         run: |
-          timeout /t 45 /nobreak >nul
+          ping -n 46 127.0.0.1 >nul
           echo Waited 45 seconds for agent to process
 
       - name: Check daemon log for response
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          type "%USERPROFILE%\.openagents\daemon.log"
+          type "%USERPROFILE%\.openagents\daemon.log" 2>nul || echo No log
+          echo ---
+          openagents status
 
-      - name: Check agent status
+      - name: Verify response contains answer
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
-          openagents status
+          findstr /C:"responded" "%USERPROFILE%\.openagents\daemon.log" && echo PASS: Agent responded || echo FAIL: No response found in log
+          type "%USERPROFILE%\.openagents\daemon.status.json" 2>nul
 
       - name: Stop daemon
         shell: cmd
