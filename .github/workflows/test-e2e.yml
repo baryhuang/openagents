@@ -1,12 +1,30 @@
 name: E2E Agent Test
 on: workflow_dispatch
 
+env:
+  CDP_PORT: "9333"
+  E2E_TEST: |
+    const http=require('http'),WebSocket=require('ws');
+    const CDP='http://127.0.0.1:'+(process.env.CDP_PORT||9333);
+    let ws,mid=1,p={};
+    async function connect(){const t=await new Promise((r,j)=>http.get(CDP+'/json',s=>{let d='';s.on('data',c=>d+=c);s.on('end',()=>r(JSON.parse(d)[0].webSocketDebuggerUrl))}).on('error',j));return new Promise((r,j)=>{ws=new WebSocket(t);ws.on('open',r);ws.on('error',j);ws.on('message',d=>{const m=JSON.parse(d);if(m.id&&p[m.id]){p[m.id](m);delete p[m.id]}})})}
+    function send(m,a={}){return new Promise((r,j)=>{const i=mid++;const t=setTimeout(()=>{delete p[i];j(new Error('timeout'))},30000);p[i]=msg=>{clearTimeout(t);msg.error?j(new Error(msg.error.message)):r(msg.result)};ws.send(JSON.stringify({id:i,method:m,params:a}))})}
+    async function ev(e){const r=await send('Runtime.evaluate',{expression:e,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.text||'err');return r.result?.value}
+    async function main(){
+      console.log('Connecting to CDP...');await connect();
+      const title=await ev('document.title');console.log('Title:',title);
+      if(!title.includes('OpenAgents'))throw new Error('Bad title');
+      console.log('PASS: App launched');
+      const body=await ev('document.body.innerText');
+      if(body.includes('Dashboard'))console.log('PASS: Dashboard loaded');
+      else throw new Error('No dashboard');
+    }
+    main().then(()=>{console.log('E2E basic test passed');ws.close();process.exit(0)}).catch(e=>{console.error('FAIL:',e.message);ws?.close();process.exit(1)})
+
 jobs:
   test-windows:
     runs-on: [self-hosted, windows, desktop-test]
     timeout-minutes: 15
-    env:
-      CDP_PORT: "9333"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,7 +35,6 @@ jobs:
           Stop-Process -Name node -Force -ErrorAction SilentlyContinue
           Stop-Process -Name electron -Force -ErrorAction SilentlyContinue
           Stop-Process -Name "OpenAgents Launcher" -Force -ErrorAction SilentlyContinue
-          Write-Host "Killed stale processes"
         continue-on-error: true
 
       - name: Clean state
@@ -26,7 +43,6 @@ jobs:
           Remove-Item "$env:USERPROFILE\.openagents\daemon.*" -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\.openagents\daemon.yaml" -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\.openagents\nodejs" -Recurse -Force -ErrorAction SilentlyContinue
-          Write-Host "State cleaned"
 
       - name: Install Node.js and openagents CLI
         shell: powershell
@@ -34,7 +50,7 @@ jobs:
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           irm https://raw.githubusercontent.com/openagents-org/openagents/develop/install.ps1 | iex
 
-      - name: Setup and launch Launcher dev folder
+      - name: Setup and launch Launcher
         shell: powershell
         run: |
           $ErrorActionPreference = 'Continue'
@@ -42,68 +58,33 @@ jobs:
           $dir = "$env:USERPROFILE\Desktop\launcher-e2e"
           Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $dir -Force | Out-Null
-          # Use git to get the launcher source directly
           Push-Location $dir
-          git init
-          git remote add origin https://github.com/openagents-org/openagents.git
-          git fetch --depth 1 origin develop
-          git checkout FETCH_HEAD -- packages/launcher/src
-          Move-Item packages\launcher\src src
-          Remove-Item packages -Recurse -Force
+          git init; git remote add origin https://github.com/openagents-org/openagents.git
+          git fetch --depth 1 origin develop; git checkout FETCH_HEAD -- packages/launcher/src
+          Move-Item packages\launcher\src src; Remove-Item packages -Recurse -Force
           npm init -y 2>$null | Out-Null
           npm install @openagents-org/agent-launcher@latest electron@33 ws 2>&1 | Select-Object -Last 3
           $pkg = Get-Content package.json | ConvertFrom-Json
           $pkg.main = "src/main/main.js"
           $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
           Pop-Location
-          # Create a launch script with full PATH
-          $launchScript = "@echo off`r`nset PATH=$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;%PATH%`r`ncd /d $dir`r`nnpx electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*"
-          Set-Content "$dir\launch.bat" $launchScript
-          # Launch Electron via the batch file
+          $bat = "@echo off`r`nset PATH=$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;%PATH%`r`ncd /d $dir`r`nnpx electron . --remote-debugging-port=$env:CDP_PORT --remote-allow-origins=*"
+          Set-Content "$dir\launch.bat" $bat
           Start-Process cmd.exe -ArgumentList "/c $dir\launch.bat" -WindowStyle Normal
           Start-Sleep -Seconds 20
-          # Verify CDP
-          $retries = 5
-          $cdpOk = $false
-          for ($i = 0; $i -lt $retries; $i++) {
-            try {
-              $r = Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 5
-              Write-Host "CDP ready"
-              $cdpOk = $true
-              break
-            } catch {
-              Write-Host "CDP attempt $($i+1)/$retries failed, waiting..."
-              Start-Sleep -Seconds 5
-            }
-          }
-          if (-not $cdpOk) {
-            Write-Host "CDP failed after $retries attempts"
-            exit 1
+          for ($i = 0; $i -lt 5; $i++) {
+            try { Invoke-WebRequest -Uri "http://127.0.0.1:$env:CDP_PORT/json" -UseBasicParsing -TimeoutSec 5 | Out-Null; Write-Host "CDP ready"; break } catch { Start-Sleep 5 }
           }
 
       - name: Run E2E test
         shell: powershell
-        env:
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
-          LLM_MODEL: ${{ secrets.LLM_MODEL }}
-          WS_TOKEN: "Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE"
         run: |
           $env:PATH = "$env:USERPROFILE\.openagents\nodejs;$env:APPDATA\npm;$env:PATH"
           $env:NODE_PATH = "$env:USERPROFILE\Desktop\launcher-e2e\node_modules"
           Push-Location "$env:USERPROFILE\Desktop\launcher-e2e"
-          # Write test inline (avoids checkout file issues)
-          node -e "const http=require('http'),WebSocket=require('ws');const CDP='http://127.0.0.1:'+($env:CDP_PORT||9333);let ws,mid=1,p={};async function connect(){const t=await new Promise((r,j)=>http.get(CDP+'/json',s=>{let d='';s.on('data',c=>d+=c);s.on('end',()=>r(JSON.parse(d)[0].webSocketDebuggerUrl))}).on('error',j));return new Promise((r,j)=>{ws=new WebSocket(t);ws.on('open',r);ws.on('error',j);ws.on('message',d=>{const m=JSON.parse(d);if(m.id&&p[m.id]){p[m.id](m);delete p[m.id]}})})}function send(m,a={}){return new Promise((r,j)=>{const i=mid++;const t=setTimeout(()=>{delete p[i];j(new Error('timeout'))},30000);p[i]=msg=>{clearTimeout(t);msg.error?j(new Error(msg.error.message)):r(msg.result)};ws.send(JSON.stringify({id:i,method:m,params:a}))})}async function ev(e){const r=await send('Runtime.evaluate',{expression:e,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.text||'err');return r.result?.value}async function main(){console.log('Connecting to CDP...');await connect();const title=await ev('document.title');console.log('Title:',title);if(!title.includes('OpenAgents'))throw new Error('Bad title');console.log('PASS: App launched');const body=await ev('document.body.innerText');if(body.includes('Dashboard'))console.log('PASS: Dashboard loaded');else throw new Error('No dashboard')}main().then(()=>{console.log('E2E basic test passed');ws.close();process.exit(0)}).catch(e=>{console.error('FAIL:',e.message);ws?.close();process.exit(1)})"
+          $env:E2E_TEST | Out-File -Encoding utf8 e2e-test.js
+          node e2e-test.js
           Pop-Location
-
-      - name: Collect logs
-        if: always()
-        shell: powershell
-        run: |
-          Write-Host "=== DAEMON LOG ==="
-          Get-Content "$env:USERPROFILE\.openagents\daemon.log" -ErrorAction SilentlyContinue
-          Write-Host "=== STATUS ==="
-          Get-Content "$env:USERPROFILE\.openagents\daemon.status.json" -ErrorAction SilentlyContinue
 
       - name: Cleanup
         if: always()
@@ -111,3 +92,61 @@ jobs:
         run: |
           Stop-Process -Name node -Force -ErrorAction SilentlyContinue
           Stop-Process -Name electron -Force -ErrorAction SilentlyContinue
+
+  test-macos:
+    runs-on: [self-hosted, macos, desktop-test]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Kill stale processes
+        run: |
+          pkill -f Electron 2>/dev/null || true
+          pkill -f node 2>/dev/null || true
+        continue-on-error: true
+
+      - name: Clean state
+        run: |
+          rm -f ~/.openagents/daemon.pid ~/.openagents/daemon.status.json ~/.openagents/daemon.log ~/.openagents/daemon.yaml
+          rm -rf ~/.openagents/nodejs
+
+      - name: Install Node.js and openagents CLI
+        run: |
+          export PATH="$HOME/.openagents/nodejs/bin:/usr/local/bin:$PATH"
+          bash install.sh
+
+      - name: Setup and launch Launcher
+        run: |
+          export PATH="$HOME/.openagents/nodejs/bin:/usr/local/bin:$PATH"
+          dir="$HOME/Desktop/launcher-e2e"
+          rm -rf "$dir"
+          mkdir -p "$dir" && cd "$dir"
+          git init && git remote add origin https://github.com/openagents-org/openagents.git
+          git fetch --depth 1 origin develop && git checkout FETCH_HEAD -- packages/launcher/src
+          mv packages/launcher/src src && rm -rf packages
+          npm init -y >/dev/null 2>&1
+          npm install @openagents-org/agent-launcher@latest electron@33 ws 2>&1 | tail -3
+          node -e "const p=require('./package.json');p.main='src/main/main.js';require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))"
+          # Launch Electron
+          cd "$dir" && npx electron . --remote-debugging-port=$CDP_PORT --remote-allow-origins=* &
+          sleep 15
+          # Verify CDP
+          for i in 1 2 3 4 5; do
+            curl -s "http://127.0.0.1:$CDP_PORT/json" >/dev/null 2>&1 && echo "CDP ready" && break
+            echo "CDP attempt $i/5 failed, waiting..." && sleep 5
+          done
+
+      - name: Run E2E test
+        run: |
+          export PATH="$HOME/.openagents/nodejs/bin:/usr/local/bin:$PATH"
+          export NODE_PATH="$HOME/Desktop/launcher-e2e/node_modules"
+          cd "$HOME/Desktop/launcher-e2e"
+          echo "$E2E_TEST" > e2e-test.js
+          node e2e-test.js
+
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -f Electron 2>/dev/null || true
+          pkill -f node 2>/dev/null || true
