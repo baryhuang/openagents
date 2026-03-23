@@ -1,7 +1,5 @@
 /**
  * Interactive TUI dashboard for OpenAgents — `openagents` or `openagents tui`
- *
- * Ported from Python Textual TUI (cli_tui.py). Uses blessed for terminal UI.
  */
 
 'use strict';
@@ -12,8 +10,6 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { getExtraBinDirs } = require('./paths');
-
-// ── Helpers ──────────────────────────────────────────────────────────────
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -28,7 +24,6 @@ function loadAgentRows(connector) {
   const status = connector.getDaemonStatus() || {};
   const agentStatuses = status.agents || {};
   const pid = connector.getDaemonPid();
-
   return agents.map(agent => {
     const info = agentStatuses[agent.name] || {};
     const state = pid ? (info.state || 'stopped') : 'stopped';
@@ -36,182 +31,124 @@ function loadAgentRows(connector) {
     if (agent.network) {
       const nets = config.networks || [];
       const net = nets.find(n => n.slug === agent.network || n.id === agent.network);
-      if (net) {
-        workspace = `${net.slug || net.id} (${net.name || ''})`;
-      } else {
-        workspace = agent.network;
-      }
+      workspace = net ? `${net.slug || net.id} (${net.name || ''})` : agent.network;
     }
-    return { name: agent.name, type: agent.type, state, workspace, role: agent.role || 'worker' };
+    return { name: agent.name, type: agent.type, state, workspace };
   });
 }
 
 function loadCatalog(connector) {
   const registry = connector.getRegistry();
-  const entries = registry.list();
-  return entries.map(e => {
+  return registry.list().map(e => {
     let installed = false;
-    try {
-      const { whichBinary } = require('./paths');
-      installed = !!whichBinary(e.install?.binary || e.name);
-    } catch {}
+    try { const { whichBinary } = require('./paths'); installed = !!whichBinary(e.install?.binary || e.name); } catch {}
     if (!installed) {
       try {
-        const markerFile = path.join(connector.config?.configDir || '', 'installed_agents.json');
-        if (fs.existsSync(markerFile)) {
-          const markers = JSON.parse(fs.readFileSync(markerFile, 'utf-8'));
-          installed = !!markers[e.name];
-        }
+        const f = path.join(connector.config?.configDir || '', 'installed_agents.json');
+        if (fs.existsSync(f)) installed = !!JSON.parse(fs.readFileSync(f, 'utf-8'))[e.name];
       } catch {}
     }
-    return {
-      name: e.name,
-      label: e.label || e.name,
-      description: e.description || '',
-      installed,
-    };
+    return { name: e.name, label: e.label || e.name, description: e.description || '', installed };
   });
 }
-
-const STATE_STYLES = {
-  online:   { sym: '●', color: 'green',  label: 'running' },
-  running:  { sym: '●', color: 'green',  label: 'running' },
-  starting: { sym: '◐', color: 'yellow', label: 'starting' },
-  reconnecting: { sym: '◐', color: 'yellow', label: 'reconnecting' },
-  stopped:  { sym: '○', color: 'gray',   label: 'stopped' },
-  error:    { sym: '✗', color: 'red',    label: 'error' },
-  'not configured': { sym: '○', color: 'gray', label: 'not configured' },
-};
 
 // ── Main TUI ─────────────────────────────────────────────────────────────
 
 function createTUI() {
-  const screen = blessed.screen({
-    smartCSR: true,
-    title: 'OpenAgents',
-    fullUnicode: true,
-  });
-
+  const screen = blessed.screen({ smartCSR: true, title: 'OpenAgents', fullUnicode: true });
   const connector = getConnector();
   let pkg;
   try { pkg = require('../package.json'); } catch { pkg = { version: '?' }; }
 
-  // ── Layout ──
-
-  // Header bar
+  // ── Header ──
   const header = blessed.box({
     top: 0, left: 0, width: '100%', height: 1,
-    tags: true,
     style: { bg: 'blue', fg: 'white', bold: true },
   });
 
-  // Title area below header
+  // ── Title ──
   const titleBox = blessed.box({
-    top: 1, left: 0, width: '100%', height: 3,
-    tags: true,
-    content: `\n  {bold}OpenAgents{/bold} {gray-fg}v${pkg.version}{/gray-fg}    {gray-fg}Local AI Agent Manager{/gray-fg}`,
+    top: 1, left: 0, width: '100%', height: 2,
+    content: `  OpenAgents v${pkg.version}`,
+    style: { bold: true },
   });
 
-  // Column headers for agent table
+  // ── Column Headers ──
   const colHeaders = blessed.box({
-    top: 4, left: 0, width: '100%', height: 1,
-    tags: true,
+    top: 3, left: 0, width: '100%', height: 1,
     style: { bg: 'white', fg: 'black' },
     content: `  ${'NAME'.padEnd(22)} ${'TYPE'.padEnd(14)} ${'STATUS'.padEnd(14)} WORKSPACE`,
   });
 
-  // Agent list
+  // ── Agent List ──
   const agentList = blessed.list({
-    top: 5, left: 0, width: '100%', height: '50%-2',
-    tags: true, keys: true, vi: true, mouse: true,
-    border: { type: 'line', left: false, right: false, top: false },
+    top: 4, left: 0, width: '100%', height: '50%-1',
+    keys: true, vi: true, mouse: true,
     style: {
-      selected: { bg: 'blue', fg: 'white', bold: true },
+      selected: { bg: 'blue', fg: 'white' },
       item: { fg: 'white' },
-      border: { fg: 'gray' },
     },
   });
 
-  // Separator
-  const separator = blessed.line({
-    top: '50%+3', left: 0, width: '100%',
-    orientation: 'horizontal',
-    style: { fg: 'gray' },
-  });
-
-  // Activity log
+  // ── Activity Section ──
   const logLabel = blessed.box({
-    top: '50%+4', left: 0, width: '100%', height: 1,
-    tags: true,
-    content: '  {bold}Activity{/bold}',
-    style: { fg: 'white' },
+    top: '50%+3', left: 0, width: '100%', height: 1,
+    content: '  ACTIVITY',
+    style: { bg: 'white', fg: 'black' },
   });
 
   const logContent = blessed.log({
-    top: '50%+5', left: 0, width: '100%', height: '50%-8',
-    tags: true,
-    scrollable: true,
-    scrollOnInput: true,
+    top: '50%+4', left: 0, width: '100%', height: '50%-7',
+    scrollable: true, scrollOnInput: true,
     padding: { left: 2 },
-    style: { fg: 'gray' },
+    style: { fg: 'white' },
   });
 
-  // Footer
+  // ── Footer ──
   const footer = blessed.box({
     bottom: 0, left: 0, width: '100%', height: 1,
-    tags: true,
     style: { bg: 'blue', fg: 'white' },
+    content: ' i Install  n New  s Start  x Stop  c Connect  u Daemon  r Refresh  q Quit',
   });
 
   screen.append(header);
   screen.append(titleBox);
   screen.append(colHeaders);
   screen.append(agentList);
-  screen.append(separator);
   screen.append(logLabel);
   screen.append(logContent);
   screen.append(footer);
-
-  // ── State ──
 
   let agentRows = [];
   let currentView = 'main';
 
   function log(msg) {
     const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    logContent.log(`{gray-fg}${ts}{/gray-fg}  ${msg}`);
+    logContent.log(`${ts}  ${msg}`);
     screen.render();
   }
 
-  // ── Refresh ──
-
   function refreshAgentTable() {
-    try {
-      agentRows = loadAgentRows(connector);
-    } catch { agentRows = []; }
+    try { agentRows = loadAgentRows(connector); } catch { agentRows = []; }
 
     const items = agentRows.length ? agentRows.map(r => {
-      const st = STATE_STYLES[r.state] || STATE_STYLES.stopped;
-      const ws = r.workspace || '{gray-fg}—{/gray-fg}';
-      return `  {${st.color}-fg}${st.sym}{/${st.color}-fg} ${r.name.padEnd(20)} ${r.type.padEnd(14)} {${st.color}-fg}${st.label.padEnd(14)}{/${st.color}-fg} ${ws}`;
-    }) : ['  {gray-fg}No agents configured. Press {bold}i{/bold} to install, {bold}n{/bold} to create.{/gray-fg}'];
+      const sym = r.state === 'running' || r.state === 'online' ? '\u25CF' :
+                  r.state === 'error' ? '\u2717' : '\u25CB';
+      const ws = r.workspace || '-';
+      return `  ${sym} ${r.name.padEnd(20)} ${r.type.padEnd(14)} ${r.state.padEnd(14)} ${ws}`;
+    }) : ['  No agents configured. Press i to install, n to create.'];
 
     agentList.setItems(items);
     updateHeader();
-    updateFooter();
     screen.render();
   }
 
   function updateHeader() {
     const pid = connector.getDaemonPid();
-    const dot = pid ? '{green-fg}●{/green-fg}' : '{gray-fg}○{/gray-fg}';
+    const dot = pid ? '\u25CF' : '\u25CB';
     const state = pid ? 'Daemon running' : 'Daemon idle';
     const count = agentRows.length;
-    header.setContent(`  ${dot} ${state}  │  ${count} agent${count !== 1 ? 's' : ''} configured`);
-  }
-
-  function updateFooter() {
-    footer.setContent('  {bold}i{/bold} Install  {bold}n{/bold} New  {bold}s{/bold} Start  {bold}x{/bold} Stop  {bold}c{/bold} Connect  {bold}u{/bold} Daemon  {bold}r{/bold} Refresh  {bold}q{/bold} Quit');
+    header.setContent(`  ${dot} ${state}  |  ${count} agent${count !== 1 ? 's' : ''} configured`);
   }
 
   // ── Install Screen ──
@@ -219,275 +156,199 @@ function createTUI() {
   function showInstallScreen() {
     currentView = 'install';
     let catalog;
-    try {
-      catalog = loadCatalog(connector);
-    } catch (e) {
-      log(`{red-fg}Error loading catalog: ${e.message}{/red-fg}`);
-      return;
-    }
+    try { catalog = loadCatalog(connector); } catch (e) { log('Error: ' + e.message); return; }
 
-    const installBox = blessed.box({
-      top: 0, left: 0, width: '100%', height: '100%',
-      tags: true,
-    });
+    const box = blessed.box({ top: 0, left: 0, width: '100%', height: '100%' });
 
-    // Header
-    const installHeader = blessed.box({
-      parent: installBox,
-      top: 0, left: 0, width: '100%', height: 1,
-      tags: true,
+    blessed.box({
+      parent: box, top: 0, left: 0, width: '100%', height: 1,
       style: { bg: 'blue', fg: 'white', bold: true },
-      content: '  Install Agent Runtimes',
+      content: '  Install Agent Runtimes    (Enter = install, Esc = back)',
     });
 
-    // Subtitle
     blessed.box({
-      parent: installBox,
-      top: 1, left: 0, width: '100%', height: 2,
-      tags: true,
-      content: '\n  {gray-fg}Select a runtime and press Enter to install or update.{/gray-fg}',
-    });
-
-    // Column headers
-    blessed.box({
-      parent: installBox,
-      top: 3, left: 0, width: '100%', height: 1,
-      tags: true,
+      parent: box, top: 1, left: 0, width: '100%', height: 1,
       style: { bg: 'white', fg: 'black' },
       content: `  ${'AGENT'.padEnd(25)} ${'STATUS'.padEnd(16)} DESCRIPTION`,
     });
 
-    // Install list
-    const installList = blessed.list({
-      parent: installBox,
-      top: 4, left: 0, width: '100%', height: '100%-7',
-      tags: true, keys: true, vi: true, mouse: true,
+    const list = blessed.list({
+      parent: box, top: 2, left: 0, width: '100%', height: '100%-4',
+      keys: true, vi: true, mouse: true,
       style: {
-        selected: { bg: 'blue', fg: 'white', bold: true },
+        selected: { bg: 'blue', fg: 'white' },
         item: { fg: 'white' },
       },
     });
 
-    // Status bar at bottom
     const statusBar = blessed.box({
-      parent: installBox,
-      bottom: 1, left: 0, width: '100%', height: 1,
-      tags: true,
-      content: '',
+      parent: box, bottom: 1, left: 0, width: '100%', height: 1,
     });
 
-    // Footer
     blessed.box({
-      parent: installBox,
-      bottom: 0, left: 0, width: '100%', height: 1,
-      tags: true,
+      parent: box, bottom: 0, left: 0, width: '100%', height: 1,
       style: { bg: 'blue', fg: 'white' },
-      content: '  {bold}Enter{/bold} Install/Update  {bold}Esc{/bold} Back',
+      content: ' Enter Install/Update  Esc Back',
     });
 
-    function renderCatalog() {
-      const items = catalog.map(e => {
-        const st = e.installed
-          ? '{green-fg}● installed{/green-fg}   '
-          : '{yellow-fg}○ available{/yellow-fg}   ';
-        const desc = e.description ? `{gray-fg}${e.description.substring(0, 45)}{/gray-fg}` : '';
-        return `  ${e.label.padEnd(25)} ${st} ${desc}`;
-      });
-      installList.setItems(items);
+    function renderList() {
+      list.setItems(catalog.map(e => {
+        const st = e.installed ? '\u25CF installed' : '\u25CB available';
+        const desc = e.description ? e.description.substring(0, 40) : '';
+        return `  ${e.label.padEnd(25)} ${st.padEnd(16)} ${desc}`;
+      }));
     }
+    renderList();
+    list.focus();
 
-    renderCatalog();
-    installList.focus();
-
-    installList.on('select', (_item, idx) => {
+    list.on('select', (_item, idx) => {
       const entry = catalog[idx];
       if (!entry) return;
-
       const verb = entry.installed ? 'Update' : 'Install';
-      const confirm = blessed.question({
-        parent: installBox,
-        top: 'center', left: 'center',
-        width: 55, height: 7,
-        border: { type: 'line' },
-        tags: true,
-        label: ` ${verb} `,
-        style: { bg: 'black', fg: 'white', border: { fg: 'cyan' }, label: { fg: 'cyan', bold: true } },
-      });
 
-      confirm.ask(`${verb} ${entry.label}? (y/n)`, (_err, ok) => {
-        confirm.destroy();
-        if (!ok) { installList.focus(); screen.render(); return; }
-        doInstall(entry, statusBar, installList, catalog, renderCatalog);
+      const dialog = blessed.box({
+        parent: box, top: 'center', left: 'center',
+        width: 50, height: 5,
+        border: { type: 'line' },
+        style: { border: { fg: 'cyan' } },
+        content: `\n  ${verb} ${entry.label}?  (y = yes, n = no)`,
       });
+      screen.render();
+
+      const onKey = (ch) => {
+        screen.unkey(['y', 'n', 'escape'], onKey);
+        dialog.destroy();
+        if (ch === 'y') {
+          doInstall(entry, statusBar, list, catalog, renderList);
+        } else {
+          list.focus();
+        }
+        screen.render();
+      };
+      screen.key(['y', 'n', 'escape'], onKey);
     });
 
-    installList.key('escape', () => {
-      screen.remove(installBox);
-      installBox.destroy();
+    list.key('escape', () => {
+      screen.remove(box);
+      box.destroy();
       currentView = 'main';
       agentList.focus();
       refreshAgentTable();
     });
 
-    screen.append(installBox);
-    installList.focus();
+    screen.append(box);
+    list.focus();
     screen.render();
   }
 
-  function doInstall(entry, statusBar, installList, catalog, renderCatalog) {
-    statusBar.setContent(`  {cyan-fg}Installing ${entry.name}...{/cyan-fg}`);
+  function doInstall(entry, statusBar, list, catalog, renderList) {
+    statusBar.setContent(`  Installing ${entry.name}...`);
     screen.render();
 
     const installer = connector.getInstaller();
-    const installCmd = installer._resolveInstallCommand(entry.name);
-    if (!installCmd) {
-      statusBar.setContent(`  {red-fg}✗ No install command for ${entry.name}{/red-fg}`);
+    const cmd = installer._resolveInstallCommand(entry.name);
+    if (!cmd) {
+      statusBar.setContent(`  Error: No install command for ${entry.name}`);
       screen.render();
-      installList.focus();
+      list.focus();
       return;
     }
 
-    log(`{cyan-fg}$ ${installCmd}{/cyan-fg}`);
-    statusBar.setContent(`  {gray-fg}$ ${installCmd.substring(0, 80)}{/gray-fg}`);
+    log('$ ' + cmd);
+    statusBar.setContent('  Running: ' + cmd.substring(0, 70));
     screen.render();
 
-    const env = { ...process.env };
-    env.npm_config_yes = 'true';
-    env.CI = '1';
-
-    const extraDirs = getExtraBinDirs();
-    if (extraDirs.length) {
-      const sep = IS_WINDOWS ? ';' : ':';
-      env.PATH = extraDirs.join(sep) + sep + (env.PATH || '');
+    const env = { ...process.env, npm_config_yes: 'true', CI: '1' };
+    const extra = getExtraBinDirs();
+    if (extra.length) {
+      env.PATH = extra.join(IS_WINDOWS ? ';' : ':') + (IS_WINDOWS ? ';' : ':') + (env.PATH || '');
     }
 
-    const proc = spawn(installCmd, [], {
-      shell: true, env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const proc = spawn(cmd, [], { shell: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let lines = 0;
 
-    let lastLine = '';
-    let lineCount = 0;
     const onData = (data) => {
-      const lines = data.toString().split('\n').filter(l => l.trim());
-      for (const line of lines) {
-        lastLine = line.trim().substring(0, 100);
-        lineCount++;
-        log(`  ${lastLine}`);
-        statusBar.setContent(`  {gray-fg}[${lineCount} lines] ${lastLine.substring(0, 70)}{/gray-fg}`);
+      data.toString().split('\n').filter(l => l.trim()).forEach(line => {
+        lines++;
+        const clean = line.trim().substring(0, 90);
+        log('  ' + clean);
+        statusBar.setContent(`  [${lines}] ${clean.substring(0, 70)}`);
         screen.render();
-      }
+      });
     };
     proc.stdout.on('data', onData);
     proc.stderr.on('data', onData);
 
     proc.on('close', (code) => {
       if (code === 0) {
-        statusBar.setContent(`  {green-fg}✓ ${entry.name} installed successfully{/green-fg}`);
-        log(`{green-fg}✓ ${entry.name} installed successfully{/green-fg}`);
-        // Mark installed
+        statusBar.setContent(`  Done! ${entry.name} installed successfully.`);
+        statusBar.style.fg = 'green';
+        log(entry.name + ' installed successfully');
         try {
-          const markerFile = path.join(connector.config?.configDir || '', 'installed_agents.json');
-          let markers = {};
-          try { markers = JSON.parse(fs.readFileSync(markerFile, 'utf-8')); } catch {}
-          markers[entry.name] = { installed_at: new Date().toISOString() };
-          fs.writeFileSync(markerFile, JSON.stringify(markers, null, 2));
+          const f = path.join(connector.config?.configDir || '', 'installed_agents.json');
+          let m = {}; try { m = JSON.parse(fs.readFileSync(f, 'utf-8')); } catch {}
+          m[entry.name] = { installed_at: new Date().toISOString() };
+          fs.writeFileSync(f, JSON.stringify(m, null, 2));
         } catch {}
-        // Refresh
-        try {
-          const newCatalog = loadCatalog(connector);
-          for (let i = 0; i < catalog.length; i++) {
-            const updated = newCatalog.find(c => c.name === catalog[i].name);
-            if (updated) catalog[i] = updated;
-          }
-          // Also mark the just-installed one
-          const idx = catalog.findIndex(c => c.name === entry.name);
-          if (idx >= 0) catalog[idx].installed = true;
-          renderCatalog();
-        } catch {}
+        const idx = catalog.findIndex(c => c.name === entry.name);
+        if (idx >= 0) catalog[idx].installed = true;
+        renderList();
       } else {
-        statusBar.setContent(`  {red-fg}✗ Failed (exit ${code}): ${lastLine.substring(0, 60)}{/red-fg}`);
-        log(`{red-fg}✗ ${entry.name} install failed (exit ${code}){/red-fg}`);
+        statusBar.setContent(`  Failed (exit ${code})`);
+        statusBar.style.fg = 'red';
+        log(entry.name + ' install failed (exit ' + code + ')');
       }
-      installList.focus();
+      setTimeout(() => { statusBar.style.fg = 'white'; }, 5000);
+      list.focus();
       screen.render();
     });
   }
 
-  // ── New Agent Dialog ──
+  // ── New Agent ──
 
   function showNewAgentDialog() {
     const dialog = blessed.box({
-      top: 'center', left: 'center',
-      width: 60, height: 16,
+      top: 'center', left: 'center', width: 56, height: 13,
       border: { type: 'line' },
-      tags: true, keys: true,
-      label: ' {bold}Create Agent{/bold} ',
-      style: { border: { fg: 'cyan' }, label: { fg: 'cyan' } },
+      style: { border: { fg: 'cyan' } },
+      label: ' Create Agent ',
     });
 
-    blessed.text({ parent: dialog, top: 1, left: 2, tags: true, content: '{bold}Name:{/bold}' });
+    blessed.text({ parent: dialog, top: 1, left: 2, content: 'Name:' });
     const nameInput = blessed.textbox({
-      parent: dialog, top: 2, left: 2, width: 44, height: 3,
-      border: { type: 'line' },
-      inputOnFocus: true,
-      style: { border: { fg: 'gray' }, focus: { border: { fg: 'cyan' } } },
+      parent: dialog, top: 2, left: 2, width: 40, height: 3,
+      border: { type: 'line' }, inputOnFocus: true,
+      style: { focus: { border: { fg: 'cyan' } } },
     });
 
-    blessed.text({ parent: dialog, top: 5, left: 2, tags: true, content: '{bold}Type:{/bold} {gray-fg}(openclaw, claude, codex, aider, goose){/gray-fg}' });
+    blessed.text({ parent: dialog, top: 5, left: 2, content: 'Type: (openclaw, claude, codex, aider, goose)' });
     const typeInput = blessed.textbox({
-      parent: dialog, top: 6, left: 2, width: 44, height: 3,
-      border: { type: 'line' },
-      inputOnFocus: true,
-      value: 'openclaw',
-      style: { border: { fg: 'gray' }, focus: { border: { fg: 'cyan' } } },
+      parent: dialog, top: 6, left: 2, width: 40, height: 3,
+      border: { type: 'line' }, inputOnFocus: true, value: 'openclaw',
+      style: { focus: { border: { fg: 'cyan' } } },
     });
 
-    const statusLabel = blessed.text({ parent: dialog, top: 10, left: 2, tags: true, content: '' });
+    const msg = blessed.text({ parent: dialog, top: 10, left: 2, content: '' });
 
-    const createBtn = blessed.button({
-      parent: dialog, top: 12, left: 2, width: 14, height: 1,
-      content: '  Create  ', tags: true, mouse: true,
-      style: { bg: 'blue', fg: 'white', focus: { bg: 'cyan' }, hover: { bg: 'cyan' } },
-    });
-
-    const cancelBtn = blessed.button({
-      parent: dialog, top: 12, left: 18, width: 14, height: 1,
-      content: '  Cancel  ', tags: true, mouse: true,
-      style: { bg: 'gray', fg: 'white', focus: { bg: 'red' }, hover: { bg: 'red' } },
-    });
-
-    function doCreate() {
+    const doCreate = () => {
       const name = nameInput.getValue().trim();
       const type = typeInput.getValue().trim();
-      if (!name) { statusLabel.setContent('{red-fg}Name is required{/red-fg}'); screen.render(); return; }
-      if (!type) { statusLabel.setContent('{red-fg}Type is required{/red-fg}'); screen.render(); return; }
+      if (!name) { msg.setContent('Name is required'); screen.render(); return; }
+      if (!type) { msg.setContent('Type is required'); screen.render(); return; }
       try {
         connector.createAgent(name, type);
-        log(`{green-fg}✓ Agent '${name}' (${type}) created{/green-fg}`);
-        screen.remove(dialog);
-        dialog.destroy();
-        agentList.focus();
-        refreshAgentTable();
-      } catch (e) {
-        statusLabel.setContent(`{red-fg}${e.message}{/red-fg}`);
-        screen.render();
-      }
-    }
+        log('Agent ' + name + ' (' + type + ') created');
+      } catch (e) { msg.setContent(e.message); screen.render(); return; }
+      screen.remove(dialog); dialog.destroy();
+      agentList.focus(); refreshAgentTable();
+    };
 
-    createBtn.on('press', doCreate);
-    cancelBtn.on('press', () => {
-      screen.remove(dialog);
-      dialog.destroy();
-      agentList.focus();
-      screen.render();
-    });
+    nameInput.key('enter', () => typeInput.focus());
+    typeInput.key('enter', doCreate);
 
     dialog.key('escape', () => {
-      screen.remove(dialog);
-      dialog.destroy();
-      agentList.focus();
-      screen.render();
+      screen.remove(dialog); dialog.destroy();
+      agentList.focus(); screen.render();
     });
 
     screen.append(dialog);
@@ -495,93 +356,54 @@ function createTUI() {
     screen.render();
   }
 
-  // ── Keybindings ──
+  // ── Keys ──
 
   screen.key('q', () => { if (currentView === 'main') process.exit(0); });
   screen.key('C-c', () => process.exit(0));
-
   screen.key('i', () => { if (currentView === 'main') showInstallScreen(); });
   screen.key('n', () => { if (currentView === 'main') showNewAgentDialog(); });
-
-  screen.key('r', () => {
-    if (currentView === 'main') {
-      refreshAgentTable();
-      log('Refreshed');
-    }
-  });
+  screen.key('r', () => { if (currentView === 'main') { refreshAgentTable(); log('Refreshed'); } });
 
   screen.key('s', () => {
-    if (currentView !== 'main') return;
-    const idx = agentList.selected;
-    const agent = agentRows[idx];
-    if (!agent) { log('{yellow-fg}No agent selected{/yellow-fg}'); return; }
-    try {
-      connector.startAgent(agent.name);
-      log(`Starting ${agent.name}...`);
-    } catch (e) { log(`{red-fg}Error: ${e.message}{/red-fg}`); }
+    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+    const a = agentRows[agentList.selected];
+    try { connector.startAgent(a.name); log('Starting ' + a.name + '...'); } catch (e) { log('Error: ' + e.message); }
     setTimeout(refreshAgentTable, 2000);
   });
 
   screen.key('x', () => {
-    if (currentView !== 'main') return;
-    const idx = agentList.selected;
-    const agent = agentRows[idx];
-    if (!agent) { log('{yellow-fg}No agent selected{/yellow-fg}'); return; }
-    try {
-      connector.stopAgent(agent.name);
-      log(`Stopped ${agent.name}`);
-    } catch (e) { log(`{red-fg}Error: ${e.message}{/red-fg}`); }
+    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+    const a = agentRows[agentList.selected];
+    try { connector.stopAgent(a.name); log('Stopped ' + a.name); } catch (e) { log('Error: ' + e.message); }
     setTimeout(refreshAgentTable, 1000);
   });
 
   screen.key('u', () => {
     if (currentView !== 'main') return;
-    const pid = connector.getDaemonPid();
-    if (pid) {
-      connector.stopDaemon();
-      log('Daemon stopped');
-    } else {
-      connector.startDaemon();
-      log('Daemon starting...');
-    }
+    if (connector.getDaemonPid()) { connector.stopDaemon(); log('Daemon stopped'); }
+    else { connector.startDaemon(); log('Daemon starting...'); }
     setTimeout(refreshAgentTable, 2000);
   });
 
   screen.key('c', () => {
-    if (currentView !== 'main') return;
-    const idx = agentList.selected;
-    const agent = agentRows[idx];
-    if (!agent) { log('{yellow-fg}No agent selected{/yellow-fg}'); return; }
-    log(`{gray-fg}Use: openagents connect ${agent.name} <workspace-token>{/gray-fg}`);
+    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+    log('Use: openagents connect ' + agentRows[agentList.selected].name + ' <token>');
   });
 
   screen.key('d', () => {
-    if (currentView !== 'main') return;
-    const idx = agentList.selected;
-    const agent = agentRows[idx];
-    if (!agent) { log('{yellow-fg}No agent selected{/yellow-fg}'); return; }
-    try {
-      connector.disconnectAgent(agent.name);
-      log(`Disconnected ${agent.name}`);
-    } catch (e) { log(`{red-fg}Error: ${e.message}{/red-fg}`); }
+    if (currentView !== 'main' || !agentRows[agentList.selected]) return;
+    const a = agentRows[agentList.selected];
+    try { connector.disconnectAgent(a.name); log('Disconnected ' + a.name); } catch (e) { log('Error: ' + e.message); }
     refreshAgentTable();
   });
 
   // ── Init ──
-
   agentList.focus();
   refreshAgentTable();
-  log('Welcome to {bold}OpenAgents{/bold}. Press {bold}i{/bold} to install agents, {bold}n{/bold} to create one.');
-
+  log('Welcome to OpenAgents. Press i to install agents, n to create one.');
   setInterval(refreshAgentTable, 5000);
   screen.render();
-  return screen;
 }
 
-// ── Entry point ──────────────────────────────────────────────────────────
-
-function run() {
-  createTUI();
-}
-
+function run() { createTUI(); }
 module.exports = { run };

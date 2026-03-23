@@ -215,3 +215,8 @@ if ($agentCount -gt 0) {
     Write-Host "       openagents up" -ForegroundColor White
     Write-Host ""
 }
+
+# Launch TUI
+Write-Host "  Launching OpenAgents..." -ForegroundColor Cyan
+Write-Host ""
+& openagents

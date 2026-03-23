@@ -243,3 +243,10 @@ else
     echo "       ${BOLD}openagents up${RESET}"
     echo ""
 fi
+
+# Launch TUI if interactive terminal
+if [ -t 0 ] && [ -t 1 ]; then
+    info "Launching OpenAgents..."
+    echo ""
+    exec openagents
+fi
