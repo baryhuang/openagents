@@ -203,18 +203,19 @@ function createTUI() {
     style: { fg: 'white' },
   });
 
-  // ── Footer ──
-  const footer = blessed.box({
+  // ── Footer (clickable buttons) ──
+  const footerBar = blessed.box({
     bottom: 0, left: 0, width: '100%', height: 1,
     tags: true,
     style: { bg: COLORS.footerBg, fg: COLORS.footerFg },
   });
+  let footerButtons = [];
 
   screen.append(header);
   screen.append(titleBox);
   screen.append(agentPanel);
   screen.append(logPanel);
-  screen.append(footer);
+  screen.append(footerBar);
 
   // ── Log helper ──
   function log(msg) {
@@ -223,36 +224,68 @@ function createTUI() {
     screen.render();
   }
 
-  // ── Footer rendering (context-aware) ──
+  // ── Footer rendering (context-aware, clickable) ──
+  // Maps footer action labels to the key they simulate
+  const footerKeyMap = {
+    'Install': 'i', 'New': 'n', 'Start': 's', 'Stop': 'x',
+    'Configure': 'e', 'Connect': 'c', 'Disconnect': 'd',
+    'Workspace': 'w', 'Remove': 'delete', 'Daemon': 'u',
+    'Refresh': 'r', 'Quit': 'q',
+  };
+
   function updateFooter() {
     const agent = agentRows[agentList.selected];
-    const parts = [];
+    const items = [];
 
-    parts.push('{cyan-fg}i{/cyan-fg} Install');
-    parts.push('{cyan-fg}n{/cyan-fg} New');
+    items.push({ key: 'i', label: 'Install' });
+    items.push({ key: 'n', label: 'New' });
 
     if (agent && agent.configured) {
       const isRunning = ['running', 'online', 'starting', 'reconnecting'].includes(agent.state);
       const isStopped = ['stopped', 'error'].includes(agent.state);
 
-      if (isStopped) parts.push('{cyan-fg}s{/cyan-fg} Start');
-      if (isRunning) parts.push('{cyan-fg}x{/cyan-fg} Stop');
+      if (isStopped) items.push({ key: 's', label: 'Start' });
+      if (isRunning) items.push({ key: 'x', label: 'Stop' });
 
       const envFields = connector.registry.getEnvFields(agent.type);
-      if (envFields && envFields.length > 0) parts.push('{cyan-fg}e{/cyan-fg} Configure');
+      if (envFields && envFields.length > 0) items.push({ key: 'e', label: 'Configure' });
 
-      if (!agent.workspace) parts.push('{cyan-fg}c{/cyan-fg} Connect');
-      if (agent.workspace) parts.push('{cyan-fg}d{/cyan-fg} Disconnect');
-      if (agent.workspace) parts.push('{cyan-fg}w{/cyan-fg} Workspace');
+      if (!agent.workspace) items.push({ key: 'c', label: 'Connect' });
+      if (agent.workspace) items.push({ key: 'd', label: 'Disconnect' });
+      if (agent.workspace) items.push({ key: 'w', label: 'Workspace' });
 
-      parts.push('{cyan-fg}Del{/cyan-fg} Remove');
+      items.push({ key: 'Del', label: 'Remove' });
     }
 
-    parts.push('{cyan-fg}u{/cyan-fg} Daemon');
-    parts.push('{cyan-fg}r{/cyan-fg} Refresh');
-    parts.push('{cyan-fg}q{/cyan-fg} Quit');
+    items.push({ key: 'u', label: 'Daemon' });
+    items.push({ key: 'r', label: 'Refresh' });
+    items.push({ key: 'q', label: 'Quit' });
 
-    footer.setContent(' ' + parts.join('  '));
+    // Remove old buttons
+    for (const btn of footerButtons) { footerBar.remove(btn); btn.destroy(); }
+    footerButtons = [];
+
+    let left = 1;
+    for (const item of items) {
+      const text = `${item.key} ${item.label}`;
+      const btn = blessed.box({
+        parent: footerBar,
+        left, top: 0, height: 1,
+        width: text.length + 2,
+        tags: true,
+        mouse: true,
+        clickable: true,
+        content: `{cyan-fg}${item.key}{/cyan-fg} ${item.label}`,
+        style: { bg: COLORS.footerBg, fg: COLORS.footerFg, hover: { bg: 'cyan', fg: 'black' } },
+      });
+      const actionKey = footerKeyMap[item.label];
+      if (actionKey) {
+        btn.on('click', () => { screen.emit('keypress', null, { full: actionKey, name: actionKey }); });
+      }
+      footerButtons.push(btn);
+      left += text.length + 2;
+    }
+
     screen.render();
   }
 
