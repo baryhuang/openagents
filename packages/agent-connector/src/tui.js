@@ -85,6 +85,39 @@ function loadAgentRows(connector) {
         workspace = agent.network;
       }
     }
+    // Check if agent type needs configuration (API key etc.)
+    let notReadyMsg = '';
+    try {
+      const agentType = agent.type || 'openclaw';
+      const entry = connector.registry.getEntry(agentType);
+      if (entry && entry.check_ready) {
+        const cr = entry.check_ready;
+        let isReady = false;
+        // Check saved env
+        if (cr.saved_env_key) {
+          const saved = connector.env.load(agentType);
+          if (saved[cr.saved_env_key]) isReady = true;
+        }
+        // Check process env vars
+        if (!isReady && cr.env_vars) {
+          for (const v of cr.env_vars) {
+            if (process.env[v]) { isReady = true; break; }
+          }
+        }
+        // Check creds file (for claude)
+        if (!isReady && cr.creds_file) {
+          const credsPath = cr.creds_file.replace('~', process.env.HOME || process.env.USERPROFILE || '');
+          try {
+            if (fs.existsSync(credsPath)) {
+              const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+              if (cr.creds_key && creds[cr.creds_key]) isReady = true;
+            }
+          } catch {}
+        }
+        if (!isReady) notReadyMsg = cr.not_ready_message || 'Not configured';
+      }
+    } catch {}
+
     return {
       name: agent.name,
       type: agent.type || 'openclaw',
@@ -93,6 +126,7 @@ function loadAgentRows(connector) {
       path: agent.path || '',
       network: agent.network || '',
       lastError: info.last_error || '',
+      notReadyMsg,
       configured: true,
     };
   });
@@ -308,7 +342,8 @@ function createTUI() {
         const state = stateMarkup(r.state, !!r.workspace);
         const ws = r.workspace || '{gray-fg}-{/gray-fg}';
         const pathInfo = r.path ? `{gray-fg} ${r.path}{/gray-fg}` : '';
-        return `  ${r.name.padEnd(22)} ${r.type.padEnd(14)} ${state.padEnd(30)} ${ws}${pathInfo}`;
+        const warning = r.notReadyMsg ? ` {yellow-fg}⚠ ${r.notReadyMsg}{/yellow-fg}` : '';
+        return `  ${r.name.padEnd(22)} ${r.type.padEnd(14)} ${state.padEnd(30)} ${ws}${pathInfo}${warning}`;
       });
       agentList.setItems(items);
     }
