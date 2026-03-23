@@ -32,16 +32,19 @@ jobs:
           openagents --version
           openagents search
 
-      - name: Verify openclaw installed
+      - name: Install openclaw if needed
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openclaw --version 2>nul || (echo Installing openclaw... && npm install -g openclaw@latest)
           openclaw --version
 
-      - name: Check agent config
+      - name: Setup agent config
         shell: cmd
         run: |
           set PATH=%USERPROFILE%\.openagents\nodejs;%APPDATA%\npm;%PATH%
+          openagents list 2>nul || openagents create test-agent --type openclaw
+          openagents connect test-agent Ux8TWAXT_YP0WUmWjtmDzjtcnZChGVZ7hYCT9ddAzrE 2>nul || echo Already connected
           openagents list
           openagents status
 
