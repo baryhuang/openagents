@@ -356,6 +356,7 @@ class ClaudeAdapter extends BaseAdapter {
       let hasToolUseSinceLastText = false;
       let postedThinking = false;
       let stderrBuf = '';
+      let lineBuffer = '';
 
       // Capture stderr for diagnostics
       if (proc.stderr) {
@@ -450,7 +451,7 @@ class ClaudeAdapter extends BaseAdapter {
           if (timeoutTimer) clearInterval(timeoutTimer);
 
           // Process remaining buffer
-          const lines = buffer.split('\n');
+          const lines = lineBuffer.split('\n');
           for (const line of lines) {
             try { await processLine(line); } catch {}
           }
@@ -481,7 +482,6 @@ class ClaudeAdapter extends BaseAdapter {
         });
 
         // Process lines as they arrive
-        let lineBuffer = '';
         proc.stdout.on('data', (chunk) => {
           lineBuffer += chunk.toString('utf-8');
           resetTimeout();
@@ -491,8 +491,6 @@ class ClaudeAdapter extends BaseAdapter {
             processLine(line).catch(() => {});
           }
         });
-        // Override buffer since we're processing in real time
-        buffer = '';
       });
     } catch (e) {
       this._log(`Error handling message: ${e.message}`);
