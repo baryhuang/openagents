@@ -697,6 +697,7 @@ function createTUI() {
     const pathInput = blessed.textbox({
       parent: dialog, top: 6, left: 2, width: 50, height: 3,
       border: { type: 'line' }, inputOnFocus: true,
+      value: defaultPath,
       style: { fg: 'white', bg: COLORS.surface, focus: { border: { fg: COLORS.accent } }, border: { fg: 'grey' } },
     });
 
