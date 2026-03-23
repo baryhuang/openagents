@@ -214,11 +214,10 @@ echo ""
 echo "${BOLD}${GREEN}  Installation complete!${RESET}"
 echo ""
 
-# Check if openagents is on the user's original PATH (not our modified one)
+# Auto-configure PATH if openagents isn't on the user's original PATH
 NEEDS_PATH=""
 if [ -n "$OA_BIN" ]; then
     OA_DIR=$(dirname "$OA_BIN")
-    # Check if it was already on PATH before we modified it
     case ":${ORIGINAL_PATH}:" in
         *":${OA_DIR}:"*) ;;  # already on PATH
         *) NEEDS_PATH="$OA_DIR" ;;
@@ -226,20 +225,47 @@ if [ -n "$OA_BIN" ]; then
 fi
 
 if [ -n "$NEEDS_PATH" ]; then
-    echo "  ${YELLOW}To use openagents, add to your shell profile (~/.bashrc, ~/.zshrc):${RESET}"
+    # Include portable nodejs if we installed it
+    if [ -d "$HOME/.openagents/nodejs/bin" ]; then
+        PATH_LINE="export PATH=\"$HOME/.openagents/nodejs/bin:$NEEDS_PATH:\$PATH\""
+    else
+        PATH_LINE="export PATH=\"$NEEDS_PATH:\$PATH\""
+    fi
+    ADDED_TO=""
+
+    # Auto-add to shell profile
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+        if [ -f "$rc" ]; then
+            if ! grep -qF "$NEEDS_PATH" "$rc" 2>/dev/null; then
+                echo "" >> "$rc"
+                echo "# Added by OpenAgents installer" >> "$rc"
+                echo "$PATH_LINE" >> "$rc"
+                ADDED_TO="$rc"
+            else
+                ADDED_TO="$rc (already configured)"
+            fi
+            break
+        fi
+    done
+
+    # If no rc file found, create .profile
+    if [ -z "$ADDED_TO" ]; then
+        echo "# Added by OpenAgents installer" > "$HOME/.profile"
+        echo "$PATH_LINE" >> "$HOME/.profile"
+        ADDED_TO="$HOME/.profile (created)"
+    fi
+
+    ok "PATH configured in ${ADDED_TO}"
     echo ""
-    echo "    ${BOLD}export PATH=\"$NEEDS_PATH:\$PATH\"${RESET}"
-    echo ""
-    echo "  ${DIM}Or run it now with:${RESET}"
-    echo ""
-    echo "    ${BOLD}$OA_BIN${RESET}"
-    echo ""
-else
-    echo "  Get started:"
-    echo ""
-    echo "    ${BOLD}openagents${RESET}                  Launch the interactive dashboard"
+    echo "  ${DIM}Restart your terminal, or run:${RESET}"
+    echo "    ${BOLD}source ${ADDED_TO%% *}${RESET}"
     echo ""
 fi
+
+echo "  Get started:"
+echo ""
+echo "    ${BOLD}openagents${RESET}                  Launch the interactive dashboard"
+echo ""
 
 if [ "$agent_count" -eq 0 ]; then
     echo "  ${DIM}No AI agents found. The dashboard will help you install one.${RESET}"
