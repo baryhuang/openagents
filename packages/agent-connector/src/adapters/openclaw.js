@@ -213,10 +213,11 @@ class OpenClawAdapter extends BaseAdapter {
 
       if (IS_WINDOWS) {
         // Find node.exe to spawn openclaw.mjs directly (unbuffered stderr)
-        const { getExtraBinDirs } = require('../paths');
-        const extraDirs = getExtraBinDirs();
+        const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
+        const searchDirs = [portableNodeDir];
+        try { const { getExtraBinDirs } = require('../paths'); searchDirs.push(...getExtraBinDirs()); } catch {}
         let nodeBin = null;
-        for (const d of extraDirs) {
+        for (const d of searchDirs) {
           const candidate = path.join(d, 'node.exe');
           if (fs.existsSync(candidate)) { nodeBin = candidate; break; }
         }
