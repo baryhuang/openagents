@@ -520,9 +520,10 @@ h1 {
   padding: 16px 18px;
   margin-bottom: 10px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  gap: 12px;
   box-shadow: var(--shadow-sm);
   transition: all 0.18s var(--ease);
 }
@@ -572,9 +573,9 @@ h1 {
 }
 
 .agent-list-remove {
+  width: 100%;
   display: flex;
   justify-content: flex-end;
-  margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
