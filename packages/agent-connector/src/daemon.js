@@ -276,10 +276,11 @@ class Daemon {
     if (network) {
       this._adapterLoop(name, agentCfg, info, network);
     } else {
-      // No workspace connected — agent is ready but not connected
-      info.state = 'idle';
+      // No workspace connected — agent is running locally
+      info.state = 'running';
+      info.network = '(local)';
       this._writeStatus();
-      this._log(`${name} ready (no workspace connected)`);
+      this._log(`${name} running (local only, no workspace connected)`);
     }
   }
 
