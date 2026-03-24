@@ -235,9 +235,11 @@ class OpenClawAdapter extends BaseAdapter {
       try { pty = require('node-pty'); } catch {}
 
       if (pty) {
-        const shell = IS_WINDOWS ? binary : binary;
+        // On Windows, .cmd files can't be spawned directly by pty — use cmd.exe
+        const ptyBin = IS_WINDOWS ? (process.env.COMSPEC || 'cmd.exe') : binary;
+        const ptyArgs = IS_WINDOWS ? ['/C', binary, ...args] : args;
         this._log('Spawn: node-pty (line-buffered)');
-        const proc = pty.spawn(binary, args, {
+        const proc = pty.spawn(ptyBin, ptyArgs, {
           name: 'xterm',
           cols: 200,
           rows: 50,
