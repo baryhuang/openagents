@@ -191,63 +191,15 @@ class OpenClawAdapter extends BaseAdapter {
 
       const spawnEnv = { ...(this.agentEnv || process.env) };
       if (IS_WINDOWS) {
-        // Ensure node and npm global bin are on PATH
         const nodeBinDir = path.dirname(process.execPath);
         const npmBin = path.join(process.env.APPDATA || '', 'npm');
-        const extraPaths = [nodeBinDir, npmBin].filter(Boolean);
-        for (const p of extraPaths) {
+        const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
+        for (const p of [nodeBinDir, npmBin, portableDir]) {
           if (p && !(spawnEnv.PATH || '').includes(p)) {
-            spawnEnv.PATH = p + ';' + (spawnEnv.PATH || '');
+            spawnEnv.PATH = p + path.delimiter + (spawnEnv.PATH || '');
           }
         }
       }
-
-      let spawnBinary = binary;
-      let spawnArgs = args;
-      const spawnOpts = {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: spawnEnv,
-        timeout: 600000,
-        windowsHide: true,
-      };
-
-      if (IS_WINDOWS) {
-        // Find node.exe to spawn openclaw.mjs directly (unbuffered stderr)
-        const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
-        const searchDirs = [portableNodeDir];
-        try { const { getExtraBinDirs } = require('../paths'); searchDirs.push(...getExtraBinDirs()); } catch {}
-        let nodeBin = null;
-        for (const d of searchDirs) {
-          const candidate = path.join(d, 'node.exe');
-          if (fs.existsSync(candidate)) { nodeBin = candidate; break; }
-        }
-        // Find openclaw entry point
-        const possibleEntries = [
-          path.join(path.dirname(binary), 'node_modules', 'openclaw', 'openclaw.mjs'),
-          path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', 'openclaw', 'openclaw.mjs'),
-        ];
-        let entryPoint = null;
-        for (const e of possibleEntries) {
-          if (fs.existsSync(e)) { entryPoint = e; break; }
-        }
-
-        if (nodeBin && entryPoint) {
-          // Direct spawn — unbuffered stderr for real-time tool streaming
-          spawnBinary = nodeBin;
-          spawnArgs = [entryPoint, ...args];
-          this._log(`Spawn: direct node (${nodeBin}) → ${entryPoint}`);
-        } else {
-          // Fallback to cmd.exe (buffered stderr — no real-time status)
-          spawnBinary = process.env.COMSPEC || 'cmd.exe';
-          const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
-          spawnArgs = ['/C', binary, ...quotedArgs];
-          this._log(`Spawn: cmd.exe fallback (nodeBin=${nodeBin}, entry=${entryPoint})`);
-        }
-      }
-
-      const proc = spawn(spawnBinary, spawnArgs, spawnOpts);
-      let stdout = '';
-      let stderr = '';
 
       // Tool name → human-readable status
       const toolLabels = {
@@ -263,71 +215,105 @@ class OpenClawAdapter extends BaseAdapter {
         memory_search: 'Searching memory...',
       };
 
-      // Stream stderr in real-time to detect tool usage and send status updates
-      let stderrBuffer = '';
-      if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
-      if (proc.stderr) proc.stderr.on('data', (d) => {
-        const chunk = d.toString();
-        stderr += chunk;
-        stdout += chunk;
-        stderrBuffer += chunk;
+      let output = '';
+      let lineBuffer = '';
 
-        // Process complete lines
-        const lines = stderrBuffer.split('\n');
-        stderrBuffer = lines.pop() || ''; // keep incomplete last line
-
-        for (const line of lines) {
-          // Debug: log all diagnostic lines from stderr
-          if (line.includes('[agent/embedded]') || line.includes('[diagnostic]')) {
-            this._log(`stderr: ${line.trim().slice(0, 120)}`);
-          }
-
-          const toolStart = line.match(/embedded run tool start:.*tool=(\w+)/);
-          if (toolStart) {
-            const toolName = toolStart[1];
-            const label = toolLabels[toolName] || `Using ${toolName}...`;
-            this._log(`Tool status: ${label}`);
-            this.sendStatus(channel, label).catch(() => {});
-          }
-          const agentStart = line.match(/embedded run agent start/);
-          if (agentStart) {
-            this.sendStatus(channel, 'thinking...').catch(() => {});
-          }
+      const processLine = (line) => {
+        const toolStart = line.match(/embedded run tool start:.*tool=(\w+)/);
+        if (toolStart) {
+          const label = toolLabels[toolStart[1]] || `Using ${toolStart[1]}...`;
+          this._log(`Tool: ${label}`);
+          this.sendStatus(channel, label).catch(() => {});
         }
-      });
-
-      proc.on('error', (err) => reject(err));
-      proc.on('exit', (code) => {
-        if (code !== 0) {
-          reject(new Error(`CLI exited ${code}: ${stderr.slice(0, 300)}`));
-          return;
+        if (line.match(/embedded run agent start/)) {
+          this.sendStatus(channel, 'thinking...').catch(() => {});
         }
+      };
 
-        stdout = stdout.trim();
-        if (!stdout) { resolve(''); return; }
+      // Try node-pty for line-buffered output (real-time tool streaming)
+      let pty;
+      try { pty = require('node-pty'); } catch {}
 
-        // Parse JSON output — find first '{'
-        const jsonStart = stdout.indexOf('{');
-        if (jsonStart < 0) { resolve(stdout); return; }
+      if (pty) {
+        const shell = IS_WINDOWS ? binary : binary;
+        this._log('Spawn: node-pty (line-buffered)');
+        const proc = pty.spawn(binary, args, {
+          name: 'xterm',
+          cols: 200,
+          rows: 50,
+          cwd: process.cwd(),
+          env: spawnEnv,
+        });
 
-        try {
-          const data = JSON.parse(stdout.slice(jsonStart));
-          // Extract response text from JSON
-          const payloads = data.payloads || [];
-          if (payloads.length > 0) {
-            const texts = payloads
-              .filter((p) => p.text)
-              .map((p) => p.text);
-            resolve(texts.join('\n\n'));
-          } else {
-            resolve('');
+        proc.onData((data) => {
+          output += data;
+          lineBuffer += data;
+          const lines = lineBuffer.split('\n');
+          lineBuffer = lines.pop() || '';
+          for (const line of lines) processLine(line);
+        });
+
+        const timeout = setTimeout(() => {
+          proc.kill();
+          reject(new Error('CLI timed out after 600 seconds'));
+        }, 600000);
+
+        proc.onExit(({ exitCode }) => {
+          clearTimeout(timeout);
+          // Process remaining buffer
+          if (lineBuffer) processLine(lineBuffer);
+
+          if (exitCode !== 0) {
+            reject(new Error(`CLI exited ${exitCode}: ${output.slice(-300)}`));
+            return;
           }
-        } catch {
-          // Failed to parse JSON — return raw output
-          resolve(stdout);
+          this._parseCliOutput(output, resolve);
+        });
+      } else {
+        // Fallback: regular spawn (buffered on Windows)
+        this._log('Spawn: fallback (no node-pty)');
+        let spawnBin = binary;
+        let spawnArgs = args;
+        if (IS_WINDOWS) {
+          spawnBin = process.env.COMSPEC || 'cmd.exe';
+          spawnArgs = ['/C', binary, ...args.map(a => a.includes(' ') ? `"${a}"` : a)];
         }
-      });
+        const proc = spawn(spawnBin, spawnArgs, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: spawnEnv,
+          timeout: 600000,
+          windowsHide: true,
+        });
+        if (proc.stdout) proc.stdout.on('data', (d) => { output += d; });
+        if (proc.stderr) proc.stderr.on('data', (d) => { output += d; });
+        proc.on('error', (err) => reject(err));
+        proc.on('exit', (code) => {
+          if (code !== 0) {
+            reject(new Error(`CLI exited ${code}: ${output.slice(-300)}`));
+            return;
+          }
+          this._parseCliOutput(output, resolve);
+        });
+      }
     });
+  }
+
+  _parseCliOutput(output, resolve) {
+    const text = output.trim();
+    if (!text) { resolve(''); return; }
+    const jsonStart = text.indexOf('{');
+    if (jsonStart < 0) { resolve(text); return; }
+    try {
+      const data = JSON.parse(text.slice(jsonStart));
+      const payloads = data.payloads || [];
+      if (payloads.length > 0) {
+        resolve(payloads.filter(p => p.text).map(p => p.text).join('\n\n'));
+      } else {
+        resolve('');
+      }
+    } catch {
+      resolve(text);
+    }
   }
   // ------------------------------------------------------------------
   // Static: configure OpenClaw's native auth from LLM env vars
