@@ -197,50 +197,44 @@ class AgentManager {
   // ------------------------------------------------------------------
 
   async startAgent(name) {
-    const pid = this._connector.getDaemonPid();
-    if (!pid) {
-      return this._startDaemon();
-    }
-    this._connector.sendDaemonCommand(`restart:${name}`);
-    return { success: true, message: `Restart command sent for ${name}` };
+    // Ensure daemon is running (long-lived background process)
+    await this._ensureDaemon();
+    // Send start command — daemon will launch the agent's adapter
+    this._connector.sendDaemonCommand(`start:${name}`);
+    return { success: true, message: `Start command sent for ${name}` };
   }
 
   async stopAgent(name) {
-    // For single-agent setups, just stop the daemon entirely
-    // (the command file approach is unreliable on Windows)
-    const agents = this._connector.config.getAgents();
-    const runningAgents = agents.filter(a => {
-      const status = this._connector.getDaemonStatus();
-      const s = status[a.name];
-      return s && (s.state === 'running' || s.state === 'online');
-    });
-
-    if (runningAgents.length <= 1) {
-      // Only one agent — stop the whole daemon
-      this._connector.stopDaemon();
-      return { success: true, message: 'Daemon stopped' };
-    }
-
-    // Multiple agents — try command file, fall back to daemon kill
     const pid = this._connector.getDaemonPid();
     if (!pid) {
       return { success: true, message: 'Daemon not running' };
     }
+    // Send stop command — daemon stops only this agent, keeps running
     this._connector.sendDaemonCommand(`stop:${name}`);
     return { success: true, message: `Stop command sent for ${name}` };
   }
 
   async startAll() {
-    const pid = this._connector.getDaemonPid();
-    if (pid) {
-      return { success: true, message: `Daemon already running (PID ${pid})` };
-    }
-    return this._startDaemon();
+    // Ensure daemon is running, then restart all agents
+    await this._ensureDaemon();
+    this._connector.sendDaemonCommand('reload');
+    return { success: true, message: 'Start all command sent' };
   }
 
   async stopAll() {
     const stopped = this._connector.stopDaemon();
     return { success: stopped, message: stopped ? 'Daemon stopped' : 'Daemon not running' };
+  }
+
+  /**
+   * Ensure the daemon is running. Start it if not.
+   * The daemon is a long-lived process — it stays running and
+   * individual agents are started/stopped via commands.
+   */
+  async _ensureDaemon() {
+    const pid = this._connector.getDaemonPid();
+    if (pid) return; // already running
+    return this._startDaemon();
   }
 
   getAllStatus() {

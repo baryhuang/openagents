@@ -569,11 +569,18 @@ class Daemon {
         const cmd = line.trim();
         if (cmd.startsWith('stop:')) {
           const agentName = cmd.slice(5).trim();
+          this._log(`Command: stop ${agentName}`);
           this.stopAgent(agentName);
+        } else if (cmd.startsWith('start:')) {
+          const agentName = cmd.slice(6).trim();
+          this._log(`Command: start ${agentName}`);
+          this.restartAgent(agentName);
         } else if (cmd.startsWith('restart:')) {
           const agentName = cmd.slice(8).trim();
+          this._log(`Command: restart ${agentName}`);
           this.restartAgent(agentName);
         } else if (cmd === 'reload') {
+          this._log('Command: reload');
           this._reload();
         }
       }

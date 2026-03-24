@@ -241,6 +241,9 @@ app.whenReady().then(() => {
 
   agentManager = new AgentManager(store);
 
+  // Start the daemon on app launch (long-lived background process)
+  agentManager._ensureDaemon().catch(() => {});
+
   // Periodically update tray menu with agent status
   setInterval(() => updateTrayMenu(), 5000);
 
