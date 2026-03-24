@@ -235,11 +235,13 @@ class OpenClawAdapter extends BaseAdapter {
           // Direct spawn — unbuffered stderr for real-time tool streaming
           spawnBinary = nodeBin;
           spawnArgs = [entryPoint, ...args];
+          this._log(`Spawn: direct node (${nodeBin}) → ${entryPoint}`);
         } else {
           // Fallback to cmd.exe (buffered stderr — no real-time status)
           spawnBinary = process.env.COMSPEC || 'cmd.exe';
           const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
           spawnArgs = ['/C', binary, ...quotedArgs];
+          this._log(`Spawn: cmd.exe fallback (nodeBin=${nodeBin}, entry=${entryPoint})`);
         }
       }
 
