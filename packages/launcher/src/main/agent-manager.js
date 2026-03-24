@@ -226,7 +226,28 @@ class AgentManager {
     // Use the Node.js agent-connector CLI to start the daemon.
     // We must use the system 'node' binary, NOT process.execPath (which is
     // electron.exe inside a packaged app and would spawn another Electron).
-    const cliPath = require.resolve('@openagents-org/agent-launcher/bin/agent-connector.js');
+    // Prefer the globally installed CLI (works in packaged apps where asar
+    // paths are not accessible by child processes).
+    const { whichBinary } = require('@openagents-org/agent-launcher/src/paths');
+    let cliPath;
+    const globalCli = whichBinary('openagents') || whichBinary('agent-connector');
+    if (globalCli) {
+      // Global CLI is a shell script/cmd — find the actual JS file
+      const fs = require('fs');
+      try {
+        const shim = fs.readFileSync(globalCli, 'utf-8');
+        const match = shim.match(/["']([^"']*agent-connector\.js)["']/);
+        if (match) cliPath = match[1];
+      } catch {}
+    }
+    if (!cliPath) {
+      try {
+        cliPath = require.resolve('@openagents-org/agent-launcher/bin/agent-connector.js');
+      } catch {}
+    }
+    if (!cliPath) {
+      return { success: false, message: 'Cannot find agent-launcher CLI. Install it globally: npm install -g @openagents-org/agent-launcher' };
+    }
 
     // Find system node binary
     const { execSync } = require('child_process');
