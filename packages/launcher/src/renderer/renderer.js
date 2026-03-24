@@ -675,7 +675,10 @@ async function refreshAgentList() {
         <div class="agent-list-item">
           <div class="agent-list-top">
             <div class="agent-list-info">
-              <h4>${esc(a.name)}</h4>
+              <div class="agent-list-name-row">
+                ${agentIcon(a.type, 28)}
+                <h4>${esc(a.name)}</h4>
+              </div>
               <span class="agent-type-label">${esc(a.type)}</span>
               <span class="agent-config-hint">
                 ${hasKey ? '&#128273; API key set' : '<span class="text-warning">&#9888; No API key</span>'}

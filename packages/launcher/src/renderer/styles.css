@@ -555,6 +555,16 @@ h1 {
   color: var(--text-tertiary);
 }
 
+.agent-list-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-list-name-row h4 {
+  margin: 0;
+}
+
 .agent-type-label {
   font-size: 12px;
   color: var(--text-secondary);
