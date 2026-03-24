@@ -1,6 +1,6 @@
 {
   "name": "@openagents-org/agent-launcher",
-  "version": "0.2.4",
+  "version": "0.2.6",
   "description": "OpenAgents Launcher — install, configure, and run AI coding agents from your terminal",
   "main": "src/index.js",
   "bin": {
@@ -37,6 +37,7 @@
     "README.md"
   ],
   "dependencies": {
-    "blessed": "^0.1.81"
+    "blessed": "^0.1.81",
+    "ws": "^8.18.0"
   }
 }

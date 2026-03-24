@@ -30,17 +30,16 @@ class Registry {
     // Try cache first (avoids network on every call)
     const cached = this._loadCache();
     if (cached) {
-      this._catalog = cached;
-      // Refresh in background if stale (but still return cached)
+      this._catalog = this._mergeBundled(cached);
       this._refreshInBackground();
-      return cached;
+      return this._catalog;
     }
 
     // No cache — try remote
     const remote = await this._fetchRemote();
     if (remote) {
-      this._catalog = remote;
-      return remote;
+      this._catalog = this._mergeBundled(remote);
+      return this._catalog;
     }
 
     // Fallback to bundled
@@ -54,22 +53,33 @@ class Registry {
   getCatalogSync() {
     if (this._catalog) return this._catalog;
     const cached = this._loadCache();
-    const bundled = this._loadBundled();
     if (cached) {
-      // Merge bundled env_config/resolve_env into cached entries (cache may be stale)
-      for (const entry of cached) {
-        const b = bundled.find(x => x.name === entry.name);
-        if (b) {
-          if (!entry.env_config && b.env_config) entry.env_config = b.env_config;
-          if (!entry.resolve_env && b.resolve_env) entry.resolve_env = b.resolve_env;
-          if (!entry.install && b.install) entry.install = b.install;
-        }
-      }
-      this._catalog = cached;
-      return cached;
+      this._catalog = this._mergeBundled(cached);
+      return this._catalog;
     }
-    this._catalog = bundled;
-    return bundled;
+    this._catalog = this._loadBundled();
+    return this._catalog;
+  }
+
+  /**
+   * Merge bundled env_config/resolve_env/install into catalog entries.
+   * Remote/cached entries may lack these fields.
+   */
+  _mergeBundled(catalog) {
+    const bundled = this._loadBundled();
+    for (const entry of catalog) {
+      const b = bundled.find(x => x.name === entry.name);
+      if (b) {
+        if ((!entry.env_config || entry.env_config.length === 0) && b.env_config && b.env_config.length > 0) entry.env_config = b.env_config;
+        if (!entry.resolve_env && b.resolve_env) entry.resolve_env = b.resolve_env;
+        if (!entry.install && b.install) entry.install = b.install;
+      }
+    }
+    // Add bundled entries not in catalog
+    for (const b of bundled) {
+      if (!catalog.find(e => e.name === b.name)) catalog.push(b);
+    }
+    return catalog;
   }
 
   /**
