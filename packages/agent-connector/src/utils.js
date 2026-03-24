@@ -46,7 +46,7 @@ function testLLMConnection(env) {
       };
       body = JSON.stringify({
         model: model || 'gpt-4o-mini',
-        max_tokens: 32,
+        max_completion_tokens: 32,
         messages: [{ role: 'user', content: 'Say hi in 5 words.' }],
       });
     }
