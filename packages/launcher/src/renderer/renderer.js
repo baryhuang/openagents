@@ -119,7 +119,7 @@ async function refreshDashboard() {
           </div>
           <div class="agent-card-status">
             <span class="status-dot ${statusClass(a.state)}"></span>
-            ${esc(a.state)}
+            ${esc(displayState(a.state))}
             ${wsLabel ? ` &middot; ${esc(wsLabel)}` : ''}
           </div>
           ${a.lastError ? `<div class="agent-card-error">${esc(a.lastError)}</div>` : ''}
@@ -161,7 +161,7 @@ function updateDaemonStatusFromAgents(agents) {
   } else if (hasStarting) {
     el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: starting</span>';
   } else if (agents.length > 0) {
-    el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: idle</span>';
+    el.innerHTML = '<span class="status-dot starting"></span><span>Daemon: stopped</span>';
   } else {
     el.innerHTML = '<span class="status-dot offline"></span><span>Daemon: offline</span>';
   }
@@ -637,7 +637,7 @@ async function refreshAgentList() {
             <h4>${esc(a.name)}</h4>
             <span>
               ${esc(a.type)} &middot;
-              <span class="status-dot ${statusClass(a.state)}"></span> ${esc(a.state)}
+              <span class="status-dot ${statusClass(a.state)}"></span> ${esc(displayState(a.state))}
               &middot; ${esc(wsDisplay)}
               ${a.restarts > 0 ? ` &middot; restarts: ${a.restarts}` : ''}
             </span>
@@ -1062,6 +1062,11 @@ function esc(str) {
   const div = document.createElement('div');
   div.textContent = String(str);
   return div.innerHTML;
+}
+
+function displayState(state) {
+  if (state === 'idle') return 'stopped';
+  return state || 'stopped';
 }
 
 function statusClass(state) {
