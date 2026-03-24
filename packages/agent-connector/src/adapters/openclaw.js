@@ -234,20 +234,31 @@ class OpenClawAdapter extends BaseAdapter {
         memory_search: 'Searching memory...',
       };
 
-      // Stream stderr in real-time to detect tool usage
+      // Stream stderr in real-time to detect tool usage and send status updates
+      let stderrBuffer = '';
       if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
       if (proc.stderr) proc.stderr.on('data', (d) => {
         const chunk = d.toString();
         stderr += chunk;
         stdout += chunk;
+        stderrBuffer += chunk;
 
-        // Parse diagnostic lines for tool start/end events
-        for (const line of chunk.split('\n')) {
+        // Process complete lines
+        const lines = stderrBuffer.split('\n');
+        stderrBuffer = lines.pop() || ''; // keep incomplete last line
+
+        for (const line of lines) {
           const toolStart = line.match(/embedded run tool start:.*tool=(\w+)/);
           if (toolStart) {
             const toolName = toolStart[1];
             const label = toolLabels[toolName] || `Using ${toolName}...`;
-            try { this.sendStatus(channel, label); } catch {}
+            this._log(`Tool status: ${label}`);
+            this.sendStatus(channel, label).catch(() => {});
+          }
+          // Also detect agent thinking
+          const agentStart = line.match(/embedded run agent start/);
+          if (agentStart) {
+            this.sendStatus(channel, 'thinking...').catch(() => {});
           }
         }
       });
