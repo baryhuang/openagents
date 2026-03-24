@@ -180,6 +180,7 @@ class OpenClawAdapter extends BaseAdapter {
       const sessionKey = `openagents-${this.workspaceId.slice(0, 8)}-${channel.slice(-8)}`;
 
       const args = [
+        '--log-level', 'trace',
         'agent', '--local',
         '--agent', this.openclawAgentId,
         '--session-id', sessionKey,
@@ -230,73 +231,77 @@ class OpenClawAdapter extends BaseAdapter {
         }
       };
 
-      // Try node-pty for line-buffered output (real-time tool streaming)
-      let pty;
-      try { pty = require('node-pty'); } catch {}
+      // Redirect stderr to temp file for real-time tool status polling.
+      // --log-level trace makes OpenClaw write diagnostic events to stderr
+      // even in non-TTY mode. We poll the temp file for new lines every 500ms.
+      const stderrFile = path.join(os.tmpdir(), `openclaw-stderr-${Date.now()}.log`);
+      const stderrFd = fs.openSync(stderrFile, 'w');
+      this._log('Spawn: stderr → ' + stderrFile);
 
-      if (pty) {
-        // On Windows, .cmd files can't be spawned directly by pty — use cmd.exe
-        const ptyBin = IS_WINDOWS ? (process.env.COMSPEC || 'cmd.exe') : binary;
-        const ptyArgs = IS_WINDOWS ? ['/C', binary, ...args] : args;
-        this._log('Spawn: node-pty (line-buffered)');
-        const proc = pty.spawn(ptyBin, ptyArgs, {
-          name: 'xterm',
-          cols: 200,
-          rows: 50,
-          cwd: process.cwd(),
-          env: spawnEnv,
-        });
-
-        proc.onData((data) => {
-          output += data;
-          lineBuffer += data;
-          const lines = lineBuffer.split('\n');
-          lineBuffer = lines.pop() || '';
-          for (const line of lines) processLine(line);
-        });
-
-        const timeout = setTimeout(() => {
-          proc.kill();
-          reject(new Error('CLI timed out after 600 seconds'));
-        }, 600000);
-
-        proc.onExit(({ exitCode }) => {
-          clearTimeout(timeout);
-          // Process remaining buffer
-          if (lineBuffer) processLine(lineBuffer);
-
-          if (exitCode !== 0) {
-            reject(new Error(`CLI exited ${exitCode}: ${output.slice(-300)}`));
-            return;
-          }
-          this._parseCliOutput(output, resolve);
-        });
-      } else {
-        // Fallback: regular spawn (buffered on Windows)
-        this._log('Spawn: fallback (no node-pty)');
-        let spawnBin = binary;
-        let spawnArgs = args;
-        if (IS_WINDOWS) {
-          spawnBin = process.env.COMSPEC || 'cmd.exe';
-          spawnArgs = ['/C', binary, ...args.map(a => a.includes(' ') ? `"${a}"` : a)];
-        }
-        const proc = spawn(spawnBin, spawnArgs, {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: spawnEnv,
-          timeout: 600000,
-          windowsHide: true,
-        });
-        if (proc.stdout) proc.stdout.on('data', (d) => { output += d; });
-        if (proc.stderr) proc.stderr.on('data', (d) => { output += d; });
-        proc.on('error', (err) => reject(err));
-        proc.on('exit', (code) => {
-          if (code !== 0) {
-            reject(new Error(`CLI exited ${code}: ${output.slice(-300)}`));
-            return;
-          }
-          this._parseCliOutput(output, resolve);
-        });
+      let spawnBin = binary;
+      let spawnArgs = args;
+      if (IS_WINDOWS) {
+        spawnBin = process.env.COMSPEC || 'cmd.exe';
+        spawnArgs = ['/C', binary, ...args.map(a => a.includes(' ') ? `"${a}"` : a)];
       }
+      const proc = spawn(spawnBin, spawnArgs, {
+        stdio: ['ignore', 'pipe', stderrFd],
+        env: spawnEnv,
+        timeout: 600000,
+        windowsHide: true,
+      });
+      if (proc.stdout) proc.stdout.on('data', (d) => { output += d; });
+
+      // Poll stderr file every 500ms for tool events
+      let stderrOffset = 0;
+      const pollInterval = setInterval(() => {
+        try {
+          const stat = fs.statSync(stderrFile);
+          if (stat.size > stderrOffset) {
+            const fd = fs.openSync(stderrFile, 'r');
+            const buf = Buffer.alloc(stat.size - stderrOffset);
+            fs.readSync(fd, buf, 0, buf.length, stderrOffset);
+            fs.closeSync(fd);
+            stderrOffset = stat.size;
+            const chunk = buf.toString('utf-8');
+            const lines = chunk.split('\n');
+            for (const line of lines) processLine(line);
+          }
+        } catch {}
+      }, 500);
+
+      const killTimeout = setTimeout(() => {
+        proc.kill();
+        reject(new Error('CLI timed out after 600 seconds'));
+      }, 600000);
+
+      proc.on('error', (err) => {
+        clearInterval(pollInterval);
+        clearTimeout(killTimeout);
+        fs.closeSync(stderrFd);
+        try { fs.unlinkSync(stderrFile); } catch {}
+        reject(err);
+      });
+      proc.on('exit', (code) => {
+        clearInterval(pollInterval);
+        clearTimeout(killTimeout);
+        fs.closeSync(stderrFd);
+        // Read any remaining stderr
+        try {
+          const remaining = fs.readFileSync(stderrFile, 'utf-8').slice(stderrOffset);
+          if (remaining) {
+            output += remaining;
+            for (const line of remaining.split('\n')) processLine(line);
+          }
+        } catch {}
+        try { fs.unlinkSync(stderrFile); } catch {}
+
+        if (code !== 0) {
+          reject(new Error(`CLI exited ${code}: ${output.slice(-300)}`));
+          return;
+        }
+        this._parseCliOutput(output, resolve);
+      });
     });
   }
 
