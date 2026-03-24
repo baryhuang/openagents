@@ -209,14 +209,13 @@ class Daemon {
       }
     } catch {}
 
-    // Wait for process to die
-    for (let i = 0; i < 20; i++) {
-      if (!Daemon._isAlive(pid)) {
-        try { fs.unlinkSync(pidFile); } catch {}
-        try { fs.unlinkSync(statusFile); } catch {}
-        return true;
-      }
-      // Busy-wait 500ms (sync, used only in CLI stop command)
+    // Always clean up PID and status files after kill attempt
+    try { fs.unlinkSync(pidFile); } catch {}
+    try { fs.unlinkSync(statusFile); } catch {}
+
+    // Wait briefly for process to die
+    for (let i = 0; i < 5; i++) {
+      if (!Daemon._isAlive(pid)) return true;
       execSync(IS_WINDOWS ? 'ping -n 2 127.0.0.1 >nul' : 'sleep 0.5', {
         stdio: 'ignore', timeout: 5000,
       });
