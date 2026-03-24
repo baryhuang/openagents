@@ -18,6 +18,18 @@ document.querySelectorAll('.nav-item').forEach((el) => {
   el.addEventListener('click', () => switchTab(el.dataset.tab));
 });
 
+// Auto-refresh active tab every 5 seconds
+let _currentTab = 'dashboard';
+const _origSwitchTab = switchTab;
+switchTab = function(tabName) {
+  _currentTab = tabName;
+  _origSwitchTab(tabName);
+};
+setInterval(() => {
+  if (_currentTab === 'dashboard') refreshDashboard();
+  else if (_currentTab === 'agents') refreshAgentList();
+}, 5000);
+
 // Keyboard shortcuts: Ctrl+1..5 for tabs
 const tabShortcuts = ['dashboard', 'agents', 'install', 'logs', 'settings'];
 document.addEventListener('keydown', (e) => {
