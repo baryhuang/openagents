@@ -207,6 +207,7 @@ class OpenClawAdapter extends BaseAdapter {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: spawnEnv,
         timeout: 600000,
+        windowsHide: true,
       };
 
       if (IS_WINDOWS) {
