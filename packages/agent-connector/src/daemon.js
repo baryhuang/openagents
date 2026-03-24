@@ -107,7 +107,16 @@ class Daemon {
    */
   async stopAgent(agentName) {
     this._stoppedAgents.add(agentName);
+    // Stop the adapter directly if running
+    if (this._adapters && this._adapters[agentName]) {
+      this._adapters[agentName].stop();
+    }
     await this._killAgent(agentName, 5000);
+    // Wait for adapter loop to actually exit
+    for (let i = 0; i < 10; i++) {
+      if (!this._adapters || !this._adapters[agentName]) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
     this._writeStatus();
   }
 
@@ -117,6 +126,9 @@ class Daemon {
   async restartAgent(agentName) {
     await this.stopAgent(agentName);
     this._stoppedAgents.delete(agentName);
+
+    // Reload config in case it changed
+    this.config.load();
 
     const agent = this.config.getAgent(agentName);
     if (agent) {
@@ -598,11 +610,12 @@ class Daemon {
     } catch {}
   }
 
-  _reload() {
+  async _reload() {
     this._log('Reloading config...');
     const oldNames = this._cachedAgentNames || new Set();
     const oldConfigs = this._cachedAgentConfigs || {};
     // Re-read config from disk
+    this.config.load();
     const newAgents = this.config.getAgents();
     const newNames = new Set(newAgents.map(a => a.name));
     const newConfigs = {};
@@ -611,7 +624,7 @@ class Daemon {
     // Stop removed agents
     for (const name of oldNames) {
       if (!newNames.has(name)) {
-        this.stopAgent(name);
+        await this.stopAgent(name);
         this._log(`Reload: stopped removed agent '${name}'`);
       }
     }
@@ -623,7 +636,8 @@ class Daemon {
         this._log(`Reload: started new agent '${agent.name}'`);
       } else if ((oldConfigs[agent.name] || '') !== (agent.network || '')) {
         // Network config changed — restart agent
-        this.stopAgent(agent.name);
+        await this.stopAgent(agent.name);
+        this._stoppedAgents.delete(agent.name);
         this._launchAgent(agent);
         this._log(`Reload: restarted '${agent.name}' (network changed)`);
       }
@@ -652,7 +666,9 @@ class Daemon {
       fs.appendFileSync(this.config.logFile, line + '\n', 'utf-8');
       this._maybeRotateLog();
     } catch {}
-    if (!this._shuttingDown) {
+    // Only log to console if stdout is a TTY (not redirected to log file)
+    // to avoid duplicate lines when daemonized
+    if (!this._shuttingDown && process.stdout.isTTY) {
       console.log(line);
     }
   }
