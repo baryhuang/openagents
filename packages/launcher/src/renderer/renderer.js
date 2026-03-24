@@ -693,9 +693,11 @@ async function refreshAgentList() {
             <button class="btn btn-sm" data-action="configure" data-type="${esc(a.type)}">Configure</button>
             ${a.network
               ? `<button class="btn btn-sm" data-action="disconnect" data-name="${esc(a.name)}">Disconnect</button>
-                 <button class="btn btn-sm" data-action="open-ws" data-name="${esc(a.name)}">Open WS</button>`
+                 <button class="btn btn-sm" data-action="open-ws" data-name="${esc(a.name)}">Open Workspace</button>`
               : `<button class="btn btn-sm" data-action="connect-workspace" data-name="${esc(a.name)}">Connect</button>`
             }
+          </div>
+          <div class="agent-list-remove">
             <button class="btn btn-sm btn-danger" data-action="remove-agent" data-name="${esc(a.name)}">Remove</button>
           </div>
         </div>`;
