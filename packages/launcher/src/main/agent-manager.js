@@ -264,83 +264,63 @@ class AgentManager {
   // ------------------------------------------------------------------
 
   _startDaemon() {
-    // Stop any existing daemon first to avoid multiple daemons fighting
-    // over the status file
     try { this._connector.stopDaemon(); } catch {}
 
-    // Use the Node.js agent-connector CLI to start the daemon.
-    // We must use the system 'node' binary, NOT process.execPath (which is
-    // electron.exe inside a packaged app and would spawn another Electron).
-    //
-    // In packaged Electron apps, require.resolve returns an asar path that
-    // child processes can't access. Instead, we write a small bootstrap script
-    // to ~/.openagents/ that requires the daemon module from the npm global dir.
-    const bootstrapPath = path.join(CONFIG_DIR, 'daemon-bootstrap.js');
-    const { whichBinary } = require('@openagents-org/agent-launcher/src/paths');
+    const { spawn } = require('child_process');
+    const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
 
-    // Find the actual agent-launcher module on disk
-    let modulePath = null;
-    const candidates = [
-      // npm global (installed alongside openclaw)
-      path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openagents-org', 'agent-launcher'),
-      path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher'),
-      // Unix global
-      '/usr/local/lib/node_modules/@openagents-org/agent-launcher',
-      '/usr/lib/node_modules/@openagents-org/agent-launcher',
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(path.join(c, 'bin', 'agent-connector.js'))) { modulePath = c; break; }
+    // Build enhanced PATH with portable Node.js
+    const extraDirs = [portableNodeDir];
+    if (process.platform === 'win32') {
+      extraDirs.push(path.join(process.env.APPDATA || '', 'npm'));
     }
-    if (!modulePath) {
-      // Auto-install the CLI globally
+    const enhancedPath = [...extraDirs, process.env.PATH || ''].join(path.delimiter);
+
+    // Find CLI entry point on disk (NOT in asar)
+    let cliPath = null;
+    const cliCandidates = [
+      path.join(portableNodeDir, 'node_modules', '@openagents-org', 'agent-launcher', 'bin', 'agent-connector.js'),
+      path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openagents-org', 'agent-launcher', 'bin', 'agent-connector.js'),
+      '/usr/local/lib/node_modules/@openagents-org/agent-launcher/bin/agent-connector.js',
+    ];
+    for (const c of cliCandidates) {
+      try { if (fs.existsSync(c)) { cliPath = c; break; } } catch {}
+    }
+    if (!cliPath) {
+      return { success: false, message: 'agent-launcher CLI not found. Install an agent first via the Install tab.' };
+    }
+
+    // Find node binary
+    let nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''));
+    if (!fs.existsSync(nodeBin)) {
       try {
         const { execSync } = require('child_process');
-        const npmBin = whichBinary('npm') || path.join(os.homedir(), '.openagents', 'nodejs', 'npm');
-        execSync(`"${npmBin}" install -g @openagents-org/agent-launcher@latest`, {
-          timeout: 60000, stdio: 'ignore',
-          env: { ...process.env, PATH: path.join(os.homedir(), '.openagents', 'nodejs') + path.delimiter + (process.env.PATH || '') }
-        });
-        // Re-check
-        for (const c of candidates) {
-          if (fs.existsSync(path.join(c, 'bin', 'agent-connector.js'))) { modulePath = c; break; }
-        }
-      } catch {}
-    }
-    if (!modulePath) {
-      return { success: false, message: 'Cannot find agent-launcher CLI. Please install it: npm install -g @openagents-org/agent-launcher' };
+        nodeBin = execSync(process.platform === 'win32' ? 'where node' : 'which node',
+          { encoding: 'utf-8', timeout: 5000, env: { ...process.env, PATH: enhancedPath } }).split(/\r?\n/)[0].trim();
+      } catch { nodeBin = 'node'; }
     }
 
-    const cliPath = path.join(modulePath, 'bin', 'agent-connector.js');
-
-    // Find system node binary
-    const { execSync } = require('child_process');
-    let nodeBin;
+    // Spawn daemon as detached background process
     try {
-      nodeBin = execSync(process.platform === 'win32' ? 'where node' : 'which node',
-        { encoding: 'utf-8', timeout: 5000 }).split(/\r?\n/)[0].trim();
-    } catch {
-      nodeBin = 'node'; // fallback — hope it's on PATH
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+      const logFile = path.join(CONFIG_DIR, 'daemon.log');
+      const pidFile = path.join(CONFIG_DIR, 'daemon.pid');
+      const logFd = fs.openSync(logFile, 'a');
+
+      const proc = spawn(nodeBin, [cliPath, 'up', '--foreground'], {
+        detached: true,
+        stdio: ['ignore', logFd, logFd],
+        env: { ...process.env, PATH: enhancedPath },
+        windowsHide: true,
+      });
+      proc.unref();
+      fs.writeFileSync(pidFile, String(proc.pid), 'utf-8');
+      fs.closeSync(logFd);
+
+      return { success: true, pid: proc.pid, message: `Daemon started (PID ${proc.pid})` };
+    } catch (e) {
+      return { success: false, message: `Failed to start daemon: ${e.message}` };
     }
-
-    const foregroundArgs = [cliPath, 'up', '--foreground'];
-
-    try {
-      Daemon.daemonize(CONFIG_DIR, foregroundArgs, nodeBin);
-    } catch (err) {
-      return { success: false, message: err.message };
-    }
-
-    // Give daemon a moment to write PID
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const pid = this._connector.getDaemonPid();
-        resolve({
-          success: true,
-          pid,
-          message: pid ? `Daemon started (PID ${pid})` : 'Daemon starting...',
-        });
-      }, 1500);
-    });
   }
 }
 
