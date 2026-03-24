@@ -487,13 +487,12 @@ async function doCreateWorkspace(agentName) {
   closeModal();
   try {
     showToast(`Creating workspace '${name}'...`, 'info');
-    await window.api.createWorkspace(name);
+    const result = await window.api.createWorkspace(name);
     showToast(`Workspace '${name}' created`, 'success');
-    // Auto-connect the agent
-    const networks = await window.api.listWorkspaces();
-    const newNet = networks.find((n) => n.name === name || n.slug === name);
-    if (newNet && agentName) {
-      await window.api.connectWorkspace(agentName, newNet.slug || newNet.id);
+
+    // Auto-connect the agent using the returned token
+    if (result && result.token && agentName) {
+      await window.api.connectWorkspace(agentName, result.token);
       window.api.signalReload();
       showToast(`Connected ${agentName} to ${name}`, 'success');
     }
