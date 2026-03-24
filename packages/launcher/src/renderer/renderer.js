@@ -120,8 +120,32 @@ async function refreshDashboard() {
         </div>`;
     } else {
       cardsEl.innerHTML = agents.map((a) => {
-        const slug = a.network || '';
-        const wsLabel = slug ? (a.networkName && a.networkName !== slug ? `${slug} (${a.networkName})` : slug) : '';
+        const isRunning = a.state === 'online' || a.state === 'running';
+        const hasApiKey = !!(a.env && a.env.LLM_API_KEY);
+        const isConnected = !!a.network;
+        const wsLabel = a.network
+          ? (a.networkName && a.networkName !== a.network ? `${a.network} (${a.networkName})` : a.network)
+          : '';
+
+        // Status indicators
+        const configStatus = hasApiKey
+          ? '<span class="badge badge-success-sm">LLM configured</span>'
+          : '<span class="badge badge-warning-sm">LLM not configured</span>';
+        const connectStatus = isConnected
+          ? `<span class="badge badge-success-sm">Connected: ${esc(wsLabel)}</span>`
+          : '<span class="badge badge-muted-sm">Not connected</span>';
+
+        // Simplified buttons
+        let buttons = '';
+        if (isRunning) {
+          buttons += `<button class="btn btn-sm" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">Stop</button>`;
+          if (isConnected) {
+            buttons += `<button class="btn btn-sm btn-primary" data-action="open-ws" data-name="${esc(a.name)}">Open Workspace</button>`;
+          }
+        } else {
+          buttons += `<button class="btn btn-sm btn-primary" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">Start</button>`;
+        }
+
         return `
         <div class="agent-card">
           <div class="agent-card-header">
@@ -132,15 +156,12 @@ async function refreshDashboard() {
           <div class="agent-card-status">
             <span class="status-dot ${statusClass(a.state)}"></span>
             ${esc(displayState(a.state))}
-            ${wsLabel ? ` &middot; ${esc(wsLabel)}` : ''}
+          </div>
+          <div class="agent-card-info">
+            ${configStatus} ${connectStatus}
           </div>
           ${a.lastError ? `<div class="agent-card-error">${esc(a.lastError)}</div>` : ''}
-          <div class="agent-card-actions">
-            <button class="btn btn-sm" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">
-              ${a.state === 'online' || a.state === 'running' ? 'Stop' : 'Start'}
-            </button>
-            <button class="btn btn-sm" data-action="show-agent-actions" data-name="${esc(a.name)}" data-type="${esc(a.type)}" data-state="${esc(a.state)}" data-network="${esc(a.network || '')}">Actions</button>
-          </div>
+          <div class="agent-card-actions">${buttons}</div>
         </div>`;
       }).join('');
     }

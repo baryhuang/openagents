@@ -749,6 +749,23 @@ h1 {
   color: var(--warning-text);
 }
 
+.badge-success-sm, .badge-warning-sm, .badge-muted-sm {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.badge-success-sm { background: var(--success-bg); color: var(--success-text); }
+.badge-warning-sm { background: var(--warning-bg); color: var(--warning-text); }
+.badge-muted-sm { background: #f0f0f0; color: #888; }
+
+.agent-card-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
 .loading-text {
   color: var(--text-tertiary);
   font-size: 13px;
