@@ -182,11 +182,26 @@ async function toggleAgent(name, currentState) {
     if (currentState === 'online' || currentState === 'running') {
       await window.api.stopAgent(name);
       showToast(`Stopping ${name}...`, 'info');
+      // Poll until stopped (up to 10s)
+      for (let i = 0; i < 5; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        await refreshDashboard();
+      }
     } else {
       await window.api.startAgent(name);
       showToast(`Starting ${name}...`, 'info');
+      // Poll until running (up to 30s — daemon needs time to connect)
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        await refreshDashboard();
+        const status = await window.api.agentStatus();
+        const agent = status[name];
+        if (agent && (agent.state === 'running' || agent.state === 'online')) {
+          showToast(`${name} is now running`, 'success');
+          break;
+        }
+      }
     }
-    setTimeout(() => refreshDashboard(), 2000);
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
@@ -269,10 +284,10 @@ async function openWorkspaceInBrowser(name) {
       showToast('No workspace connected', 'warning');
       return;
     }
-    const slug = agent.networkName || agent.network;
-    // Look up token from workspaces list
+    // Look up workspace details (slug + token)
     const workspaces = await window.api.listWorkspaces();
     const ws = workspaces.find((w) => w.slug === agent.network || w.id === agent.network);
+    const slug = (ws && ws.slug) || agent.network;
     let url = `https://workspace.openagents.org/${slug}`;
     if (ws && ws.token) url += `?token=${encodeURIComponent(ws.token)}`;
     window.api.openExternal(url);

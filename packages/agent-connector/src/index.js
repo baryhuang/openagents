@@ -113,6 +113,7 @@ class AgentConnector {
       slug: n.slug,
       name: n.name || n.slug,
       endpoint: n.endpoint || '',
+      token: n.token || '',
     }));
   }
 

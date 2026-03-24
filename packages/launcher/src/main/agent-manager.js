@@ -94,6 +94,15 @@ class AgentManager {
 
   saveAgentEnv(agentType, env) {
     this._connector.saveAgentEnv(agentType, env);
+
+    // Configure agent-specific native auth (e.g., OpenClaw's auth-profiles.json)
+    try {
+      if (agentType === 'openclaw') {
+        const OpenClawAdapter = require('@openagents-org/agent-launcher/src/adapters/openclaw');
+        OpenClawAdapter.configureNativeAuth(env);
+      }
+    } catch {}
+
     this.signalReload();
     return { success: true };
   }
@@ -125,8 +134,28 @@ class AgentManager {
     return this._connector.createWorkspace({ name: name || 'My Workspace' });
   }
 
-  async connectWorkspace(agentName, slug) {
-    this._connector.connectWorkspace(agentName, slug);
+  async connectWorkspace(agentName, tokenOrSlug) {
+    // Resolve the token to get workspace info (slug, name, id)
+    try {
+      const info = await this._connector.resolveToken(tokenOrSlug);
+      const slug = info.slug || info.workspace_id;
+      const wsName = info.name || slug;
+
+      // Save network to config
+      this._connector.config.addNetwork({
+        id: info.workspace_id,
+        slug,
+        name: wsName,
+        endpoint: info.endpoint || this._connector.workspace?.endpoint,
+        token: tokenOrSlug,
+      });
+
+      // Connect agent to the resolved slug
+      this._connector.connectWorkspace(agentName, slug);
+    } catch {
+      // Fallback: treat as slug directly
+      this._connector.connectWorkspace(agentName, tokenOrSlug);
+    }
     this.signalReload();
     return { success: true };
   }
@@ -177,6 +206,22 @@ class AgentManager {
   }
 
   async stopAgent(name) {
+    // For single-agent setups, just stop the daemon entirely
+    // (the command file approach is unreliable on Windows)
+    const agents = this._connector.config.getAgents();
+    const runningAgents = agents.filter(a => {
+      const status = this._connector.getDaemonStatus();
+      const s = status[a.name];
+      return s && (s.state === 'running' || s.state === 'online');
+    });
+
+    if (runningAgents.length <= 1) {
+      // Only one agent — stop the whole daemon
+      this._connector.stopDaemon();
+      return { success: true, message: 'Daemon stopped' };
+    }
+
+    // Multiple agents — try command file, fall back to daemon kill
     const pid = this._connector.getDaemonPid();
     if (!pid) {
       return { success: true, message: 'Daemon not running' };

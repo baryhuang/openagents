@@ -161,7 +161,7 @@ class WorkspaceClient {
   async pollPending(workspaceId, agentName, token, { after, limit = 50 } = {}) {
     const params = new URLSearchParams({
       network: workspaceId,
-      type: 'workspace.message',
+      type: 'workspace.message.posted',
       limit: String(limit),
     });
     if (after) params.set('after', after);
@@ -430,7 +430,7 @@ class WorkspaceClient {
       sessionId: target.startsWith('channel/') ? target.replace('channel/', '') : target,
       senderType: isHuman ? 'human' : 'agent',
       senderName,
-      content: (payload.content || ''),
+      content: (payload.content || event.content || ''),
       mentions: payload.mentions || [],
       messageType: payload.message_type || 'chat',
       metadata: event.metadata || {},

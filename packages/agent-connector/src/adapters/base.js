@@ -80,7 +80,10 @@ class BaseAdapter {
 
     try {
       // Send initial heartbeat
-      await this._heartbeat();
+      try { await this._heartbeat(); } catch (e) {
+        this._log(`Heartbeat failed (non-fatal): ${e.message}`);
+      }
+      this._log('Starting poll loop...');
       await this._pollLoop();
     } finally {
       this._running = false;
@@ -169,8 +172,10 @@ class BaseAdapter {
 
   async _pollLoop() {
     let idleCount = 0;
+    let pollCount = 0;
 
     while (this._running) {
+      pollCount++;
       let messages, rawCursor;
       try {
         const result = await this.client.pollPending(
@@ -179,8 +184,11 @@ class BaseAdapter {
         );
         messages = result.messages;
         rawCursor = result.cursor;
+        if (pollCount <= 3 || pollCount % 20 === 0) {
+          this._log(`Poll #${pollCount}: ${messages.length} messages, cursor=${rawCursor || 'none'}`);
+        }
       } catch (e) {
-        this._log(`Poll failed: ${e.message}`);
+        this._log(`Poll #${pollCount} failed: ${e.message}`);
         await this._sleep(5000);
         continue;
       }

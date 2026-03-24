@@ -36,12 +36,24 @@ class OpenClawAdapter extends BaseAdapter {
     this.openclawAgentId = opts.openclawAgentId || 'main';
     this.disabledModules = opts.disabledModules || new Set();
 
+    // Direct API mode: call LLM via HTTP (no OpenClaw CLI needed).
+    // Activated when LLM_API_KEY + LLM_BASE_URL are in agent env.
+    const env = opts.agentEnv || {};
+    this._directApiKey = env.OPENAI_API_KEY || env.LLM_API_KEY || '';
+    this._directBaseUrl = (env.OPENAI_BASE_URL || env.LLM_BASE_URL || '').replace(/\/+$/, '');
+    this._directModel = env.OPENCLAW_MODEL || env.LLM_MODEL || 'gpt-4o';
+    const forceDirectApi = (env.OPENCLAW_DIRECT_API || '').trim();
+    this._directMode = !!(this._directApiKey && this._directBaseUrl && (forceDirectApi === '1' || forceDirectApi === 'true'));
+
     // Find the openclaw binary
     this._openclawBinary = this._findOpenclawBinary();
-    if (this._openclawBinary) {
+
+    if (this._directMode) {
+      this._log(`Using direct LLM API mode (${this._directBaseUrl}, model=${this._directModel})`);
+    } else if (this._openclawBinary) {
       this._log(`Using OpenClaw CLI mode (${this._openclawBinary})`);
     } else {
-      this._log('OpenClaw binary not found — agent will not be able to process messages');
+      this._log('OpenClaw binary not found and no direct API config — agent will not be able to process messages');
     }
 
     // Install workspace skill
@@ -150,7 +162,12 @@ class OpenClawAdapter extends BaseAdapter {
     await this.sendStatus(msgChannel, 'thinking...');
 
     try {
-      const responseText = await this._runCliAgent(content, msgChannel);
+      let responseText;
+      if (this._directMode) {
+        responseText = await this._runDirectApi(content, msgChannel);
+      } else {
+        responseText = await this._runCliAgent(content, msgChannel);
+      }
 
       if (responseText) {
         await this.sendResponse(msgChannel, responseText);
@@ -254,6 +271,147 @@ class OpenClawAdapter extends BaseAdapter {
         }
       });
     });
+  }
+  // ------------------------------------------------------------------
+  // Direct API mode (bypass OpenClaw CLI, call LLM directly)
+  // ------------------------------------------------------------------
+
+  async _runDirectApi(userMessage, channel) {
+    const https = require('https');
+    const http = require('http');
+    const url = new URL(this._directBaseUrl + '/chat/completions');
+    const transport = url.protocol === 'https:' ? https : http;
+
+    // Build system prompt
+    let systemPrompt;
+    try {
+      const { buildOpenclawSystemPrompt } = require('./workspace-prompt');
+      systemPrompt = buildOpenclawSystemPrompt({
+        agentName: this.agentName,
+        workspaceId: this.workspaceId,
+        channelName: channel,
+        endpoint: this.client?.endpoint || '',
+        token: this.token || '',
+      });
+    } catch (e) {
+      this._log(`System prompt build failed (using fallback): ${e.message}`);
+    }
+    if (!systemPrompt) {
+      systemPrompt = `You are a helpful AI assistant named ${this.agentName}. You are connected to an OpenAgents workspace. Answer questions concisely and helpfully.`;
+    }
+
+    // Simple conversation (no history for now)
+    const messages = [
+      { role: 'system', content: systemPrompt || 'You are a helpful assistant.' },
+      { role: 'user', content: userMessage },
+    ];
+
+    const body = JSON.stringify({
+      model: this._directModel,
+      messages,
+      stream: false,
+    });
+
+    this._log(`Direct API: ${url.hostname} model=${this._directModel} msg=${userMessage.slice(0, 50)}...`);
+
+    return new Promise((resolve, reject) => {
+      const req = transport.request(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this._directApiKey}`,
+          'Content-Length': Buffer.byteLength(body),
+        },
+        timeout: 120000,
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            if (res.statusCode !== 200) {
+              reject(new Error(`${res.statusCode} ${data.slice(0, 200)}`));
+              return;
+            }
+            const result = JSON.parse(data);
+            const text = result.choices?.[0]?.message?.content || '';
+            this._log(`Direct API response: ${text.slice(0, 80)}...`);
+            resolve(text);
+          } catch (e) {
+            reject(new Error(`Parse error: ${e.message}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+      req.write(body);
+      req.end();
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Static: configure OpenClaw's native auth from LLM env vars
+  // ------------------------------------------------------------------
+
+  /**
+   * Write OpenClaw's auth-profiles.json and openclaw.json from the
+   * user-provided LLM_API_KEY / LLM_BASE_URL / LLM_MODEL values.
+   * Called by the Launcher's saveAgentEnv when type === 'openclaw'.
+   */
+  static configureNativeAuth(env) {
+    const apiKey = env.LLM_API_KEY;
+    const baseUrl = env.LLM_BASE_URL || 'https://api.openai.com/v1';
+    const model = env.LLM_MODEL || 'gpt-4o';
+    if (!apiKey) return;
+
+    // Determine provider: if baseUrl is openai.com, use 'openai'; otherwise 'openai-compatible'
+    const isOpenAI = baseUrl.includes('api.openai.com');
+    const isAnthropic = baseUrl.includes('api.anthropic.com');
+    let provider = 'openai';
+    if (isAnthropic) provider = 'anthropic';
+    else if (!isOpenAI) provider = 'openai';  // custom endpoints use openai provider with baseUrl override
+
+    const profileId = `${provider}:manual`;
+    const agentDir = path.join(OPENCLAW_STATE_DIR, 'agents', 'main', 'agent');
+
+    // Write auth-profiles.json
+    try {
+      fs.mkdirSync(agentDir, { recursive: true });
+      const authFile = path.join(agentDir, 'auth-profiles.json');
+      let authData = { version: 1, profiles: {} };
+      try { authData = JSON.parse(fs.readFileSync(authFile, 'utf-8')); } catch {}
+      authData.profiles = authData.profiles || {};
+      const profile = { type: 'token', provider, token: apiKey };
+      if (!isOpenAI && !isAnthropic) profile.baseUrl = baseUrl;
+      authData.profiles[profileId] = profile;
+      authData.lastGood = authData.lastGood || {};
+      authData.lastGood[provider] = profileId;
+      fs.writeFileSync(authFile, JSON.stringify(authData, null, 2), 'utf-8');
+    } catch {}
+
+    // Write model config in openclaw.json
+    try {
+      const configFile = path.join(OPENCLAW_STATE_DIR, 'openclaw.json');
+      let config = {};
+      try { config = JSON.parse(fs.readFileSync(configFile, 'utf-8')); } catch {}
+      config.agents = config.agents || {};
+      config.agents.defaults = config.agents.defaults || {};
+      config.agents.defaults.model = config.agents.defaults.model || {};
+
+      const modelId = isAnthropic ? `anthropic/${model}` : `openai/${model}`;
+      config.agents.defaults.model.primary = modelId;
+      config.agents.defaults.models = config.agents.defaults.models || {};
+      config.agents.defaults.models[modelId] = {};
+      fs.writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf-8');
+    } catch {}
+
+    // For non-standard endpoints, enable direct API mode since OpenClaw's
+    // CLI doesn't support custom base URLs. The adapter will call the LLM
+    // API directly via HTTP instead of using `openclaw agent` CLI.
+    if (!isOpenAI && !isAnthropic) {
+      env.OPENAI_BASE_URL = baseUrl;
+      env.OPENAI_API_KEY = apiKey;
+      env.OPENCLAW_DIRECT_API = 'true';
+    }
   }
 }
 
