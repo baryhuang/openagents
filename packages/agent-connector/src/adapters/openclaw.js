@@ -211,9 +211,19 @@ class OpenClawAdapter extends BaseAdapter {
       };
 
       if (IS_WINDOWS) {
-        spawnBinary = process.env.COMSPEC || 'cmd.exe';
-        const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
-        spawnArgs = ['/C', binary, ...quotedArgs];
+        // Spawn node directly with the JS entry point instead of cmd.exe /C
+        // to get unbuffered stderr for real-time tool status streaming
+        const nodeBin = path.join(path.dirname(binary), 'node.exe');
+        const entryPoint = path.join(path.dirname(binary), 'node_modules', 'openclaw', 'openclaw.mjs');
+        if (fs.existsSync(nodeBin) && fs.existsSync(entryPoint)) {
+          spawnBinary = nodeBin;
+          spawnArgs = [entryPoint, ...args];
+        } else {
+          // Fallback to cmd.exe (buffered stderr)
+          spawnBinary = process.env.COMSPEC || 'cmd.exe';
+          const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
+          spawnArgs = ['/C', binary, ...quotedArgs];
+        }
       }
 
       const proc = spawn(spawnBinary, spawnArgs, spawnOpts);
