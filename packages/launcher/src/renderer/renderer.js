@@ -663,41 +663,44 @@ async function refreshAgentList() {
     }
 
     listEl.innerHTML = agents.map((a) => {
+      const isRunning = a.state === 'online' || a.state === 'running';
       const slug = a.network || '';
-      const wsDisplay = slug ? (a.networkName && a.networkName !== slug ? `${slug} (${a.networkName})` : slug) : 'local only';
+      const wsDisplay = slug ? (a.networkName && a.networkName !== slug ? `${slug} (${a.networkName})` : slug) : '';
+      const hasKey = a.env?.LLM_API_KEY || a.env?.OPENAI_API_KEY || a.env?.ANTHROPIC_API_KEY;
       const envDisplay = [];
       if (a.env?.LLM_BASE_URL || a.env?.OPENAI_BASE_URL) envDisplay.push(`API: ${a.env.LLM_BASE_URL || a.env.OPENAI_BASE_URL}`);
       if (a.env?.LLM_MODEL || a.env?.OPENCLAW_MODEL) envDisplay.push(`Model: ${a.env.LLM_MODEL || a.env.OPENCLAW_MODEL}`);
-      const hasKey = a.env?.LLM_API_KEY || a.env?.OPENAI_API_KEY || a.env?.ANTHROPIC_API_KEY;
 
       return `
         <div class="agent-list-item">
-          <div class="agent-list-info">
-            <h4>${esc(a.name)}</h4>
-            <span>
-              ${esc(a.type)} &middot;
-              <span class="status-dot ${statusClass(a.state)}"></span> ${esc(displayState(a.state))}
-              &middot; ${esc(wsDisplay)}
-              ${a.restarts > 0 ? ` &middot; restarts: ${a.restarts}` : ''}
-            </span>
-            <span class="agent-config-hint">
-              ${hasKey ? '&#128273; API key set' : '<span class="text-warning">&#9888; No API key</span>'}
-              ${envDisplay.length ? ' &middot; ' + envDisplay.map(esc).join(' &middot; ') : ''}
-            </span>
-            ${a.lastError ? `<span class="agent-error">${esc(a.lastError)}</span>` : ''}
+          <div class="agent-list-top">
+            <div class="agent-list-info">
+              <h4>${esc(a.name)}</h4>
+              <span class="agent-type-label">${esc(a.type)}</span>
+              <span class="agent-config-hint">
+                ${hasKey ? '&#128273; API key set' : '<span class="text-warning">&#9888; No API key</span>'}
+                ${envDisplay.length ? ' &middot; ' + envDisplay.map(esc).join(' &middot; ') : ''}
+              </span>
+              ${a.lastError ? `<span class="agent-error">${esc(a.lastError)}</span>` : ''}
+            </div>
+            <div class="agent-list-status">
+              <span class="status-dot ${statusClass(a.state)}"></span>
+              <span class="agent-state-text">${esc(displayState(a.state))}</span>
+              ${wsDisplay ? `<span class="agent-ws-label">${esc(wsDisplay)}</span>` : '<span class="agent-ws-label muted">Not connected</span>'}
+            </div>
           </div>
-          <div class="agent-list-actions">
-            <button class="btn btn-sm" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">
-              ${a.state === 'online' || a.state === 'running' ? 'Stop' : 'Start'}
-            </button>
-            <button class="btn btn-sm" data-action="configure" data-type="${esc(a.type)}">Configure</button>
-            ${a.network
-              ? `<button class="btn btn-sm" data-action="disconnect" data-name="${esc(a.name)}">Disconnect</button>
-                 <button class="btn btn-sm" data-action="open-ws" data-name="${esc(a.name)}">Open Workspace</button>`
-              : `<button class="btn btn-sm" data-action="connect-workspace" data-name="${esc(a.name)}">Connect</button>`
-            }
-          </div>
-          <div class="agent-list-remove">
+          <div class="agent-list-bottom">
+            <div class="agent-list-actions">
+              <button class="btn btn-sm${isRunning ? '' : ' btn-primary'}" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">
+                ${isRunning ? 'Stop' : 'Start'}
+              </button>
+              <button class="btn btn-sm" data-action="configure" data-type="${esc(a.type)}">Configure</button>
+              ${a.network
+                ? `<button class="btn btn-sm" data-action="disconnect" data-name="${esc(a.name)}">Disconnect</button>
+                   <button class="btn btn-sm" data-action="open-ws" data-name="${esc(a.name)}">Open Workspace</button>`
+                : `<button class="btn btn-sm" data-action="connect-workspace" data-name="${esc(a.name)}">Connect</button>`
+              }
+            </div>
             <button class="btn btn-sm btn-danger" data-action="remove-agent" data-name="${esc(a.name)}">Remove</button>
           </div>
         </div>`;
