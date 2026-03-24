@@ -13,6 +13,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawn, execSync } = require('child_process');
 
 const BaseAdapter = require('./base');
@@ -211,15 +212,30 @@ class OpenClawAdapter extends BaseAdapter {
       };
 
       if (IS_WINDOWS) {
-        // Spawn node directly with the JS entry point instead of cmd.exe /C
-        // to get unbuffered stderr for real-time tool status streaming
-        const nodeBin = path.join(path.dirname(binary), 'node.exe');
-        const entryPoint = path.join(path.dirname(binary), 'node_modules', 'openclaw', 'openclaw.mjs');
-        if (fs.existsSync(nodeBin) && fs.existsSync(entryPoint)) {
+        // Find node.exe to spawn openclaw.mjs directly (unbuffered stderr)
+        const { getExtraBinDirs } = require('../paths');
+        const extraDirs = getExtraBinDirs();
+        let nodeBin = null;
+        for (const d of extraDirs) {
+          const candidate = path.join(d, 'node.exe');
+          if (fs.existsSync(candidate)) { nodeBin = candidate; break; }
+        }
+        // Find openclaw entry point
+        const possibleEntries = [
+          path.join(path.dirname(binary), 'node_modules', 'openclaw', 'openclaw.mjs'),
+          path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', 'openclaw', 'openclaw.mjs'),
+        ];
+        let entryPoint = null;
+        for (const e of possibleEntries) {
+          if (fs.existsSync(e)) { entryPoint = e; break; }
+        }
+
+        if (nodeBin && entryPoint) {
+          // Direct spawn — unbuffered stderr for real-time tool streaming
           spawnBinary = nodeBin;
           spawnArgs = [entryPoint, ...args];
         } else {
-          // Fallback to cmd.exe (buffered stderr)
+          // Fallback to cmd.exe (buffered stderr — no real-time status)
           spawnBinary = process.env.COMSPEC || 'cmd.exe';
           const quotedArgs = args.map((a) => a.includes(' ') ? `"${a}"` : a);
           spawnArgs = ['/C', binary, ...quotedArgs];
