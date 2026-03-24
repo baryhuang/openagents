@@ -13,8 +13,6 @@
     <nav id="sidebar">
       <div class="sidebar-header">
         <h2>OpenAgents</h2>
-        <span class="version" id="launcher-version">--</span>
-        <span class="version-detail" id="sdk-version">--</span>
       </div>
       <ul class="nav-items">
         <li class="nav-item active" data-tab="dashboard">
@@ -34,6 +32,10 @@
         </li>
       </ul>
       <div class="sidebar-footer">
+        <div class="version-info">
+          <span class="version-line" id="launcher-version">Launcher: --</span>
+          <span class="version-line" id="sdk-version">Core: --</span>
+        </div>
         <div class="daemon-status" id="daemon-status" data-action="toggle-daemon" style="cursor:pointer;" title="Click to toggle daemon">
           <span class="status-dot offline"></span>
           <span>Daemon: offline</span>

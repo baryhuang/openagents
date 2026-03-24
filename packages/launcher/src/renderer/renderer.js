@@ -158,8 +158,8 @@ async function refreshDashboard() {
     // Node.js native — always ready
     banner.style.display = 'none';
     const launcherEl = document.getElementById('launcher-version');
-    if (launcherEl && status.launcherVersion) launcherEl.textContent = `v${status.launcherVersion}`;
-    versionEl.textContent = `core v${status.sdkVersion}`;
+    if (launcherEl && status.launcherVersion) launcherEl.textContent = `Launcher v${status.launcherVersion}`;
+    versionEl.textContent = `Core v${status.sdkVersion}`;
   } catch {}
 }
 
