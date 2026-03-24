@@ -220,9 +220,37 @@ class OpenClawAdapter extends BaseAdapter {
       let stdout = '';
       let stderr = '';
 
-      // OpenClaw writes --json output to stderr, so capture both
+      // Tool name → human-readable status
+      const toolLabels = {
+        exec: 'Running command...',
+        read: 'Reading file...',
+        write: 'Writing file...',
+        edit: 'Editing file...',
+        browser: 'Using browser...',
+        web_search: 'Searching the web...',
+        web_fetch: 'Fetching webpage...',
+        process: 'Running process...',
+        image_generate: 'Generating image...',
+        memory_search: 'Searching memory...',
+      };
+
+      // Stream stderr in real-time to detect tool usage
       if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
-      if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; stdout += d; });
+      if (proc.stderr) proc.stderr.on('data', (d) => {
+        const chunk = d.toString();
+        stderr += chunk;
+        stdout += chunk;
+
+        // Parse diagnostic lines for tool start/end events
+        for (const line of chunk.split('\n')) {
+          const toolStart = line.match(/embedded run tool start:.*tool=(\w+)/);
+          if (toolStart) {
+            const toolName = toolStart[1];
+            const label = toolLabels[toolName] || `Using ${toolName}...`;
+            try { this.sendStatus(channel, label); } catch {}
+          }
+        }
+      });
 
       proc.on('error', (err) => reject(err));
       proc.on('exit', (code) => {
