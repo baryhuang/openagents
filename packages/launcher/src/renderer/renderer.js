@@ -182,10 +182,17 @@ async function toggleAgent(name, currentState) {
     if (currentState === 'online' || currentState === 'running') {
       await window.api.stopAgent(name);
       showToast(`Stopping ${name}...`, 'info');
-      // Poll until stopped (up to 10s)
+      // Poll until stopped (up to 15s — daemon checks commands every 5s)
       for (let i = 0; i < 5; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        await refreshDashboard();
+        await new Promise(r => setTimeout(r, 3000));
+        refreshDashboard();
+        refreshAgentList();
+        const status = await window.api.agentStatus();
+        const agent = status[name];
+        if (!agent || agent.state === 'stopped' || agent.state === 'idle') {
+          showToast(`${name} stopped`, 'success');
+          break;
+        }
       }
     } else {
       await window.api.startAgent(name);
