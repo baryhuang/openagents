@@ -35,7 +35,16 @@ class Installer {
    * Checks binary on PATH first, then marker files.
    */
   isInstalled(agentType) {
-    // Use verify command if available for accurate detection
+    // Fast check: marker file or binary on PATH (no execSync to avoid blocking)
+    if (this._hasMarker(agentType)) return true;
+    if (this._whichBinary(agentType)) return true;
+    return false;
+  }
+
+  /**
+   * Deep verification — runs the agent's verify command (slow, use sparingly).
+   */
+  verifyInstalled(agentType) {
     const entry = this.registry.getEntry(agentType);
     const IS_WINDOWS = process.platform === 'win32';
     const verifyCmd = entry && entry.install
@@ -47,13 +56,7 @@ class Installer {
         return true;
       } catch { return false; }
     }
-    if (this._whichBinary(agentType)) return true;
-    if (this._hasMarker(agentType)) {
-      // Marker exists but binary not found — stale marker, clean it up
-      this._markUninstalled(agentType);
-      return false;
-    }
-    return false;
+    return this.isInstalled(agentType);
   }
 
   /**

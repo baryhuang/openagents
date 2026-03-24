@@ -145,7 +145,9 @@ async function refreshDashboard() {
     const versionEl = document.getElementById('sdk-version');
     // Node.js native — always ready
     banner.style.display = 'none';
-    versionEl.textContent = `v${status.sdkVersion}`;
+    const launcherEl = document.getElementById('launcher-version');
+    if (launcherEl && status.launcherVersion) launcherEl.textContent = `v${status.launcherVersion}`;
+    versionEl.textContent = `core v${status.sdkVersion}`;
   } catch {}
 }
 
@@ -763,12 +765,17 @@ async function installCatalogItem(name, isInstalled) {
   });
   if (!confirmed) return;
 
-  // Switch to dedicated install view
+  // Switch to dedicated install view — hide tabs, show progress overlay
   const content = document.getElementById('content');
-  const savedHTML = content.innerHTML;
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  // Remove any previous progress view
+  const oldProgress = document.getElementById('install-progress-overlay');
+  if (oldProgress) oldProgress.remove();
 
-  content.innerHTML = `
-    <div class="install-progress-view">
+  const progressView = document.createElement('div');
+  progressView.id = 'install-progress-overlay';
+  progressView.className = 'install-progress-view';
+  progressView.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
         ${agentIcon(name, 32)}
         <div>
@@ -779,8 +786,8 @@ async function installCatalogItem(name, isInstalled) {
       <pre class="log-viewer install-log" id="install-live-log" style="min-height:300px;max-height:calc(100vh - 200px);"></pre>
       <div id="install-done-bar" style="display:none;margin-top:16px;">
         <button class="btn btn-primary" id="install-back-btn">Back to Install</button>
-      </div>
-    </div>`;
+      </div>`;
+  content.appendChild(progressView);
 
   const logEl = document.getElementById('install-live-log');
   const doneBar = document.getElementById('install-done-bar');
@@ -801,7 +808,9 @@ async function installCatalogItem(name, isInstalled) {
             logEl.textContent += `NOT FOUND\n\n⚠ Please install ${dep} first.\n`;
             doneBar.style.display = 'block';
             document.getElementById('install-back-btn').addEventListener('click', () => {
-              // Refresh catalog to show updated install status
+              const overlay = document.getElementById('install-progress-overlay');
+              if (overlay) overlay.remove();
+              // switchTab will re-add .active to the correct tab
               switchTab('install');
             });
             return;
@@ -862,7 +871,10 @@ async function installCatalogItem(name, isInstalled) {
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
   document.getElementById('install-back-btn').addEventListener('click', () => {
-    // Refresh catalog to show updated install status
+    // Remove progress overlay and restore tabs
+    const overlay = document.getElementById('install-progress-overlay');
+    if (overlay) overlay.remove();
+    // switchTab will re-add .active to the correct tab
     switchTab('install');
   });
 }
@@ -887,10 +899,14 @@ async function uninstallCatalogItem(name) {
   if (!confirmed) return;
 
   const content = document.getElementById('content');
-  const savedHTML = content.innerHTML;
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  const oldProgress = document.getElementById('install-progress-overlay');
+  if (oldProgress) oldProgress.remove();
 
-  content.innerHTML = `
-    <div class="install-progress-view">
+  const progressView = document.createElement('div');
+  progressView.id = 'install-progress-overlay';
+  progressView.className = 'install-progress-view';
+  progressView.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
         ${agentIcon(name, 32)}
         <div>
@@ -901,8 +917,8 @@ async function uninstallCatalogItem(name) {
       <pre class="log-viewer install-log" id="install-live-log" style="min-height:300px;max-height:calc(100vh - 200px);"></pre>
       <div id="install-done-bar" style="display:none;margin-top:16px;">
         <button class="btn btn-primary" id="install-back-btn">Back to Install</button>
-      </div>
-    </div>`;
+      </div>`;
+  content.appendChild(progressView);
 
   const logEl = document.getElementById('install-live-log');
   const doneBar = document.getElementById('install-done-bar');
@@ -950,7 +966,10 @@ async function uninstallCatalogItem(name) {
   window.api.removeInstallOutputListener();
   doneBar.style.display = 'block';
   document.getElementById('install-back-btn').addEventListener('click', () => {
-    // Refresh catalog to show updated install status
+    // Remove progress overlay and restore tabs
+    const overlay = document.getElementById('install-progress-overlay');
+    if (overlay) overlay.remove();
+    // switchTab will re-add .active to the correct tab
     switchTab('install');
   });
 }

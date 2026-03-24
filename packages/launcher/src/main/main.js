@@ -133,6 +133,7 @@ function setupIPC() {
     pythonFound: true,  // No longer needed — always "found" since we're Node.js native
     sdkInstalled: true,
     sdkVersion: require('@openagents-org/agent-launcher/package.json').version,
+    launcherVersion: require('../../package.json').version,
     runtime: 'node',
   }));
   ipcMain.handle('python:install', () => ({ success: true, message: 'No installation needed — using Node.js agent-connector' }));
