@@ -226,28 +226,46 @@ class AgentManager {
     // Use the Node.js agent-connector CLI to start the daemon.
     // We must use the system 'node' binary, NOT process.execPath (which is
     // electron.exe inside a packaged app and would spawn another Electron).
-    // Prefer the globally installed CLI (works in packaged apps where asar
-    // paths are not accessible by child processes).
+    //
+    // In packaged Electron apps, require.resolve returns an asar path that
+    // child processes can't access. Instead, we write a small bootstrap script
+    // to ~/.openagents/ that requires the daemon module from the npm global dir.
+    const bootstrapPath = path.join(CONFIG_DIR, 'daemon-bootstrap.js');
     const { whichBinary } = require('@openagents-org/agent-launcher/src/paths');
-    let cliPath;
-    const globalCli = whichBinary('openagents') || whichBinary('agent-connector');
-    if (globalCli) {
-      // Global CLI is a shell script/cmd — find the actual JS file
-      const fs = require('fs');
+
+    // Find the actual agent-launcher module on disk
+    let modulePath = null;
+    const candidates = [
+      // npm global (installed alongside openclaw)
+      path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openagents-org', 'agent-launcher'),
+      path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher'),
+      // Unix global
+      '/usr/local/lib/node_modules/@openagents-org/agent-launcher',
+      '/usr/lib/node_modules/@openagents-org/agent-launcher',
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(path.join(c, 'bin', 'agent-connector.js'))) { modulePath = c; break; }
+    }
+    if (!modulePath) {
+      // Auto-install the CLI globally
       try {
-        const shim = fs.readFileSync(globalCli, 'utf-8');
-        const match = shim.match(/["']([^"']*agent-connector\.js)["']/);
-        if (match) cliPath = match[1];
+        const { execSync } = require('child_process');
+        const npmBin = whichBinary('npm') || path.join(os.homedir(), '.openagents', 'nodejs', 'npm');
+        execSync(`"${npmBin}" install -g @openagents-org/agent-launcher@latest`, {
+          timeout: 60000, stdio: 'ignore',
+          env: { ...process.env, PATH: path.join(os.homedir(), '.openagents', 'nodejs') + path.delimiter + (process.env.PATH || '') }
+        });
+        // Re-check
+        for (const c of candidates) {
+          if (fs.existsSync(path.join(c, 'bin', 'agent-connector.js'))) { modulePath = c; break; }
+        }
       } catch {}
     }
-    if (!cliPath) {
-      try {
-        cliPath = require.resolve('@openagents-org/agent-launcher/bin/agent-connector.js');
-      } catch {}
+    if (!modulePath) {
+      return { success: false, message: 'Cannot find agent-launcher CLI. Please install it: npm install -g @openagents-org/agent-launcher' };
     }
-    if (!cliPath) {
-      return { success: false, message: 'Cannot find agent-launcher CLI. Install it globally: npm install -g @openagents-org/agent-launcher' };
-    }
+
+    const cliPath = path.join(modulePath, 'bin', 'agent-connector.js');
 
     // Find system node binary
     const { execSync } = require('child_process');
