@@ -121,14 +121,16 @@ async function refreshDashboard() {
     } else {
       cardsEl.innerHTML = agents.map((a) => {
         const isRunning = a.state === 'online' || a.state === 'running' || a.state === 'idle';
-        const hasApiKey = !!(a.env && a.env.LLM_API_KEY);
+        const hasApiKey = !!(a.env && (a.env.LLM_API_KEY || a.env.OPENAI_API_KEY || a.env.ANTHROPIC_API_KEY));
+        const loginBasedTypes = ['claude', 'copilot', 'gemini', 'amp'];
+        const isLoginBased = loginBasedTypes.includes(a.type);
         const isConnected = !!a.network;
         const wsLabel = a.network
           ? (a.networkName && a.networkName !== a.network ? `${a.network} (${a.networkName})` : a.network)
           : '';
 
         // Status indicators
-        const configStatus = hasApiKey
+        const configStatus = (hasApiKey || isLoginBased)
           ? '<span class="badge badge-success-sm">LLM configured</span>'
           : '<span class="badge badge-warning-sm">LLM not configured</span>';
         const connectStatus = isConnected
