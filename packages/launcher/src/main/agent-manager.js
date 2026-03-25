@@ -263,8 +263,9 @@ class AgentManager {
     const { spawn } = require('child_process');
     const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
 
-    // Build enhanced PATH with portable Node.js
-    const extraDirs = [portableNodeDir];
+    // Build enhanced PATH with portable Node.js and npm global
+    const npmGlobalBin = path.join(os.homedir(), '.openagents', 'npm-global', 'bin');
+    const extraDirs = [portableNodeDir, npmGlobalBin, '/usr/local/bin'];
     if (process.platform === 'win32') {
       extraDirs.push(path.join(process.env.APPDATA || '', 'npm'));
     }
@@ -272,8 +273,10 @@ class AgentManager {
 
     // Find CLI entry point on disk (NOT in asar)
     let cliPath = null;
+    const npmGlobalDir = path.join(os.homedir(), '.openagents', 'npm-global');
     const cliCandidates = [
       path.join(portableNodeDir, 'node_modules', '@openagents-org', 'agent-launcher', 'bin', 'agent-connector.js'),
+      path.join(npmGlobalDir, 'lib', 'node_modules', '@openagents-org', 'agent-launcher', 'bin', 'agent-connector.js'),
       path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openagents-org', 'agent-launcher', 'bin', 'agent-connector.js'),
       '/usr/local/lib/node_modules/@openagents-org/agent-launcher/bin/agent-connector.js',
     ];
