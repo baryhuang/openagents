@@ -74,14 +74,27 @@ class AgentManager {
   // ------------------------------------------------------------------
 
   async getCatalog() {
+    let catalog;
     try {
-      return await this._connector.getCatalog();
+      catalog = await this._connector.getCatalog();
     } catch {
-      return this._connector.registry.getCatalogSync().map((e) => ({
+      catalog = this._connector.registry.getCatalogSync().map((e) => ({
         ...e,
         installed: this._connector.isInstalled(e.name),
       }));
     }
+    // Ensure bundled fields (check_ready, env_config, launch) are always present
+    const bundled = this._connector.registry._loadBundled();
+    for (const entry of catalog) {
+      const b = bundled.find(x => x.name === entry.name);
+      if (b) {
+        if (!entry.check_ready && b.check_ready) entry.check_ready = b.check_ready;
+        if ((!entry.env_config || !entry.env_config.length) && b.env_config?.length) entry.env_config = b.env_config;
+        if (!entry.install && b.install) entry.install = b.install;
+        if (!entry.launch && b.launch) entry.launch = b.launch;
+      }
+    }
+    return catalog;
   }
 
   async getEnvFields(agentType) {
