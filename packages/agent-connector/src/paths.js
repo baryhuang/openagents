@@ -42,6 +42,10 @@ function getExtraBinDirs() {
     if (nodeDir) _push(dirs, nodeDir);
   } catch {}
 
+  // Add portable Node.js directory (~/.openagents/nodejs/)
+  const portableNode = path.join(HOME, '.openagents', 'nodejs');
+  _push(dirs, portableNode);
+
   // Filter to existing directories only, deduplicate
   const seen = new Set();
   const currentPATH = process.env.PATH || '';
