@@ -222,7 +222,7 @@ async function toggleAgent(name, currentState) {
         refreshAgentList();
         const status = await window.api.agentStatus();
         const agent = status[name];
-        if (!agent || agent.state === 'stopped' || agent.state === 'idle') {
+        if (!agent || agent.state === 'stopped') {
           showToast(`${name} stopped`, 'success');
           break;
         }
@@ -1120,12 +1120,12 @@ function esc(str) {
 }
 
 function displayState(state) {
-  if (state === 'idle') return 'stopped';
+  if (state === 'idle') return 'running';
   return state || 'stopped';
 }
 
 function statusClass(state) {
-  if (state === 'online' || state === 'running') return 'online';
+  if (state === 'online' || state === 'running' || state === 'idle') return 'online';
   if (state === 'starting' || state === 'reconnecting') return 'starting';
   return 'offline';
 }
