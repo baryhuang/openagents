@@ -1,6 +1,6 @@
 {
   "name": "openagents-launcher",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "OpenAgents Launcher — install, configure, and manage your AI agents",
   "main": "src/main/main.js",
   "scripts": {
@@ -40,6 +40,11 @@
       "src/**/*",
       "node_modules/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@openagents-org/**/*",
+      "node_modules/ws/**/*",
+      "node_modules/blessed/**/*"
     ],
     "win": {
       "target": [

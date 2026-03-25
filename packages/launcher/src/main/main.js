@@ -25,16 +25,18 @@ let tray = null;
 let agentManager = null;
 let coreVersion = null;
 
-// ── Auto-update core library ──
-async function ensureCoreLibrary() {
-  const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
-  const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
-
-  if (!fs.existsSync(nodeBin)) {
-    // No portable Node.js — core library install will be handled by the Install tab
-    return;
+// ── Core library management ──
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyDirSync(s, d);
+    else fs.copyFileSync(s, d);
   }
+}
 
+async function ensureCoreLibrary() {
   const corePkgPath = path.join(GLOBAL_MODULES, CORE_PKG, 'package.json');
   let installedVersion = null;
 
@@ -43,23 +45,63 @@ async function ensureCoreLibrary() {
   }
 
   if (!installedVersion) {
-    // Core library not installed — install it
-    console.log('Installing core library...');
-    try {
-      execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
-        stdio: 'ignore', timeout: 120000,
-        env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
-      });
-      try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
-    } catch (e) {
-      console.error('Failed to install core library:', e.message);
+    // First launch — copy bundled core library to global path
+    // This avoids needing npm/network on first startup
+    const bundledPath = path.join(__dirname, '..', '..', 'node_modules', CORE_PKG);
+    // Also check asar-extracted path for packaged apps
+    const asarUnpacked = path.join(__dirname, '..', '..', '..', 'app.asar.unpacked', 'node_modules', CORE_PKG);
+
+    let srcPath = null;
+    if (fs.existsSync(path.join(bundledPath, 'package.json'))) srcPath = bundledPath;
+    else if (fs.existsSync(path.join(asarUnpacked, 'package.json'))) srcPath = asarUnpacked;
+
+    if (srcPath) {
+      console.log('First launch: copying bundled core library to global path...');
+      try {
+        const destPath = path.join(GLOBAL_MODULES, CORE_PKG);
+        // Ensure parent dirs exist
+        fs.mkdirSync(path.join(GLOBAL_MODULES, '@openagents-org'), { recursive: true });
+        copyDirSync(srcPath, destPath);
+        // Also copy dependencies (ws, blessed)
+        for (const dep of ['ws', 'blessed']) {
+          const depSrc = path.join(path.dirname(srcPath), dep);
+          const depDest = path.join(GLOBAL_MODULES, dep);
+          if (fs.existsSync(depSrc) && !fs.existsSync(depDest)) {
+            copyDirSync(depSrc, depDest);
+          }
+        }
+        try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
+        console.log('Core library v' + installedVersion + ' ready');
+      } catch (e) {
+        console.error('Failed to copy bundled core library:', e.message);
+      }
+    }
+
+    // If copy failed and npm is available, try npm install
+    if (!installedVersion) {
+      const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+      if (fs.existsSync(npmBin)) {
+        console.log('Installing core library via npm...');
+        try {
+          execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
+            stdio: 'ignore', timeout: 120000,
+            env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+          });
+          try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
+        } catch (e) {
+          console.error('Failed to install core library:', e.message);
+        }
+      }
     }
   }
 
   coreVersion = installedVersion;
 
   // Check for updates in background (don't block startup)
-  checkCoreUpdate(npmBin).catch(() => {});
+  const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+  if (fs.existsSync(npmBin)) {
+    checkCoreUpdate(npmBin).catch(() => {});
+  }
 }
 
 async function checkCoreUpdate(npmBin) {
