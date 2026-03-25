@@ -120,7 +120,7 @@ async function refreshDashboard() {
         </div>`;
     } else {
       cardsEl.innerHTML = agents.map((a) => {
-        const isRunning = a.state === 'online' || a.state === 'running';
+        const isRunning = a.state === 'online' || a.state === 'running' || a.state === 'idle';
         const hasApiKey = !!(a.env && a.env.LLM_API_KEY);
         const isConnected = !!a.network;
         const wsLabel = a.network
@@ -186,7 +186,7 @@ async function refreshDashboard() {
 
 function updateDaemonStatusFromAgents(agents) {
   const el = document.getElementById('daemon-status');
-  const hasOnline = agents.some((a) => a.state === 'online' || a.state === 'running');
+  const hasOnline = agents.some((a) => a.state === 'online' || a.state === 'running' || a.state === 'idle' || a.state === 'idle');
   const hasStarting = agents.some((a) => a.state === 'starting' || a.state === 'reconnecting');
 
   if (hasOnline) {
@@ -212,7 +212,7 @@ async function updateDaemonStatus() {
 
 async function toggleAgent(name, currentState) {
   try {
-    if (currentState === 'online' || currentState === 'running') {
+    if (currentState === 'online' || currentState === 'running' || currentState === 'idle') {
       await window.api.stopAgent(name);
       showToast(`Stopping ${name}...`, 'info');
       // Poll until stopped (up to 15s — daemon checks commands every 5s)
@@ -274,7 +274,7 @@ document.getElementById('btn-stop-all').addEventListener('click', async () => {
 // ---- Agent Actions (context menu) ----
 
 function showAgentActions(name, type, state, network) {
-  const isRunning = state === 'online' || state === 'running';
+  const isRunning = state === 'online' || state === 'running' || state === 'idle';
   const actions = [];
 
   if (isRunning) {
@@ -663,7 +663,7 @@ async function refreshAgentList() {
     }
 
     listEl.innerHTML = agents.map((a) => {
-      const isRunning = a.state === 'online' || a.state === 'running';
+      const isRunning = a.state === 'online' || a.state === 'running' || a.state === 'idle';
       const slug = a.network || '';
       const wsDisplay = slug ? (a.networkName && a.networkName !== slug ? `${slug} (${a.networkName})` : slug) : '';
       const hasKey = a.env?.LLM_API_KEY || a.env?.OPENAI_API_KEY || a.env?.ANTHROPIC_API_KEY;
@@ -1125,7 +1125,7 @@ function displayState(state) {
 }
 
 function statusClass(state) {
-  if (state === 'online' || state === 'running' || state === 'idle') return 'online';
+  if (state === 'online' || state === 'running' || state === 'idle' || state === 'idle') return 'online';
   if (state === 'starting' || state === 'reconnecting') return 'starting';
   return 'offline';
 }
