@@ -36,7 +36,7 @@
           <span class="version-line" id="launcher-version">Launcher: --</span>
           <span class="version-line" id="sdk-version">Core: --</span>
         </div>
-        <div class="daemon-status" id="daemon-status" data-action="toggle-daemon" style="cursor:pointer;" title="Click to toggle daemon">
+        <div class="daemon-status" id="daemon-status" title="Daemon status">
           <span class="status-dot offline"></span>
           <span>Daemon: offline</span>
         </div>
@@ -62,10 +62,7 @@
           </div>
         </div>
 
-        <div class="actions-bar">
-          <button class="btn btn-primary" id="btn-start-all">Start All</button>
-          <button class="btn btn-danger" id="btn-stop-all">Stop All</button>
-        </div>
+        <!-- Daemon lifecycle is automatic — tied to Launcher app -->
 
         <!-- D25: Activity log panel -->
         <div class="card" id="activity-log-card" style="margin-top:20px;">

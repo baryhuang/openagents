@@ -116,20 +116,22 @@ function updateTrayMenu() {
     ...agentItems,
     { type: 'separator' },
     {
-      label: 'Start All',
-      click: () => agentManager && agentManager.startAll(),
-    },
-    {
-      label: 'Stop All',
-      click: () => agentManager && agentManager.stopAll(),
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        app.isQuitting = true;
-        if (agentManager) agentManager.stopAll();
-        app.quit();
+      label: 'Quit OpenAgents',
+      click: async () => {
+        const { dialog } = require('electron');
+        const result = await dialog.showMessageBox({
+          type: 'question',
+          buttons: ['Quit', 'Cancel'],
+          defaultId: 1,
+          title: 'Quit OpenAgents Launcher',
+          message: 'Quit OpenAgents Launcher?',
+          detail: 'The daemon will stop and all connected agents will go offline.',
+        });
+        if (result.response === 0) {
+          app.isQuitting = true;
+          try { if (agentManager) await agentManager.stopAll(); } catch {}
+          app.quit();
+        }
       },
     },
   ]);
@@ -275,5 +277,6 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
-  if (agentManager) agentManager.stopAll();
+  // Stop daemon — agents go offline when launcher quits
+  try { if (agentManager) agentManager.stopAll(); } catch {}
 });
