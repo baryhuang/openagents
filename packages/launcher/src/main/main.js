@@ -41,6 +41,8 @@ async function downloadNodejs(nodejsDir, onProgress) {
   const nodeVersion = 'v22.14.0';
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
 
+  // Clean any previous failed install to avoid merge conflicts
+  try { fs.rmSync(nodejsDir, { recursive: true, force: true }); } catch {}
   fs.mkdirSync(nodejsDir, { recursive: true });
   slog(`downloadNodejs: platform=${process.platform} arch=${arch} dir=${nodejsDir}`);
 
@@ -208,18 +210,34 @@ async function ensureCoreLibrary() {
 
     // If copy failed and npm is available, try npm install (slow — requires network)
     if (!installedVersion) {
-      const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
-      if (fs.existsSync(npmBin)) {
-        console.log('Bundled copy not found — installing core library via npm (this may take a moment)...');
+      const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+      // Find npm-cli.js — could be at different locations depending on how node was extracted
+      const npmCliCandidates = [
+        path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      ];
+      const npmCli = npmCliCandidates.find(p => fs.existsSync(p));
+      // Also check for npm.cmd as fallback
+      const npmCmd = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+
+      if (fs.existsSync(nodeBin) && (npmCli || fs.existsSync(npmCmd))) {
+        const installCmd = npmCli
+          ? `"${nodeBin}" "${npmCli}" install -g ${CORE_PKG}@latest`
+          : `"${npmCmd}" install -g ${CORE_PKG}@latest`;
+        console.log('Bundled copy not found — installing core library via npm...');
+        slog('npm install cmd: ' + installCmd);
         try {
-          execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
+          execSync(installCmd, {
             stdio: 'ignore', timeout: 120000,
             env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
           });
           try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
         } catch (e) {
           console.error('Failed to install core library:', e.message);
+          slog('npm install failed: ' + e.message);
         }
+      } else {
+        slog('Cannot install core: nodeBin=' + fs.existsSync(nodeBin) + ' npmCli=' + !!npmCli + ' npmCmd=' + fs.existsSync(npmCmd));
       }
     }
   }
