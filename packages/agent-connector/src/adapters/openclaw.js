@@ -286,21 +286,26 @@ class OpenClawAdapter extends BaseAdapter {
         clearInterval(pollInterval);
         clearTimeout(killTimeout);
         fs.closeSync(stderrFd);
-        // Read any remaining stderr
+        // Read full stderr content (contains JSON output + trace lines)
+        let stderrContent = '';
         try {
-          const remaining = fs.readFileSync(stderrFile, 'utf-8').slice(stderrOffset);
+          stderrContent = fs.readFileSync(stderrFile, 'utf-8');
+          // Process any remaining lines for tool events
+          const remaining = stderrContent.slice(stderrOffset);
           if (remaining) {
-            output += remaining;
             for (const line of remaining.split('\n')) processLine(line);
           }
         } catch {}
         try { fs.unlinkSync(stderrFile); } catch {}
 
+        // OpenClaw --json writes JSON to stderr, so combine stdout + stderr
+        const allOutput = output + '\n' + stderrContent;
+
         if (code !== 0) {
-          reject(new Error(`CLI exited ${code}: ${output.slice(-300)}`));
+          reject(new Error(`CLI exited ${code}: ${allOutput.slice(-300)}`));
           return;
         }
-        this._parseCliOutput(output, resolve);
+        this._parseCliOutput(allOutput, resolve);
       });
     });
   }
@@ -308,19 +313,65 @@ class OpenClawAdapter extends BaseAdapter {
   _parseCliOutput(output, resolve) {
     const text = output.trim();
     if (!text) { resolve(''); return; }
-    const jsonStart = text.indexOf('{');
-    if (jsonStart < 0) { resolve(text); return; }
-    try {
-      const data = JSON.parse(text.slice(jsonStart));
-      const payloads = data.payloads || [];
-      if (payloads.length > 0) {
-        resolve(payloads.filter(p => p.text).map(p => p.text).join('\n\n'));
-      } else {
-        resolve('');
+
+    // OpenClaw --json outputs a JSON blob with {"payloads":[...]} structure.
+    // With --log-level trace, stderr also contains diagnostic lines.
+    // Find the JSON by looking for '{"payloads"' or the last complete JSON object.
+    let jsonStr = null;
+
+    // Strategy 1: find {"payloads" directly
+    const payloadsIdx = text.indexOf('{"payloads"');
+    if (payloadsIdx >= 0) {
+      // Find the matching closing brace by counting braces
+      let depth = 0;
+      for (let i = payloadsIdx; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') { depth--; if (depth === 0) { jsonStr = text.slice(payloadsIdx, i + 1); break; } }
       }
-    } catch {
-      resolve(text);
     }
+
+    // Strategy 2: find last '{' that starts a valid JSON with "payloads"
+    if (!jsonStr) {
+      for (let i = text.length - 1; i >= 0; i--) {
+        if (text[i] === '{') {
+          const candidate = text.slice(i);
+          try {
+            const d = JSON.parse(candidate);
+            if (d.payloads) { jsonStr = candidate; break; }
+          } catch {}
+        }
+      }
+    }
+
+    // Strategy 3: try each line that starts with '{'
+    if (!jsonStr) {
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('{')) {
+          try {
+            const d = JSON.parse(trimmed);
+            if (d.payloads) { jsonStr = trimmed; break; }
+          } catch {}
+        }
+      }
+    }
+
+    if (jsonStr) {
+      try {
+        const data = JSON.parse(jsonStr);
+        const payloads = data.payloads || [];
+        if (payloads.length > 0) {
+          resolve(payloads.filter(p => p.text).map(p => p.text).join('\n\n'));
+          return;
+        }
+      } catch {}
+    }
+
+    // Fallback: return non-diagnostic text
+    const cleanLines = text.split('\n').filter(l =>
+      !l.includes('[diagnostic]') && !l.includes('[agent/embedded]') && !l.includes('Registered plugin')
+    ).map(l => l.trim()).filter(Boolean);
+    resolve(cleanLines.join('\n') || '');
   }
   // ------------------------------------------------------------------
   // Static: configure OpenClaw's native auth from LLM env vars
