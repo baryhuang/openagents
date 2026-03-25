@@ -500,13 +500,34 @@ class Installer {
         });
       });
 
-      // The zip extracts to node-vX.X.X-win-x64/ subfolder
+      // The zip extracts to node-vX.X.X-win-x64/ subfolder — flatten it
       const extractedDir = path.join(nodejsDir, `node-${nodeVersion}-win-${arch}`);
+      if (fs.existsSync(extractedDir)) {
+        if (onData) onData('Flattening Node.js directory...\n');
+        const entries = fs.readdirSync(extractedDir);
+        for (const entry of entries) {
+          const src = path.join(extractedDir, entry);
+          const dest = path.join(nodejsDir, entry);
+          if (!fs.existsSync(dest)) {
+            fs.renameSync(src, dest);
+          } else if (fs.statSync(src).isDirectory() && fs.statSync(dest).isDirectory()) {
+            // Merge directories (e.g. node_modules)
+            const subEntries = fs.readdirSync(src);
+            for (const sub of subEntries) {
+              const subSrc = path.join(src, sub);
+              const subDest = path.join(dest, sub);
+              if (!fs.existsSync(subDest)) fs.renameSync(subSrc, subDest);
+            }
+          }
+        }
+        // Remove empty nested dir
+        try { fs.rmdirSync(extractedDir, { recursive: true }); } catch {}
+      }
       const sep = ';';
 
-      // Add extracted node dir to PATH for this session
-      if (!(process.env.PATH || '').includes(extractedDir)) {
-        process.env.PATH = extractedDir + sep + (process.env.PATH || '');
+      // Add nodejs dir to PATH for this session
+      if (!(process.env.PATH || '').includes(nodejsDir)) {
+        process.env.PATH = nodejsDir + sep + (process.env.PATH || '');
       }
       // npm global installs go to %APPDATA%\npm
       const npmGlobal = path.join(process.env.APPDATA || '', 'npm');
