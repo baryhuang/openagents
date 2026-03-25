@@ -73,6 +73,8 @@ class Registry {
         if ((!entry.env_config || entry.env_config.length === 0) && b.env_config && b.env_config.length > 0) entry.env_config = b.env_config;
         if (!entry.resolve_env && b.resolve_env) entry.resolve_env = b.resolve_env;
         if (!entry.install && b.install) entry.install = b.install;
+        if (!entry.check_ready && b.check_ready) entry.check_ready = b.check_ready;
+        if (!entry.launch && b.launch) entry.launch = b.launch;
       }
     }
     // Add bundled entries not in catalog
