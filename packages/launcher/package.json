@@ -27,7 +27,7 @@
     "electron-builder": "^25.0.0"
   },
   "dependencies": {
-    "@openagents-org/agent-launcher": "^0.2.42"
+    "@openagents-org/agent-launcher": "^0.2.43"
   },
   "build": {
     "appId": "com.openagents.launcher",
