@@ -205,7 +205,7 @@ function setupIPC() {
   ipcMain.handle('settings:set', (_e, key, value) => store.set(key, value));
 
   // Health check
-  ipcMain.handle('agents:health-check', (_e, type) => mgr.healthCheck(type));
+  ipcMain.handle('agents:health-check', (_e, type) => agentManager.healthCheck(type));
 
   // Shell
   ipcMain.handle('shell:open-external', (_e, url) => shell.openExternal(url));
@@ -215,7 +215,8 @@ function setupIPC() {
     const env = getEnhancedEnv();
     if (process.platform === 'win32') {
       // Open cmd.exe window with the command
-      spawn('cmd.exe', ['/K', cmd], { detached: true, stdio: 'ignore', env, windowsHide: false });
+      const comspec = process.env.ComSpec || env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
+      spawn(comspec, ['/K', cmd], { detached: true, stdio: 'ignore', env });
     } else if (process.platform === 'darwin') {
       // Open Terminal.app with the command
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"`], { detached: true, stdio: 'ignore' });
