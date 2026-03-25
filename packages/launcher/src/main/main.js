@@ -74,14 +74,27 @@ function createTray() {
 }
 
 function createPlaceholderIcon() {
-  // Generate a simple 16x16 icon programmatically
+  // Generate a 16x16 "OA" tray icon — purple circle with white center
   const size = 16;
   const canvas = Buffer.alloc(size * size * 4);
-  for (let i = 0; i < size * size; i++) {
-    canvas[i * 4] = 0x33;     // R
-    canvas[i * 4 + 1] = 0x99; // G
-    canvas[i * 4 + 2] = 0xFF; // B
-    canvas[i * 4 + 3] = 0xFF; // A
+  const cx = 7.5, cy = 7.5, r = 7, ri = 4;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+      if (d <= r) {
+        if (d <= ri) {
+          // White inner circle
+          canvas[i] = 0xFF; canvas[i+1] = 0xFF; canvas[i+2] = 0xFF; canvas[i+3] = 0xFF;
+        } else {
+          // Purple ring (#6C63FF)
+          canvas[i] = 0x6C; canvas[i+1] = 0x63; canvas[i+2] = 0xFF; canvas[i+3] = 0xFF;
+        }
+      } else {
+        // Transparent
+        canvas[i] = 0; canvas[i+1] = 0; canvas[i+2] = 0; canvas[i+3] = 0;
+      }
+    }
   }
   return nativeImage.createFromBuffer(canvas, { width: size, height: size });
 }
