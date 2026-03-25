@@ -690,6 +690,9 @@ async function refreshAgentList() {
       const slug = a.network || '';
       const wsDisplay = slug ? (a.networkName && a.networkName !== slug ? `${slug} (${a.networkName})` : slug) : '';
       const hasKey = a.env?.LLM_API_KEY || a.env?.OPENAI_API_KEY || a.env?.ANTHROPIC_API_KEY;
+      // Login-based agents (like Claude) don't need API keys in env — they use OAuth
+      const loginBasedTypes = ['claude', 'copilot', 'gemini', 'amp'];
+      const isLoginBased = loginBasedTypes.includes(a.type);
       const envDisplay = [];
       if (a.env?.LLM_BASE_URL || a.env?.OPENAI_BASE_URL) envDisplay.push(`API: ${a.env.LLM_BASE_URL || a.env.OPENAI_BASE_URL}`);
       if (a.env?.LLM_MODEL || a.env?.OPENCLAW_MODEL) envDisplay.push(`Model: ${a.env.LLM_MODEL || a.env.OPENCLAW_MODEL}`);
@@ -704,7 +707,7 @@ async function refreshAgentList() {
               </div>
               <span class="agent-type-label">${esc(a.type)}</span>
               <span class="agent-config-hint">
-                ${hasKey ? '&#128273; API key set' : '<span class="text-warning">&#9888; No API key</span>'}
+                ${hasKey ? '&#128273; API key set' : isLoginBased ? '&#128273; Login-based auth' : '<span class="text-warning">&#9888; No API key</span>'}
                 ${envDisplay.length ? ' &middot; ' + envDisplay.map(esc).join(' &middot; ') : ''}
               </span>
               ${a.lastError ? `<span class="agent-error">${esc(a.lastError)}</span>` : ''}
