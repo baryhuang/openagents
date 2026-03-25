@@ -402,7 +402,75 @@ function setupIPC() {
 // ---- App lifecycle ----
 
 app.whenReady().then(async () => {
-  // On Windows, ensure common tool directories are on PATH
+  // Hide menu bar on Windows/Linux (keep on macOS for system conventions)
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+  }
+
+  createTray();
+
+  // ── Splash screen for first-time setup ──
+  const nodeExists = fs.existsSync(path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node'));
+  const coreExists = fs.existsSync(path.join(GLOBAL_MODULES, CORE_PKG, 'package.json'));
+
+  let splash = null;
+  if (!nodeExists || !coreExists) {
+    // Show splash window for first-time setup
+    splash = new BrowserWindow({
+      width: 420, height: 260, frame: false, resizable: false, center: true,
+      alwaysOnTop: true, transparent: false, skipTaskbar: true,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    });
+    const splashHtml = `data:text/html,
+      <html><body style="margin:0;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:%23f5f5f7;color:%23333;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:8px;">OpenAgents Launcher</div>
+        <div id="msg" style="font-size:14px;color:%23888;margin-bottom:20px;">Preparing first launch...</div>
+        <div style="width:240px;height:6px;background:%23e0e0e0;border-radius:3px;overflow:hidden;">
+          <div id="bar" style="width:10%25;height:100%25;background:%236C63FF;border-radius:3px;transition:width 0.5s;"></div>
+        </div>
+        <div id="detail" style="font-size:11px;color:%23aaa;margin-top:8px;"></div>
+      </body></html>`;
+    splash.loadURL(splashHtml);
+    splash.show();
+
+    const updateSplash = (msg, pct, detail) => {
+      if (splash && !splash.isDestroyed()) {
+        splash.webContents.executeJavaScript(`
+          document.getElementById('msg').textContent='${msg.replace(/'/g, "\\'")}';
+          document.getElementById('bar').style.width='${pct}%';
+          document.getElementById('detail').textContent='${(detail || '').replace(/'/g, "\\'")}';
+        `).catch(() => {});
+      }
+    };
+
+    // Step 1: Install Node.js if needed
+    if (!nodeExists) {
+      updateSplash('Installing Node.js runtime...', 20, 'This only happens once');
+      try {
+        // Use the installer's ensureNodejs — need to create a temporary installer
+        const { Installer } = require(fs.existsSync(path.join(GLOBAL_MODULES, CORE_PKG, 'src', 'installer.js'))
+          ? path.join(GLOBAL_MODULES, CORE_PKG, 'src', 'installer.js')
+          : path.join(__dirname, '..', '..', 'node_modules', CORE_PKG, 'src', 'installer.js'));
+        const tmpInstaller = new Installer({ configDir: path.join(os.homedir(), '.openagents') });
+        await tmpInstaller.ensureNodejs((msg) => {
+          const line = msg.toString().trim();
+          if (line.includes('%')) {
+            const m = line.match(/(\d+)%/);
+            if (m) updateSplash('Downloading Node.js...', 20 + parseInt(m[1]) * 0.3, line.slice(0, 60));
+          }
+        });
+        updateSplash('Node.js installed', 50);
+      } catch (e) {
+        updateSplash('Node.js install failed: ' + e.message, 50, 'Will retry on next launch');
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+
+    // Step 2: Ensure core library
+    updateSplash('Setting up core library...', 60);
+  }
+
+  // ── PATH setup ──
   if (process.platform === 'win32') {
     const pathDirs = (process.env.PATH || '').toLowerCase().split(';');
     const candidates = [
@@ -418,7 +486,6 @@ app.whenReady().then(async () => {
       process.env.PATH += ';' + candidates.join(';');
     }
   } else {
-    // macOS/Linux: add portable node to PATH
     const binDir = path.join(PORTABLE_NODE_DIR, 'bin');
     if (fs.existsSync(binDir) && !process.env.PATH.includes(binDir)) {
       process.env.PATH = binDir + ':' + process.env.PATH;
@@ -428,14 +495,20 @@ app.whenReady().then(async () => {
   // Ensure core library is installed and check for updates
   await ensureCoreLibrary();
 
-  // Add global modules path again (in case ensureCoreLibrary just installed it)
+  // Add global modules path
   if (fs.existsSync(GLOBAL_MODULES) && !require('module').globalPaths.includes(GLOBAL_MODULES)) {
     require('module').globalPaths.push(GLOBAL_MODULES);
   }
 
-  // Hide menu bar on Windows/Linux (keep on macOS for system conventions)
-  if (process.platform !== 'darwin') {
-    Menu.setApplicationMenu(null);
+  // Close splash
+  if (splash && !splash.isDestroyed()) {
+    splash.webContents.executeJavaScript(`
+      document.getElementById('msg').textContent='Ready!';
+      document.getElementById('bar').style.width='100%';
+    `).catch(() => {});
+    await new Promise(r => setTimeout(r, 500));
+    splash.close();
+    splash = null;
   }
 
   const { AgentManager } = require('./agent-manager');
@@ -448,7 +521,6 @@ app.whenReady().then(async () => {
   setInterval(() => updateTrayMenu(), 5000);
 
   setupIPC();
-  createTray();
   createWindow();
 });
 
