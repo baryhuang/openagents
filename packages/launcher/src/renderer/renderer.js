@@ -1258,6 +1258,42 @@ setInterval(() => {
   updateDaemonStatus();
 }, 5000);
 
+// ---- Core library update banner ----
+if (window.api.onCoreUpdate) {
+  window.api.onCoreUpdate(({ current, latest }) => {
+    const banner = document.getElementById('update-banner');
+    if (!banner) return;
+    banner.style.display = 'block';
+    banner.innerHTML = `
+      <div style="background:#EEF2FF;border:1px solid #6C63FF;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;">
+        <div style="font-weight:600;color:#6C63FF;margin-bottom:4px;">Update available</div>
+        <div style="color:#666;margin-bottom:6px;">v${current} → v${latest}</div>
+        <button id="btn-update-core" class="btn btn-sm btn-primary" style="width:100%;font-size:11px;">Update Now</button>
+      </div>`;
+    document.getElementById('btn-update-core').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-update-core');
+      btn.textContent = 'Updating...';
+      btn.disabled = true;
+      try {
+        const result = await window.api.updateCore();
+        if (result.success) {
+          banner.innerHTML = `<div style="background:#ECFDF5;border:1px solid #10B981;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;color:#065F46;">Updated to v${result.version}</div>`;
+          document.getElementById('sdk-version').textContent = 'Core: v' + result.version;
+          setTimeout(() => { banner.style.display = 'none'; }, 5000);
+        } else {
+          showToast('Update failed: ' + result.error, 'error');
+          btn.textContent = 'Retry';
+          btn.disabled = false;
+        }
+      } catch (err) {
+        showToast('Update failed: ' + err.message, 'error');
+        btn.textContent = 'Retry';
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 // ---- Delegated click handler ----
 // CSP blocks inline onclick; use data-action attributes + delegation instead.
 

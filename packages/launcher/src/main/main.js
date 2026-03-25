@@ -285,6 +285,27 @@ function setupIPC() {
   // Health check
   ipcMain.handle('agents:health-check', (_e, type) => agentManager.healthCheck(type));
 
+  // Core library update
+  ipcMain.handle('core:update', async () => {
+    const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+    try {
+      execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
+        stdio: 'ignore', timeout: 120000,
+        env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+      });
+      const corePkgPath = path.join(GLOBAL_MODULES, CORE_PKG, 'package.json');
+      try { coreVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
+      // Restart daemon
+      if (agentManager) {
+        try { await agentManager.stopAll(); } catch {}
+        agentManager._ensureDaemon().catch(() => {});
+      }
+      return { success: true, version: coreVersion };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   // Shell
   ipcMain.handle('shell:open-external', (_e, url) => shell.openExternal(url));
   ipcMain.handle('shell:open-terminal', (_e, cmd) => {
