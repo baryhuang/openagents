@@ -25,6 +25,16 @@ let tray = null;
 let agentManager = null;
 let coreVersion = null;
 
+// ── Startup log (helps debug first-launch issues) ──
+const STARTUP_LOG = path.join(os.homedir(), '.openagents', 'startup.log');
+function slog(msg) {
+  try {
+    fs.mkdirSync(path.dirname(STARTUP_LOG), { recursive: true });
+    fs.appendFileSync(STARTUP_LOG, `${new Date().toISOString()} ${msg}\n`);
+  } catch {}
+  console.log('[startup]', msg);
+}
+
 // ── Node.js download (no external deps — works from packaged app) ──
 async function downloadNodejs(nodejsDir, onProgress) {
   const https = require('https');
@@ -32,10 +42,12 @@ async function downloadNodejs(nodejsDir, onProgress) {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
 
   fs.mkdirSync(nodejsDir, { recursive: true });
+  slog(`downloadNodejs: platform=${process.platform} arch=${arch} dir=${nodejsDir}`);
 
   if (process.platform === 'win32') {
     const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-win-${arch}.zip`;
     const zipPath = path.join(os.tmpdir(), `node-${nodeVersion}.zip`);
+    slog(`Downloading: ${url} → ${zipPath}`);
 
     // Download
     await new Promise((resolve, reject) => {
@@ -68,11 +80,19 @@ async function downloadNodejs(nodejsDir, onProgress) {
     });
 
     // Extract using PowerShell
+    slog(`Download complete. Extracting ${zipPath} → ${nodejsDir}`);
     if (onProgress) onProgress(90, 'Extracting...');
-    execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force"`, { timeout: 120000 });
+    try {
+      execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force"`, { timeout: 120000, stdio: 'pipe' });
+      slog('Extraction complete');
+    } catch (e) {
+      slog(`Extraction failed: ${e.message}`);
+      throw e;
+    }
 
     // Flatten nested folder
     const nested = path.join(nodejsDir, `node-${nodeVersion}-win-${arch}`);
+    slog(`Checking nested dir: ${nested} exists=${fs.existsSync(nested)}`);
     if (fs.existsSync(nested)) {
       for (const entry of fs.readdirSync(nested)) {
         const src = path.join(nested, entry);
@@ -546,17 +566,22 @@ app.whenReady().then(async () => {
 
     // Step 1: Install Node.js if needed
     if (!nodeExists) {
+      slog('Node.js not found — starting download');
       updateSplash('Downloading Node.js runtime...', 20, 'This only happens once');
       try {
         await downloadNodejs(PORTABLE_NODE_DIR, (pct, detail) => {
           updateSplash('Downloading Node.js...', 20 + pct * 0.5, detail);
         });
+        const nodeExe = path.join(PORTABLE_NODE_DIR, 'node.exe');
+        slog(`Download done. node.exe exists: ${fs.existsSync(nodeExe)}`);
         updateSplash('Node.js installed', 70);
       } catch (e) {
-        console.error('Node.js install failed:', e.message);
-        updateSplash('Setup failed: ' + e.message, 50, 'Will retry on next launch');
-        await new Promise(r => setTimeout(r, 3000));
+        slog(`Node.js install FAILED: ${e.message}\n${e.stack}`);
+        updateSplash('Setup failed: ' + e.message, 50, 'Check ~/.openagents/startup.log');
+        await new Promise(r => setTimeout(r, 5000));
       }
+    } else {
+      slog('Node.js already exists');
     }
 
     // Step 2: Ensure core library
