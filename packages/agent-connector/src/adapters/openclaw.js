@@ -144,7 +144,12 @@ class OpenClawAdapter extends BaseAdapter {
 
     if (!content) return;
 
-    const msgChannel = msg.sessionId || this.channelName;
+    // msg.sessionId may be a channel name (from workspace UI) or an agent target
+    // (from API). Only use it if it looks like a channel, otherwise use channelName.
+    let msgChannel = this.channelName || 'general';
+    if (msg.sessionId && !msg.sessionId.startsWith('openagents:') && !msg.sessionId.startsWith('agent:')) {
+      msgChannel = msg.sessionId;
+    }
     const sender = msg.senderName || msg.senderType || 'user';
     this._log(`Processing message from ${sender} in ${msgChannel}: ${content.slice(0, 80)}...`);
 
@@ -177,7 +182,8 @@ class OpenClawAdapter extends BaseAdapter {
         return;
       }
 
-      const sessionKey = `openagents-${this.workspaceId.slice(0, 8)}-${channel.slice(-8)}`;
+      const channelSuffix = (channel || 'general').replace(/[^a-zA-Z0-9-]/g, '').slice(-8) || 'general';
+      const sessionKey = `openagents-${this.workspaceId.slice(0, 8)}-${channelSuffix}`;
 
       const args = [
         '--log-level', 'trace',
@@ -365,11 +371,17 @@ class OpenClawAdapter extends BaseAdapter {
       try {
         const data = JSON.parse(jsonStr);
         const payloads = data.payloads || [];
+        this._log(`CLI parsed: ${payloads.length} payloads, keys=${payloads.map(p=>Object.keys(p).join('/')).join(', ')}, text=${payloads.map(p=>(p.text||'').slice(0,50)).join('|')}`);
         if (payloads.length > 0) {
-          resolve(payloads.filter(p => p.text).map(p => p.text).join('\n\n'));
-          return;
+          const texts = payloads.filter(p => p.text).map(p => p.text);
+          if (texts.length > 0) {
+            resolve(texts.join('\n\n'));
+            return;
+          }
         }
-      } catch {}
+      } catch (e) {
+        this._log(`CLI JSON parse error: ${e.message}`);
+      }
     }
 
     // Fallback: return non-diagnostic text

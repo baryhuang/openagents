@@ -232,7 +232,11 @@ class BaseAdapter {
   // ------------------------------------------------------------------
 
   async _dispatchMessage(msg) {
-    const channel = msg.sessionId || this.channelName;
+    // Use sessionId only if it looks like a channel, not an agent target
+    let channel = this.channelName || 'general';
+    if (msg.sessionId && !msg.sessionId.startsWith('openagents:') && !msg.sessionId.startsWith('agent:')) {
+      channel = msg.sessionId;
+    }
 
     if (this._channelBusy.has(channel)) {
       if (!this._channelQueues[channel]) this._channelQueues[channel] = [];
