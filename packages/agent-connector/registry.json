@@ -75,26 +75,7 @@
       "not_ready_message": "Not logged in. Run: claude login",
       "login_command": "claude login"
     },
-    "env_config": [
-      {
-        "name": "ANTHROPIC_API_KEY",
-        "description": "Anthropic API key",
-        "required": true,
-        "password": true
-      },
-      {
-        "name": "ANTHROPIC_BASE_URL",
-        "description": "API base URL (leave empty for default)",
-        "required": false,
-        "placeholder": "https://api.anthropic.com"
-      },
-      {
-        "name": "ANTHROPIC_MODEL",
-        "description": "Model name",
-        "required": false,
-        "placeholder": "claude-sonnet-4-20250514"
-      }
-    ]
+    "env_config": []
   },
   {
     "name": "cline",
