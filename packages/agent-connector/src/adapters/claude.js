@@ -413,10 +413,11 @@ class ClaudeAdapter extends BaseAdapter {
                 }
                 lastResponseText.push(block.text.trim());
                 postedThinking = true;
-                // Don't post text as "thinking" — it will be sent as the final response
-                // Only send a brief status indicator
-                const preview = block.text.trim().slice(0, 60);
-                await this.sendStatus(msgChannel, preview.length < block.text.trim().length ? preview + '...' : preview);
+                // Only send status preview for longer responses (short ones arrive too quickly)
+                if (block.text.trim().length > 80) {
+                  const preview = block.text.trim().slice(0, 60) + '...';
+                  await this.sendStatus(msgChannel, preview);
+                }
               } else if (block.type === 'tool_use') {
                 hasToolUseSinceLastText = true;
                 postedThinking = false;
