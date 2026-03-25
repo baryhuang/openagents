@@ -709,7 +709,7 @@ async function refreshAgentList() {
               </div>
               <span class="agent-type-label">${esc(a.type)}</span>
               <span class="agent-config-hint">
-                ${hasKey ? '&#128273; API key set' : isLoginBased ? '&#128273; Login-based auth' : '<span class="text-warning">&#9888; No API key</span>'}
+                ${hasKey ? '&#128273; API key set' : isLoginBased ? '&#128273; Configured (login)' : '<span class="text-warning">&#9888; No API key</span>'}
                 ${envDisplay.length ? ' &middot; ' + envDisplay.map(esc).join(' &middot; ') : ''}
               </span>
               ${a.lastError ? `<span class="agent-error">${esc(a.lastError)}</span>` : ''}
