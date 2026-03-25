@@ -290,16 +290,21 @@ class OpenClawAdapter extends BaseAdapter {
         let stderrContent = '';
         try {
           stderrContent = fs.readFileSync(stderrFile, 'utf-8');
+          this._log(`CLI exit code=${code}, stdout=${output.length}b, stderr=${stderrContent.length}b`);
           // Process any remaining lines for tool events
           const remaining = stderrContent.slice(stderrOffset);
           if (remaining) {
             for (const line of remaining.split('\n')) processLine(line);
           }
-        } catch {}
+        } catch (e) {
+          this._log(`CLI stderr read error: ${e.message}`);
+        }
         try { fs.unlinkSync(stderrFile); } catch {}
 
         // OpenClaw --json writes JSON to stderr, so combine stdout + stderr
         const allOutput = output + '\n' + stderrContent;
+        const hasPayloads = allOutput.includes('"payloads"');
+        this._log(`CLI parse: hasPayloads=${hasPayloads}, total=${allOutput.length}b`);
 
         if (code !== 0) {
           reject(new Error(`CLI exited ${code}: ${allOutput.slice(-300)}`));
