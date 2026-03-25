@@ -146,7 +146,7 @@ class Installer {
 
     // Use bundled node/npm if system npm not available
     if (cmd.startsWith('npm install')) {
-      const args = cmd.replace('npm install', 'install');
+      const args = cmd.replace('npm install', 'install --ignore-scripts');
       cmd = this._resolveNpmCommand(args);
     }
 
@@ -181,7 +181,7 @@ class Installer {
     // Resolve npm command
     let cmd = rawCmd;
     if (rawCmd.startsWith('npm install')) {
-      const args = rawCmd.replace('npm install', 'install --loglevel=verbose');
+      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --ignore-scripts');
       cmd = this._resolveNpmCommand(args);
     } else if (rawCmd.startsWith('pip install') || rawCmd.startsWith('pipx install')) {
       cmd = rawCmd; // pip commands stay as-is
@@ -236,7 +236,20 @@ class Installer {
 
     const output = await this._execShell(uninstallCmd);
     this._markUninstalled(agentType);
+    // Clean stale shims on Windows (npm sometimes leaves .cmd/.ps1 files behind)
+    this._cleanStaleShims(agentType);
     return { success: true, output };
+  }
+
+  _cleanStaleShims(agentType) {
+    const entry = this.registry.getEntry(agentType);
+    const binary = entry && entry.install ? entry.install.binary : agentType;
+    if (!binary) return;
+    const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
+    for (const ext of ['', '.cmd', '.ps1']) {
+      const shimPath = path.join(portableDir, binary + ext);
+      try { if (fs.existsSync(shimPath)) fs.unlinkSync(shimPath); } catch {}
+    }
   }
 
   /**
