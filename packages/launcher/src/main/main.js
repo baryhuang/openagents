@@ -321,8 +321,12 @@ function setupIPC() {
       const setPath = `set PATH=${portableNode};${npmBin};%PATH%`;
       execSync(`start "" cmd /K "${setPath} && ${cmd}"`, { stdio: 'ignore', env, shell: true });
     } else if (process.platform === 'darwin') {
-      // Open Terminal.app with the command
-      spawn('osascript', ['-e', `tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"`], { detached: true, stdio: 'ignore' });
+      // Open Terminal.app with PATH set so agent binaries are found
+      const home = require('os').homedir();
+      const npmGlobal = path.join(home, '.openagents', 'npm-global', 'bin');
+      const setPath = `export PATH=${npmGlobal}:/usr/local/bin:$PATH`;
+      const fullCmd = `${setPath} && ${cmd}`.replace(/"/g, '\\"');
+      spawn('osascript', ['-e', `tell app "Terminal" to do script "${fullCmd}"`], { detached: true, stdio: 'ignore' });
     } else {
       // Linux — try common terminal emulators
       const terminals = ['x-terminal-emulator', 'gnome-terminal', 'xterm'];

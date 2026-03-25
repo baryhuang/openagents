@@ -1359,12 +1359,12 @@ async function agentLogin(agentType) {
     openConfigureScreen(agentType);
     return;
   }
-  showToast(`Opening ${agentType} login...`, 'info');
+  showToast(`Opening ${agentType} login... Follow the prompts in the terminal.`, 'info');
   try {
-    await window.api.shellExec(cmd);
-    showToast(`${agentType} login complete`, 'success');
+    await window.api.openTerminal(cmd);
+    showToast(`Login terminal opened. Complete login there, then return here.`, 'success');
   } catch (err) {
-    showToast(`Login failed: ${err.message}`, 'error');
+    showToast(`Failed to open terminal: ${err.message}`, 'error');
   }
 }
 
