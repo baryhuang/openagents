@@ -330,8 +330,13 @@ class OpenClawAdapter extends BaseAdapter {
     // Find the JSON by looking for '{"payloads"' or the last complete JSON object.
     let jsonStr = null;
 
-    // Strategy 1: find {"payloads" directly
-    const payloadsIdx = text.indexOf('{"payloads"');
+    // Strategy 1: find {"payloads" or { "payloads" (with whitespace)
+    let payloadsIdx = text.indexOf('{"payloads"');
+    if (payloadsIdx < 0) {
+      // Try with whitespace after {
+      const match = text.match(/\{\s*"payloads"/);
+      if (match) payloadsIdx = match.index;
+    }
     if (payloadsIdx >= 0) {
       // Find the matching closing brace by counting braces
       let depth = 0;
