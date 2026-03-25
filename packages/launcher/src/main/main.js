@@ -83,7 +83,13 @@ async function downloadNodejs(nodejsDir, onProgress) {
     slog(`Download complete. Extracting ${zipPath} → ${nodejsDir}`);
     if (onProgress) onProgress(90, 'Extracting...');
     try {
-      execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force"`, { timeout: 120000, stdio: 'pipe' });
+      // Use tar (built into Windows 10+) — more reliable than PowerShell Expand-Archive
+      try {
+        execSync(`tar -xf "${zipPath}" -C "${nodejsDir}"`, { timeout: 120000, stdio: 'pipe' });
+      } catch {
+        // Fallback to PowerShell Expand-Archive
+        execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force"`, { timeout: 120000, stdio: 'pipe' });
+      }
       slog('Extraction complete');
     } catch (e) {
       slog(`Extraction failed: ${e.message}`);
