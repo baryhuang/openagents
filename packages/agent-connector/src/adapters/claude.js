@@ -423,8 +423,21 @@ class ClaudeAdapter extends BaseAdapter {
                 postedThinking = false;
                 lastResponseText.length = 0;
                 const toolName = block.name || '';
-                const toolInput = typeof block.input === 'object' ? JSON.stringify(block.input) : String(block.input || '');
-                const inputPreview = toolInput.length > 200 ? toolInput.slice(0, 200) + '...' : toolInput;
+                // Format tool input as readable text
+                let inputPreview = '';
+                if (block.input && typeof block.input === 'object') {
+                  // Extract key fields for common tools
+                  const inp = block.input;
+                  if (inp.command) inputPreview = inp.command;
+                  else if (inp.file_path || inp.path) inputPreview = inp.file_path || inp.path;
+                  else if (inp.pattern) inputPreview = inp.pattern;
+                  else if (inp.query) inputPreview = inp.query;
+                  else if (inp.url) inputPreview = inp.url;
+                  else if (inp.content) inputPreview = inp.content.slice(0, 100);
+                  else inputPreview = JSON.stringify(inp).slice(0, 150);
+                } else {
+                  inputPreview = String(block.input || '').slice(0, 150);
+                }
                 await this.sendStatus(msgChannel, `${toolName} › ${inputPreview}`);
               }
             }
