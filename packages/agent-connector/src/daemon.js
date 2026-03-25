@@ -107,6 +107,11 @@ class Daemon {
    */
   async stopAgent(agentName) {
     this._stoppedAgents.add(agentName);
+    // Mark state as stopped immediately
+    if (this._processes[agentName]) {
+      this._processes[agentName].state = 'stopped';
+    }
+    this._writeStatus();
     // Stop the adapter directly if running
     if (this._adapters && this._adapters[agentName]) {
       this._adapters[agentName].stop();
