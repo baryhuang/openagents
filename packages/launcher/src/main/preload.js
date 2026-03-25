@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('api', {
   // Shell
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   shellExec: (cmd) => ipcRenderer.invoke('shell:exec', cmd),
+  openTerminal: (cmd) => ipcRenderer.invoke('shell:open-terminal', cmd),
 
   // Debug
   debugEnv: () => ipcRenderer.invoke('debug:env'),

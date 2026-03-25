@@ -209,6 +209,24 @@ function setupIPC() {
 
   // Shell
   ipcMain.handle('shell:open-external', (_e, url) => shell.openExternal(url));
+  ipcMain.handle('shell:open-terminal', (_e, cmd) => {
+    const { spawn } = require('child_process');
+    const { getEnhancedEnv } = require('@openagents-org/agent-launcher').paths;
+    const env = getEnhancedEnv();
+    if (process.platform === 'win32') {
+      // Open cmd.exe window with the command
+      spawn('cmd.exe', ['/K', cmd], { detached: true, stdio: 'ignore', env, windowsHide: false });
+    } else if (process.platform === 'darwin') {
+      // Open Terminal.app with the command
+      spawn('osascript', ['-e', `tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"`], { detached: true, stdio: 'ignore' });
+    } else {
+      // Linux — try common terminal emulators
+      const terminals = ['x-terminal-emulator', 'gnome-terminal', 'xterm'];
+      for (const term of terminals) {
+        try { spawn(term, ['-e', cmd], { detached: true, stdio: 'ignore', env }); return; } catch {}
+      }
+    }
+  });
   ipcMain.handle('shell:exec', (_e, cmd) => {
     const { execSync } = require('child_process');
     const { getEnhancedEnv } = require('@openagents-org/agent-launcher').paths;

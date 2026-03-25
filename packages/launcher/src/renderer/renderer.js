@@ -358,13 +358,14 @@ async function openConfigureScreen(agentType) {
 
         document.getElementById('btn-agent-login').addEventListener('click', async () => {
           const cmd = checkReady.login_command;
-          showToast(`Opening ${cmd}... Follow the prompts in the terminal.`, 'info');
+          showToast(`Opening terminal for ${cmd}... Complete login in the new window.`, 'info');
           try {
-            await window.api.shellExec(cmd);
-            showToast('Login complete!', 'success');
-            openConfigureScreen(agentType); // refresh
+            // Open login command in a visible terminal window
+            await window.api.openTerminal(cmd);
+            // Give user time to complete login, then refresh
+            setTimeout(() => openConfigureScreen(agentType), 5000);
           } catch (err) {
-            showToast(`Login failed: ${err.message}`, 'error');
+            showToast(`Failed to open terminal: ${err.message}`, 'error');
           }
         });
         return;
