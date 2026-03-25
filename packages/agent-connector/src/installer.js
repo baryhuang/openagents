@@ -91,7 +91,34 @@ class Installer {
       version = match ? match[1] : raw.split('\n')[0];
     } catch {}
 
-    return { installed: true, binary, version };
+    // Check login/ready status if check_ready is defined
+    let ready = true;
+    const checkReady = entry?.check_ready;
+    if (checkReady) {
+      ready = false;
+      // Check env vars
+      if (checkReady.env_vars) {
+        for (const v of checkReady.env_vars) {
+          if (process.env[v]) { ready = true; break; }
+        }
+      }
+      // Check credentials file
+      if (!ready && checkReady.creds_file) {
+        try {
+          const credsPath = checkReady.creds_file.replace('~', os.homedir());
+          if (fs.existsSync(credsPath)) {
+            const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+            if (checkReady.creds_key) {
+              ready = !!creds[checkReady.creds_key];
+            } else {
+              ready = true;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    return { installed: true, binary, version, ready };
   }
 
   /**

@@ -327,6 +327,49 @@ async function openConfigureScreen(agentType) {
     ]);
 
     if (!fields || fields.length === 0) {
+      // Check if agent type requires login (e.g., Claude Code)
+      const catalog = await window.api.getCatalog();
+      const entry = catalog.find(c => c.name === agentType);
+      const checkReady = entry?.check_ready;
+
+      if (checkReady?.login_command) {
+        // Agent uses login-based auth (not env vars)
+        let loggedIn = false;
+        try {
+          const health = await window.api.healthCheck(agentType);
+          loggedIn = health?.ready || false;
+        } catch {}
+
+        showModal(`
+          <h3>Configure ${esc(agentType)}</h3>
+          <p class="hint">This agent uses login-based authentication.</p>
+          <div style="margin:16px 0;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);">
+            <span style="font-size:18px;">${loggedIn ? '✅' : '⚠️'}</span>
+            <strong>${loggedIn ? 'Logged in' : 'Not logged in'}</strong>
+            ${!loggedIn ? `<p class="hint" style="margin-top:8px;">${esc(checkReady.not_ready_message || 'Login required')}</p>` : ''}
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" id="btn-agent-login" data-login-cmd="${esc(checkReady.login_command)}">
+              ${loggedIn ? 'Re-login' : 'Login'}
+            </button>
+            <button class="btn" data-action="close-modal">Close</button>
+          </div>
+        `);
+
+        document.getElementById('btn-agent-login').addEventListener('click', async () => {
+          const cmd = checkReady.login_command;
+          showToast(`Opening ${cmd}... Follow the prompts in the terminal.`, 'info');
+          try {
+            await window.api.shellExec(cmd);
+            showToast('Login complete!', 'success');
+            openConfigureScreen(agentType); // refresh
+          } catch (err) {
+            showToast(`Login failed: ${err.message}`, 'error');
+          }
+        });
+        return;
+      }
+
       showModal(`
         <h3>Configure ${esc(agentType)}</h3>
         <p class="hint">No configuration required for this agent type.</p>
