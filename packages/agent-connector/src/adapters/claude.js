@@ -423,8 +423,9 @@ class ClaudeAdapter extends BaseAdapter {
                 postedThinking = false;
                 lastResponseText.length = 0;
                 const toolName = block.name || '';
-                const toolInput = String(block.input || '').slice(0, 200);
-                await this.sendStatus(msgChannel, `**Using tool:** \`${toolName}\`\n\`\`\`\n${toolInput}\n\`\`\``);
+                const toolInput = typeof block.input === 'object' ? JSON.stringify(block.input) : String(block.input || '');
+                const inputPreview = toolInput.length > 200 ? toolInput.slice(0, 200) + '...' : toolInput;
+                await this.sendStatus(msgChannel, `${toolName} › ${inputPreview}`);
               }
             }
           } else if (eventType === 'result') {
