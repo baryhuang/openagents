@@ -74,7 +74,27 @@
       "keychain_service": "Claude Code-credentials",
       "not_ready_message": "Not logged in. Run: claude login",
       "login_command": "claude login"
-    }
+    },
+    "env_config": [
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "description": "Anthropic API key",
+        "required": true,
+        "password": true
+      },
+      {
+        "name": "ANTHROPIC_BASE_URL",
+        "description": "API base URL (leave empty for default)",
+        "required": false,
+        "placeholder": "https://api.anthropic.com"
+      },
+      {
+        "name": "ANTHROPIC_MODEL",
+        "description": "Model name",
+        "required": false,
+        "placeholder": "claude-sonnet-4-20250514"
+      }
+    ]
   },
   {
     "name": "cline",
@@ -137,7 +157,7 @@
         "OPENAI_API_KEY"
       ],
       "saved_env_key": "OPENAI_API_KEY",
-      "not_ready_message": "No API key — press e to configure"
+      "not_ready_message": "No API key \u2014 press e to configure"
     },
     "resolve_env": {
       "rules": [
@@ -220,7 +240,7 @@
         "OPENAI_API_KEY"
       ],
       "saved_env_key": "OPENAI_API_KEY",
-      "not_ready_message": "No API key — press e to configure"
+      "not_ready_message": "No API key \u2014 press e to configure"
     },
     "resolve_env": {
       "rules": [
@@ -296,9 +316,9 @@
         "nodejs",
         "git"
       ],
-      "macos": "echo 'NanoClaw uses direct API mode — no binary install needed'",
-      "linux": "echo 'NanoClaw uses direct API mode — no binary install needed'",
-      "windows": "echo 'NanoClaw uses direct API mode — no binary install needed'"
+      "macos": "echo 'NanoClaw uses direct API mode \u2014 no binary install needed'",
+      "linux": "echo 'NanoClaw uses direct API mode \u2014 no binary install needed'",
+      "windows": "echo 'NanoClaw uses direct API mode \u2014 no binary install needed'"
     },
     "adapter": {
       "module": "openagents.adapters.nanoclaw",
@@ -322,7 +342,7 @@
         "OPENAI_API_KEY"
       ],
       "saved_env_key": "OPENAI_API_KEY",
-      "not_ready_message": "No API key — press e to configure"
+      "not_ready_message": "No API key \u2014 press e to configure"
     },
     "resolve_env": {
       "rules": [
@@ -419,7 +439,7 @@
         "OPENAI_API_KEY"
       ],
       "saved_env_key": "LLM_API_KEY",
-      "not_ready_message": "Not configured — press e to configure"
+      "not_ready_message": "Not configured \u2014 press e to configure"
     }
   },
   {
@@ -490,7 +510,7 @@
         "ANTHROPIC_API_KEY"
       ],
       "saved_env_key": "LLM_API_KEY",
-      "not_ready_message": "Not configured — press e to configure"
+      "not_ready_message": "Not configured \u2014 press e to configure"
     }
   },
   {
