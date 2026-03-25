@@ -247,29 +247,8 @@ async function toggleAgent(name, currentState) {
   }
 }
 
-document.getElementById('btn-start-all').addEventListener('click', async () => {
-  const btn = document.getElementById('btn-start-all');
-  btn.classList.add('btn-loading');
-  try {
-    const result = await window.api.startAll();
-    showToast(result.message || 'Starting all agents...', 'success');
-    setTimeout(() => refreshDashboard(), 2000);
-  } catch (err) {
-    showToast(`Error: ${err.message}`, 'error');
-  } finally {
-    btn.classList.remove('btn-loading');
-  }
-});
-
-document.getElementById('btn-stop-all').addEventListener('click', async () => {
-  try {
-    await window.api.stopAll();
-    showToast('Stopping all agents...', 'info');
-    setTimeout(() => refreshDashboard(), 2000);
-  } catch (err) {
-    showToast(`Error: ${err.message}`, 'error');
-  }
-});
+// Daemon lifecycle is automatic — tied to Launcher app.
+// Start All / Stop All buttons removed from UI.
 
 // ---- Agent Actions (context menu) ----
 
