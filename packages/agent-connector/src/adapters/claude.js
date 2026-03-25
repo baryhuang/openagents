@@ -413,11 +413,10 @@ class ClaudeAdapter extends BaseAdapter {
                 }
                 lastResponseText.push(block.text.trim());
                 postedThinking = true;
-                await this.client.sendMessage(
-                  this.workspaceId, msgChannel, this.token,
-                  block.text.trim(),
-                  { senderType: 'agent', senderName: this.agentName, messageType: 'thinking', metadata: { agent_mode: this._mode } }
-                );
+                // Don't post text as "thinking" — it will be sent as the final response
+                // Only send a brief status indicator
+                const preview = block.text.trim().slice(0, 60);
+                await this.sendStatus(msgChannel, preview.length < block.text.trim().length ? preview + '...' : preview);
               } else if (block.type === 'tool_use') {
                 hasToolUseSinceLastText = true;
                 postedThinking = false;
