@@ -69,11 +69,12 @@
       "env_vars": [
         "ANTHROPIC_API_KEY"
       ],
-      "creds_file": "~/.claude/.credentials.json",
-      "creds_key": "claudeAiOauth",
+      "creds_file": "~/.claude/sessions",
+      "creds_key": null,
       "keychain_service": "Claude Code-credentials",
       "not_ready_message": "Not logged in. Run: claude login",
-      "login_command": "claude login"
+      "login_command": "claude login",
+      "alt_check": "claude --print hi"
     },
     "env_config": []
   },

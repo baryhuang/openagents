@@ -103,16 +103,23 @@ class Installer {
           if (process.env[v]) { ready = true; break; }
         }
       }
-      // Check credentials file
+      // Check credentials file or directory
       if (!ready && checkReady.creds_file) {
         try {
           const credsPath = checkReady.creds_file.replace('~', os.homedir());
           if (fs.existsSync(credsPath)) {
-            const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
-            if (checkReady.creds_key) {
-              ready = !!creds[checkReady.creds_key];
+            const stat = fs.statSync(credsPath);
+            if (stat.isDirectory()) {
+              // Directory exists — check if it has files (e.g. session files)
+              ready = fs.readdirSync(credsPath).length > 0;
             } else {
-              ready = true;
+              // File — parse JSON and check key
+              const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+              if (checkReady.creds_key) {
+                ready = !!creds[checkReady.creds_key];
+              } else {
+                ready = true;
+              }
             }
           }
         } catch {}
