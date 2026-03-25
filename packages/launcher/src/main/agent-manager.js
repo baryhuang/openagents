@@ -248,9 +248,13 @@ class AgentManager {
     const pid = this._connector.getDaemonPid();
     if (pid) {
       // Daemon already running — don't restart (avoids status flicker)
-      // Version upgrades are handled by the Quit → Relaunch flow
       return;
     }
+    // Don't attempt if Node.js isn't installed yet
+    const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
+    const nodeBin = path.join(portableNodeDir, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+    if (!fs.existsSync(nodeBin)) return;
+
     return this._startDaemon();
   }
 

@@ -26,9 +26,11 @@ let agentManager = null;
 let coreVersion = null;
 
 // ── Core library management ──
+const SKIP_DIRS = new Set(['.git', 'test', 'tests', 'docs', 'example', 'examples', '.github']);
 function copyDirSync(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(entry.name)) continue;
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
     if (entry.isDirectory()) copyDirSync(s, d);
@@ -56,7 +58,7 @@ async function ensureCoreLibrary() {
     else if (fs.existsSync(path.join(asarUnpacked, 'package.json'))) srcPath = asarUnpacked;
 
     if (srcPath) {
-      console.log('First launch: copying bundled core library to global path...');
+      console.log('First launch: copying bundled core library from', srcPath);
       try {
         const destPath = path.join(GLOBAL_MODULES, CORE_PKG);
         // Ensure parent dirs exist
@@ -77,11 +79,11 @@ async function ensureCoreLibrary() {
       }
     }
 
-    // If copy failed and npm is available, try npm install
+    // If copy failed and npm is available, try npm install (slow — requires network)
     if (!installedVersion) {
       const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
       if (fs.existsSync(npmBin)) {
-        console.log('Installing core library via npm...');
+        console.log('Bundled copy not found — installing core library via npm (this may take a moment)...');
         try {
           execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
             stdio: 'ignore', timeout: 120000,
