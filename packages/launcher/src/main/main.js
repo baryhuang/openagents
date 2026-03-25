@@ -214,9 +214,9 @@ function setupIPC() {
     const { getEnhancedEnv } = require('@openagents-org/agent-launcher').paths;
     const env = getEnhancedEnv();
     if (process.platform === 'win32') {
-      // Open cmd.exe window with the command
+      // Open a visible terminal window with the command
       const comspec = process.env.ComSpec || env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
-      spawn(comspec, ['/K', cmd], { detached: true, stdio: 'ignore', env });
+      spawn(comspec, ['/C', 'start', 'Login', comspec, '/K', cmd], { stdio: 'ignore', env, shell: false });
     } else if (process.platform === 'darwin') {
       // Open Terminal.app with the command
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"`], { detached: true, stdio: 'ignore' });
