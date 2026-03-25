@@ -25,6 +25,107 @@ let tray = null;
 let agentManager = null;
 let coreVersion = null;
 
+// ── Node.js download (no external deps — works from packaged app) ──
+async function downloadNodejs(nodejsDir, onProgress) {
+  const https = require('https');
+  const nodeVersion = 'v22.14.0';
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+
+  fs.mkdirSync(nodejsDir, { recursive: true });
+
+  if (process.platform === 'win32') {
+    const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-win-${arch}.zip`;
+    const zipPath = path.join(os.tmpdir(), `node-${nodeVersion}.zip`);
+
+    // Download
+    await new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(zipPath);
+      https.get(url, (res) => {
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          https.get(res.headers.location, (r2) => {
+            const total = parseInt(r2.headers['content-length'] || '0');
+            let downloaded = 0;
+            r2.on('data', (chunk) => {
+              downloaded += chunk.length;
+              file.write(chunk);
+              if (total && onProgress) onProgress(Math.round(downloaded / total * 100), `${(downloaded/1e6).toFixed(1)} MB`);
+            });
+            r2.on('end', () => { file.end(); resolve(); });
+            r2.on('error', reject);
+          }).on('error', reject);
+          return;
+        }
+        const total = parseInt(res.headers['content-length'] || '0');
+        let downloaded = 0;
+        res.on('data', (chunk) => {
+          downloaded += chunk.length;
+          file.write(chunk);
+          if (total && onProgress) onProgress(Math.round(downloaded / total * 100), `${(downloaded/1e6).toFixed(1)} MB`);
+        });
+        res.on('end', () => { file.end(); resolve(); });
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+
+    // Extract using PowerShell
+    if (onProgress) onProgress(90, 'Extracting...');
+    execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force"`, { timeout: 120000 });
+
+    // Flatten nested folder
+    const nested = path.join(nodejsDir, `node-${nodeVersion}-win-${arch}`);
+    if (fs.existsSync(nested)) {
+      for (const entry of fs.readdirSync(nested)) {
+        const src = path.join(nested, entry);
+        const dest = path.join(nodejsDir, entry);
+        if (!fs.existsSync(dest)) fs.renameSync(src, dest);
+        else if (fs.statSync(src).isDirectory() && fs.statSync(dest).isDirectory()) {
+          for (const sub of fs.readdirSync(src)) {
+            const ss = path.join(src, sub), dd = path.join(dest, sub);
+            if (!fs.existsSync(dd)) fs.renameSync(ss, dd);
+          }
+        }
+      }
+      try { fs.rmSync(nested, { recursive: true }); } catch {}
+    }
+    try { fs.unlinkSync(zipPath); } catch {}
+
+  } else {
+    // macOS/Linux: download tar.gz
+    const platName = process.platform === 'darwin' ? 'darwin' : 'linux';
+    const ext = process.platform === 'darwin' ? 'tar.gz' : 'tar.xz';
+    const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-${platName}-${arch}.${ext}`;
+    const tarPath = path.join(os.tmpdir(), `node-${nodeVersion}.${ext}`);
+
+    await new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(tarPath);
+      https.get(url, (res) => {
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          https.get(res.headers.location, (r2) => {
+            const total = parseInt(r2.headers['content-length'] || '0');
+            let downloaded = 0;
+            r2.on('data', (chunk) => { downloaded += chunk.length; file.write(chunk); if (total && onProgress) onProgress(Math.round(downloaded/total*100), `${(downloaded/1e6).toFixed(1)} MB`); });
+            r2.on('end', () => { file.end(); resolve(); });
+            r2.on('error', reject);
+          }).on('error', reject);
+          return;
+        }
+        const total = parseInt(res.headers['content-length'] || '0');
+        let downloaded = 0;
+        res.on('data', (chunk) => { downloaded += chunk.length; file.write(chunk); if (total && onProgress) onProgress(Math.round(downloaded/total*100), `${(downloaded/1e6).toFixed(1)} MB`); });
+        res.on('end', () => { file.end(); resolve(); });
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+
+    if (onProgress) onProgress(90, 'Extracting...');
+    const flag = ext === 'tar.gz' ? '-xzf' : '-xJf';
+    execSync(`tar ${flag} "${tarPath}" -C "${nodejsDir}" --strip-components=1`, { timeout: 120000 });
+    try { fs.unlinkSync(tarPath); } catch {}
+  }
+
+  if (onProgress) onProgress(100, 'Done');
+}
+
 // ── Core library management ──
 const SKIP_DIRS = new Set(['.git', 'test', 'tests', 'docs', 'example', 'examples', '.github']);
 function copyDirSync(src, dest) {
@@ -445,23 +546,15 @@ app.whenReady().then(async () => {
 
     // Step 1: Install Node.js if needed
     if (!nodeExists) {
-      updateSplash('Installing Node.js runtime...', 20, 'This only happens once');
+      updateSplash('Downloading Node.js runtime...', 20, 'This only happens once');
       try {
-        // Use the installer's ensureNodejs — need to create a temporary installer
-        const { Installer } = require(fs.existsSync(path.join(GLOBAL_MODULES, CORE_PKG, 'src', 'installer.js'))
-          ? path.join(GLOBAL_MODULES, CORE_PKG, 'src', 'installer.js')
-          : path.join(__dirname, '..', '..', 'node_modules', CORE_PKG, 'src', 'installer.js'));
-        const tmpInstaller = new Installer({ configDir: path.join(os.homedir(), '.openagents') });
-        await tmpInstaller.ensureNodejs((msg) => {
-          const line = msg.toString().trim();
-          if (line.includes('%')) {
-            const m = line.match(/(\d+)%/);
-            if (m) updateSplash('Downloading Node.js...', 20 + parseInt(m[1]) * 0.3, line.slice(0, 60));
-          }
+        await downloadNodejs(PORTABLE_NODE_DIR, (pct, detail) => {
+          updateSplash('Downloading Node.js...', 20 + pct * 0.5, detail);
         });
-        updateSplash('Node.js installed', 50);
+        updateSplash('Node.js installed', 70);
       } catch (e) {
-        updateSplash('Node.js install failed: ' + e.message, 50, 'Will retry on next launch');
+        console.error('Node.js install failed:', e.message);
+        updateSplash('Setup failed: ' + e.message, 50, 'Will retry on next launch');
         await new Promise(r => setTimeout(r, 3000));
       }
     }
