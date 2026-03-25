@@ -216,7 +216,8 @@ function setupIPC() {
     if (process.platform === 'win32') {
       // Open a visible terminal window with PATH set
       const { execSync } = require('child_process');
-      const portableNode = path.join(os.homedir(), '.openagents', 'nodejs');
+      const home = process.env.USERPROFILE || require('os').homedir();
+      const portableNode = path.join(home, '.openagents', 'nodejs');
       const npmBin = path.join(process.env.APPDATA || '', 'npm');
       const setPath = `set PATH=${portableNode};${npmBin};%PATH%`;
       execSync(`start "" cmd /K "${setPath} && ${cmd}"`, { stdio: 'ignore', env, shell: true });
