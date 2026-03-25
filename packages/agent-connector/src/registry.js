@@ -109,13 +109,15 @@ class Registry {
   getEntry(agentType) {
     const catalog = this.getCatalogSync();
     const entry = catalog.find((e) => e.name === agentType) || null;
-    // If the cached entry is missing install info, merge with bundled
-    if (entry && !entry.install) {
-      const bundled = this._loadBundled();
-      const bundledEntry = bundled.find((e) => e.name === agentType);
-      if (bundledEntry && bundledEntry.install) {
-        return { ...entry, install: bundledEntry.install };
-      }
+    if (!entry) return null;
+    // Merge missing fields from bundled registry
+    const bundled = this._loadBundled();
+    const b = bundled.find((e) => e.name === agentType);
+    if (b) {
+      if (!entry.install && b.install) entry.install = b.install;
+      if (!entry.check_ready && b.check_ready) entry.check_ready = b.check_ready;
+      if (!entry.launch && b.launch) entry.launch = b.launch;
+      if ((!entry.env_config || !entry.env_config.length) && b.env_config?.length) entry.env_config = b.env_config;
     }
     return entry;
   }

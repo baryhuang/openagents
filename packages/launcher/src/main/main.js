@@ -70,31 +70,9 @@ async function checkCoreUpdate(npmBin) {
     }).trim();
 
     if (coreVersion && latest && latest !== coreVersion) {
-      // Notify user of available update
-      const result = await dialog.showMessageBox({
-        type: 'info',
-        buttons: ['Update Now', 'Later'],
-        defaultId: 0,
-        title: 'Update Available',
-        message: `Core library update available`,
-        detail: `Current: v${coreVersion}\nLatest: v${latest}\n\nUpdate now? The daemon will restart.`,
-      });
-
-      if (result.response === 0) {
-        try {
-          execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
-            stdio: 'ignore', timeout: 120000,
-            env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
-          });
-          try { coreVersion = JSON.parse(fs.readFileSync(path.join(GLOBAL_MODULES, CORE_PKG, 'package.json'), 'utf-8')).version; } catch {}
-          // Restart daemon to pick up new version
-          if (agentManager) {
-            try { agentManager.stopAll(); } catch {}
-            agentManager._ensureDaemon().catch(() => {});
-          }
-        } catch (e) {
-          dialog.showErrorBox('Update Failed', e.message);
-        }
+      // Send update info to renderer (shown in sidebar, not a popup)
+      if (mainWindow) {
+        mainWindow.webContents.send('core-update-available', { current: coreVersion, latest });
       }
     }
   } catch {}
