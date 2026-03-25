@@ -1,12 +1,104 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, dialog } = require('electron');
 const path = require('path');
-const { AgentManager } = require('./agent-manager');
+const fs = require('fs');
+const os = require('os');
+const { execSync } = require('child_process');
+// AgentManager is loaded lazily after core library is ensured
+
+// ── Core library resolution ──
+// Use the globally installed core library at ~/.openagents/nodejs/ instead of
+// the bundled copy. This allows independent updates without rebuilding the app.
+const PORTABLE_NODE_DIR = path.join(os.homedir(), '.openagents', 'nodejs');
+const GLOBAL_MODULES = path.join(PORTABLE_NODE_DIR, 'node_modules');
+const CORE_PKG = '@openagents-org/agent-launcher';
+
+// Add global modules to Node's resolution path so require(CORE_PKG) finds it
+if (fs.existsSync(GLOBAL_MODULES)) {
+  require('module').globalPaths.push(GLOBAL_MODULES);
+}
+
 const { Store } = require('./store');
 
 const store = new Store();
 let mainWindow = null;
 let tray = null;
 let agentManager = null;
+let coreVersion = null;
+
+// ── Auto-update core library ──
+async function ensureCoreLibrary() {
+  const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+  const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+
+  if (!fs.existsSync(nodeBin)) {
+    // No portable Node.js — core library install will be handled by the Install tab
+    return;
+  }
+
+  const corePkgPath = path.join(GLOBAL_MODULES, CORE_PKG, 'package.json');
+  let installedVersion = null;
+
+  if (fs.existsSync(corePkgPath)) {
+    try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
+  }
+
+  if (!installedVersion) {
+    // Core library not installed — install it
+    console.log('Installing core library...');
+    try {
+      execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
+        stdio: 'ignore', timeout: 120000,
+        env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+      });
+      try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
+    } catch (e) {
+      console.error('Failed to install core library:', e.message);
+    }
+  }
+
+  coreVersion = installedVersion;
+
+  // Check for updates in background (don't block startup)
+  checkCoreUpdate(npmBin).catch(() => {});
+}
+
+async function checkCoreUpdate(npmBin) {
+  try {
+    const latest = execSync(`"${npmBin}" view ${CORE_PKG} version`, {
+      encoding: 'utf-8', timeout: 15000,
+      env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+    }).trim();
+
+    if (coreVersion && latest && latest !== coreVersion) {
+      // Notify user of available update
+      const result = await dialog.showMessageBox({
+        type: 'info',
+        buttons: ['Update Now', 'Later'],
+        defaultId: 0,
+        title: 'Update Available',
+        message: `Core library update available`,
+        detail: `Current: v${coreVersion}\nLatest: v${latest}\n\nUpdate now? The daemon will restart.`,
+      });
+
+      if (result.response === 0) {
+        try {
+          execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
+            stdio: 'ignore', timeout: 120000,
+            env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+          });
+          try { coreVersion = JSON.parse(fs.readFileSync(path.join(GLOBAL_MODULES, CORE_PKG, 'package.json'), 'utf-8')).version; } catch {}
+          // Restart daemon to pick up new version
+          if (agentManager) {
+            try { agentManager.stopAll(); } catch {}
+            agentManager._ensureDaemon().catch(() => {});
+          }
+        } catch (e) {
+          dialog.showErrorBox('Update Failed', e.message);
+        }
+      }
+    }
+  } catch {}
+}
 
 function createWindow() {
   if (mainWindow) {
@@ -155,7 +247,7 @@ function setupIPC() {
     pythonPath: null,
     pythonFound: true,  // No longer needed — always "found" since we're Node.js native
     sdkInstalled: true,
-    sdkVersion: require('@openagents-org/agent-launcher/package.json').version,
+    sdkVersion: coreVersion || 'not installed',
     launcherVersion: require('../../package.json').version,
     runtime: 'node',
   }));
@@ -262,22 +354,36 @@ function setupIPC() {
 
 // ---- App lifecycle ----
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // On Windows, ensure common tool directories are on PATH
   if (process.platform === 'win32') {
-    const os = require('os');
     const pathDirs = (process.env.PATH || '').toLowerCase().split(';');
     const candidates = [
+      PORTABLE_NODE_DIR,
       path.join(process.env.APPDATA || '', 'npm'),
       path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs'),
       path.join(process.env.LOCALAPPDATA || '', 'Programs', 'nodejs'),
     ].filter(d => {
-      try { return d && require('fs').existsSync(d) && !pathDirs.includes(d.toLowerCase()); }
+      try { return d && fs.existsSync(d) && !pathDirs.includes(d.toLowerCase()); }
       catch { return false; }
     });
     if (candidates.length) {
       process.env.PATH += ';' + candidates.join(';');
     }
+  } else {
+    // macOS/Linux: add portable node to PATH
+    const binDir = path.join(PORTABLE_NODE_DIR, 'bin');
+    if (fs.existsSync(binDir) && !process.env.PATH.includes(binDir)) {
+      process.env.PATH = binDir + ':' + process.env.PATH;
+    }
+  }
+
+  // Ensure core library is installed and check for updates
+  await ensureCoreLibrary();
+
+  // Add global modules path again (in case ensureCoreLibrary just installed it)
+  if (fs.existsSync(GLOBAL_MODULES) && !require('module').globalPaths.includes(GLOBAL_MODULES)) {
+    require('module').globalPaths.push(GLOBAL_MODULES);
   }
 
   // Hide menu bar on Windows/Linux (keep on macOS for system conventions)
@@ -285,6 +391,7 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
   }
 
+  const { AgentManager } = require('./agent-manager');
   agentManager = new AgentManager(store);
 
   // Start the daemon on app launch (long-lived background process)
