@@ -35,6 +35,32 @@ function slog(msg) {
   console.log('[startup]', msg);
 }
 
+// ── File download helper ──
+function downloadFile(https, url, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    const doGet = (u) => {
+      https.get(u, (res) => {
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          doGet(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
+        const total = parseInt(res.headers['content-length'] || '0');
+        let downloaded = 0;
+        const file = fs.createWriteStream(destPath);
+        res.on('data', (chunk) => {
+          downloaded += chunk.length;
+          file.write(chunk);
+          if (total && onProgress) onProgress(Math.round(downloaded / total * 100), `${(downloaded/1e6).toFixed(1)} MB`);
+        });
+        res.on('end', () => { file.end(resolve); });
+        res.on('error', reject);
+      }).on('error', reject);
+    };
+    doGet(url);
+  });
+}
+
 // ── Node.js download (no external deps — works from packaged app) ──
 async function downloadNodejs(nodejsDir, onProgress) {
   const https = require('https');
@@ -47,75 +73,46 @@ async function downloadNodejs(nodejsDir, onProgress) {
   slog(`downloadNodejs: platform=${process.platform} arch=${arch} dir=${nodejsDir}`);
 
   if (process.platform === 'win32') {
-    const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-win-${arch}.zip`;
-    const zipPath = path.join(os.tmpdir(), `node-${nodeVersion}.zip`);
-    slog(`Downloading: ${url} → ${zipPath}`);
+    // Download just node.exe (single binary, no zip extraction needed)
+    const nodeExeUrl = `https://nodejs.org/dist/${nodeVersion}/win-${arch}/node.exe`;
+    const nodeExeDest = path.join(nodejsDir, 'node.exe');
+    slog(`Downloading: ${nodeExeUrl} → ${nodeExeDest}`);
 
-    // Download
-    await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(zipPath);
-      https.get(url, (res) => {
-        if (res.statusCode === 302 || res.statusCode === 301) {
-          https.get(res.headers.location, (r2) => {
-            const total = parseInt(r2.headers['content-length'] || '0');
-            let downloaded = 0;
-            r2.on('data', (chunk) => {
-              downloaded += chunk.length;
-              file.write(chunk);
-              if (total && onProgress) onProgress(Math.round(downloaded / total * 100), `${(downloaded/1e6).toFixed(1)} MB`);
-            });
-            r2.on('end', () => { file.end(); resolve(); });
-            r2.on('error', reject);
-          }).on('error', reject);
-          return;
-        }
-        const total = parseInt(res.headers['content-length'] || '0');
-        let downloaded = 0;
-        res.on('data', (chunk) => {
-          downloaded += chunk.length;
-          file.write(chunk);
-          if (total && onProgress) onProgress(Math.round(downloaded / total * 100), `${(downloaded/1e6).toFixed(1)} MB`);
-        });
-        res.on('end', () => { file.end(); resolve(); });
-        res.on('error', reject);
-      }).on('error', reject);
-    });
+    await downloadFile(https, nodeExeUrl, nodeExeDest, onProgress);
+    slog(`node.exe downloaded: ${fs.existsSync(nodeExeDest)}`);
 
-    // Extract using PowerShell
-    slog(`Download complete. Extracting ${zipPath} → ${nodejsDir}`);
-    if (onProgress) onProgress(90, 'Extracting...');
+    // Download npm separately (needed for installing agents)
+    // npm is distributed as a tarball — download and extract
+    const npmVersion = '10.9.2';
+    const npmUrl = `https://registry.npmjs.org/npm/-/npm-${npmVersion}.tgz`;
+    const npmTgz = path.join(os.tmpdir(), `npm-${npmVersion}.tgz`);
+    const npmModDir = path.join(nodejsDir, 'node_modules', 'npm');
+    slog(`Downloading npm: ${npmUrl}`);
+
+    if (onProgress) onProgress(85, 'Installing npm...');
+    await downloadFile(https, npmUrl, npmTgz, null);
+
+    // Extract npm tarball using tar (built into Windows 10+)
+    fs.mkdirSync(npmModDir, { recursive: true });
     try {
-      // Use tar (built into Windows 10+) — more reliable than PowerShell Expand-Archive
-      try {
-        execSync(`tar -xf "${zipPath}" -C "${nodejsDir}"`, { timeout: 120000, stdio: 'pipe' });
-      } catch {
-        // Fallback to PowerShell Expand-Archive
-        execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force"`, { timeout: 120000, stdio: 'pipe' });
-      }
-      slog('Extraction complete');
+      execSync(`tar -xzf "${npmTgz}" -C "${npmModDir}" --strip-components=1`, { timeout: 60000, stdio: 'pipe' });
+      slog('npm extracted successfully');
     } catch (e) {
-      slog(`Extraction failed: ${e.message}`);
-      throw e;
+      slog(`npm extraction failed: ${e.message}`);
     }
+    try { fs.unlinkSync(npmTgz); } catch {}
 
-    // Flatten nested folder
-    const nested = path.join(nodejsDir, `node-${nodeVersion}-win-${arch}`);
-    slog(`Checking nested dir: ${nested} exists=${fs.existsSync(nested)}`);
-    if (fs.existsSync(nested)) {
-      for (const entry of fs.readdirSync(nested)) {
-        const src = path.join(nested, entry);
-        const dest = path.join(nodejsDir, entry);
-        if (!fs.existsSync(dest)) fs.renameSync(src, dest);
-        else if (fs.statSync(src).isDirectory() && fs.statSync(dest).isDirectory()) {
-          for (const sub of fs.readdirSync(src)) {
-            const ss = path.join(src, sub), dd = path.join(dest, sub);
-            if (!fs.existsSync(dd)) fs.renameSync(ss, dd);
-          }
-        }
-      }
-      try { fs.rmSync(nested, { recursive: true }); } catch {}
+    // Create npm.cmd shim
+    const npmCliPath = path.join(npmModDir, 'bin', 'npm-cli.js');
+    if (fs.existsSync(npmCliPath)) {
+      fs.writeFileSync(path.join(nodejsDir, 'npm.cmd'),
+        `@echo off\r\n"${nodeExeDest}" "${npmCliPath}" %*\r\n`);
+      fs.writeFileSync(path.join(nodejsDir, 'npx.cmd'),
+        `@echo off\r\n"${nodeExeDest}" "${path.join(npmModDir, 'bin', 'npx-cli.js')}" %*\r\n`);
+      slog('npm.cmd created');
+    } else {
+      slog(`npm-cli.js not found at ${npmCliPath}`);
     }
-    try { fs.unlinkSync(zipPath); } catch {}
 
   } else {
     // macOS/Linux: download tar.gz
@@ -183,8 +180,11 @@ async function ensureCoreLibrary() {
     const asarUnpacked = path.join(__dirname, '..', '..', '..', 'app.asar.unpacked', 'node_modules', CORE_PKG);
 
     let srcPath = null;
+    slog(`ensureCoreLibrary: bundledPath=${bundledPath} exists=${fs.existsSync(path.join(bundledPath, 'package.json'))}`);
+    slog(`ensureCoreLibrary: asarUnpacked=${asarUnpacked} exists=${fs.existsSync(path.join(asarUnpacked, 'package.json'))}`);
     if (fs.existsSync(path.join(bundledPath, 'package.json'))) srcPath = bundledPath;
     else if (fs.existsSync(path.join(asarUnpacked, 'package.json'))) srcPath = asarUnpacked;
+    slog(`ensureCoreLibrary: srcPath=${srcPath}`);
 
     if (srcPath) {
       console.log('First launch: copying bundled core library from', srcPath);
