@@ -232,9 +232,12 @@ class AgentManager {
    * individual agents are started/stopped via commands.
    */
   async _ensureDaemon() {
-    // On app startup, always restart the daemon to ensure it runs
-    // the latest code (handles version upgrades gracefully)
-    try { this._connector.stopDaemon(); } catch {}
+    const pid = this._connector.getDaemonPid();
+    if (pid) {
+      // Daemon already running — don't restart (avoids status flicker)
+      // Version upgrades are handled by the Quit → Relaunch flow
+      return;
+    }
     return this._startDaemon();
   }
 
