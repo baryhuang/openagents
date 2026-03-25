@@ -124,6 +124,12 @@ class Daemon {
    * Restart a single agent by name.
    */
   async restartAgent(agentName) {
+    // Set state to 'starting' immediately so UI never sees 'stopped' during restart
+    if (this._processes[agentName]) {
+      this._processes[agentName].state = 'starting';
+      this._writeStatus();
+    }
+
     await this.stopAgent(agentName);
     this._stoppedAgents.delete(agentName);
 
