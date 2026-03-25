@@ -214,9 +214,12 @@ function setupIPC() {
     const { getEnhancedEnv } = require('@openagents-org/agent-launcher').paths;
     const env = getEnhancedEnv();
     if (process.platform === 'win32') {
-      // Open a visible terminal window with the command
+      // Open a visible terminal window with PATH set
       const { execSync } = require('child_process');
-      execSync(`start "" cmd /K "${cmd}"`, { stdio: 'ignore', env, shell: true });
+      const portableNode = path.join(os.homedir(), '.openagents', 'nodejs');
+      const npmBin = path.join(process.env.APPDATA || '', 'npm');
+      const setPath = `set PATH=${portableNode};${npmBin};%PATH%`;
+      execSync(`start "" cmd /K "${setPath} && ${cmd}"`, { stdio: 'ignore', env, shell: true });
     } else if (process.platform === 'darwin') {
       // Open Terminal.app with the command
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"`], { detached: true, stdio: 'ignore' });
