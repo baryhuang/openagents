@@ -369,8 +369,15 @@ class Daemon {
         info.state = 'error';
         info.lastError = (err.message || String(err)).slice(0, 200);
         this._writeStatus();
-        this._log(`${name} crashed: ${info.lastError}, restarting in ${info._backoff}s (attempt ${info.restarts})`);
 
+        if (info.restarts >= 10) {
+          this._log(`${name} crashed ${info.restarts} times, giving up. Fix the issue and restart manually.`);
+          info.state = 'stopped';
+          this._writeStatus();
+          break;
+        }
+
+        this._log(`${name} crashed: ${info.lastError}, restarting in ${info._backoff}s (attempt ${info.restarts})`);
         await this._sleep(info._backoff * 1000);
         info._backoff = Math.min(info._backoff * 2, 60);
       }
