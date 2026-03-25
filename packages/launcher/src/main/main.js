@@ -10,6 +10,10 @@ let agentManager = null;
 
 function createWindow() {
   if (mainWindow) {
+    // Restore Dock icon on macOS before showing window
+    if (process.platform === 'darwin' && app.dock) {
+      app.dock.show();
+    }
     mainWindow.show();
     mainWindow.focus();
     return;
@@ -41,6 +45,10 @@ function createWindow() {
     if (!app.isQuitting) {
       e.preventDefault();
       mainWindow.hide();
+      // Hide Dock icon on macOS so it doesn't distract
+      if (process.platform === 'darwin' && app.dock) {
+        app.dock.hide();
+      }
     }
   });
 
