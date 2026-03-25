@@ -182,8 +182,9 @@ async function ensureCoreLibrary() {
     let srcPath = null;
     slog(`ensureCoreLibrary: bundledPath=${bundledPath} exists=${fs.existsSync(path.join(bundledPath, 'package.json'))}`);
     slog(`ensureCoreLibrary: asarUnpacked=${asarUnpacked} exists=${fs.existsSync(path.join(asarUnpacked, 'package.json'))}`);
-    if (fs.existsSync(path.join(bundledPath, 'package.json'))) srcPath = bundledPath;
-    else if (fs.existsSync(path.join(asarUnpacked, 'package.json'))) srcPath = asarUnpacked;
+    // Prefer asarUnpacked (real files on disk) over asar (virtual filesystem, can't copy)
+    if (fs.existsSync(path.join(asarUnpacked, 'package.json'))) srcPath = asarUnpacked;
+    else if (fs.existsSync(path.join(bundledPath, 'package.json'))) srcPath = bundledPath;
     slog(`ensureCoreLibrary: srcPath=${srcPath}`);
 
     if (srcPath) {
