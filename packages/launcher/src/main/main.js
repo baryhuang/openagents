@@ -215,8 +215,8 @@ function setupIPC() {
     const env = getEnhancedEnv();
     if (process.platform === 'win32') {
       // Open a visible terminal window with the command
-      const comspec = process.env.ComSpec || env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
-      spawn(comspec, ['/C', 'start', 'Login', comspec, '/K', cmd], { stdio: 'ignore', env, shell: false });
+      const { execSync } = require('child_process');
+      execSync(`start "" cmd /K "${cmd}"`, { stdio: 'ignore', env, shell: true });
     } else if (process.platform === 'darwin') {
       // Open Terminal.app with the command
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"`], { detached: true, stdio: 'ignore' });
