@@ -1076,6 +1076,14 @@ async function refreshLogs() {
 }
 
 document.getElementById('btn-refresh-logs').addEventListener('click', refreshLogs);
+document.getElementById('btn-copy-logs').addEventListener('click', () => {
+  const logs = document.getElementById('log-viewer').textContent;
+  navigator.clipboard.writeText(logs).then(() => {
+    showToast('Logs copied to clipboard', 'success');
+  }).catch(() => {
+    showToast('Failed to copy logs', 'error');
+  });
+});
 document.getElementById('log-agent-filter').addEventListener('change', refreshLogs);
 document.getElementById('catalog-search-input').addEventListener('input', (e) => filterCatalog(e.target.value));
 
