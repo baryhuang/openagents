@@ -1,6 +1,6 @@
 # OpenAgents Launcher — Bug Tracker
 
-Last updated: 2026-03-26
+Last updated: 2026-03-27
 
 ## Open Bugs
 
@@ -96,3 +96,13 @@ Last updated: 2026-03-26
 - **Status:** Resolved in core v0.2.33
 - **Description:** On Windows, a visible cmd.exe console window appeared briefly every time the openclaw CLI was invoked to process a workspace message.
 - **Fix:** Added `windowsHide: true` to spawn options.
+
+### BUG-R05: macOS npm global path differs from Windows (lib/node_modules/)
+- **Status:** Resolved in core v0.2.49, launcher v0.6.4
+- **Description:** npm `-g` installs to `node_modules/` on Windows but `lib/node_modules/` on macOS/Linux. The Launcher only checked `node_modules/`, so core library was "not found" on macOS despite being installed.
+- **Fix:** Replaced `npm install -g` with `npm install --prefix ~/.openagents/nodejs` which forces `node_modules/` on all platforms. No platform-specific path logic needed.
+
+### BUG-R06: Single instance not enforced — multiple launchers could run
+- **Status:** Resolved in launcher v0.6.4
+- **Description:** Users could accidentally open multiple Launcher instances, causing daemon conflicts and port binding errors.
+- **Fix:** Added `app.requestSingleInstanceLock()`. Second instance shows a dialog and quits. First instance's window gets focused.
