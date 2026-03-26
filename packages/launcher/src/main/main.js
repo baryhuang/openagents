@@ -225,6 +225,25 @@ async function ensureCoreLibrary() {
 
   coreVersion = installedVersion;
 
+  // npm --prefix prunes packages not in package.json — npm itself gets deleted.
+  // Reinstall npm if it was removed by the core update.
+  const npmCheck = path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (!fs.existsSync(npmCheck)) {
+    slog('npm was removed by --prefix install — reinstalling...');
+    try {
+      const https = require('https');
+      const npmTgz = path.join(os.tmpdir(), 'npm-reinstall.tgz');
+      const npmDir = path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm');
+      await downloadFile(https, 'https://registry.npmjs.org/npm/-/npm-10.9.2.tgz', npmTgz, null);
+      fs.mkdirSync(npmDir, { recursive: true });
+      execSync(`tar -xzf "${npmTgz}" -C "${npmDir}" --strip-components=1`, { timeout: 60000, stdio: 'pipe' });
+      try { fs.unlinkSync(npmTgz); } catch {}
+      slog('npm reinstalled');
+    } catch (e) {
+      slog('npm reinstall failed: ' + e.message);
+    }
+  }
+
   // Reload agent manager with the (potentially updated) core
   if (installedVersion && agentManager) {
     agentManager.reloadCore();
