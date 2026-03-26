@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   // Python / SDK
   pythonStatus: () => ipcRenderer.invoke('python:status'),
   installSDK: () => ipcRenderer.invoke('python:install'),
+  runtimeInfo: () => ipcRenderer.invoke('runtime:info'),
 
   // Agents
   listAgents: () => ipcRenderer.invoke('agents:list'),

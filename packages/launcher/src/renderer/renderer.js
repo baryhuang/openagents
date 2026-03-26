@@ -757,26 +757,51 @@ async function removeAgent(name) {
 // ---- Install tab ----
 
 async function refreshInstallStatus() {
-  // Runtime status
+  // Runtime info
   try {
-    const status = await window.api.pythonStatus();
+    const info = await window.api.runtimeInfo();
 
-    const pyEl = document.getElementById('python-status');
-    if (status.runtime === 'node') {
-      pyEl.textContent = 'Node.js (native)';
-    } else if (status.pythonPath) {
-      pyEl.textContent = status.pythonPath;
+    const nodeEl = document.getElementById('nodejs-version');
+    if (info.nodeVersion) {
+      nodeEl.textContent = info.nodeVersion;
+      nodeEl.style.color = 'var(--success)';
     } else {
-      pyEl.textContent = 'Not found';
+      nodeEl.textContent = 'Not installed';
+      nodeEl.style.color = 'var(--danger)';
     }
-    pyEl.style.color = 'var(--success)';
+
+    const npmEl = document.getElementById('npm-version');
+    if (info.npmVersion) {
+      npmEl.textContent = `v${info.npmVersion}`;
+      npmEl.style.color = 'var(--success)';
+    } else {
+      npmEl.textContent = 'Not installed';
+      npmEl.style.color = 'var(--danger)';
+    }
 
     const sdkEl = document.getElementById('sdk-status');
-    sdkEl.textContent = `v${status.sdkVersion}`;
-    sdkEl.style.color = 'var(--success)';
+    if (info.coreVersion) {
+      sdkEl.textContent = `v${info.coreVersion}`;
+      sdkEl.style.color = 'var(--success)';
+    } else {
+      sdkEl.textContent = 'Not installed';
+      sdkEl.style.color = 'var(--danger)';
+    }
 
-    const sdkBtn = document.getElementById('btn-install-sdk');
-    if (sdkBtn) sdkBtn.disabled = true;
+    const latestEl = document.getElementById('sdk-latest');
+    if (info.latestVersion) {
+      latestEl.textContent = `v${info.latestVersion}`;
+      if (info.coreVersion && info.latestVersion !== info.coreVersion) {
+        latestEl.style.color = 'var(--warning)';
+        latestEl.textContent += ' (update available)';
+      } else {
+        latestEl.style.color = 'var(--success)';
+        latestEl.textContent += ' (up to date)';
+      }
+    } else {
+      latestEl.textContent = 'Unable to check';
+      latestEl.style.color = 'var(--text-muted)';
+    }
   } catch {}
 
   // Catalog

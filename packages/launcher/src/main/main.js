@@ -395,6 +395,35 @@ function setupIPC() {
   }));
   ipcMain.handle('python:install', () => ({ success: true, message: 'No installation needed — using Node.js agent-connector' }));
 
+  ipcMain.handle('runtime:info', async () => {
+    const info = { nodeVersion: null, npmVersion: null, coreVersion: coreVersion || null, latestVersion: null };
+    // Node.js version
+    const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+    if (fs.existsSync(nodeBin)) {
+      try { info.nodeVersion = execSync(`"${nodeBin}" --version`, { encoding: 'utf-8', timeout: 5000 }).trim(); } catch {}
+    }
+    // npm version
+    const npmCmd = findNpmCommand();
+    if (npmCmd) {
+      try {
+        info.npmVersion = execSync(`${npmCmd} --version`, {
+          encoding: 'utf-8', timeout: 5000,
+          env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+        }).trim();
+      } catch {}
+    }
+    // Latest version (from background check or fetch now)
+    if (npmCmd) {
+      try {
+        info.latestVersion = execSync(`${npmCmd} view ${CORE_PKG} version`, {
+          encoding: 'utf-8', timeout: 10000,
+          env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+        }).trim();
+      } catch {}
+    }
+    return info;
+  });
+
   // Agent CRUD
   ipcMain.handle('agents:list', () => agentManager.getAgents());
   ipcMain.handle('agents:add', (_e, config) => agentManager.addAgent(config));
