@@ -180,6 +180,8 @@ function findNpmCommand() {
   return null;
 }
 
+let _updateSplash = null; // set by app.whenReady, used by ensureCoreLibrary
+
 async function ensureCoreLibrary() {
   const corePkgPath = path.join(GLOBAL_MODULES, CORE_PKG, 'package.json');
   let installedVersion = null;
@@ -193,8 +195,10 @@ async function ensureCoreLibrary() {
   if (npmCmd) {
     if (!installedVersion) {
       slog('Core library not found — installing via npm...');
+      if (_updateSplash) _updateSplash('Installing core library...', 65, 'First time setup');
     } else {
       slog('Core library v' + installedVersion + ' found — checking for updates...');
+      if (_updateSplash) _updateSplash('Checking for updates...', 65, 'v' + installedVersion);
     }
     try {
       execSync(`${npmCmd} install -g ${CORE_PKG}@latest --ignore-scripts`, {
@@ -204,8 +208,10 @@ async function ensureCoreLibrary() {
       const newVersion = (() => { try { return JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch { return null; } })();
       if (newVersion && newVersion !== installedVersion) {
         slog('Core library updated: ' + (installedVersion || 'none') + ' → ' + newVersion);
+        if (_updateSplash) _updateSplash('Updated core library', 80, 'v' + (installedVersion || '?') + ' → v' + newVersion);
       } else {
         slog('Core library v' + (newVersion || installedVersion) + ' (already latest)');
+        if (_updateSplash) _updateSplash('Core library up to date', 80, 'v' + (newVersion || installedVersion));
       }
       installedVersion = newVersion || installedVersion;
     } catch (e) {
@@ -565,63 +571,62 @@ app.whenReady().then(async () => {
 
   createTray();
 
-  // ── Splash screen for first-time setup ──
+  // ── Splash screen ──
   const nodeExists = fs.existsSync(path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node'));
   const coreExists = fs.existsSync(path.join(GLOBAL_MODULES, CORE_PKG, 'package.json'));
 
-  let splash = null;
-  if (!nodeExists || !coreExists) {
-    // Show splash window for first-time setup
-    splash = new BrowserWindow({
-      width: 420, height: 260, frame: false, resizable: false, center: true,
-      alwaysOnTop: true, transparent: false, skipTaskbar: true,
-      webPreferences: { nodeIntegration: false, contextIsolation: true },
-    });
-    const splashHtml = `data:text/html,
-      <html><body style="margin:0;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:%23f5f5f7;color:%23333;">
-        <div style="font-size:28px;font-weight:700;margin-bottom:8px;">OpenAgents Launcher</div>
-        <div id="msg" style="font-size:14px;color:%23888;margin-bottom:20px;">Preparing first launch...</div>
-        <div style="width:240px;height:6px;background:%23e0e0e0;border-radius:3px;overflow:hidden;">
-          <div id="bar" style="width:10%25;height:100%25;background:%236C63FF;border-radius:3px;transition:width 0.5s;"></div>
+  // Always show splash — used for Node.js download, core install, AND core updates
+  let splash = new BrowserWindow({
+    width: 420, height: 260, frame: false, resizable: false, center: true,
+    alwaysOnTop: true, transparent: false, skipTaskbar: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+  const splashHtml = `data:text/html,
+    <html><body style="margin:0;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:%23f5f5f7;color:%23333;">
+      <div style="font-size:28px;font-weight:700;margin-bottom:8px;">OpenAgents Launcher</div>
+      <div id="msg" style="font-size:14px;color:%23888;margin-bottom:20px;">${!nodeExists ? 'Preparing first launch...' : 'Starting...'}</div>
+      <div style="width:240px;height:6px;background:%23e0e0e0;border-radius:3px;overflow:hidden;">
+        <div id="bar" style="width:10%25;height:100%25;background:%236C63FF;border-radius:3px;transition:width 0.5s;"></div>
         </div>
         <div id="detail" style="font-size:11px;color:%23aaa;margin-top:8px;"></div>
       </body></html>`;
-    splash.loadURL(splashHtml);
-    splash.show();
+  splash.loadURL(splashHtml);
+  splash.show();
 
-    const updateSplash = (msg, pct, detail) => {
-      if (splash && !splash.isDestroyed()) {
-        splash.webContents.executeJavaScript(`
-          document.getElementById('msg').textContent='${msg.replace(/'/g, "\\'")}';
-          document.getElementById('bar').style.width='${pct}%';
-          document.getElementById('detail').textContent='${(detail || '').replace(/'/g, "\\'")}';
-        `).catch(() => {});
-      }
-    };
-
-    // Step 1: Install Node.js if needed
-    if (!nodeExists) {
-      slog('Node.js not found — starting download');
-      updateSplash('Downloading Node.js runtime...', 20, 'This only happens once');
-      try {
-        await downloadNodejs(PORTABLE_NODE_DIR, (pct, detail) => {
-          updateSplash('Downloading Node.js...', 20 + pct * 0.5, detail);
-        });
-        const nodeExe = path.join(PORTABLE_NODE_DIR, 'node.exe');
-        slog(`Download done. node.exe exists: ${fs.existsSync(nodeExe)}`);
-        updateSplash('Node.js installed', 70);
-      } catch (e) {
-        slog(`Node.js install FAILED: ${e.message}\n${e.stack}`);
-        updateSplash('Setup failed: ' + e.message, 50, 'Check ~/.openagents/startup.log');
-        await new Promise(r => setTimeout(r, 5000));
-      }
-    } else {
-      slog('Node.js already exists');
+  const updateSplash = (msg, pct, detail) => {
+    if (splash && !splash.isDestroyed()) {
+      splash.webContents.executeJavaScript(`
+        document.getElementById('msg').textContent='${msg.replace(/'/g, "\\'")}';
+        document.getElementById('bar').style.width='${pct}%';
+        document.getElementById('detail').textContent='${(detail || '').replace(/'/g, "\\'")}';
+      `).catch(() => {});
     }
+  };
 
-    // Step 2: Ensure core library
-    updateSplash('Setting up core library...', 60);
+  // Step 1: Install Node.js if needed
+  if (!nodeExists) {
+    slog('Node.js not found — starting download');
+    updateSplash('Downloading Node.js runtime...', 20, 'This only happens once');
+    try {
+      await downloadNodejs(PORTABLE_NODE_DIR, (pct, detail) => {
+        updateSplash('Downloading Node.js...', 20 + pct * 0.5, detail);
+      });
+      const nodeExe = path.join(PORTABLE_NODE_DIR, 'node.exe');
+      slog(`Download done. node.exe exists: ${fs.existsSync(nodeExe)}`);
+      updateSplash('Node.js installed', 70);
+    } catch (e) {
+      slog(`Node.js install FAILED: ${e.message}\n${e.stack}`);
+      updateSplash('Setup failed: ' + e.message, 50, 'Check ~/.openagents/startup.log');
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  } else {
+    slog('Node.js already exists');
+    updateSplash('Starting...', 50);
   }
+
+  // Step 2: Ensure core library (install or update)
+  updateSplash('Checking for updates...', 60);
+  _updateSplash = updateSplash;
 
   // ── PATH setup ──
   if (process.platform === 'win32') {
