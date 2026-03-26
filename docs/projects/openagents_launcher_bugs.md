@@ -19,62 +19,6 @@ Last updated: 2026-03-27
   ```
 - **Notes:** The workspace web UI loads fine at `https://workspace.openagents.org/5fc4c33d`. The 500 is specifically on the API endpoint. Affects all clients (tested from Windows machine, Linux server).
 
-### BUG-002: OpenClaw shows INSTALLED after uninstall (stale shims)
-- **Status:** Fixed in core v0.2.46, needs verification
-- **Severity:** Medium
-- **Component:** agent-connector/installer.js
-- **Description:** After uninstalling OpenClaw, the Install tab still shows "INSTALLED". Caused by npm leaving extensionless shim files (Unix-style) that `where` command finds.
-- **Fix:** `isInstalled()` now verifies the actual package exists in `node_modules` before reporting installed. Also `_cleanStaleShims()` removes all shim variants after uninstall.
-- **Core version:** v0.2.46+
-
-### BUG-003: Chinese/CJK username breaks npm and openclaw CLI
-- **Status:** Fixed in core v0.2.47 + v0.2.48
-- **Severity:** High
-- **Component:** launcher/main.js, agent-connector/adapters/openclaw.js
-- **Description:** Users with Chinese/Japanese/Korean characters in their Windows username (e.g., `C:\Users\王思璠\`) experience garbled paths when running npm.cmd or openclaw.cmd through cmd.exe. Batch files can't handle Unicode paths.
-- **Fix:**
-  - v0.2.47: `findNpmCommand()` uses `node.exe npm-cli.js` instead of `npm.cmd`
-  - v0.2.47: OpenClaw adapter spawns `node.exe openclaw.mjs` instead of `cmd.exe /C openclaw.cmd`
-  - v0.2.48: `configureNativeAuth()` creates `~/.openclaw/` directories before writing config
-- **Core version:** v0.2.48+
-
-### BUG-004: Core library auto-update notification not shown
-- **Status:** Fixed in launcher v0.6.2
-- **Severity:** Medium
-- **Component:** launcher/main.js
-- **Description:** `checkCoreUpdate()` was called before `createWindow()`, so `mainWindow` was null and the notification was never sent to the renderer.
-- **Fix:** Moved `checkCoreUpdate()` to after `createWindow()`. Also added periodic check every 4 hours.
-- **Launcher version:** v0.6.2+
-
-### BUG-005: Node.js zip extraction fails silently on Windows
-- **Status:** Fixed in launcher v0.6.0
-- **Severity:** High
-- **Component:** launcher/main.js
-- **Description:** `Expand-Archive` (PowerShell) silently fails on some Windows machines. The zip downloads but extraction produces empty directory. Also, flattening the nested `node-v22.14.0-win-x64/` folder conflicts with existing `node_modules/`.
-- **Fix:** Replaced zip download with direct `node.exe` binary download (85MB single file) + npm tarball extraction via `tar`. No zip, no Expand-Archive, no flattening needed.
-- **Launcher version:** v0.6.0+
-
-### BUG-006: Daemon start fails from packaged exe (asar path)
-- **Status:** Fixed in launcher v0.4.1+
-- **Severity:** Critical
-- **Component:** launcher/agent-manager.js
-- **Description:** `_startDaemon()` used `require.resolve()` which returned a path inside the asar virtual filesystem. Child processes can't access asar paths, so the daemon crashed with MODULE_NOT_FOUND.
-- **Fix:** Search for the CLI at the global portable Node.js path first (`~/.openagents/nodejs/node_modules/@openagents-org/agent-launcher/bin/agent-connector.js`), fall back to `require.resolve` only as last resort.
-
-### BUG-007: Multiple daemon instances cause duplicate responses
-- **Status:** Fixed in core v0.2.33+
-- **Severity:** High
-- **Component:** agent-connector/daemon.js
-- **Description:** `restart:` command started a new adapter loop without properly stopping the old one. Multiple adapter loops polled the same workspace, causing each message to be processed 2-5 times.
-- **Fix:** Added `_stopToken` per adapter. `restartAgent()` sets the stop token, waits for the old loop to exit, then starts a new one. Also deduplicates log writes.
-
-### BUG-008: Dashboard status flapping (running/stopped)
-- **Status:** Fixed in core v0.2.14+
-- **Severity:** Medium
-- **Component:** agent-connector/daemon.js, launcher/agent-manager.js
-- **Description:** Dashboard alternated between showing "running" and "stopped" on every refresh. Caused by `process.kill(pid, 0)` returning EPERM on Windows for cross-session processes, and stale PID/status files from crashed daemons.
-- **Fix:** Removed PID validation from `getDaemonPid()`. Added EPERM handling in `_isAlive()`. Always clean status files on daemon stop.
-
 ## Resolved Bugs (Closed)
 
 ### BUG-R01: Bundled core library version mismatch
@@ -98,7 +42,7 @@ Last updated: 2026-03-27
 - **Fix:** Added `windowsHide: true` to spawn options.
 
 ### BUG-R05: macOS npm global path differs from Windows (lib/node_modules/)
-- **Status:** Resolved in core v0.2.49, launcher v0.6.4
+- **Status:** Resolved in core v0.2.49+
 - **Description:** npm `-g` installs to `node_modules/` on Windows but `lib/node_modules/` on macOS/Linux. The Launcher only checked `node_modules/`, so core library was "not found" on macOS despite being installed.
 - **Fix:** Replaced `npm install -g` with `npm install --prefix ~/.openagents/nodejs` which forces `node_modules/` on all platforms. No platform-specific path logic needed.
 
@@ -106,3 +50,48 @@ Last updated: 2026-03-27
 - **Status:** Resolved in launcher v0.6.4
 - **Description:** Users could accidentally open multiple Launcher instances, causing daemon conflicts and port binding errors.
 - **Fix:** Added `app.requestSingleInstanceLock()`. Second instance shows a dialog and quits. First instance's window gets focused.
+
+### BUG-R07: OpenClaw shows INSTALLED after uninstall (stale shims)
+- **Status:** Resolved in core v0.2.46+
+- **Description:** After uninstalling OpenClaw, the Install tab still shows "INSTALLED". Caused by npm leaving extensionless shim files (Unix-style) that `where` command finds.
+- **Fix:** `isInstalled()` now verifies the actual package exists in `node_modules` before reporting installed. Also `_cleanStaleShims()` removes all shim variants after uninstall. Further simplified in v0.2.52 — no more shim hunting, uses deterministic `openclaw.mjs` path.
+
+### BUG-R08: Chinese/CJK username breaks npm and openclaw CLI
+- **Status:** Resolved in core v0.2.47+
+- **Description:** Users with Chinese/Japanese/Korean characters in their Windows username (e.g., `C:\Users\王思璠\`) experience garbled paths when running npm.cmd or openclaw.cmd through cmd.exe. Batch files can't handle Unicode paths.
+- **Fix:** All commands now use `node.exe` directly instead of `.cmd` shims. npm runs via `node.exe npm-cli.js`. OpenClaw runs via `node.exe openclaw.mjs`. No cmd.exe involvement.
+
+### BUG-R09: Core library auto-update notification not shown
+- **Status:** Resolved in launcher v0.6.2+
+- **Description:** `checkCoreUpdate()` was called before `createWindow()`, so `mainWindow` was null and the notification was never sent to the renderer.
+- **Fix:** Moved `checkCoreUpdate()` to after `createWindow()`. Added periodic check every 4 hours. Auto-update runs on every startup before window opens.
+
+### BUG-R10: Node.js zip extraction fails silently on Windows
+- **Status:** Resolved in launcher v0.6.0+
+- **Description:** `Expand-Archive` (PowerShell) silently fails on some Windows machines. The zip downloads but extraction produces empty directory.
+- **Fix:** Replaced zip download with direct `node.exe` binary download (85MB single file) + npm tarball extraction via `tar`. No zip, no Expand-Archive needed.
+
+### BUG-R11: Daemon start fails from packaged exe (asar path)
+- **Status:** Resolved in launcher v0.4.1+
+- **Description:** `_startDaemon()` used `require.resolve()` which returned a path inside the asar virtual filesystem. Child processes can't access asar paths, so the daemon crashed with MODULE_NOT_FOUND.
+- **Fix:** Search for the CLI at the global portable Node.js path first. Removed bundled dependency in v0.6.0.
+
+### BUG-R12: Multiple daemon instances cause duplicate responses
+- **Status:** Resolved in core v0.2.33+
+- **Description:** `restart:` command started a new adapter loop without properly stopping the old one. Multiple adapter loops polled the same workspace, causing each message to be processed 2-5 times.
+- **Fix:** Added `_stopToken` per adapter. `restartAgent()` sets the stop token, waits for the old loop to exit, then starts a new one.
+
+### BUG-R13: Dashboard status flapping (running/stopped)
+- **Status:** Resolved in core v0.2.14+
+- **Description:** Dashboard alternated between showing "running" and "stopped" on every refresh. Caused by cross-session process.kill on Windows and stale PID files.
+- **Fix:** Removed PID validation from `getDaemonPid()`. Added EPERM handling in `_isAlive()`. Always clean status files on daemon stop.
+
+### BUG-R14: OpenClaw binary not found on macOS (node_modules/.bin path)
+- **Status:** Resolved in core v0.2.52
+- **Description:** After switching to `npm --prefix`, binary shims moved to `node_modules/.bin/` but the adapter only searched `bin/` and the root directory.
+- **Fix:** Eliminated shim hunting entirely. Always spawn `node + openclaw.mjs` directly. Deterministic path: `~/.openagents/nodejs/node_modules/openclaw/openclaw.mjs`.
+
+### BUG-R15: configureNativeAuth fails when ~/.openclaw doesn't exist
+- **Status:** Resolved in core v0.2.48
+- **Description:** OpenClaw installed with `--ignore-scripts` skips initial setup. The `~/.openclaw/` directory doesn't exist, so writing `openclaw.json` and `auth-profiles.json` fails silently.
+- **Fix:** `configureNativeAuth()` now creates all necessary directories with `mkdirSync({ recursive: true })` before writing config files.
