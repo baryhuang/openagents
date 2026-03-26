@@ -55,9 +55,11 @@ class Installer {
     if (binaryPath.startsWith(portableDir)) {
       const pkgDir = path.join(globalModules, npmPkg || binary);
       if (!fs.existsSync(path.join(pkgDir, 'package.json'))) {
-        // Stale shim — clean it up
-        for (const ext of ['', '.cmd', '.ps1']) {
-          try { const p = path.join(portableDir, binary + ext); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+        // Stale shim — clean it up from all possible locations
+        for (const dir of [portableDir, path.join(globalModules, '.bin')]) {
+          for (const ext of ['', '.cmd', '.ps1']) {
+            try { const p = path.join(dir, binary + ext); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+          }
         }
         return false;
       }
@@ -272,9 +274,12 @@ class Installer {
     const binary = entry && entry.install ? entry.install.binary : agentType;
     if (!binary) return;
     const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
-    for (const ext of ['', '.cmd', '.ps1']) {
-      const shimPath = path.join(portableDir, binary + ext);
-      try { if (fs.existsSync(shimPath)) fs.unlinkSync(shimPath); } catch {}
+    const binDir = path.join(portableDir, 'node_modules', '.bin');
+    for (const dir of [portableDir, binDir]) {
+      for (const ext of ['', '.cmd', '.ps1']) {
+        const shimPath = path.join(dir, binary + ext);
+        try { if (fs.existsSync(shimPath)) fs.unlinkSync(shimPath); } catch {}
+      }
     }
   }
 

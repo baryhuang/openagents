@@ -65,15 +65,16 @@ class OpenClawAdapter extends BaseAdapter {
 
     // Check common npm global directories
     const dirs = [];
+    const home = process.env.USERPROFILE || process.env.HOME || '';
+    // --prefix installs put .bin shims in node_modules/.bin/
+    if (home) dirs.push(path.join(home, '.openagents', 'nodejs', 'node_modules', '.bin'));
     if (IS_WINDOWS) {
+      if (home) dirs.push(path.join(home, '.openagents', 'nodejs'));
       const appdata = process.env.APPDATA || '';
       if (appdata) dirs.push(path.join(appdata, 'npm'));
-      // Portable Node.js installed by OpenAgents Launcher
-      const home = process.env.USERPROFILE || process.env.HOME || '';
-      if (home) dirs.push(path.join(home, '.openagents', 'nodejs'));
     } else {
-      const home = process.env.HOME || '';
-      dirs.push(path.join(home, '.openagents', 'nodejs', 'bin'), '/usr/local/bin');
+      if (home) dirs.push(path.join(home, '.openagents', 'nodejs', 'bin'));
+      dirs.push('/usr/local/bin');
     }
     for (const d of dirs) {
       for (const name of ['openclaw.cmd', 'openclaw']) {
