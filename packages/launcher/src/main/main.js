@@ -651,6 +651,32 @@ app.whenReady().then(async () => {
     updateSplash('Starting...', 50);
   }
 
+  // Step 1b: Ensure npm is installed (might be missing if old launcher installed node without npm)
+  const npmCliPath = path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (!fs.existsSync(npmCliPath)) {
+    slog('npm not found — installing...');
+    updateSplash('Installing npm...', 55);
+    try {
+      const https = require('https');
+      const npmVersion = '10.9.2';
+      const npmTgz = path.join(os.tmpdir(), `npm-${npmVersion}.tgz`);
+      const npmModDir = path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm');
+      await downloadFile(https, `https://registry.npmjs.org/npm/-/npm-${npmVersion}.tgz`, npmTgz, null);
+      fs.mkdirSync(npmModDir, { recursive: true });
+      execSync(`tar -xzf "${npmTgz}" -C "${npmModDir}" --strip-components=1`, { timeout: 60000, stdio: 'pipe' });
+      try { fs.unlinkSync(npmTgz); } catch {}
+      // Create npm.cmd shim on Windows
+      if (process.platform === 'win32') {
+        const nodeExe = path.join(PORTABLE_NODE_DIR, 'node.exe');
+        fs.writeFileSync(path.join(PORTABLE_NODE_DIR, 'npm.cmd'),
+          `@echo off\r\n"${nodeExe}" "${path.join(npmModDir, 'bin', 'npm-cli.js')}" %*\r\n`);
+      }
+      slog('npm installed');
+    } catch (e) {
+      slog('npm install failed: ' + e.message);
+    }
+  }
+
   // Step 2: Ensure core library (install or update)
   updateSplash('Checking for updates...', 60);
   _updateSplash = updateSplash;
