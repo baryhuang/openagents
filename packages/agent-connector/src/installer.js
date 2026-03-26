@@ -170,7 +170,8 @@ class Installer {
 
     // Use bundled node/npm if system npm not available
     if (cmd.startsWith('npm install')) {
-      const args = cmd.replace('npm install', 'install --ignore-scripts');
+      const prefixDir = path.join(os.homedir(), '.openagents', 'nodejs');
+      const args = cmd.replace('npm install', 'install --ignore-scripts').replace(' -g ', ` --prefix "${prefixDir}" `);
       cmd = this._resolveNpmCommand(args);
     }
 
@@ -205,7 +206,8 @@ class Installer {
     // Resolve npm command
     let cmd = rawCmd;
     if (rawCmd.startsWith('npm install')) {
-      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --ignore-scripts');
+      const prefixDir2 = path.join(os.homedir(), '.openagents', 'nodejs');
+      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --ignore-scripts').replace(' -g ', ` --prefix "${prefixDir2}" `);
       cmd = this._resolveNpmCommand(args);
     } else if (rawCmd.startsWith('pip install') || rawCmd.startsWith('pipx install')) {
       cmd = rawCmd; // pip commands stay as-is
@@ -345,10 +347,11 @@ class Installer {
   _deriveUninstallCommand(installCmd) {
     if (!installCmd) return null;
 
-    // npm install -g <pkg> → npm uninstall -g <pkg>
+    // npm install -g <pkg> → npm uninstall --prefix <dir> <pkg>
     if (installCmd.includes('npm install')) {
+      const prefixDir = path.join(os.homedir(), '.openagents', 'nodejs');
       return installCmd
-        .replace('npm install -g', 'npm uninstall -g')
+        .replace('npm install -g', `npm uninstall --prefix "${prefixDir}"`)
         .replace('npm install', 'npm uninstall')
         .replace(/@latest/g, '')
         .replace(/@[\d.]+/g, '');

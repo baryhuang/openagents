@@ -9,17 +9,12 @@ const { execSync } = require('child_process');
 // Use the globally installed core library at ~/.openagents/nodejs/ instead of
 // the bundled copy. This allows independent updates without rebuilding the app.
 const PORTABLE_NODE_DIR = path.join(os.homedir(), '.openagents', 'nodejs');
-// npm global modules: Windows uses node_modules/, macOS/Linux uses lib/node_modules/
-const GLOBAL_MODULES = process.platform === 'win32'
-  ? path.join(PORTABLE_NODE_DIR, 'node_modules')
-  : path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules');
+const GLOBAL_MODULES = path.join(PORTABLE_NODE_DIR, 'node_modules');
 const CORE_PKG = '@openagents-org/agent-launcher';
 
 // Add global modules to Node's resolution path so require(CORE_PKG) finds it
-for (const gm of [GLOBAL_MODULES, path.join(PORTABLE_NODE_DIR, 'node_modules'), path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules')]) {
-  if (fs.existsSync(gm) && !require('module').globalPaths.includes(gm)) {
-    require('module').globalPaths.push(gm);
-  }
+if (fs.existsSync(GLOBAL_MODULES) && !require('module').globalPaths.includes(GLOBAL_MODULES)) {
+  require('module').globalPaths.push(GLOBAL_MODULES);
 }
 
 const { Store } = require('./store');
@@ -208,7 +203,7 @@ async function ensureCoreLibrary() {
       if (_updateSplash) _updateSplash('Checking for updates...', 65, 'v' + installedVersion);
     }
     try {
-      execSync(`${npmCmd} install -g ${CORE_PKG}@latest --ignore-scripts`, {
+      execSync(`${npmCmd} install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`, {
         stdio: 'pipe', timeout: 120000,
         env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
       });
@@ -502,7 +497,7 @@ function setupIPC() {
   ipcMain.handle('core:update', async () => {
     const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
     try {
-      execSync(`"${npmBin}" install -g ${CORE_PKG}@latest`, {
+      execSync(`"${npmBin}" install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`, {
         stdio: 'ignore', timeout: 120000,
         env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
       });
