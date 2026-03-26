@@ -216,8 +216,8 @@ async function ensureCoreLibrary() {
     agentManager.reloadCore();
   }
 
-  // Check for updates in background (don't block startup)
-  checkCoreUpdate().catch(() => {});
+  // Update check is deferred until after mainWindow is created
+  // (called from app.whenReady after createWindow)
 }
 
 async function checkCoreUpdate() {
@@ -672,6 +672,9 @@ app.whenReady().then(async () => {
 
   setupIPC();
   createWindow();
+
+  // Check for core library updates after window is ready
+  checkCoreUpdate().catch(() => {});
 });
 
 app.on('window-all-closed', () => {
