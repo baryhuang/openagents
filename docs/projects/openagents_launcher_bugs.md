@@ -4,22 +4,14 @@ Last updated: 2026-03-27
 
 ## Open Bugs
 
-### BUG-001: Workspace endpoint returns 500 on /v1/discover
-- **Status:** Open
-- **Severity:** High
-- **Component:** workspace-web backend
-- **Reported:** 2026-03-26
-- **Description:** The `/v1/discover` endpoint returns HTTP 500 Internal Server Error for workspace `5fc4c33d`.
-- **Impact:** Agent shows "running" in the Launcher but is invisible in the workspace UI. Daemon logs show repeated "Poll failed: Request timed out" and "Heartbeat failed: Request timed out".
-- **Reproduce:**
-  ```bash
-  curl -s "https://workspace-endpoint.openagents.org/v1/discover?network=5fc4c33d" \
-    -H "X-Workspace-Token: EN_m_dzu2PvaU012dMRgRAPYYq3qMMjVz2jGBceWifo"
-  # Returns: Internal Server Error (HTTP 500)
-  ```
-- **Notes:** The workspace web UI loads fine at `https://workspace.openagents.org/5fc4c33d`. The 500 is specifically on the API endpoint. Affects all clients (tested from Windows machine, Linux server).
+No open bugs.
 
 ## Resolved Bugs (Closed)
+
+### BUG-R16: Workspace endpoint returns 500 on /v1/discover
+- **Status:** Resolved
+- **Description:** The `/v1/discover` endpoint returned HTTP 500 Internal Server Error for workspace `5fc4c33d`.
+- **Fix:** Backend server issue resolved.
 
 ### BUG-R01: Bundled core library version mismatch
 - **Status:** Resolved in launcher v0.6.0
