@@ -36,10 +36,34 @@ class Installer {
    * Checks binary on PATH first, then marker files.
    */
   isInstalled(agentType) {
-    // Fast check: marker file or binary on PATH (no execSync to avoid blocking)
+    // Fast check: marker file
     if (this._hasMarker(agentType)) return true;
-    if (this._whichBinary(agentType)) return true;
-    return false;
+
+    // Check if binary exists on PATH
+    const binaryPath = this._whichBinary(agentType);
+    if (!binaryPath) return false;
+
+    // Verify it's not a stale shim — check the actual package exists
+    // npm shims point to node_modules/<pkg>/ — if the package dir is gone, the shim is stale
+    const entry = this.registry.getEntry(agentType);
+    const npmPkg = entry && entry.install ? entry.install.npm_package : null;
+    const binary = entry && entry.install ? entry.install.binary : agentType;
+    const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
+    const globalModules = path.join(portableDir, 'node_modules');
+
+    // If the binary is in our portable dir, verify the package exists
+    if (binaryPath.startsWith(portableDir)) {
+      const pkgDir = path.join(globalModules, npmPkg || binary);
+      if (!fs.existsSync(path.join(pkgDir, 'package.json'))) {
+        // Stale shim — clean it up
+        for (const ext of ['', '.cmd', '.ps1']) {
+          try { const p = path.join(portableDir, binary + ext); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+        }
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /**
@@ -295,6 +319,7 @@ class Installer {
       proc.on('close', (code) => {
         if (code === 0) {
           this._markUninstalled(agentType);
+          this._cleanStaleShims(agentType);
           if (onData) onData(`\nDone! ${agentType} has been uninstalled.\n`);
           resolve({ success: true, command: cmd });
         } else {
