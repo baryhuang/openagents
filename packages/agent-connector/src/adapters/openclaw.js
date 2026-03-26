@@ -460,6 +460,7 @@ class OpenClawAdapter extends BaseAdapter {
       // This is the proper way to add custom LLM endpoints to OpenClaw.
       // See: https://docs.openclaw.ai/concepts/model-providers
       try {
+        fs.mkdirSync(OPENCLAW_STATE_DIR, { recursive: true });
         let config = {};
         try { config = JSON.parse(fs.readFileSync(configFile, 'utf-8')); } catch {}
 
@@ -477,6 +478,20 @@ class OpenClawAdapter extends BaseAdapter {
         config.agents.defaults.model = { primary: `custom/${model}` };
 
         fs.writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf-8');
+      } catch {}
+
+      // Also write auth-profiles.json for the custom provider
+      try {
+        const agentDir = path.join(OPENCLAW_STATE_DIR, 'agents', 'main', 'agent');
+        fs.mkdirSync(agentDir, { recursive: true });
+        const authFile = path.join(agentDir, 'auth-profiles.json');
+        let authData = { version: 1, profiles: {} };
+        try { authData = JSON.parse(fs.readFileSync(authFile, 'utf-8')); } catch {}
+        authData.profiles = authData.profiles || {};
+        authData.profiles['custom:manual'] = { type: 'token', provider: 'custom', token: apiKey };
+        authData.lastGood = authData.lastGood || {};
+        authData.lastGood.custom = 'custom:manual';
+        fs.writeFileSync(authFile, JSON.stringify(authData, null, 2), 'utf-8');
       } catch {}
     }
   }
