@@ -12,6 +12,7 @@ function switchTab(tabName) {
   if (tabName === 'agents') refreshAgentList();
   if (tabName === 'install') refreshInstallStatus();
   if (tabName === 'logs') refreshLogs();
+  if (tabName === 'settings') { refreshSettingsWorkspaces(); refreshSettingsRuntime(); }
 }
 
 document.querySelectorAll('.nav-item').forEach((el) => {
@@ -757,52 +758,6 @@ async function removeAgent(name) {
 // ---- Install tab ----
 
 async function refreshInstallStatus() {
-  // Runtime info
-  try {
-    const info = await window.api.runtimeInfo();
-
-    const nodeEl = document.getElementById('nodejs-version');
-    if (info.nodeVersion) {
-      nodeEl.textContent = info.nodeVersion;
-      nodeEl.style.color = 'var(--success)';
-    } else {
-      nodeEl.textContent = 'Not installed';
-      nodeEl.style.color = 'var(--danger)';
-    }
-
-    const npmEl = document.getElementById('npm-version');
-    if (info.npmVersion) {
-      npmEl.textContent = `v${info.npmVersion}`;
-      npmEl.style.color = 'var(--success)';
-    } else {
-      npmEl.textContent = 'Not installed';
-      npmEl.style.color = 'var(--danger)';
-    }
-
-    const sdkEl = document.getElementById('sdk-status');
-    if (info.coreVersion) {
-      sdkEl.textContent = `v${info.coreVersion}`;
-      sdkEl.style.color = 'var(--success)';
-    } else {
-      sdkEl.textContent = 'Not installed';
-      sdkEl.style.color = 'var(--danger)';
-    }
-
-    const latestEl = document.getElementById('sdk-latest');
-    if (info.latestVersion) {
-      latestEl.textContent = `v${info.latestVersion}`;
-      if (info.coreVersion && info.latestVersion !== info.coreVersion) {
-        latestEl.style.color = 'var(--warning)';
-        latestEl.textContent += ' (update available)';
-      } else {
-        latestEl.style.color = 'var(--success)';
-        latestEl.textContent += ' (up to date)';
-      }
-    } else {
-      latestEl.textContent = 'Unable to check';
-      latestEl.style.color = 'var(--text-muted)';
-    }
-  } catch {}
 
   // Catalog
   refreshCatalog();
@@ -1261,6 +1216,25 @@ async function refreshSettingsWorkspaces() {
   }
 }
 
+async function refreshSettingsRuntime() {
+  try {
+    const info = await window.api.runtimeInfo();
+    const set = (id, value, color) => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = value; el.style.color = color; }
+    };
+    set('settings-nodejs-version', info.nodeVersion || 'Not installed', info.nodeVersion ? 'var(--success)' : 'var(--danger)');
+    set('settings-npm-version', info.npmVersion ? `v${info.npmVersion}` : 'Not installed', info.npmVersion ? 'var(--success)' : 'var(--danger)');
+    set('settings-core-version', info.coreVersion ? `v${info.coreVersion}` : 'Not installed', info.coreVersion ? 'var(--success)' : 'var(--danger)');
+    if (info.latestVersion) {
+      const upToDate = info.coreVersion === info.latestVersion;
+      set('settings-core-latest', `v${info.latestVersion}${upToDate ? ' (up to date)' : ' (update available)'}`, upToDate ? 'var(--success)' : 'var(--warning)');
+    } else {
+      set('settings-core-latest', 'Unable to check', 'var(--text-muted)');
+    }
+  } catch {}
+}
+
 // ---- Update About version ----
 
 (async () => {
@@ -1278,7 +1252,7 @@ setInterval(() => {
   if (activeTab) {
     const tab = activeTab.dataset.tab;
     if (tab === 'dashboard') refreshDashboard();
-    if (tab === 'settings') refreshSettingsWorkspaces();
+    if (tab === 'settings') { refreshSettingsWorkspaces(); refreshSettingsRuntime(); }
   }
   updateDaemonStatus();
 }, 5000);

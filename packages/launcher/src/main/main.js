@@ -188,36 +188,39 @@ async function ensureCoreLibrary() {
     try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
   }
 
-  if (!installedVersion) {
-    // First launch — install core library via npm (requires Node.js + npm)
-    slog('Core library not found — installing via npm...');
-    const npmCmd = findNpmCommand();
-    if (npmCmd) {
-      try {
-        slog('npm install cmd: ' + npmCmd + ' install -g ' + CORE_PKG + '@latest --ignore-scripts');
-        execSync(`${npmCmd} install -g ${CORE_PKG}@latest --ignore-scripts`, {
-          stdio: 'pipe', timeout: 120000,
-          env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
-        });
-        try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
-        slog('Core library v' + installedVersion + ' installed');
-      } catch (e) {
-        slog('npm install failed: ' + e.message);
-      }
+  // Always try to update to latest on startup
+  const npmCmd = findNpmCommand();
+  if (npmCmd) {
+    if (!installedVersion) {
+      slog('Core library not found — installing via npm...');
     } else {
-      slog('Cannot install core — npm not available');
+      slog('Core library v' + installedVersion + ' found — checking for updates...');
     }
+    try {
+      execSync(`${npmCmd} install -g ${CORE_PKG}@latest --ignore-scripts`, {
+        stdio: 'pipe', timeout: 120000,
+        env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+      });
+      const newVersion = (() => { try { return JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch { return null; } })();
+      if (newVersion && newVersion !== installedVersion) {
+        slog('Core library updated: ' + (installedVersion || 'none') + ' → ' + newVersion);
+      } else {
+        slog('Core library v' + (newVersion || installedVersion) + ' (already latest)');
+      }
+      installedVersion = newVersion || installedVersion;
+    } catch (e) {
+      slog('Core update check failed: ' + e.message);
+    }
+  } else if (!installedVersion) {
+    slog('Cannot install core — npm not available');
   }
 
   coreVersion = installedVersion;
 
-  // Reload agent manager with the newly installed core
+  // Reload agent manager with the (potentially updated) core
   if (installedVersion && agentManager) {
     agentManager.reloadCore();
   }
-
-  // Update check is deferred until after mainWindow is created
-  // (called from app.whenReady after createWindow)
 }
 
 async function checkCoreUpdate() {
@@ -673,8 +676,13 @@ app.whenReady().then(async () => {
   setupIPC();
   createWindow();
 
-  // Check for core library updates after window is ready
-  checkCoreUpdate().catch(() => {});
+  // Check for core library updates periodically (every 4 hours)
+  // On startup, the auto-update already ran in ensureCoreLibrary.
+  // This periodic check catches updates while the app stays open for days.
+  const FOUR_HOURS = 4 * 60 * 60 * 1000;
+  setInterval(() => checkCoreUpdate().catch(() => {}), FOUR_HOURS);
+  // Also check once after 30s (in case the startup auto-update was slow)
+  setTimeout(() => checkCoreUpdate().catch(() => {}), 30000);
 });
 
 app.on('window-all-closed', () => {
