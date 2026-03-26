@@ -9,12 +9,17 @@ const { execSync } = require('child_process');
 // Use the globally installed core library at ~/.openagents/nodejs/ instead of
 // the bundled copy. This allows independent updates without rebuilding the app.
 const PORTABLE_NODE_DIR = path.join(os.homedir(), '.openagents', 'nodejs');
-const GLOBAL_MODULES = path.join(PORTABLE_NODE_DIR, 'node_modules');
+// npm global modules: Windows uses node_modules/, macOS/Linux uses lib/node_modules/
+const GLOBAL_MODULES = process.platform === 'win32'
+  ? path.join(PORTABLE_NODE_DIR, 'node_modules')
+  : path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules');
 const CORE_PKG = '@openagents-org/agent-launcher';
 
 // Add global modules to Node's resolution path so require(CORE_PKG) finds it
-if (fs.existsSync(GLOBAL_MODULES)) {
-  require('module').globalPaths.push(GLOBAL_MODULES);
+for (const gm of [GLOBAL_MODULES, path.join(PORTABLE_NODE_DIR, 'node_modules'), path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules')]) {
+  if (fs.existsSync(gm) && !require('module').globalPaths.includes(gm)) {
+    require('module').globalPaths.push(gm);
+  }
 }
 
 const { Store } = require('./store');

@@ -11,13 +11,18 @@ const fs = require('fs');
 const os = require('os');
 
 const CONFIG_DIR = path.join(os.homedir(), '.openagents');
-const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher');
+// npm global modules: Windows uses node_modules/, macOS/Linux uses lib/node_modules/
+const GLOBAL_CORE_WIN = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher');
+const GLOBAL_CORE_UNIX = path.join(CONFIG_DIR, 'nodejs', 'lib', 'node_modules', '@openagents-org', 'agent-launcher');
+const GLOBAL_CORE = process.platform === 'win32' ? GLOBAL_CORE_WIN : GLOBAL_CORE_UNIX;
 
 // Load core library from global install (not bundled asar)
 function loadCore() {
-  // Try global path first
-  if (fs.existsSync(path.join(GLOBAL_CORE, 'package.json'))) {
-    return require(GLOBAL_CORE);
+  // Try both paths (platform-specific first, then the other)
+  for (const p of [GLOBAL_CORE, GLOBAL_CORE_WIN, GLOBAL_CORE_UNIX]) {
+    if (fs.existsSync(path.join(p, 'package.json'))) {
+      try { return require(p); } catch {}
+    }
   }
   // Fallback to bundled (for dev mode or if global not yet installed)
   try { return require('@openagents-org/agent-launcher'); } catch {}
@@ -51,10 +56,12 @@ class AgentManager {
   }
 
   get coreVersion() {
-    try {
-      const pkg = path.join(GLOBAL_CORE, 'package.json');
-      if (fs.existsSync(pkg)) return JSON.parse(fs.readFileSync(pkg, 'utf-8')).version;
-    } catch {}
+    for (const base of [GLOBAL_CORE, GLOBAL_CORE_WIN, GLOBAL_CORE_UNIX]) {
+      try {
+        const pkg = path.join(base, 'package.json');
+        if (fs.existsSync(pkg)) return JSON.parse(fs.readFileSync(pkg, 'utf-8')).version;
+      } catch {}
+    }
     // Fallback to bundled
     try { return require('@openagents-org/agent-launcher/package.json').version; } catch {}
     return null;
