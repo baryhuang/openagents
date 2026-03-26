@@ -39,7 +39,16 @@ class Installer {
     // Fast check: marker file
     if (this._hasMarker(agentType)) return true;
 
-    // Check if binary exists on PATH
+    // Definitive check: does the package exist in our node_modules?
+    const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
+    const globalModules = path.join(portableDir, 'node_modules');
+    const entry = this.registry.getEntry(agentType);
+    const npmPkg = entry && entry.install ? entry.install.npm_package : null;
+    const binary = entry && entry.install ? entry.install.binary : agentType;
+    const pkgDir = path.join(globalModules, npmPkg || binary);
+    if (fs.existsSync(path.join(pkgDir, 'package.json'))) return true;
+
+    // Fallback: check if binary exists on PATH (system install)
     const binaryPath = this._whichBinary(agentType);
     if (!binaryPath) return false;
 
