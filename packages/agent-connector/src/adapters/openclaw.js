@@ -163,6 +163,13 @@ class OpenClawAdapter extends BaseAdapter {
 
   _runCliAgent(userMessage, channel) {
     return new Promise((resolve, reject) => {
+      // Re-check binary if not found at construction time (installed after daemon started)
+      if (!this._openclawBinary) {
+        this._openclawBinary = this._findOpenclawBinary();
+        if (this._openclawBinary) {
+          this._log(`OpenClaw binary found (late): ${this._openclawBinary}`);
+        }
+      }
       const binary = this._openclawBinary;
       if (!binary) {
         reject(new Error('OpenClaw binary not found'));
