@@ -177,9 +177,8 @@ function _addUnixPaths(dirs) {
   _push(dirs, '/usr/local/bin');
   _push(dirs, '/usr/bin');
 
-  // npm global (varies by install method)
-  _push(dirs, path.join(HOME, '.npm-global', 'bin'));
-  _push(dirs, path.join(HOME, '.openagents', 'npm-global', 'bin'));
+  // npm global — all installs use --prefix ~/.openagents/nodejs
+  // No need for ~/.npm-global or ~/.openagents/npm-global
 
   // nvm
   const nvmDir = process.env.NVM_DIR || path.join(HOME, '.nvm');

@@ -152,16 +152,10 @@ if command -v openagents >/dev/null 2>&1; then
     info "Upgrading to latest..."
 fi
 
-# Install globally — use --prefix on macOS/Linux to avoid sudo
-GLOBAL_DIR=""
-if [ "$OS" != "windows" ]; then
-    GLOBAL_DIR="$HOME/.openagents/npm-global"
-    mkdir -p "$GLOBAL_DIR"
-    $NPM install --prefix "$GLOBAL_DIR" -g "$NPM_PACKAGE@latest" 2>&1 | tail -5
-    export PATH="$GLOBAL_DIR/bin:$PATH"
-else
-    $NPM install -g "$NPM_PACKAGE@latest" 2>&1 | tail -5
-fi
+# Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
+PREFIX_DIR="$HOME/.openagents/nodejs"
+$NPM install --prefix "$PREFIX_DIR" "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | tail -5
+export PATH="$PREFIX_DIR/node_modules/.bin:$PREFIX_DIR/bin:$PATH"
 
 OA_BIN=""
 if command -v openagents >/dev/null 2>&1; then

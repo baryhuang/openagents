@@ -115,15 +115,10 @@ if ($existing) {
 }
 
 # Install globally
-try {
-    & npm install -g "$NPM_PACKAGE@latest" 2>&1 | Select-Object -Last 5
-} catch {
-    Warn "Global install failed, trying with --prefix..."
-    $globalDir = Join-Path $env:USERPROFILE ".openagents\npm-global"
-    New-Item -ItemType Directory -Force -Path $globalDir | Out-Null
-    & npm install --prefix $globalDir -g "$NPM_PACKAGE@latest" 2>&1 | Select-Object -Last 5
-    $env:PATH = "$globalDir;$env:PATH"
-}
+# Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
+$prefixDir = Join-Path $env:USERPROFILE ".openagents\nodejs"
+& npm install --prefix $prefixDir "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | Select-Object -Last 5
+$env:PATH = "$prefixDir\node_modules\.bin;$prefixDir;$env:PATH"
 
 # Verify
 $oaBin = ""

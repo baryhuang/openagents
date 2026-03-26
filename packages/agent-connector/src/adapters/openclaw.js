@@ -73,7 +73,7 @@ class OpenClawAdapter extends BaseAdapter {
       if (home) dirs.push(path.join(home, '.openagents', 'nodejs'));
     } else {
       const home = process.env.HOME || '';
-      dirs.push(path.join(home, '.npm-global', 'bin'), '/usr/local/bin');
+      dirs.push(path.join(home, '.openagents', 'nodejs', 'bin'), '/usr/local/bin');
     }
     for (const d of dirs) {
       for (const name of ['openclaw.cmd', 'openclaw']) {
