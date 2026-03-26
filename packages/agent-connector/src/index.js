@@ -32,10 +32,18 @@ class AgentConnector {
 
   async getCatalog() {
     const catalog = await this.registry.getCatalog();
+    // Always re-check installed status (don't trust cached value)
     return catalog.map((entry) => ({
       ...entry,
       installed: this.installer.isInstalled(entry.name),
     }));
+  }
+
+  /**
+   * Clear catalog cache so next getCatalog re-checks installed status.
+   */
+  clearCatalogCache() {
+    this.registry._catalog = null;
   }
 
   getEnvFields(agentType) {

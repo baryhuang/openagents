@@ -194,15 +194,21 @@ class AgentManager {
   }
 
   async installAgentTypeStreaming(agentType, onData) {
-    return this._connector.installer.installStreaming(agentType, onData);
+    const result = await this._connector.installer.installStreaming(agentType, onData);
+    this._connector.clearCatalogCache();
+    return result;
   }
 
   async uninstallAgentType(agentType) {
-    return this._connector.uninstall(agentType);
+    const result = await this._connector.uninstall(agentType);
+    this._connector.clearCatalogCache();
+    return result;
   }
 
   async uninstallAgentTypeStreaming(agentType, onData) {
-    return this._connector.installer.uninstallStreaming(agentType, onData);
+    const result = await this._connector.installer.uninstallStreaming(agentType, onData);
+    this._connector.clearCatalogCache();
+    return result;
   }
 
   // ------------------------------------------------------------------

@@ -453,7 +453,11 @@ function setupIPC() {
     });
   });
   ipcMain.handle('agents:check-type', (_e, agentType) => agentManager.checkAgentType(agentType));
-  ipcMain.handle('agents:catalog', () => agentManager.getCatalog());
+  ipcMain.handle('agents:catalog', () => {
+    // Clear cached catalog to ensure fresh installed-status check
+    try { agentManager._connector.registry._catalog = null; } catch {}
+    return agentManager.getCatalog();
+  });
 
   // Agent configuration
   ipcMain.handle('agents:env-fields', (_e, agentType) => agentManager.getEnvFields(agentType));
