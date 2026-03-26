@@ -563,6 +563,31 @@ function setupIPC() {
   });
 }
 
+// ---- Single instance lock ----
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  // Another instance is already running — show message and quit
+  const { dialog } = require('electron');
+  dialog.showMessageBoxSync({
+    type: 'info',
+    title: 'OpenAgents Launcher',
+    message: 'OpenAgents Launcher is already running.',
+    detail: 'Check the system tray for the running instance.',
+    buttons: ['OK'],
+  });
+  app.quit();
+} else {
+  // When a second instance tries to start, focus the existing window
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 // ---- App lifecycle ----
 
 app.whenReady().then(async () => {
