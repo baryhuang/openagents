@@ -52,7 +52,7 @@ class Installer {
     const binaryPath = this._whichBinary(agentType);
     if (!binaryPath) {
       // Clean stale marker if package is gone
-      if (this._hasMarker(agentType)) this._removeMarker(agentType);
+      try { fs.unlinkSync(path.join(this.markersDir, agentType)); } catch {}
       return false;
     }
 
