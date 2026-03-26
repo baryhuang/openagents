@@ -247,8 +247,18 @@ class OpenClawAdapter extends BaseAdapter {
       let spawnBin = binary;
       let spawnArgs = args;
       if (IS_WINDOWS) {
-        spawnBin = process.env.COMSPEC || 'cmd.exe';
-        spawnArgs = ['/C', binary, ...args.map(a => a.includes(' ') ? `"${a}"` : a)];
+        // Avoid cmd.exe — it can't handle Unicode paths (Chinese/Japanese/Korean usernames)
+        // Find node.exe + openclaw.mjs and spawn directly
+        const portableNode = path.join(os.homedir(), '.openagents', 'nodejs', 'node.exe');
+        const openclawMjs = path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', 'openclaw', 'openclaw.mjs');
+        if (fs.existsSync(portableNode) && fs.existsSync(openclawMjs)) {
+          spawnBin = portableNode;
+          spawnArgs = [openclawMjs, ...args];
+        } else {
+          // Fallback to cmd.exe (works for ASCII-only paths)
+          spawnBin = process.env.COMSPEC || 'cmd.exe';
+          spawnArgs = ['/C', binary, ...args.map(a => a.includes(' ') ? `"${a}"` : a)];
+        }
       }
       const proc = spawn(spawnBin, spawnArgs, {
         stdio: ['ignore', 'pipe', stderrFd],
