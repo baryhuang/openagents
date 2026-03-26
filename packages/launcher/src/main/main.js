@@ -222,7 +222,11 @@ async function ensureCoreLibrary() {
 
 async function checkCoreUpdate() {
   const npmCmd = findNpmCommand();
-  if (!npmCmd) return;
+  if (!npmCmd) {
+    slog('checkCoreUpdate: skipped — npm not found');
+    return;
+  }
+  slog('checkCoreUpdate: using ' + npmCmd);
   try {
     const latest = execSync(`${npmCmd} view ${CORE_PKG} version`, {
       encoding: 'utf-8', timeout: 15000,
