@@ -55,33 +55,19 @@ class OpenClawAdapter extends BaseAdapter {
   // ------------------------------------------------------------------
 
   _findOpenclawBinary() {
+    // We know exactly where openclaw is — installed via --prefix ~/.openagents/nodejs
+    const home = process.env.USERPROFILE || process.env.HOME || '';
+    const portableDir = path.join(home, '.openagents', 'nodejs');
+    const mjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');
+    if (fs.existsSync(mjs)) return mjs;
+
+    // Fallback: check if openclaw is on PATH (system install)
     try {
       const cmd = IS_WINDOWS ? 'where openclaw' : 'which openclaw';
-      const { getEnhancedEnv } = require('../paths');
-      const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000, env: getEnhancedEnv() })
+      const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
         .split(/\r?\n/)[0].trim();
       if (result) return result;
     } catch {}
-
-    // Check common npm global directories
-    const dirs = [];
-    const home = process.env.USERPROFILE || process.env.HOME || '';
-    // --prefix installs put .bin shims in node_modules/.bin/
-    if (home) dirs.push(path.join(home, '.openagents', 'nodejs', 'node_modules', '.bin'));
-    if (IS_WINDOWS) {
-      if (home) dirs.push(path.join(home, '.openagents', 'nodejs'));
-      const appdata = process.env.APPDATA || '';
-      if (appdata) dirs.push(path.join(appdata, 'npm'));
-    } else {
-      if (home) dirs.push(path.join(home, '.openagents', 'nodejs', 'bin'));
-      dirs.push('/usr/local/bin');
-    }
-    for (const d of dirs) {
-      for (const name of ['openclaw.cmd', 'openclaw']) {
-        const candidate = path.join(d, name);
-        if (fs.existsSync(candidate)) return candidate;
-      }
-    }
     return null;
   }
 
@@ -245,21 +231,21 @@ class OpenClawAdapter extends BaseAdapter {
       const stderrFd = fs.openSync(stderrFile, 'w');
       this._log('Spawn: stderr → ' + stderrFile);
 
-      let spawnBin = binary;
-      let spawnArgs = args;
-      if (IS_WINDOWS) {
-        // Avoid cmd.exe — it can't handle Unicode paths (Chinese/Japanese/Korean usernames)
-        // Find node.exe + openclaw.mjs and spawn directly
-        const portableNode = path.join(os.homedir(), '.openagents', 'nodejs', 'node.exe');
-        const openclawMjs = path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', 'openclaw', 'openclaw.mjs');
-        if (fs.existsSync(portableNode) && fs.existsSync(openclawMjs)) {
-          spawnBin = portableNode;
-          spawnArgs = [openclawMjs, ...args];
-        } else {
-          // Fallback to cmd.exe (works for ASCII-only paths)
-          spawnBin = process.env.COMSPEC || 'cmd.exe';
-          spawnArgs = ['/C', binary, ...args.map(a => a.includes(' ') ? `"${a}"` : a)];
-        }
+      // Always spawn node + openclaw.mjs directly (no shims, no cmd.exe, cross-platform)
+      const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
+      const nodeBin = IS_WINDOWS
+        ? path.join(portableDir, 'node.exe')
+        : path.join(portableDir, 'bin', 'node');
+      const openclawMjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');
+
+      let spawnBin, spawnArgs;
+      if (fs.existsSync(nodeBin) && fs.existsSync(openclawMjs)) {
+        spawnBin = nodeBin;
+        spawnArgs = [openclawMjs, ...args];
+      } else {
+        // Fallback: try the binary path directly (system install)
+        spawnBin = binary;
+        spawnArgs = args;
       }
       const proc = spawn(spawnBin, spawnArgs, {
         stdio: ['ignore', 'pipe', stderrFd],
