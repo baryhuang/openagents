@@ -164,6 +164,22 @@ function copyDirSync(src, dest) {
   }
 }
 
+function findNpmCommand() {
+  const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+  if (!fs.existsSync(nodeBin)) return null;
+  // Check for npm.cmd shim first
+  const npmCmd = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+  if (fs.existsSync(npmCmd)) return `"${npmCmd}"`;
+  // Find npm-cli.js directly
+  const candidates = [
+    path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+  const npmCli = candidates.find(p => fs.existsSync(p));
+  if (npmCli) return `"${nodeBin}" "${npmCli}"`;
+  return null;
+}
+
 async function ensureCoreLibrary() {
   const corePkgPath = path.join(GLOBAL_MODULES, CORE_PKG, 'package.json');
   let installedVersion = null;
@@ -173,88 +189,42 @@ async function ensureCoreLibrary() {
   }
 
   if (!installedVersion) {
-    // First launch — copy bundled core library to global path
-    // This avoids needing npm/network on first startup
-    const bundledPath = path.join(__dirname, '..', '..', 'node_modules', CORE_PKG);
-    // Also check asar-extracted path for packaged apps
-    const asarUnpacked = path.join(__dirname, '..', '..', '..', 'app.asar.unpacked', 'node_modules', CORE_PKG);
-
-    let srcPath = null;
-    slog(`ensureCoreLibrary: bundledPath=${bundledPath} exists=${fs.existsSync(path.join(bundledPath, 'package.json'))}`);
-    slog(`ensureCoreLibrary: asarUnpacked=${asarUnpacked} exists=${fs.existsSync(path.join(asarUnpacked, 'package.json'))}`);
-    // Prefer asarUnpacked (real files on disk) over asar (virtual filesystem, can't copy)
-    if (fs.existsSync(path.join(asarUnpacked, 'package.json'))) srcPath = asarUnpacked;
-    else if (fs.existsSync(path.join(bundledPath, 'package.json'))) srcPath = bundledPath;
-    slog(`ensureCoreLibrary: srcPath=${srcPath}`);
-
-    if (srcPath) {
-      console.log('First launch: copying bundled core library from', srcPath);
+    // First launch — install core library via npm (requires Node.js + npm)
+    slog('Core library not found — installing via npm...');
+    const npmCmd = findNpmCommand();
+    if (npmCmd) {
       try {
-        const destPath = path.join(GLOBAL_MODULES, CORE_PKG);
-        // Ensure parent dirs exist
-        fs.mkdirSync(path.join(GLOBAL_MODULES, '@openagents-org'), { recursive: true });
-        copyDirSync(srcPath, destPath);
-        // Also copy dependencies (ws, blessed)
-        for (const dep of ['ws', 'blessed']) {
-          const depSrc = path.join(path.dirname(srcPath), dep);
-          const depDest = path.join(GLOBAL_MODULES, dep);
-          if (fs.existsSync(depSrc) && !fs.existsSync(depDest)) {
-            copyDirSync(depSrc, depDest);
-          }
-        }
+        slog('npm install cmd: ' + npmCmd + ' install -g ' + CORE_PKG + '@latest --ignore-scripts');
+        execSync(`${npmCmd} install -g ${CORE_PKG}@latest --ignore-scripts`, {
+          stdio: 'pipe', timeout: 120000,
+          env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+        });
         try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
-        console.log('Core library v' + installedVersion + ' ready');
+        slog('Core library v' + installedVersion + ' installed');
       } catch (e) {
-        console.error('Failed to copy bundled core library:', e.message);
+        slog('npm install failed: ' + e.message);
       }
-    }
-
-    // If copy failed and npm is available, try npm install (slow — requires network)
-    if (!installedVersion) {
-      const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
-      // Find npm-cli.js — could be at different locations depending on how node was extracted
-      const npmCliCandidates = [
-        path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-        path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-      ];
-      const npmCli = npmCliCandidates.find(p => fs.existsSync(p));
-      // Also check for npm.cmd as fallback
-      const npmCmd = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
-
-      if (fs.existsSync(nodeBin) && (npmCli || fs.existsSync(npmCmd))) {
-        const installCmd = npmCli
-          ? `"${nodeBin}" "${npmCli}" install -g ${CORE_PKG}@latest`
-          : `"${npmCmd}" install -g ${CORE_PKG}@latest`;
-        console.log('Bundled copy not found — installing core library via npm...');
-        slog('npm install cmd: ' + installCmd);
-        try {
-          execSync(installCmd, {
-            stdio: 'ignore', timeout: 120000,
-            env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
-          });
-          try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
-        } catch (e) {
-          console.error('Failed to install core library:', e.message);
-          slog('npm install failed: ' + e.message);
-        }
-      } else {
-        slog('Cannot install core: nodeBin=' + fs.existsSync(nodeBin) + ' npmCli=' + !!npmCli + ' npmCmd=' + fs.existsSync(npmCmd));
-      }
+    } else {
+      slog('Cannot install core — npm not available');
     }
   }
 
   coreVersion = installedVersion;
 
-  // Check for updates in background (don't block startup)
-  const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
-  if (fs.existsSync(npmBin)) {
-    checkCoreUpdate(npmBin).catch(() => {});
+  // Reload agent manager with the newly installed core
+  if (installedVersion && agentManager) {
+    agentManager.reloadCore();
   }
+
+  // Check for updates in background (don't block startup)
+  checkCoreUpdate().catch(() => {});
 }
 
-async function checkCoreUpdate(npmBin) {
+async function checkCoreUpdate() {
+  const npmCmd = findNpmCommand();
+  if (!npmCmd) return;
   try {
-    const latest = execSync(`"${npmBin}" view ${CORE_PKG} version`, {
+    const latest = execSync(`${npmCmd} view ${CORE_PKG} version`, {
       encoding: 'utf-8', timeout: 15000,
       env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
     }).trim();
@@ -504,7 +474,7 @@ function setupIPC() {
   ipcMain.handle('shell:open-external', (_e, url) => shell.openExternal(url));
   ipcMain.handle('shell:open-terminal', (_e, cmd) => {
     const { spawn } = require('child_process');
-    const { getEnhancedEnv } = require('@openagents-org/agent-launcher').paths;
+    const { getEnhancedEnv } = (() => { try { return require(path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher')).paths; } catch { try { return require('@openagents-org/agent-launcher').paths; } catch { return { getEnhancedEnv: () => process.env }; } } })();
     const env = getEnhancedEnv();
     if (process.platform === 'win32') {
       // Open a visible terminal window with PATH set
@@ -531,7 +501,7 @@ function setupIPC() {
   });
   ipcMain.handle('shell:exec', (_e, cmd) => {
     const { execSync } = require('child_process');
-    const { getEnhancedEnv } = require('@openagents-org/agent-launcher').paths;
+    const { getEnhancedEnv } = (() => { try { return require(path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher')).paths; } catch { try { return require('@openagents-org/agent-launcher').paths; } catch { return { getEnhancedEnv: () => process.env }; } } })();
     const env = getEnhancedEnv();
     // Use ComSpec directly — guaranteed to be the correct path on this system
     const shell = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : true;

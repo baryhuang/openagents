@@ -9,14 +9,63 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { AgentConnector, Daemon } = require('@openagents-org/agent-launcher');
 
 const CONFIG_DIR = path.join(os.homedir(), '.openagents');
+const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher');
+
+// Load core library from global install (not bundled asar)
+function loadCore() {
+  // Try global path first
+  if (fs.existsSync(path.join(GLOBAL_CORE, 'package.json'))) {
+    return require(GLOBAL_CORE);
+  }
+  // Fallback to bundled (for dev mode or if global not yet installed)
+  try { return require('@openagents-org/agent-launcher'); } catch {}
+  return null;
+}
+
+let core = loadCore();
 
 class AgentManager {
   constructor(store) {
     this._store = store;
-    this._connector = new AgentConnector({ configDir: CONFIG_DIR });
+    if (!core) core = loadCore();
+    if (core) {
+      this._connector = new core.AgentConnector({ configDir: CONFIG_DIR });
+    } else {
+      // Core not available yet — will be initialized after install
+      this._connector = null;
+    }
+  }
+
+  /** Reload core library after install/update */
+  reloadCore() {
+    // Clear require cache for global path
+    const cacheKeys = Object.keys(require.cache).filter(k => k.includes('agent-launcher'));
+    for (const k of cacheKeys) delete require.cache[k];
+    core = loadCore();
+    if (core) {
+      this._connector = new core.AgentConnector({ configDir: CONFIG_DIR });
+    }
+    return !!core;
+  }
+
+  get coreVersion() {
+    try {
+      const pkg = path.join(GLOBAL_CORE, 'package.json');
+      if (fs.existsSync(pkg)) return JSON.parse(fs.readFileSync(pkg, 'utf-8')).version;
+    } catch {}
+    // Fallback to bundled
+    try { return require('@openagents-org/agent-launcher/package.json').version; } catch {}
+    return null;
+  }
+
+  _ensureConnector() {
+    if (!this._connector) {
+      if (!this.reloadCore()) {
+        throw new Error('Core library not installed. Install an agent first via the Install tab.');
+      }
+    }
   }
 
   // ------------------------------------------------------------------
@@ -24,6 +73,7 @@ class AgentManager {
   // ------------------------------------------------------------------
 
   getAgents() {
+    if (!this._connector) return [];
     const agents = this._connector.listAgents();
     const status = this.getAllStatus();
 
