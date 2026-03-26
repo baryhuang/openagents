@@ -167,16 +167,18 @@ function copyDirSync(src, dest) {
 function findNpmCommand() {
   const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
   if (!fs.existsSync(nodeBin)) return null;
-  // Check for npm.cmd shim first
-  const npmCmd = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
-  if (fs.existsSync(npmCmd)) return `"${npmCmd}"`;
-  // Find npm-cli.js directly
+  // Always prefer node.exe + npm-cli.js (avoids cmd.exe Unicode path encoding issues)
   const candidates = [
     path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
     path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
   ];
   const npmCli = candidates.find(p => fs.existsSync(p));
   if (npmCli) return `"${nodeBin}" "${npmCli}"`;
+  // Fallback to npm.cmd (may fail on non-ASCII usernames)
+  if (process.platform !== 'win32') {
+    const npmBin = path.join(PORTABLE_NODE_DIR, 'bin', 'npm');
+    if (fs.existsSync(npmBin)) return `"${npmBin}"`;
+  }
   return null;
 }
 
