@@ -73,7 +73,13 @@
         }
       ],
       "icon": "assets/icon.icns",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "identity": "Developer ID Application: ZHONGYUAN ZHU (AP69DBR725)",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": true
     },
     "dmg": {
       "title": "${productName} ${version}"

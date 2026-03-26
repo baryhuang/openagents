@@ -193,34 +193,63 @@ async function ensureCoreLibrary() {
   }
 
   // Always try to update to latest on startup
-  const npmCmd = findNpmCommand();
-  if (npmCmd) {
+  // Use direct tarball download — avoids npm --prefix which prunes npm itself
+  const https = require('https');
+  try {
+    // Check latest version from registry
+    const latestVersion = await new Promise((res, rej) => {
+      https.get(`https://registry.npmjs.org/${CORE_PKG}/latest`, r => {
+        let d = ''; r.on('data', c => d += c);
+        r.on('end', () => { try { res(JSON.parse(d).version); } catch { rej(new Error('parse error')); } });
+      }).on('error', rej);
+    });
+
     if (!installedVersion) {
-      slog('Core library not found — installing via npm...');
-      if (_updateSplash) _updateSplash('Installing core library...', 65, 'First time setup');
+      slog('Core library not found — installing v' + latestVersion + '...');
+      if (_updateSplash) _updateSplash('Installing core library...', 65, 'v' + latestVersion);
+    } else if (latestVersion !== installedVersion) {
+      slog('Core library v' + installedVersion + ' → v' + latestVersion + ' update available');
+      if (_updateSplash) _updateSplash('Updating core library...', 65, 'v' + installedVersion + ' → v' + latestVersion);
     } else {
-      slog('Core library v' + installedVersion + ' found — checking for updates...');
-      if (_updateSplash) _updateSplash('Checking for updates...', 65, 'v' + installedVersion);
+      slog('Core library v' + installedVersion + ' (already latest)');
+      if (_updateSplash) _updateSplash('Core library up to date', 80, 'v' + installedVersion);
     }
-    try {
-      execSync(`${npmCmd} install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`, {
-        stdio: 'pipe', timeout: 120000,
-        env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
-      });
+
+    if (!installedVersion || latestVersion !== installedVersion) {
+      // Download and extract tarball directly — no npm needed
+      const tgzUrl = `https://registry.npmjs.org/${CORE_PKG}/-/agent-launcher-${latestVersion}.tgz`;
+      const tgzPath = path.join(os.tmpdir(), `agent-launcher-${latestVersion}.tgz`);
+      const destDir = path.join(GLOBAL_MODULES, CORE_PKG);
+
+      await downloadFile(https, tgzUrl, tgzPath, null);
+      // Remove old version
+      try { fs.rmSync(destDir, { recursive: true, force: true }); } catch {}
+      fs.mkdirSync(destDir, { recursive: true });
+      execSync(`tar -xzf "${tgzPath}" -C "${destDir}" --strip-components=1`, { timeout: 60000, stdio: 'pipe' });
+      try { fs.unlinkSync(tgzPath); } catch {}
+
       const newVersion = (() => { try { return JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch { return null; } })();
-      if (newVersion && newVersion !== installedVersion) {
-        slog('Core library updated: ' + (installedVersion || 'none') + ' → ' + newVersion);
-        if (_updateSplash) _updateSplash('Updated core library', 80, 'v' + (installedVersion || '?') + ' → v' + newVersion);
-      } else {
-        slog('Core library v' + (newVersion || installedVersion) + ' (already latest)');
-        if (_updateSplash) _updateSplash('Core library up to date', 80, 'v' + (newVersion || installedVersion));
+      if (newVersion) {
+        slog('Core library installed: v' + newVersion);
+        if (_updateSplash) _updateSplash('Core library ready', 80, 'v' + newVersion);
+        installedVersion = newVersion;
       }
-      installedVersion = newVersion || installedVersion;
-    } catch (e) {
-      slog('Core update check failed: ' + e.message);
     }
-  } else if (!installedVersion) {
-    slog('Cannot install core — npm not available');
+  } catch (e) {
+    slog('Core update failed: ' + e.message);
+    if (!installedVersion) {
+      slog('Falling back to npm...');
+      const npmCmd = findNpmCommand();
+      if (npmCmd) {
+        try {
+          execSync(`${npmCmd} install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`, {
+            stdio: 'pipe', timeout: 120000,
+            env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+          });
+          try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version; } catch {}
+        } catch {}
+      }
+    }
   }
 
   coreVersion = installedVersion;
