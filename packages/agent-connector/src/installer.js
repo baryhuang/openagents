@@ -36,9 +36,6 @@ class Installer {
    * Checks binary on PATH first, then marker files.
    */
   isInstalled(agentType) {
-    // Fast check: marker file
-    if (this._hasMarker(agentType)) return true;
-
     // Definitive check: does the package exist in our node_modules?
     const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
     const globalModules = path.join(portableDir, 'node_modules');
@@ -48,9 +45,16 @@ class Installer {
     const pkgDir = path.join(globalModules, npmPkg || binary);
     if (fs.existsSync(path.join(pkgDir, 'package.json'))) return true;
 
+    // Marker file alone is not enough — package may have been pruned
+    // (npm --prefix removes packages not in its dependency tree)
+
     // Fallback: check if binary exists on PATH (system install)
     const binaryPath = this._whichBinary(agentType);
-    if (!binaryPath) return false;
+    if (!binaryPath) {
+      // Clean stale marker if package is gone
+      if (this._hasMarker(agentType)) this._removeMarker(agentType);
+      return false;
+    }
 
     // Verify it's not a stale shim — if binary is in our portable dir,
     // check the actual package exists (reuse variables from above)
