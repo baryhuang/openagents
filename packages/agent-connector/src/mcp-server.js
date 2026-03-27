@@ -13,7 +13,12 @@
  */
 
 const readline = require('readline');
+const { execSync, spawn: spawnChild } = require('child_process');
+const net = require('net');
 const { WorkspaceClient } = require('./workspace-client');
+
+// Active tunnels: port → { proc, url }
+const _activeTunnels = {};
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -185,6 +190,42 @@ function buildToolDefs(disabledModules) {
     );
   }
 
+  // -- Tunnel module --
+  if (!disabledModules.has('tunnel')) {
+    tools.push(
+      {
+        name: 'tunnel_expose',
+        description:
+          'Expose a local port as a public URL via Cloudflare tunnel. ' +
+          'Use this to let workspace users preview a local dev server ' +
+          '(e.g. React, Next.js, Flask on localhost). Returns the public URL.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            port: { type: 'integer', description: 'Local port to expose (e.g. 3000)' },
+          },
+          required: ['port'],
+        },
+      },
+      {
+        name: 'tunnel_close',
+        description: 'Close a tunnel that was previously opened with tunnel_expose.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            port: { type: 'integer', description: 'Port of the tunnel to close' },
+          },
+          required: ['port'],
+        },
+      },
+      {
+        name: 'tunnel_list',
+        description: 'List all active tunnels.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    );
+  }
+
   return tools;
 }
 
@@ -196,6 +237,10 @@ const MIME_MAP = {
   '.html': 'text/html', '.css': 'text/css', '.xml': 'application/xml',
   '.yaml': 'application/yaml', '.yml': 'application/yaml',
   '.csv': 'text/csv', '.log': 'text/plain', '.sh': 'text/x-shellscript',
+  '.toml': 'application/toml', '.rs': 'text/x-rust', '.go': 'text/x-go',
+  '.java': 'text/x-java', '.rb': 'text/x-ruby', '.c': 'text/x-c',
+  '.cpp': 'text/x-c++', '.h': 'text/x-c', '.tsx': 'text/typescript',
+  '.jsx': 'text/javascript', '.sql': 'application/sql',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.gif': 'image/gif', '.svg': 'image/svg+xml', '.pdf': 'application/pdf',
 };
@@ -419,6 +464,100 @@ class McpServer {
       case 'workspace_browser_close': {
         await this.ws.browserCloseTab(this.workspaceId, this.token, args.tab_id);
         return text(`Browser tab closed: ${args.tab_id}`);
+      }
+
+      // ── Tunnel ──
+
+      case 'tunnel_expose': {
+        const port = args.port;
+        if (!port) throw new Error('port is required');
+
+        if (_activeTunnels[port]) {
+          return text(`Tunnel already open for port ${port}: ${_activeTunnels[port].url}`);
+        }
+
+        // Check cloudflared is available
+        let cfBin;
+        try {
+          cfBin = execSync('which cloudflared 2>/dev/null || echo ""', { encoding: 'utf-8' }).trim();
+        } catch {}
+        if (!cfBin) {
+          return text(
+            'Error: cloudflared is not installed. Install it:\n' +
+            '  macOS:  brew install cloudflared\n' +
+            '  Linux:  curl -fsSL https://github.com/cloudflare/cloudflared/' +
+            'releases/latest/download/cloudflared-linux-amd64 ' +
+            '-o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared'
+          );
+        }
+
+        // Pre-flight: check port is listening
+        const portOpen = await new Promise((resolve) => {
+          const sock = new net.Socket();
+          sock.setTimeout(2000);
+          sock.on('connect', () => { sock.destroy(); resolve(true); });
+          sock.on('error', () => resolve(false));
+          sock.on('timeout', () => { sock.destroy(); resolve(false); });
+          sock.connect(port, 'localhost');
+        });
+        if (!portOpen) {
+          return text(`Error: nothing is listening on localhost:${port}. Start a server on that port first.`);
+        }
+
+        // Start cloudflared
+        const proc = spawnChild('cloudflared', ['tunnel', '--url', `http://localhost:${port}`], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+        });
+
+        // Wait for URL from stderr (cloudflared logs the URL there)
+        const url = await new Promise((resolve, reject) => {
+          const urlRe = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
+          let buf = '';
+          const timeout = setTimeout(() => {
+            proc.kill();
+            reject(new Error('cloudflared did not produce a URL within 20 seconds'));
+          }, 20000);
+
+          const onData = (chunk) => {
+            buf += chunk.toString();
+            const match = buf.match(urlRe);
+            if (match) {
+              clearTimeout(timeout);
+              proc.stderr.removeListener('data', onData);
+              resolve(match[0]);
+            }
+          };
+          proc.stderr.on('data', onData);
+          proc.on('exit', (code) => {
+            clearTimeout(timeout);
+            reject(new Error(`cloudflared exited with code ${code}: ${buf.slice(0, 200)}`));
+          });
+        });
+
+        _activeTunnels[port] = { proc, url };
+        proc.unref(); // don't block MCP server exit
+        return text(`Tunnel open: localhost:${port} → ${url}`);
+      }
+
+      case 'tunnel_close': {
+        const port = args.port;
+        const tunnel = _activeTunnels[port];
+        if (!tunnel) return text(`No tunnel open for port ${port}`);
+        try { tunnel.proc.kill(); } catch {}
+        delete _activeTunnels[port];
+        return text(`Tunnel closed for port ${port}`);
+      }
+
+      case 'tunnel_list': {
+        const ports = Object.keys(_activeTunnels);
+        if (!ports.length) return text('No active tunnels.');
+        const lines = ports.map((p) => {
+          const t = _activeTunnels[p];
+          const running = t.proc && t.proc.exitCode === null;
+          return `- localhost:${p} → ${t.url} (${running ? 'running' : 'stopped'})`;
+        });
+        return text(lines.join('\n'));
       }
 
       default:

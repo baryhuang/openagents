@@ -31,7 +31,6 @@ class ClaudeAdapter extends BaseAdapter {
   constructor(opts) {
     super(opts);
     this.disabledModules = opts.disabledModules || new Set();
-    this.workingDir = opts.workingDir || undefined;
     this._channelSessions = {}; // channel → Claude CLI session_id
     this._channelProcesses = {}; // channel → child process
     this._sessionsFile = path.join(
@@ -192,7 +191,7 @@ class ClaudeAdapter extends BaseAdapter {
     return null;
   }
 
-  _buildClaudeCmd(prompt, channelName) {
+  _buildClaudeCmd(prompt, channelName, { skipResume = false } = {}) {
     const claudeBin = this._findClaudeBinary();
     if (!claudeBin) {
       throw new Error('claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash');
@@ -252,9 +251,9 @@ class ClaudeAdapter extends BaseAdapter {
     cmd.push('--allowedTools', ...allowed);
     cmd.push('--disallowedTools', 'AskUserQuestion');
 
-    // Resume existing conversation
+    // Resume existing conversation (skipped on retry after stale session)
     const sessionId = this._channelSessions[channelName];
-    if (sessionId) {
+    if (sessionId && !skipResume) {
       cmd.push('--resume', sessionId);
     }
 
@@ -389,19 +388,24 @@ class ClaudeAdapter extends BaseAdapter {
 
     let mcpConfigFile = null;
     let cmd;
-    try {
-      const result = this._buildClaudeCmd(content, msgChannel);
-      cmd = result.cmd;
-      mcpConfigFile = result.mcpConfigFile;
-    } catch (e) {
-      await this.sendError(msgChannel, e.message);
-      return;
-    }
 
     // Clean env
     const cleanEnv = { ...(this.agentEnv || process.env) };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE_SESSION;
+
+    // Run up to 2 attempts: first with session resume, then fresh if stale session detected
+    let _shouldRetry = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (mcpConfigFile) { try { fs.unlinkSync(mcpConfigFile); } catch {} mcpConfigFile = null; }
+      try {
+        const built = this._buildClaudeCmd(content, msgChannel, { skipResume: attempt > 0 });
+        cmd = built.cmd;
+        mcpConfigFile = built.mcpConfigFile;
+      } catch (e) {
+        await this.sendError(msgChannel, e.message);
+        return;
+      }
 
     try {
       // Always resolve shim/symlink to node + JS entry point.
@@ -428,13 +432,14 @@ class ClaudeAdapter extends BaseAdapter {
       let postedThinking = false;
       let stderrBuf = '';
       let lineBuffer = '';
+      let _pendingLines = Promise.resolve(); // chain of in-flight processLine calls
 
       // Capture stderr for diagnostics
       if (proc.stderr) {
         proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString('utf-8'); });
       }
 
-      await new Promise((resolve, reject) => {
+      _shouldRetry = await new Promise((resolve, reject) => {
         let consecutiveTimeouts = 0;
         let lastDataTime = Date.now();
         let timeoutTimer = null;
@@ -484,6 +489,8 @@ class ClaudeAdapter extends BaseAdapter {
                 }
                 lastResponseText.push(block.text.trim());
                 postedThinking = true;
+                // Stream text in real-time as "thinking" (same as Python adapter)
+                try { await this.sendThinking(msgChannel, block.text.trim()); } catch {}
               } else if (block.type === 'tool_use') {
                 hasToolUseSinceLastText = true;
                 postedThinking = false;
@@ -530,6 +537,9 @@ class ClaudeAdapter extends BaseAdapter {
         proc.on('exit', async (code) => {
           if (timeoutTimer) clearInterval(timeoutTimer);
 
+          // Wait for all in-flight processLine calls to complete
+          try { await _pendingLines; } catch {}
+
           // Process remaining buffer
           const lines = lineBuffer.split('\n');
           for (const line of lines) {
@@ -550,10 +560,19 @@ class ClaudeAdapter extends BaseAdapter {
             if (fullResponse) {
               try { await this.sendResponse(msgChannel, fullResponse); } catch {}
             }
-          } else if (!postedThinking) {
-            try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
+            resolve(false); // done, no retry
+          } else if (code !== 0 && this._channelSessions[msgChannel]) {
+            // No output + error exit + had a resume session → stale session, signal retry
+            this._log(`Stale session detected for ${msgChannel}, clearing and retrying without resume`);
+            delete this._channelSessions[msgChannel];
+            this._saveSessions();
+            resolve(true); // retry=true
+          } else {
+            if (!postedThinking) {
+              try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
+            }
+            resolve(false);
           }
-          resolve();
         });
 
         proc.on('error', (err) => {
@@ -561,26 +580,29 @@ class ClaudeAdapter extends BaseAdapter {
           reject(err);
         });
 
-        // Process lines as they arrive
+        // Process lines as they arrive (chained to preserve order)
         proc.stdout.on('data', (chunk) => {
           lineBuffer += chunk.toString('utf-8');
           resetTimeout();
           const lines = lineBuffer.split('\n');
           lineBuffer = lines.pop(); // keep incomplete line
           for (const line of lines) {
-            processLine(line).catch(() => {});
+            _pendingLines = _pendingLines.then(() => processLine(line)).catch(() => {});
           }
         });
       });
     } catch (e) {
       this._log(`Error handling message: ${e.message}`);
       await this.sendError(msgChannel, `Error processing message: ${e.message}`);
-    } finally {
-      if (mcpConfigFile) {
-        try { fs.unlinkSync(mcpConfigFile); } catch {}
-      }
-      delete this._channelProcesses[msgChannel];
+      break; // no retry on spawn error
     }
+    if (!_shouldRetry) break; // exit loop if no retry needed
+    } // end for attempt
+
+    if (mcpConfigFile) {
+      try { fs.unlinkSync(mcpConfigFile); } catch {}
+    }
+    delete this._channelProcesses[msgChannel];
   }
 }
 

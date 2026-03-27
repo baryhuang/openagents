@@ -257,6 +257,7 @@ class OpenClawAdapter extends BaseAdapter {
       const proc = spawn(spawnBin, spawnArgs, {
         stdio: ['ignore', 'pipe', stderrFd],
         env: spawnEnv,
+        cwd: this.workingDir || process.env.HOME || '/',
         timeout: 600000,
         windowsHide: true,
       });
@@ -414,7 +415,9 @@ class OpenClawAdapter extends BaseAdapter {
    */
   static configureNativeAuth(env) {
     const apiKey = env.LLM_API_KEY;
-    const baseUrl = env.LLM_BASE_URL || 'https://api.openai.com/v1';
+    // Strip /chat/completions suffix — OpenClaw appends it internally
+    const rawUrl = env.LLM_BASE_URL || 'https://api.openai.com/v1';
+    const baseUrl = rawUrl.replace(/\/chat\/completions\/?$/, '');
     const model = env.LLM_MODEL || 'gpt-4o';
     if (!apiKey) return;
 

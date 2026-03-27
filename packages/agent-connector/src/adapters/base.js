@@ -31,7 +31,7 @@ class BaseAdapter {
    * @param {string} opts.agentName
    * @param {string} [opts.endpoint]
    */
-  constructor({ workspaceId, channelName, token, agentName, endpoint, agentEnv, agentType }) {
+  constructor({ workspaceId, channelName, token, agentName, endpoint, agentEnv, agentType, workingDir }) {
     this.workspaceId = workspaceId;
     this.channelName = channelName;
     this.token = token;
@@ -39,6 +39,7 @@ class BaseAdapter {
     this.endpoint = endpoint || DEFAULT_ENDPOINT;
     this.agentEnv = agentEnv || process.env;
     this.agentType = agentType;
+    this.workingDir = workingDir || undefined;
     this.client = new WorkspaceClient(this.endpoint);
     this._lastEventId = null;
     this._running = false;
@@ -308,6 +309,17 @@ class BaseAdapter {
         senderType: 'agent',
         senderName: this.agentName,
         messageType: 'status',
+        metadata: { agent_mode: this._mode },
+      });
+    } catch {}
+  }
+
+  async sendThinking(channel, content) {
+    try {
+      await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
+        senderType: 'agent',
+        senderName: this.agentName,
+        messageType: 'thinking',
         metadata: { agent_mode: this._mode },
       });
     } catch {}

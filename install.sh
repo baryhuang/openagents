@@ -15,7 +15,7 @@ exec 3>&1 1>&2
 # Save original PATH to detect if openagents needs PATH setup
 ORIGINAL_PATH="$PATH"
 
-VERSION="1.0.4"
+VERSION="1.0.6"
 NPM_PACKAGE="@openagents-org/agent-launcher"
 MIN_NODE_MAJOR=18
 
@@ -129,6 +129,43 @@ else
     fi
 fi
 
+# Ensure portable Node.js v22+ at ~/.openagents/nodejs/bin/ for agents that need it
+# (e.g. OpenClaw requires v22.12+). System Node may be older (v18/v20).
+PORTABLE_NODE="$HOME/.openagents/nodejs/bin/node"
+PORTABLE_NODE_VER="v22.16.0"
+if [ -x "$PORTABLE_NODE" ]; then
+    portable_major=$("$PORTABLE_NODE" -e "process.stdout.write(String(process.versions.node.split('.')[0]))" 2>/dev/null || echo 0)
+    if [ "$portable_major" -lt 22 ]; then
+        info "Upgrading portable Node.js to $PORTABLE_NODE_VER..."
+        _install_portable=1
+    fi
+elif [ ! -x "$PORTABLE_NODE" ]; then
+    _install_portable=1
+fi
+
+if [ "${_install_portable:-}" = "1" ]; then
+    case "$OS" in
+        macos)
+            if [ "$ARCH" = "arm64" ]; then
+                _PNODE_URL="https://nodejs.org/dist/$PORTABLE_NODE_VER/node-${PORTABLE_NODE_VER}-darwin-arm64.tar.gz"
+            else
+                _PNODE_URL="https://nodejs.org/dist/$PORTABLE_NODE_VER/node-${PORTABLE_NODE_VER}-darwin-x64.tar.gz"
+            fi
+            mkdir -p "$HOME/.openagents/nodejs"
+            curl -fsSL "$_PNODE_URL" | tar xz -C "$HOME/.openagents/nodejs" --strip-components=1
+            ;;
+        linux)
+            _PNODE_URL="https://nodejs.org/dist/$PORTABLE_NODE_VER/node-${PORTABLE_NODE_VER}-linux-x64.tar.xz"
+            mkdir -p "$HOME/.openagents/nodejs"
+            curl -fsSL "$_PNODE_URL" | tar xJ -C "$HOME/.openagents/nodejs" --strip-components=1
+            ;;
+    esac
+    if [ -x "$PORTABLE_NODE" ]; then
+        ok "Portable Node.js $PORTABLE_NODE_VER installed"
+    fi
+fi
+export PATH="$HOME/.openagents/nodejs/bin:$PATH"
+
 # =========================================================================
 # Step 2: Install/upgrade openagents
 # =========================================================================
@@ -165,12 +202,32 @@ if [ -n "$LATEST_VER" ] && [ "$LATEST_VER" != "$INSTALLED_VER" ]; then
     TARBALL_URL="https://registry.npmjs.org/$NPM_PACKAGE/-/agent-launcher-${LATEST_VER}.tgz"
     mkdir -p "$CORE_DIR"
     curl -fsSL "$TARBALL_URL" | tar xz -C "$CORE_DIR" --strip-components=1
-    # Install dependencies (blessed for TUI) without pruning other packages
-    $NPM install --prefix "$PREFIX_DIR" --no-save blessed 2>&1 | tail -2
-    # Create bin shims
+    # Install blessed (TUI dep) via direct tarball — avoids npm --prefix pruning other packages
+    BLESSED_DIR="$PREFIX_DIR/node_modules/blessed"
+    if [ ! -f "$BLESSED_DIR/package.json" ]; then
+        BLESSED_VER=$($NPM view blessed version 2>/dev/null || echo "0.1.81")
+        mkdir -p "$BLESSED_DIR"
+        curl -fsSL "https://registry.npmjs.org/blessed/-/blessed-${BLESSED_VER}.tgz" | tar xz -C "$BLESSED_DIR" --strip-components=1
+    fi
+    # Create package.json at prefix so future npm --save --prefix installs don't prune core packages
+    if [ ! -f "$PREFIX_DIR/package.json" ]; then
+        printf '{"private":true,"dependencies":{"%s":"%s","blessed":"%s"}}\n' \
+            "$NPM_PACKAGE" "$LATEST_VER" "${BLESSED_VER:-0.1.81}" > "$PREFIX_DIR/package.json"
+    else
+        # Update existing package.json to include core deps
+        node -e "
+            const f='$PREFIX_DIR/package.json';
+            const p=JSON.parse(require('fs').readFileSync(f,'utf-8'));
+            p.dependencies=p.dependencies||{};
+            p.dependencies['$NPM_PACKAGE']='$LATEST_VER';
+            if(!p.dependencies.blessed)p.dependencies.blessed='${BLESSED_VER:-0.1.81}';
+            require('fs').writeFileSync(f,JSON.stringify(p));
+        " 2>/dev/null
+    fi
+    # Create bin shims (tarball install doesn't create .bin entries)
     BIN_SHIM_DIR="$PREFIX_DIR/node_modules/.bin"
     mkdir -p "$BIN_SHIM_DIR"
-    for name in openagents agent-connector; do
+    for name in agn openagents agent-connector; do
         printf '#!/bin/sh\nexec "$(dirname "$0")/../../bin/node" "$(dirname "$0")/../@openagents-org/agent-launcher/bin/agent-connector.js" "$@"\n' > "$BIN_SHIM_DIR/$name"
         chmod +x "$BIN_SHIM_DIR/$name"
     done
@@ -178,16 +235,12 @@ elif [ -n "$INSTALLED_VER" ]; then
     info "Already up to date ($INSTALLED_VER)"
 fi
 
-# Ensure node/npm are at ~/.openagents/nodejs/bin/ (unified path for the daemon)
-# If we used system node (not portable), create symlinks so the daemon can find it
+# Portable node at ~/.openagents/nodejs/bin/ is always installed above.
+# Ensure npm is also available there (tarball includes it).
 BIN_DIR="$PREFIX_DIR/bin"
-if [ ! -x "$BIN_DIR/node" ]; then
-    mkdir -p "$BIN_DIR"
-    SYSTEM_NODE=$(command -v "$NODE" 2>/dev/null || command -v node 2>/dev/null)
+if [ ! -x "$BIN_DIR/npm" ] && [ -x "$BIN_DIR/node" ]; then
+    # Portable tarball should include npm; if not, symlink system npm
     SYSTEM_NPM=$(command -v npm 2>/dev/null)
-    if [ -n "$SYSTEM_NODE" ]; then
-        ln -sf "$SYSTEM_NODE" "$BIN_DIR/node"
-    fi
     if [ -n "$SYSTEM_NPM" ]; then
         ln -sf "$SYSTEM_NPM" "$BIN_DIR/npm"
     fi
@@ -197,13 +250,10 @@ export PATH="$PREFIX_DIR/node_modules/.bin:$PREFIX_DIR/bin:$PATH"
 
 OA_BIN=""
 if command -v openagents >/dev/null 2>&1; then
-    new_version=$(openagents --version 2>/dev/null | head -1 || echo "unknown")
+    # Use known version (already fetched above) — most reliable
+    _oa_ver="${LATEST_VER:-${INSTALLED_VER:-unknown}}"
     OA_BIN=$(command -v openagents)
-    ok "openagents $new_version installed"
-elif [ -n "$GLOBAL_DIR" ] && [ -x "$GLOBAL_DIR/bin/openagents" ]; then
-    new_version=$("$GLOBAL_DIR/bin/openagents" --version 2>/dev/null | head -1 || echo "unknown")
-    OA_BIN="$GLOBAL_DIR/bin/openagents"
-    ok "openagents $new_version installed"
+    ok "openagents v${_oa_ver} installed"
 else
     fail "Failed to install openagents.
   Try manually: npm install -g $NPM_PACKAGE"
@@ -296,7 +346,7 @@ fi
 
 echo "  Get started:"
 echo ""
-echo "    ${BOLD}openagents${RESET}                  Launch the interactive dashboard"
+echo "    ${BOLD}agn${RESET}                         Launch the interactive dashboard"
 echo ""
 
 if [ "$agent_count" -eq 0 ]; then

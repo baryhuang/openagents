@@ -210,7 +210,7 @@ class Daemon {
 
     console.log(`Daemon started (PID ${proc.pid})`);
     console.log(`Logs: ${logFile}`);
-    console.log('Stop: agent-connector down');
+    console.log('Stop: agn down');
   }
 
   /**
@@ -408,6 +408,7 @@ class Daemon {
         openclawAgentId: agentCfg.openclaw_agent_id || 'main',
         disabledModules: new Set(),
         agentEnv: this._buildAgentEnv(agentCfg),
+        workingDir: agentCfg.path || undefined,
       });
     } catch (e) {
       this._log(`${name} failed to create ${agentType} adapter: ${e.message}`);

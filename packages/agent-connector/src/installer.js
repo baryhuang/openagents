@@ -196,7 +196,7 @@ class Installer {
     // Use bundled node/npm if system npm not available
     if (cmd.startsWith('npm install')) {
       const prefixDir = path.join(os.homedir(), '.openagents', 'nodejs');
-      const args = cmd.replace('npm install', 'install --ignore-scripts --no-save').replace(' -g ', ` --prefix "${prefixDir}" `);
+      const args = cmd.replace('npm install', 'install --save').replace(' -g ', ` --prefix "${prefixDir}" `);
       cmd = this._resolveNpmCommand(args);
     }
 
@@ -232,7 +232,8 @@ class Installer {
     let cmd = rawCmd;
     if (rawCmd.startsWith('npm install')) {
       const prefixDir2 = path.join(os.homedir(), '.openagents', 'nodejs');
-      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --ignore-scripts --no-save').replace(' -g ', ` --prefix "${prefixDir2}" `);
+      // Use --save so npm tracks the package in package.json (prevents pruning on next install)
+      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --save').replace(' -g ', ` --prefix "${prefixDir2}" `);
       cmd = this._resolveNpmCommand(args);
     } else if (rawCmd.startsWith('pip install') || rawCmd.startsWith('pipx install')) {
       cmd = rawCmd; // pip commands stay as-is

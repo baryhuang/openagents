@@ -7,7 +7,7 @@
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$VERSION = "1.0.4"
+$VERSION = "1.0.5"
 $NPM_PACKAGE = "@openagents-org/agent-launcher"
 $MIN_NODE_MAJOR = 18
 
@@ -133,8 +133,17 @@ if ($latestVer -and ($latestVer -ne $installedVer)) {
     New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
     tar -xzf $tgz -C $coreDir --strip-components=1
     Remove-Item $tgz -Force -ErrorAction SilentlyContinue
-    # Install dependencies (blessed for TUI) without pruning
-    & npm install --prefix $prefixDir --no-save blessed 2>&1 | Select-Object -Last 2
+    # Install blessed (TUI dep) via direct tarball — avoids npm --prefix pruning other packages
+    $blessedDir = Join-Path $prefixDir "node_modules\blessed"
+    if (-not (Test-Path (Join-Path $blessedDir "package.json"))) {
+        $blessedVer = & npm view blessed version 2>$null
+        if (-not $blessedVer) { $blessedVer = "0.1.81" }
+        $blessedTgz = Join-Path $env:TEMP "blessed.tgz"
+        Invoke-WebRequest -Uri "https://registry.npmjs.org/blessed/-/blessed-$blessedVer.tgz" -OutFile $blessedTgz -UseBasicParsing
+        New-Item -ItemType Directory -Force -Path $blessedDir | Out-Null
+        tar -xzf $blessedTgz -C $blessedDir --strip-components=1
+        Remove-Item $blessedTgz -Force -ErrorAction SilentlyContinue
+    }
     # Create bin shims
     $shimDir = Join-Path $prefixDir "node_modules\.bin"
     New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
@@ -164,20 +173,14 @@ if (-not (Test-Path $portableNode)) {
 $oaBin = ""
 $acCmd = Get-Command openagents -ErrorAction SilentlyContinue
 if ($acCmd) {
-    $newVer = & openagents --version 2>$null
+    # Read version from package.json (more reliable than running --version via shim)
+    $newVer = ""
+    try { $newVer = (Get-Content $corePkg -ErrorAction SilentlyContinue | ConvertFrom-Json).version } catch {}
+    if (-not $newVer) { $newVer = if ($latestVer) { $latestVer } else { $installedVer } }
     $oaBin = $acCmd.Source
-    Ok "openagents $newVer installed"
+    Ok "openagents v$newVer installed"
 } else {
-    # Check npm global bin
-    $npmBin = Join-Path $env:APPDATA "npm"
-    if (Test-Path (Join-Path $npmBin "openagents.cmd")) {
-        $env:PATH = "$npmBin;$env:PATH"
-        $newVer = & openagents --version 2>$null
-        $oaBin = Join-Path $npmBin "openagents.cmd"
-        Ok "openagents $newVer installed"
-    } else {
-        Fail "Failed to install openagents. Try: npm install -g $NPM_PACKAGE"
-    }
+    Fail "Failed to install openagents. Try: npm install -g $NPM_PACKAGE"
 }
 
 # =========================================================================

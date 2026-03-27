@@ -104,13 +104,30 @@ function loadAgentRows(connector) {
             if (process.env[v]) { isReady = true; break; }
           }
         }
-        // Check creds file (for claude)
+        // Check creds file/directory (for claude)
         if (!isReady && cr.creds_file) {
           const credsPath = cr.creds_file.replace('~', process.env.HOME || process.env.USERPROFILE || '');
           try {
             if (fs.existsSync(credsPath)) {
-              const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
-              if (cr.creds_key && creds[cr.creds_key]) isReady = true;
+              const stat = fs.statSync(credsPath);
+              if (stat.isDirectory()) {
+                // Directory (e.g. ~/.claude/sessions) — check if it has files
+                isReady = fs.readdirSync(credsPath).length > 0;
+              } else {
+                const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+                if (cr.creds_key) isReady = !!creds[cr.creds_key];
+                else isReady = true;
+              }
+            }
+          } catch {}
+        }
+        // Also check OAuth credentials (Claude Code stores tokens in .credentials.json)
+        if (!isReady) {
+          try {
+            const oauthFile = path.join(process.env.HOME || '', '.claude', '.credentials.json');
+            if (fs.existsSync(oauthFile)) {
+              const creds = JSON.parse(fs.readFileSync(oauthFile, 'utf-8'));
+              if (creds.claudeAiOauth && creds.claudeAiOauth.accessToken) isReady = true;
             }
           } catch {}
         }

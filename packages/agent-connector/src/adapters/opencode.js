@@ -30,7 +30,6 @@ class OpenCodeAdapter extends BaseAdapter {
   constructor(opts) {
     super(opts);
     this.disabledModules = opts.disabledModules || new Set();
-    this.workingDir = opts.workingDir || undefined;
 
     // Agent home directory: ~/.openagents/agents/{agentName}/
     this.agentHome = path.join(os.homedir(), '.openagents', 'agents', this.agentName);

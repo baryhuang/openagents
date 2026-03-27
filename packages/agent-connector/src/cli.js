@@ -100,7 +100,7 @@ async function cmdStatus(connector) {
 
   const agents = connector.listAgents();
   if (agents.length === 0) {
-    print('\nNo agents configured. Run: openagents create <name> --type <type>');
+    print('\nNo agents configured. Run: agn create <name> --type <type>');
     return;
   }
 
@@ -117,7 +117,7 @@ async function cmdStatus(connector) {
 
 async function cmdCreate(connector, flags, positional) {
   const name = positional[0];
-  if (!name) { print('Usage: openagents create <name> [--type <type>]'); return; }
+  if (!name) { print('Usage: agn create <name> [--type <type>]'); return; }
   const type = flags.type || 'openclaw';
   const role = flags.role || 'worker';
 
@@ -143,28 +143,28 @@ async function cmdCreate(connector, flags, positional) {
 
 async function cmdRemove(connector, _flags, positional) {
   const name = positional[0];
-  if (!name) { print('Usage: openagents remove <name>'); return; }
+  if (!name) { print('Usage: agn remove <name>'); return; }
   connector.removeAgent(name);
   print(`Agent '${name}' removed`);
 }
 
 async function cmdStart(connector, _flags, positional) {
   const name = positional[0];
-  if (!name) { print('Usage: openagents start <name>'); return; }
+  if (!name) { print('Usage: agn start <name>'); return; }
   connector.sendDaemonCommand(`restart:${name}`);
   print(`Sent start command for '${name}'`);
 }
 
 async function cmdStop(connector, _flags, positional) {
   const name = positional[0];
-  if (!name) { print('Usage: openagents stop <name>'); return; }
+  if (!name) { print('Usage: agn stop <name>'); return; }
   connector.sendDaemonCommand(`stop:${name}`);
   print(`Sent stop command for '${name}'`);
 }
 
 async function cmdInstall(connector, _flags, positional) {
   const type = positional[0];
-  if (!type) { print('Usage: openagents install <type>'); return; }
+  if (!type) { print('Usage: agn install <type>'); return; }
 
   if (connector.isInstalled(type)) {
     print(`${type} is already installed`);
@@ -184,7 +184,7 @@ async function cmdInstall(connector, _flags, positional) {
 
 async function cmdUninstall(connector, _flags, positional) {
   const type = positional[0];
-  if (!type) { print('Usage: openagents uninstall <type>'); return; }
+  if (!type) { print('Usage: agn uninstall <type>'); return; }
 
   print(`Uninstalling ${type}...`);
   try {
@@ -271,7 +271,7 @@ async function cmdConnect(connector, flags, positional) {
   const name = positional[0];
   const token = positional[1] || flags.token;
   if (!name || !token) {
-    print('Usage: openagents connect <agent-name> <token>');
+    print('Usage: agn connect <agent-name> <token>');
     return;
   }
 
@@ -308,7 +308,7 @@ async function cmdConnect(connector, flags, positional) {
 
 async function cmdDisconnect(connector, _flags, positional) {
   const name = positional[0];
-  if (!name) { print('Usage: openagents disconnect <agent-name>'); return; }
+  if (!name) { print('Usage: agn disconnect <agent-name>'); return; }
   connector.disconnectWorkspace(name);
   print(`'${name}' disconnected from workspace`);
 
@@ -361,7 +361,7 @@ async function cmdWorkspace(connector, flags, positional) {
 
     case 'join': {
       const token = subArgs[0] || flags.token;
-      if (!token) { print('Usage: openagents workspace join <token>'); return; }
+      if (!token) { print('Usage: agn workspace join <token>'); return; }
       try {
         const info = await connector.resolveToken(token);
         connector.config.addNetwork({
@@ -395,7 +395,7 @@ async function cmdWorkspace(connector, flags, positional) {
 
 async function cmdEnv(connector, flags, positional) {
   const type = positional[0];
-  if (!type) { print('Usage: openagents env <type> [--set KEY=VALUE]'); return; }
+  if (!type) { print('Usage: agn env <type> [--set KEY=VALUE]'); return; }
 
   const setVal = flags.set;
   if (setVal) {
@@ -432,7 +432,7 @@ async function cmdEnv(connector, flags, positional) {
 
 async function cmdTestLLM(connector, _flags, positional) {
   const type = positional[0];
-  if (!type) { print('Usage: openagents test-llm <type>'); return; }
+  if (!type) { print('Usage: agn test-llm <type>'); return; }
 
   const env = connector.getAgentEnv(type);
   const resolved = connector.resolveAgentEnv(type, env);
@@ -454,7 +454,7 @@ async function cmdVersion() {
 }
 
 async function cmdHelp() {
-  print(`Usage: openagents <command> [options]
+  print(`Usage: agn <command> [options]
 
 Commands:
   up [--foreground]           Start daemon (background by default)
@@ -558,7 +558,7 @@ async function main() {
   const handler = commands[cmd];
   if (!handler) {
     print(`Unknown command: ${cmd}`);
-    print('Run: openagents help');
+    print('Run: agn help');
     process.exitCode = 1;
     return;
   }

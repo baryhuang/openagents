@@ -106,6 +106,14 @@ class AgentConnector {
 
   saveAgentEnv(agentType, env) {
     this.env.save(agentType, env);
+    // Configure native auth for agents that need it (e.g. OpenClaw auth-profiles.json)
+    try {
+      if (agentType === 'openclaw') {
+        const OpenClawAdapter = require('./adapters/openclaw');
+        const saved = this.env.load(agentType);
+        OpenClawAdapter.configureNativeAuth(saved);
+      }
+    } catch {}
     return { success: true };
   }
 
