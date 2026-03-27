@@ -478,6 +478,7 @@ Commands:
   workspace create [name]     Create a new workspace
   workspace join <token>      Join workspace with token
   workspace list              List configured workspaces
+  mcp-server                  Start MCP server (stdio) for workspace tools
   version                     Show version
   help                        Show this help
 
@@ -535,6 +536,23 @@ async function main() {
     workspace: () => cmdWorkspace(connector, flags, positional),
     env: () => cmdEnv(connector, flags, positional),
     'test-llm': () => cmdTestLLM(connector, flags, positional),
+    'mcp-server': () => {
+      const { runMcpServer } = require('./mcp-server');
+      const workspaceId = flags['workspace-id'] || process.env.OPENAGENTS_WORKSPACE_ID;
+      const channelName = flags['channel-name'] || process.env.OPENAGENTS_CHANNEL_NAME || 'general';
+      const agentName = flags['agent-name'] || process.env.OPENAGENTS_AGENT_NAME || 'agent';
+      const endpoint = flags.endpoint || process.env.OPENAGENTS_ENDPOINT || 'https://workspace-endpoint.openagents.org';
+      const token = process.env.OA_WORKSPACE_TOKEN || '';
+      if (!workspaceId || !token) {
+        print('Error: --workspace-id required and OA_WORKSPACE_TOKEN env var must be set');
+        process.exitCode = 1;
+        return;
+      }
+      const disabledModules = new Set();
+      if (flags['disable-files']) disabledModules.add('files');
+      if (flags['disable-browser']) disabledModules.add('browser');
+      runMcpServer({ workspaceId, channelName, agentName, endpoint, token, disabledModules });
+    },
   };
 
   const handler = commands[cmd];
