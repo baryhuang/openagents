@@ -105,6 +105,51 @@ class ClaudeAdapter extends BaseAdapter {
     }
   }
 
+  /**
+   * Find the portable Node.js binary.
+   */
+  _findNodeBin() {
+    const home = os.homedir();
+    const candidates = IS_WINDOWS
+      ? [path.join(home, '.openagents', 'nodejs', 'node.exe')]
+      : [path.join(home, '.openagents', 'nodejs', 'bin', 'node'),
+         path.join(home, '.openagents', 'nodejs', 'node')];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+    return 'node';
+  }
+
+  /**
+   * Resolve a binary shim/symlink to [nodeBin, jsEntryPoint].
+   * On Windows: parses .cmd shim to extract the JS path.
+   * On macOS/Linux: follows symlink to the actual .js file.
+   * Returns [nodeBin, jsPath] or null if resolution fails.
+   */
+  _resolveToNodeCmd(binPath) {
+    const nodeBin = this._findNodeBin();
+    if (IS_WINDOWS && binPath.toLowerCase().endsWith('.cmd')) {
+      const cmdDir = path.dirname(path.resolve(binPath));
+      const cmdContent = fs.readFileSync(binPath, 'utf-8');
+      const jsMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.js)/i);
+      if (jsMatch) {
+        return [nodeBin, path.resolve(cmdDir, jsMatch[1])];
+      }
+    } else {
+      // Unix: symlink → resolve to actual .js file
+      try {
+        let target = binPath;
+        if (fs.lstatSync(binPath).isSymbolicLink()) {
+          target = path.resolve(path.dirname(binPath), fs.readlinkSync(binPath));
+        }
+        if (target.endsWith('.js') || target.endsWith('.mjs')) {
+          return [nodeBin, target];
+        }
+      } catch {}
+    }
+    return null;
+  }
+
   _findClaudeBinary() {
     const home = os.homedir();
 
@@ -268,20 +313,14 @@ class ClaudeAdapter extends BaseAdapter {
       this._log('Could not find openagents binary — MCP tools may not be available');
     }
 
-    // On Windows, .cmd shims can't be used as MCP server commands —
-    // resolve to node.exe + the actual JS entry point
+    // Resolve shim/symlink to node + JS entry point for MCP server
+    // (.cmd shims and #!/usr/bin/env node shebangs both fail as MCP commands)
     let mcpCommand = oaBin;
     let mcpFinalArgs = mcpArgs;
-    if (IS_WINDOWS && oaBin.toLowerCase().endsWith('.cmd')) {
-      const cmdContent = fs.readFileSync(oaBin, 'utf-8');
-      const jsMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.js)/i);
-      if (jsMatch) {
-        const cmdDir = path.dirname(path.resolve(oaBin));
-        const jsPath = path.resolve(cmdDir, jsMatch[1]);
-        const nodeExe = path.join(os.homedir(), '.openagents', 'nodejs', 'node.exe');
-        mcpCommand = fs.existsSync(nodeExe) ? nodeExe : 'node';
-        mcpFinalArgs = [jsPath, ...mcpArgs];
-      }
+    const mcpResolved = this._resolveToNodeCmd(oaBin);
+    if (mcpResolved) {
+      mcpCommand = mcpResolved[0];
+      mcpFinalArgs = [mcpResolved[1], ...mcpArgs];
     }
 
     const mcpConfig = {
@@ -365,22 +404,14 @@ class ClaudeAdapter extends BaseAdapter {
     delete cleanEnv.CLAUDE_CODE_SESSION;
 
     try {
-      // On Windows, spawn node.exe directly instead of .cmd shims to avoid
-      // visible console windows and Unicode path issues
-      if (IS_WINDOWS && cmd[0].toLowerCase().endsWith('.cmd')) {
-        // Resolve .cmd shim → actual JS entry point
-        // npm shims use %dp0% (directory of the .cmd file) as a relative base
-        const cmdDir = path.dirname(path.resolve(cmd[0]));
-        const cmdContent = fs.readFileSync(cmd[0], 'utf-8');
-        const jsMatch = cmdContent.match(/"?%dp0%\\([^"*?]+\.js)"?/i);
-        if (jsMatch) {
-          const jsPath = path.resolve(cmdDir, jsMatch[1]);
-          const nodeExe = path.join(os.homedir(), '.openagents', 'nodejs', 'node.exe');
-          const nodeBin = fs.existsSync(nodeExe) ? nodeExe : 'node';
-          cmd = [nodeBin, jsPath, ...cmd.slice(1)];
-        } else {
-          cmd = ['cmd.exe', '/c', ...cmd];
-        }
+      // Always resolve shim/symlink to node + JS entry point.
+      // On Windows: .cmd shims need cmd.exe which creates visible windows.
+      // On macOS/Linux: #!/usr/bin/env node fails when node isn't on system PATH.
+      const resolved = this._resolveToNodeCmd(cmd[0]);
+      if (resolved) {
+        cmd = [resolved[0], resolved[1], ...cmd.slice(1)];
+      } else if (IS_WINDOWS && cmd[0].toLowerCase().endsWith('.cmd')) {
+        cmd = ['cmd.exe', '/c', ...cmd];
       }
 
       const proc = spawn(cmd[0], cmd.slice(1), {
