@@ -133,6 +133,8 @@ if ($latestVer -and ($latestVer -ne $installedVer)) {
     New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
     tar -xzf $tgz -C $coreDir --strip-components=1
     Remove-Item $tgz -Force -ErrorAction SilentlyContinue
+    # Install dependencies (blessed for TUI) without pruning
+    & npm install --prefix $prefixDir --no-save blessed 2>&1 | Select-Object -Last 2
     # Create bin shims
     $shimDir = Join-Path $prefixDir "node_modules\.bin"
     New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
