@@ -7,7 +7,7 @@
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$VERSION = "1.0.2"
+$VERSION = "1.0.3"
 $NPM_PACKAGE = "@openagents-org/agent-launcher"
 $MIN_NODE_MAJOR = 18
 
@@ -117,8 +117,19 @@ if ($existing) {
 # Install globally
 # Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
 $prefixDir = Join-Path $env:USERPROFILE ".openagents\nodejs"
-& npm install --prefix $prefixDir "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | Select-Object -Last 5
+& npm install --prefix $prefixDir "$NPM_PACKAGE@latest" --no-save --ignore-scripts 2>&1 | Select-Object -Last 5
 $env:PATH = "$prefixDir\node_modules\.bin;$prefixDir;$env:PATH"
+
+# Ensure node.exe is at ~/.openagents/nodejs/ (unified path for the daemon)
+# If we used system node (not portable), copy it so the daemon can find it
+$portableNode = Join-Path $prefixDir "node.exe"
+if (-not (Test-Path $portableNode)) {
+    $systemNode = $node.Path
+    if ($systemNode -and (Test-Path $systemNode)) {
+        Copy-Item $systemNode $portableNode -Force
+        Ok "node.exe copied to $prefixDir"
+    }
+}
 
 # Verify
 $oaBin = ""

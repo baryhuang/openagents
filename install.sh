@@ -15,7 +15,7 @@ exec 3>&1 1>&2
 # Save original PATH to detect if openagents needs PATH setup
 ORIGINAL_PATH="$PATH"
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 NPM_PACKAGE="@openagents-org/agent-launcher"
 MIN_NODE_MAJOR=18
 
@@ -154,7 +154,23 @@ fi
 
 # Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
 PREFIX_DIR="$HOME/.openagents/nodejs"
-$NPM install --prefix "$PREFIX_DIR" "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | tail -5
+$NPM install --prefix "$PREFIX_DIR" "$NPM_PACKAGE@latest" --no-save --ignore-scripts 2>&1 | tail -5
+
+# Ensure node/npm are at ~/.openagents/nodejs/bin/ (unified path for the daemon)
+# If we used system node (not portable), create symlinks so the daemon can find it
+BIN_DIR="$PREFIX_DIR/bin"
+if [ ! -x "$BIN_DIR/node" ]; then
+    mkdir -p "$BIN_DIR"
+    SYSTEM_NODE=$(command -v "$NODE" 2>/dev/null || command -v node 2>/dev/null)
+    SYSTEM_NPM=$(command -v npm 2>/dev/null)
+    if [ -n "$SYSTEM_NODE" ]; then
+        ln -sf "$SYSTEM_NODE" "$BIN_DIR/node"
+    fi
+    if [ -n "$SYSTEM_NPM" ]; then
+        ln -sf "$SYSTEM_NPM" "$BIN_DIR/npm"
+    fi
+fi
+
 export PATH="$PREFIX_DIR/node_modules/.bin:$PREFIX_DIR/bin:$PATH"
 
 OA_BIN=""
