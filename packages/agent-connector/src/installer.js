@@ -42,7 +42,15 @@ class Installer {
     const entry = this.registry.getEntry(agentType);
     const npmPkg = entry && entry.install ? entry.install.npm_package : null;
     const binary = entry && entry.install ? entry.install.binary : agentType;
-    const pkgDir = path.join(globalModules, npmPkg || binary);
+    // Extract actual npm package name from install command (e.g. "npm install -g @anthropic-ai/claude-code" → "@anthropic-ai/claude-code")
+    const installCmd = entry && entry.install ? this._getInstallCommand(entry.install) : null;
+    let npmPkgFromCmd = null;
+    if (!npmPkg && installCmd && installCmd.includes('npm install')) {
+      const match = installCmd.match(/npm install\s+(?:-g\s+)?(@?[\w-]+(?:\/[\w-]+)?)(?:@\S*)?$/);
+      if (match) npmPkgFromCmd = match[1];
+    }
+    const pkgName = npmPkg || npmPkgFromCmd || binary;
+    const pkgDir = path.join(globalModules, pkgName);
     if (fs.existsSync(path.join(pkgDir, 'package.json'))) return true;
 
     // Marker file alone is not enough — package may have been pruned
