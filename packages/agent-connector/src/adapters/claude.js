@@ -339,9 +339,19 @@ class ClaudeAdapter extends BaseAdapter {
     delete cleanEnv.CLAUDE_CODE_SESSION;
 
     try {
-      // On Windows, .cmd files need cmd.exe
+      // On Windows, spawn node.exe directly instead of .cmd shims to avoid
+      // visible console windows and Unicode path issues
       if (IS_WINDOWS && cmd[0].toLowerCase().endsWith('.cmd')) {
-        cmd = ['cmd.exe', '/c', ...cmd];
+        // Resolve .cmd shim → actual JS entry point
+        const cmdContent = fs.readFileSync(cmd[0], 'utf-8');
+        const jsMatch = cmdContent.match(/"([^"]+\.js)"/);
+        if (jsMatch) {
+          const nodeExe = path.join(os.homedir(), '.openagents', 'nodejs', 'node.exe');
+          const nodeBin = fs.existsSync(nodeExe) ? nodeExe : 'node';
+          cmd = [nodeBin, jsMatch[1], ...cmd.slice(1)];
+        } else {
+          cmd = ['cmd.exe', '/c', ...cmd];
+        }
       }
 
       const proc = spawn(cmd[0], cmd.slice(1), {
@@ -349,6 +359,7 @@ class ClaudeAdapter extends BaseAdapter {
         env: cleanEnv,
         cwd: this.workingDir,
         detached: !IS_WINDOWS,
+        windowsHide: true,
       });
       this._channelProcesses[msgChannel] = proc;
 
