@@ -7,7 +7,7 @@
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$VERSION = "1.0.3"
+$VERSION = "1.0.4"
 $NPM_PACKAGE = "@openagents-org/agent-launcher"
 $MIN_NODE_MAJOR = 18
 
@@ -117,7 +117,35 @@ if ($existing) {
 # Install globally
 # Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
 $prefixDir = Join-Path $env:USERPROFILE ".openagents\nodejs"
-& npm install --prefix $prefixDir "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | Select-Object -Last 5
+# Install via direct tarball (avoids npm --prefix pruning other packages)
+$coreDir = Join-Path $prefixDir "node_modules\@openagents-org\agent-launcher"
+$latestVer = & npm view "$NPM_PACKAGE" version 2>$null
+$installedVer = ""
+$corePkg = Join-Path $coreDir "package.json"
+if (Test-Path $corePkg) {
+    $installedVer = (Get-Content $corePkg | ConvertFrom-Json).version
+}
+
+if ($latestVer -and ($latestVer -ne $installedVer)) {
+    $tarballUrl = "https://registry.npmjs.org/$NPM_PACKAGE/-/agent-launcher-$latestVer.tgz"
+    $tgz = Join-Path $env:TEMP "agent-launcher.tgz"
+    Invoke-WebRequest -Uri $tarballUrl -OutFile $tgz -UseBasicParsing
+    New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
+    tar -xzf $tgz -C $coreDir --strip-components=1
+    Remove-Item $tgz -Force -ErrorAction SilentlyContinue
+    # Create bin shims
+    $shimDir = Join-Path $prefixDir "node_modules\.bin"
+    New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+    $nodeExePath = if (Test-Path (Join-Path $prefixDir "node.exe")) { Join-Path $prefixDir "node.exe" } else { "node" }
+    $cliJs = Join-Path $coreDir "bin\agent-connector.js"
+    foreach ($name in @("openagents", "agent-connector")) {
+        Set-Content -Path (Join-Path $shimDir "$name.cmd") -Value "@echo off`r`n`"$nodeExePath`" `"$cliJs`" %*`r`n"
+    }
+    Ok "$NPM_PACKAGE v$latestVer installed"
+} elseif ($installedVer) {
+    Ok "Already up to date ($installedVer)"
+}
+
 $env:PATH = "$prefixDir\node_modules\.bin;$prefixDir;$env:PATH"
 
 # Ensure node.exe is at ~/.openagents/nodejs/ (unified path for the daemon)
@@ -127,7 +155,6 @@ if (-not (Test-Path $portableNode)) {
     $systemNode = $node.Path
     if ($systemNode -and (Test-Path $systemNode)) {
         Copy-Item $systemNode $portableNode -Force
-        Ok "node.exe copied to $prefixDir"
     }
 }
 

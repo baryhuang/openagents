@@ -15,7 +15,7 @@ exec 3>&1 1>&2
 # Save original PATH to detect if openagents needs PATH setup
 ORIGINAL_PATH="$PATH"
 
-VERSION="1.0.3"
+VERSION="1.0.4"
 NPM_PACKAGE="@openagents-org/agent-launcher"
 MIN_NODE_MAJOR=18
 
@@ -152,9 +152,29 @@ if command -v openagents >/dev/null 2>&1; then
     info "Upgrading to latest..."
 fi
 
-# Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
+# Install to ~/.openagents/nodejs/node_modules/ via direct tarball (avoids npm --prefix pruning)
 PREFIX_DIR="$HOME/.openagents/nodejs"
-$NPM install --prefix "$PREFIX_DIR" "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | tail -5
+CORE_DIR="$PREFIX_DIR/node_modules/@openagents-org/agent-launcher"
+LATEST_VER=$($NPM view "$NPM_PACKAGE" version 2>/dev/null || echo "")
+INSTALLED_VER=""
+if [ -f "$CORE_DIR/package.json" ]; then
+    INSTALLED_VER=$(node -e "try{console.log(require('$CORE_DIR/package.json').version)}catch{}" 2>/dev/null || echo "")
+fi
+
+if [ -n "$LATEST_VER" ] && [ "$LATEST_VER" != "$INSTALLED_VER" ]; then
+    TARBALL_URL="https://registry.npmjs.org/$NPM_PACKAGE/-/agent-launcher-${LATEST_VER}.tgz"
+    mkdir -p "$CORE_DIR"
+    curl -fsSL "$TARBALL_URL" | tar xz -C "$CORE_DIR" --strip-components=1
+    # Create bin shims
+    BIN_SHIM_DIR="$PREFIX_DIR/node_modules/.bin"
+    mkdir -p "$BIN_SHIM_DIR"
+    for name in openagents agent-connector; do
+        printf '#!/bin/sh\nexec "$(dirname "$0")/../../bin/node" "$(dirname "$0")/../@openagents-org/agent-launcher/bin/agent-connector.js" "$@"\n' > "$BIN_SHIM_DIR/$name"
+        chmod +x "$BIN_SHIM_DIR/$name"
+    done
+elif [ -n "$INSTALLED_VER" ]; then
+    info "Already up to date ($INSTALLED_VER)"
+fi
 
 # Ensure node/npm are at ~/.openagents/nodejs/bin/ (unified path for the daemon)
 # If we used system node (not portable), create symlinks so the daemon can find it
