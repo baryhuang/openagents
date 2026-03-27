@@ -106,6 +106,14 @@ class ClaudeAdapter extends BaseAdapter {
   }
 
   _findClaudeBinary() {
+    const home = os.homedir();
+
+    // Tier 0: Portable install at ~/.openagents/nodejs/node_modules/.bin/
+    const portableBin = path.join(home, '.openagents', 'nodejs', 'node_modules', '.bin');
+    const ext = IS_WINDOWS ? '.cmd' : '';
+    const portableCandidate = path.join(portableBin, `claude${ext}`);
+    if (fs.existsSync(portableCandidate)) return portableCandidate;
+
     // Tier 1: PATH search
     try {
       if (IS_WINDOWS) {
@@ -120,12 +128,10 @@ class ClaudeAdapter extends BaseAdapter {
 
     // Tier 2: Next to current Node.js interpreter (npm global)
     const nodeBinDir = path.dirname(process.execPath);
-    const ext = IS_WINDOWS ? '.cmd' : '';
     const nearNode = path.join(nodeBinDir, `claude${ext}`);
     if (fs.existsSync(nearNode)) return nearNode;
 
     // Tier 3: Common install locations
-    const home = os.homedir();
     const candidates = IS_WINDOWS ? [
       path.join(process.env.APPDATA || '', 'npm', 'claude.cmd'),
     ] : [
