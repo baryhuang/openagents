@@ -163,6 +163,16 @@ class Installer {
           }
         } catch {}
       }
+      // Also check OAuth credentials (Claude Code stores tokens in .credentials.json)
+      if (!ready) {
+        try {
+          const oauthFile = path.join(os.homedir(), '.claude', '.credentials.json');
+          if (fs.existsSync(oauthFile)) {
+            const creds = JSON.parse(fs.readFileSync(oauthFile, 'utf-8'));
+            if (creds.claudeAiOauth?.accessToken) ready = true;
+          }
+        } catch {}
+      }
     }
 
     return { installed: true, binary, version, ready };
