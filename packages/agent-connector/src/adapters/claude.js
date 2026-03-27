@@ -349,12 +349,15 @@ class ClaudeAdapter extends BaseAdapter {
       // visible console windows and Unicode path issues
       if (IS_WINDOWS && cmd[0].toLowerCase().endsWith('.cmd')) {
         // Resolve .cmd shim → actual JS entry point
+        // npm shims use %dp0% (directory of the .cmd file) as a relative base
+        const cmdDir = path.dirname(path.resolve(cmd[0]));
         const cmdContent = fs.readFileSync(cmd[0], 'utf-8');
-        const jsMatch = cmdContent.match(/"([^"]+\.js)"/);
+        const jsMatch = cmdContent.match(/"?%dp0%\\([^"*?]+\.js)"?/i);
         if (jsMatch) {
+          const jsPath = path.resolve(cmdDir, jsMatch[1]);
           const nodeExe = path.join(os.homedir(), '.openagents', 'nodejs', 'node.exe');
           const nodeBin = fs.existsSync(nodeExe) ? nodeExe : 'node';
-          cmd = [nodeBin, jsMatch[1], ...cmd.slice(1)];
+          cmd = [nodeBin, jsPath, ...cmd.slice(1)];
         } else {
           cmd = ['cmd.exe', '/c', ...cmd];
         }
