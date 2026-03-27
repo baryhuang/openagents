@@ -117,7 +117,7 @@ if ($existing) {
 # Install globally
 # Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
 $prefixDir = Join-Path $env:USERPROFILE ".openagents\nodejs"
-& npm install --prefix $prefixDir "$NPM_PACKAGE@latest" --no-save --ignore-scripts 2>&1 | Select-Object -Last 5
+& npm install --prefix $prefixDir "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | Select-Object -Last 5
 $env:PATH = "$prefixDir\node_modules\.bin;$prefixDir;$env:PATH"
 
 # Ensure node.exe is at ~/.openagents/nodejs/ (unified path for the daemon)

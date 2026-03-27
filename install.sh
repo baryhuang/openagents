@@ -154,7 +154,7 @@ fi
 
 # Install to ~/.openagents/nodejs/node_modules/ (consistent across all platforms)
 PREFIX_DIR="$HOME/.openagents/nodejs"
-$NPM install --prefix "$PREFIX_DIR" "$NPM_PACKAGE@latest" --no-save --ignore-scripts 2>&1 | tail -5
+$NPM install --prefix "$PREFIX_DIR" "$NPM_PACKAGE@latest" --ignore-scripts 2>&1 | tail -5
 
 # Ensure node/npm are at ~/.openagents/nodejs/bin/ (unified path for the daemon)
 # If we used system node (not portable), create symlinks so the daemon can find it
