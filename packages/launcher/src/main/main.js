@@ -146,6 +146,17 @@ async function downloadNodejs(nodejsDir, onProgress) {
     const flag = ext === 'tar.gz' ? '-xzf' : '-xJf';
     execSync(`tar ${flag} "${tarPath}" -C "${nodejsDir}" --strip-components=1`, { timeout: 120000 });
     try { fs.unlinkSync(tarPath); } catch {}
+
+    // Unify paths with Windows: create symlinks in root so node/npm are at
+    // ~/.openagents/nodejs/node and ~/.openagents/nodejs/npm (same as Windows)
+    const binDir = path.join(nodejsDir, 'bin');
+    for (const name of ['node', 'npm', 'npx']) {
+      const src = path.join(binDir, name);
+      const dest = path.join(nodejsDir, name);
+      if (fs.existsSync(src) && !fs.existsSync(dest)) {
+        try { fs.symlinkSync(src, dest); } catch {}
+      }
+    }
   }
 
   if (onProgress) onProgress(100, 'Done');

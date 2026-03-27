@@ -308,8 +308,10 @@ class AgentManager {
     }
     // Don't attempt if Node.js isn't installed yet
     const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
-    const nodeBin = path.join(portableNodeDir, process.platform === 'win32' ? 'node.exe' : 'bin/node');
-    if (!fs.existsSync(nodeBin)) return;
+    // Check both unified path (symlink) and legacy platform-specific path
+    const nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''));
+    const nodeBinLegacy = path.join(portableNodeDir, 'bin', 'node');
+    if (!fs.existsSync(nodeBin) && !fs.existsSync(nodeBinLegacy)) return;
 
     return this._startDaemon();
   }
@@ -340,12 +342,14 @@ class AgentManager {
     const { spawn } = require('child_process');
     const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
 
-    // Build enhanced PATH with portable Node.js
-    const extraDirs = [portableNodeDir];
+    // Build enhanced PATH with portable Node.js and agent binaries
+    const extraDirs = [
+      path.join(portableNodeDir, 'node_modules', '.bin'),  // agent binaries
+      portableNodeDir,                                      // node, npm (unified via symlinks)
+      path.join(portableNodeDir, 'bin'),                    // legacy macOS/Linux node, npm
+    ];
     if (process.platform === 'win32') {
       extraDirs.push(path.join(process.env.APPDATA || '', 'npm'));
-    } else {
-      extraDirs.push(path.join(portableNodeDir, 'bin'));
     }
     const enhancedPath = [...extraDirs, process.env.PATH || ''].join(path.delimiter);
 
