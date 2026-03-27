@@ -226,8 +226,12 @@ class ClaudeAdapter extends BaseAdapter {
 
     // Find openagents binary (multi-tier)
     let oaBin = null;
+    const home3 = os.homedir();
+    // Tier 0: Portable install at ~/.openagents/nodejs/node_modules/.bin/
+    const oaPortable = path.join(home3, '.openagents', 'nodejs', 'node_modules', '.bin', `openagents${IS_WINDOWS ? '.cmd' : ''}`);
+    if (fs.existsSync(oaPortable)) oaBin = oaPortable;
     // Tier 1: PATH
-    try {
+    if (!oaBin) try {
       if (IS_WINDOWS) {
         oaBin = execSync('where openagents.cmd 2>nul || where openagents.exe 2>nul || where openagents 2>nul', {
           encoding: 'utf-8', timeout: 5000,
