@@ -42,8 +42,9 @@ function getExtraBinDirs() {
     if (nodeDir) _push(dirs, nodeDir);
   } catch {}
 
-  // Add portable Node.js directory (~/.openagents/nodejs/)
+  // Add portable Node.js directory (~/.openagents/nodejs/) and agent binaries
   const portableNode = path.join(HOME, '.openagents', 'nodejs');
+  _push(dirs, path.join(portableNode, 'node_modules', '.bin'));
   _push(dirs, portableNode);
 
   // Filter to existing directories only, deduplicate
