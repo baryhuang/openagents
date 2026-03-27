@@ -582,7 +582,8 @@ function setupIPC() {
       const home = require('os').homedir();
       const portableNode = path.join(home, '.openagents', 'nodejs');
       const portableBin = path.join(portableNode, 'node_modules', '.bin');
-      const setPath = `export PATH=${portableBin}:${portableNode}:/usr/local/bin:$PATH`;
+      const portableNodeBin = path.join(portableNode, 'bin');
+      const setPath = `export PATH=${portableBin}:${portableNodeBin}:${portableNode}:/usr/local/bin:$PATH`;
       const fullCmd = `${setPath} && ${cmd}`.replace(/"/g, '\\"');
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${fullCmd}"`], { detached: true, stdio: 'ignore' });
     } else {
