@@ -251,7 +251,7 @@ function createTUI() {
   const agentList = blessed.list({
     parent: agentPanel,
     top: 1, left: 0, width: '100%-2', height: '100%-3',
-    keys: true, vi: true, mouse: true,
+    keys: false, vi: false, mouse: true,
     tags: true,
     style: {
       bg: 'black',
@@ -300,7 +300,7 @@ function createTUI() {
 
   // ── Footer rendering (context-aware, clickable) ──
   function updateFooter() {
-    const agent = agentRows[agentList.selected];
+    const agent = selectedAgent();
     const items = [];
 
     items.push({ key: 'i', label: 'Install' });
@@ -357,25 +357,30 @@ function createTUI() {
 
   // ── Agent table refresh ──
   function refreshAgentTable() {
-    const savedIdx = agentList.selected || 0;
+    const savedIdx = Math.floor((agentList.selected || 0) / 2);
     try { agentRows = loadAgentRows(connector); } catch { agentRows = []; }
 
     if (agentRows.length === 0) {
       agentList.setItems(['  {gray-fg}No agents configured. Press {bold}i{/bold} to install, {bold}n{/bold} to create.{/gray-fg}']);
     } else {
-      const items = agentRows.map(r => {
+      // Two rows per agent: main row + detail row (path + config status)
+      const items = [];
+      for (const r of agentRows) {
         const state = stateMarkup(r.state, !!r.workspace);
-        const ws = r.workspace || '{gray-fg}-{/gray-fg}';
-        const pathInfo = r.path ? `{gray-fg} ${r.path}{/gray-fg}` : '';
-        const warning = r.notReadyMsg ? ` {yellow-fg}⚠ ${r.notReadyMsg}{/yellow-fg}` : '';
-        return `  ${r.name.padEnd(22)} ${r.type.padEnd(14)} ${state.padEnd(30)} ${ws}${pathInfo}${warning}`;
-      });
+        const ws = r.workspace || '';
+        items.push(`  ${r.name.padEnd(22)} ${r.type.padEnd(14)} ${state.padEnd(30)} ${ws}`);
+        // Detail row: working dir + config warning
+        const details = [];
+        details.push(r.path || process.env.HOME || '~');
+        if (r.notReadyMsg) details.push(`{yellow-fg}⚠ ${r.notReadyMsg}{/yellow-fg}`);
+        items.push(`  {gray-fg}  ${details.join('  |  ')}{/gray-fg}`);
+      }
       agentList.setItems(items);
     }
 
-    // Restore cursor position
+    // Restore cursor position (2 rows per agent)
     if (agentRows.length > 0) {
-      agentList.select(Math.min(savedIdx, agentRows.length - 1));
+      agentList.select(Math.min(savedIdx * 2, (agentRows.length - 1) * 2));
     }
 
     updateHeader();
@@ -404,13 +409,34 @@ function createTUI() {
     );
   }
 
-  // Update footer when selection changes
+  // Helper: get currently selected agent (2 rows per agent)
+  function selectedAgent() {
+    return agentRows[Math.floor((agentList.selected || 0) / 2)];
+  }
+
+  // Override up/down to skip detail rows (move by 2)
+  agentList.key(['down', 'j'], () => {
+    const idx = agentList.selected || 0;
+    const next = idx + 2;
+    if (next < agentList.items.length) {
+      agentList.select(next);
+      screen.render();
+    }
+  });
+  agentList.key(['up', 'k'], () => {
+    const idx = agentList.selected || 0;
+    const prev = idx - 2;
+    if (prev >= 0) {
+      agentList.select(prev);
+      screen.render();
+    }
+  });
   agentList.on('select item', () => updateFooter());
 
   // ── Enter key → Context menu ──
-  agentList.on('select', (_item, idx) => {
+  agentList.key('enter', () => {
     if (currentView !== 'main') return;
-    const agent = agentRows[idx];
+    const agent = selectedAgent();
     if (!agent || !agent.configured) return;
     showAgentActionMenu(agent);
   });
@@ -945,6 +971,7 @@ function createTUI() {
     function doSave() {
       const env = gatherEnv();
       connector.saveAgentEnv(agent.type, env);
+      signalDaemonReload();
       log(`{green-fg}\u2713{/green-fg} Configuration saved for ${agent.type}`);
       closeConfig();
     }
@@ -1233,6 +1260,7 @@ function createTUI() {
       // Remove from config
       try {
         connector.removeAgent(agentName);
+        signalDaemonReload();
         log(`{green-fg}\u2713{/green-fg} Removed {cyan-fg}${agentName}{/cyan-fg}`);
       } catch (e) {
         log(`{red-fg}\u2717{/red-fg} ${e.message}`);
@@ -1402,38 +1430,38 @@ function createTUI() {
       });
     },
     Start() {
-      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-      const a = agentRows[agentList.selected];
+      if (currentView !== 'main' || !selectedAgent()) return;
+      const a = selectedAgent();
       if (a.configured) doStart(a.name);
     },
     Stop() {
-      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-      const a = agentRows[agentList.selected];
+      if (currentView !== 'main' || !selectedAgent()) return;
+      const a = selectedAgent();
       if (a.configured) doStop(a.name);
     },
     Configure() {
-      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-      const a = agentRows[agentList.selected];
+      if (currentView !== 'main' || !selectedAgent()) return;
+      const a = selectedAgent();
       if (a.configured) showConfigureScreen(a);
     },
     Connect() {
-      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-      const a = agentRows[agentList.selected];
+      if (currentView !== 'main' || !selectedAgent()) return;
+      const a = selectedAgent();
       if (a.configured && !a.workspace) showConnectWorkspaceScreen(a.name);
     },
     Disconnect() {
-      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-      const a = agentRows[agentList.selected];
+      if (currentView !== 'main' || !selectedAgent()) return;
+      const a = selectedAgent();
       if (a.configured && a.workspace) doDisconnect(a.name);
     },
     Workspace() {
-      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-      const a = agentRows[agentList.selected];
+      if (currentView !== 'main' || !selectedAgent()) return;
+      const a = selectedAgent();
       if (a.configured && a.workspace) doOpenWorkspace(a);
     },
     Remove() {
-      if (currentView !== 'main' || !agentRows[agentList.selected]) return;
-      const a = agentRows[agentList.selected];
+      if (currentView !== 'main' || !selectedAgent()) return;
+      const a = selectedAgent();
       if (a.configured) doRemove(a.name);
     },
     Daemon() {

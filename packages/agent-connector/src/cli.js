@@ -122,8 +122,11 @@ async function cmdCreate(connector, flags, positional) {
   const role = flags.role || 'worker';
 
   try {
-    connector.addAgent({ name, type, role, path: flags.path });
+    connector.addAgent({ name, type, role, path: flags.path || process.cwd() });
     print(`Agent '${name}' created (type: ${type})`);
+
+    // Signal daemon to pick up the new agent
+    try { connector.sendDaemonCommand('reload'); } catch {}
 
     // Auto-install if not installed
     if (!connector.isInstalled(type)) {
@@ -145,6 +148,7 @@ async function cmdRemove(connector, _flags, positional) {
   const name = positional[0];
   if (!name) { print('Usage: agn remove <name>'); return; }
   connector.removeAgent(name);
+  try { connector.sendDaemonCommand('reload'); } catch {}
   print(`Agent '${name}' removed`);
 }
 
@@ -404,6 +408,7 @@ async function cmdEnv(connector, flags, positional) {
     const key = setVal.slice(0, eq);
     const val = setVal.slice(eq + 1);
     connector.saveAgentEnv(type, { [key]: val });
+    try { connector.sendDaemonCommand('reload'); } catch {}
     print(`Saved ${key} for ${type}`);
     return;
   }
