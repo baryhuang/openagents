@@ -573,14 +573,16 @@ function setupIPC() {
       const { execSync } = require('child_process');
       const home = process.env.USERPROFILE || require('os').homedir();
       const portableNode = path.join(home, '.openagents', 'nodejs');
+      const portableBin = path.join(portableNode, 'node_modules', '.bin');
       const npmBin = path.join(process.env.APPDATA || '', 'npm');
-      const setPath = `set PATH=${portableNode};${npmBin};%PATH%`;
+      const setPath = `set PATH=${portableBin};${portableNode};${npmBin};%PATH%`;
       execSync(`start "" cmd /K "${setPath} && ${cmd}"`, { stdio: 'ignore', env, shell: true });
     } else if (process.platform === 'darwin') {
       // Open Terminal.app with PATH set so agent binaries are found
       const home = require('os').homedir();
-      const npmGlobal = path.join(home, '.openagents', 'npm-global', 'bin');
-      const setPath = `export PATH=${npmGlobal}:/usr/local/bin:$PATH`;
+      const portableNode = path.join(home, '.openagents', 'nodejs');
+      const portableBin = path.join(portableNode, 'node_modules', '.bin');
+      const setPath = `export PATH=${portableBin}:${portableNode}:/usr/local/bin:$PATH`;
       const fullCmd = `${setPath} && ${cmd}`.replace(/"/g, '\\"');
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${fullCmd}"`], { detached: true, stdio: 'ignore' });
     } else {
