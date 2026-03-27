@@ -268,12 +268,28 @@ class ClaudeAdapter extends BaseAdapter {
       this._log('Could not find openagents binary — MCP tools may not be available');
     }
 
+    // On Windows, .cmd shims can't be used as MCP server commands —
+    // resolve to node.exe + the actual JS entry point
+    let mcpCommand = oaBin;
+    let mcpFinalArgs = mcpArgs;
+    if (IS_WINDOWS && oaBin.toLowerCase().endsWith('.cmd')) {
+      const cmdContent = fs.readFileSync(oaBin, 'utf-8');
+      const jsMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.js)/i);
+      if (jsMatch) {
+        const cmdDir = path.dirname(path.resolve(oaBin));
+        const jsPath = path.resolve(cmdDir, jsMatch[1]);
+        const nodeExe = path.join(os.homedir(), '.openagents', 'nodejs', 'node.exe');
+        mcpCommand = fs.existsSync(nodeExe) ? nodeExe : 'node';
+        mcpFinalArgs = [jsPath, ...mcpArgs];
+      }
+    }
+
     const mcpConfig = {
       mcpServers: {
         'openagents-workspace': {
           type: 'stdio',
-          command: oaBin,
-          args: mcpArgs,
+          command: mcpCommand,
+          args: mcpFinalArgs,
           env: { OA_WORKSPACE_TOKEN: this.token },
         },
       },
