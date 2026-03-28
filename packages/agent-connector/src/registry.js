@@ -127,7 +127,7 @@ class Registry {
    */
   async refresh() {
     const remote = await this._fetchRemote();
-    if (remote) this._catalog = remote;
+    if (remote) this._catalog = this._mergeBundled(remote);
     return this._catalog || this.getCatalogSync();
   }
 

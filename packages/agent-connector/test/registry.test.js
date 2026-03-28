@@ -73,8 +73,9 @@ describe('Registry', () => {
 
     const reg2 = new Registry(tmpDir);
     const catalog = reg2.getCatalogSync();
-    assert.equal(catalog.length, 1);
-    assert.equal(catalog[0].name, 'fake-agent');
+    // Cache entry is merged with bundled entries
+    assert.ok(catalog.length > 1);
+    assert.ok(catalog.find(e => e.name === 'fake-agent'));
   });
 
   it('ignores expired cache', () => {

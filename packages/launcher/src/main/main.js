@@ -193,6 +193,20 @@ function findNpmCommand() {
   return null;
 }
 
+/**
+ * Add a package to the prefix's package.json so npm --prefix won't prune it.
+ * Tarball-extracted packages aren't tracked by npm — any subsequent
+ * `npm install --prefix` would delete them as extraneous.
+ */
+function _addToPrefixPackageJson(pkg, version) {
+  const pkgJsonPath = path.join(PORTABLE_NODE_DIR, 'package.json');
+  let data = {};
+  try { data = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8')); } catch {}
+  if (!data.dependencies) data.dependencies = {};
+  data.dependencies[pkg] = version;
+  try { fs.writeFileSync(pkgJsonPath, JSON.stringify(data, null, 2) + '\n', 'utf-8'); } catch {}
+}
+
 let _updateSplash = null; // set by app.whenReady, used by ensureCoreLibrary
 
 async function ensureCoreLibrary() {
@@ -244,6 +258,8 @@ async function ensureCoreLibrary() {
         slog('Core library installed: v' + newVersion);
         if (_updateSplash) _updateSplash('Core library ready', 80, 'v' + newVersion);
         installedVersion = newVersion;
+        // Register in prefix package.json so npm --prefix won't prune it
+        _addToPrefixPackageJson(CORE_PKG, newVersion);
       }
     }
   } catch (e) {
