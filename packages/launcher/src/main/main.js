@@ -600,17 +600,33 @@ function setupIPC() {
       const { execSync } = require('child_process');
       const home = process.env.USERPROFILE || require('os').homedir();
       const portableNode = path.join(home, '.openagents', 'nodejs');
-      const portableBin = path.join(portableNode, 'node_modules', '.bin');
       const npmBin = path.join(process.env.APPDATA || '', 'npm');
-      const setPath = `set PATH=${portableBin};${portableNode};${npmBin};%PATH%`;
+      // Include per-agent runtime bins + legacy shared bin
+      const runtimeBins = [];
+      try {
+        const rd = path.join(home, '.openagents', 'runtimes');
+        for (const d of fs.readdirSync(rd, { withFileTypes: true })) {
+          if (d.isDirectory()) runtimeBins.push(path.join(rd, d.name, 'node_modules', '.bin'));
+        }
+      } catch {}
+      const allBins = [...runtimeBins, path.join(portableNode, 'node_modules', '.bin'), portableNode, npmBin].join(';');
+      const setPath = `set PATH=${allBins};%PATH%`;
       execSync(`start "" cmd /K "${setPath} && ${cmd}"`, { stdio: 'ignore', env, shell: true });
     } else if (process.platform === 'darwin') {
       // Open Terminal.app with PATH set so agent binaries are found
       const home = require('os').homedir();
       const portableNode = path.join(home, '.openagents', 'nodejs');
-      const portableBin = path.join(portableNode, 'node_modules', '.bin');
       const portableNodeBin = path.join(portableNode, 'bin');
-      const setPath = `export PATH=${portableBin}:${portableNodeBin}:${portableNode}:/usr/local/bin:$PATH`;
+      // Include per-agent runtime bins + legacy shared bin
+      const runtimeBins = [];
+      try {
+        const rd = path.join(home, '.openagents', 'runtimes');
+        for (const d of fs.readdirSync(rd, { withFileTypes: true })) {
+          if (d.isDirectory()) runtimeBins.push(path.join(rd, d.name, 'node_modules', '.bin'));
+        }
+      } catch {}
+      const allBins = [...runtimeBins, path.join(portableNode, 'node_modules', '.bin'), portableNodeBin, portableNode, '/usr/local/bin'].join(':');
+      const setPath = `export PATH=${allBins}:$PATH`;
       const fullCmd = `${setPath} && ${cmd}`.replace(/"/g, '\\"');
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${fullCmd}"`], { detached: true, stdio: 'ignore' });
     } else {

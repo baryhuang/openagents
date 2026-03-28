@@ -343,11 +343,22 @@ class AgentManager {
     const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
 
     // Build enhanced PATH with portable Node.js and agent binaries
+    const openagentsDir = path.join(os.homedir(), '.openagents');
     const extraDirs = [
-      path.join(portableNodeDir, 'node_modules', '.bin'),  // agent binaries
       portableNodeDir,                                      // node, npm (unified via symlinks)
       path.join(portableNodeDir, 'bin'),                    // legacy macOS/Linux node, npm
     ];
+    // Add per-agent runtime bin dirs (~/.openagents/runtimes/<type>/node_modules/.bin)
+    const runtimesDir = path.join(openagentsDir, 'runtimes');
+    try {
+      for (const d of fs.readdirSync(runtimesDir, { withFileTypes: true })) {
+        if (d.isDirectory()) extraDirs.push(path.join(runtimesDir, d.name, 'node_modules', '.bin'));
+      }
+    } catch {}
+    // Core library bin
+    extraDirs.push(path.join(openagentsDir, 'core', 'node_modules', '.bin'));
+    // Legacy shared bin
+    extraDirs.push(path.join(portableNodeDir, 'node_modules', '.bin'));
     if (process.platform === 'win32') {
       extraDirs.push(path.join(process.env.APPDATA || '', 'npm'));
     }
