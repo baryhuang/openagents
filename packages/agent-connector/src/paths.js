@@ -42,10 +42,23 @@ function getExtraBinDirs() {
     if (nodeDir) _push(dirs, nodeDir);
   } catch {}
 
-  // Add portable Node.js directory (~/.openagents/nodejs/) and agent binaries
+  // Add portable Node.js directory (~/.openagents/nodejs/)
   const portableNode = path.join(HOME, '.openagents', 'nodejs');
-  _push(dirs, path.join(portableNode, 'node_modules', '.bin'));
   _push(dirs, portableNode);
+
+  // Core library bin (~/.openagents/core/node_modules/.bin)
+  _push(dirs, path.join(HOME, '.openagents', 'core', 'node_modules', '.bin'));
+
+  // Per-agent runtime bins (~/.openagents/runtimes/<type>/node_modules/.bin)
+  const runtimesDir = path.join(HOME, '.openagents', 'runtimes');
+  try {
+    for (const d of fs.readdirSync(runtimesDir, { withFileTypes: true })) {
+      if (d.isDirectory()) _push(dirs, path.join(runtimesDir, d.name, 'node_modules', '.bin'));
+    }
+  } catch {}
+
+  // Legacy: shared node_modules/.bin (for backward compat with pre-isolation installs)
+  _push(dirs, path.join(portableNode, 'node_modules', '.bin'));
 
   // Filter to existing directories only, deduplicate
   const seen = new Set();
@@ -178,8 +191,7 @@ function _addUnixPaths(dirs) {
   _push(dirs, '/usr/local/bin');
   _push(dirs, '/usr/bin');
 
-  // npm global — all installs use --prefix ~/.openagents/nodejs
-  // No need for ~/.npm-global or ~/.openagents/npm-global
+  // npm agents install to isolated prefixes: ~/.openagents/runtimes/<type>/
 
   // nvm
   const nvmDir = process.env.NVM_DIR || path.join(HOME, '.nvm');
@@ -272,11 +284,28 @@ function _resolveNvmVersion(nvmDir, alias) {
   return null;
 }
 
+/**
+ * Get the isolated npm prefix directory for an agent runtime.
+ * Each agent type gets its own prefix to prevent cross-agent interference.
+ */
+function getRuntimePrefix(agentType) {
+  return path.join(HOME, '.openagents', 'runtimes', agentType);
+}
+
+/**
+ * Get the core library directory (separate from agent runtimes).
+ */
+function getCorePrefix() {
+  return path.join(HOME, '.openagents', 'core');
+}
+
 module.exports = {
   getExtraBinDirs,
   getEnhancedPATH,
   getEnhancedEnv,
   whichBinary,
+  getRuntimePrefix,
+  getCorePrefix,
   IS_WINDOWS,
   IS_MACOS,
   SEP,

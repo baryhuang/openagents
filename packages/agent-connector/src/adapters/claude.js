@@ -152,9 +152,13 @@ class ClaudeAdapter extends BaseAdapter {
   _findClaudeBinary() {
     const home = os.homedir();
 
-    // Tier 0: Portable install at ~/.openagents/nodejs/node_modules/.bin/
-    const portableBin = path.join(home, '.openagents', 'nodejs', 'node_modules', '.bin');
+    // Tier 0: Isolated runtime prefix (~/.openagents/runtimes/claude/)
     const ext = IS_WINDOWS ? '.cmd' : '';
+    const runtimeCandidate = path.join(home, '.openagents', 'runtimes', 'claude', 'node_modules', '.bin', `claude${ext}`);
+    if (fs.existsSync(runtimeCandidate)) return runtimeCandidate;
+
+    // Tier 0b: Legacy portable install at ~/.openagents/nodejs/node_modules/.bin/
+    const portableBin = path.join(home, '.openagents', 'nodejs', 'node_modules', '.bin');
     const portableCandidate = path.join(portableBin, `claude${ext}`);
     if (fs.existsSync(portableCandidate)) return portableCandidate;
 
@@ -271,9 +275,22 @@ class ClaudeAdapter extends BaseAdapter {
     // Find openagents binary (multi-tier)
     let oaBin = null;
     const home3 = os.homedir();
-    // Tier 0: Portable install at ~/.openagents/nodejs/node_modules/.bin/
-    const oaPortable = path.join(home3, '.openagents', 'nodejs', 'node_modules', '.bin', `openagents${IS_WINDOWS ? '.cmd' : ''}`);
-    if (fs.existsSync(oaPortable)) oaBin = oaPortable;
+    // Tier 0: Check all isolated runtime prefixes for openagents binary
+    const oaExt = IS_WINDOWS ? '.cmd' : '';
+    const runtimesRoot = path.join(home3, '.openagents', 'runtimes');
+    try {
+      for (const d of fs.readdirSync(runtimesRoot, { withFileTypes: true })) {
+        if (d.isDirectory()) {
+          const candidate = path.join(runtimesRoot, d.name, 'node_modules', '.bin', `openagents${oaExt}`);
+          if (fs.existsSync(candidate)) { oaBin = candidate; break; }
+        }
+      }
+    } catch {}
+    // Tier 0b: Legacy portable install
+    if (!oaBin) {
+      const oaPortable = path.join(home3, '.openagents', 'nodejs', 'node_modules', '.bin', `openagents${oaExt}`);
+      if (fs.existsSync(oaPortable)) oaBin = oaPortable;
+    }
     // Tier 1: PATH
     if (!oaBin) try {
       if (IS_WINDOWS) {

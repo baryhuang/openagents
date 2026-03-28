@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execSync, exec } = require('child_process');
-const { whichBinary, getEnhancedEnv } = require('./paths');
+const { whichBinary, getEnhancedEnv, getRuntimePrefix } = require('./paths');
 
 /**
  * Manages installation and uninstallation of agent runtimes.
@@ -36,13 +36,9 @@ class Installer {
    * Checks binary on PATH first, then marker files.
    */
   isInstalled(agentType) {
-    // Definitive check: does the package exist in our node_modules?
-    const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
-    const globalModules = path.join(portableDir, 'node_modules');
     const entry = this.registry.getEntry(agentType);
     const npmPkg = entry && entry.install ? entry.install.npm_package : null;
     const binary = entry && entry.install ? entry.install.binary : agentType;
-    // Extract actual npm package name from install command (e.g. "npm install -g @anthropic-ai/claude-code" → "@anthropic-ai/claude-code")
     const installCmd = entry && entry.install ? this._getInstallCommand(entry.install) : null;
     let npmPkgFromCmd = null;
     if (!npmPkg && installCmd && installCmd.includes('npm install')) {
@@ -50,29 +46,31 @@ class Installer {
       if (match) npmPkgFromCmd = match[1];
     }
     const pkgName = npmPkg || npmPkgFromCmd || binary;
-    const pkgDir = path.join(globalModules, pkgName);
-    if (fs.existsSync(path.join(pkgDir, 'package.json'))) return true;
 
-    // Marker file alone is not enough — package may have been pruned
-    // (npm --prefix removes packages not in its dependency tree)
+    // Check isolated runtime prefix first (~/.openagents/runtimes/<type>/)
+    const runtimeModules = path.join(getRuntimePrefix(agentType), 'node_modules');
+    if (fs.existsSync(path.join(runtimeModules, pkgName, 'package.json'))) return true;
+
+    // Legacy: check shared prefix (~/.openagents/nodejs/node_modules/)
+    const legacyModules = path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules');
+    if (fs.existsSync(path.join(legacyModules, pkgName, 'package.json'))) return true;
 
     // Fallback: check if binary exists on PATH (system install)
     const binaryPath = this._whichBinary(agentType);
     if (!binaryPath) {
-      // Clean stale marker if package is gone
       try { fs.unlinkSync(path.join(this.markersDir, agentType)); } catch {}
       return false;
     }
 
-    // Verify it's not a stale shim — if binary is in our portable dir,
-    // check the actual package exists (reuse variables from above)
-    if (binaryPath.startsWith(portableDir)) {
-      if (!fs.existsSync(path.join(pkgDir, 'package.json'))) {
-        // Stale shim — clean it up from all possible locations
-        for (const dir of [portableDir, path.join(globalModules, '.bin')]) {
-          for (const ext of ['', '.cmd', '.ps1']) {
-            try { const p = path.join(dir, binary + ext); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
-          }
+    // Verify it's not a stale shim pointing to a missing package
+    const openagentsDir = path.join(os.homedir(), '.openagents');
+    if (binaryPath.startsWith(openagentsDir)) {
+      const hasRuntime = fs.existsSync(path.join(runtimeModules, pkgName, 'package.json'));
+      const hasLegacy = fs.existsSync(path.join(legacyModules, pkgName, 'package.json'));
+      if (!hasRuntime && !hasLegacy) {
+        // Stale shim — clean it up
+        for (const ext of ['', '.cmd', '.ps1']) {
+          try { const p = path.join(path.dirname(binaryPath), binary + ext); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
         }
         return false;
       }
@@ -195,7 +193,8 @@ class Installer {
 
     // Use bundled node/npm if system npm not available
     if (cmd.startsWith('npm install')) {
-      const prefixDir = path.join(os.homedir(), '.openagents', 'nodejs');
+      const prefixDir = getRuntimePrefix(agentType);
+      fs.mkdirSync(prefixDir, { recursive: true });
       const args = cmd.replace('npm install', 'install --save').replace(' -g ', ` --prefix "${prefixDir}" `);
       cmd = this._resolveNpmCommand(args);
     }
@@ -231,9 +230,10 @@ class Installer {
     // Resolve npm command
     let cmd = rawCmd;
     if (rawCmd.startsWith('npm install')) {
-      const prefixDir2 = path.join(os.homedir(), '.openagents', 'nodejs');
+      const prefixDir = getRuntimePrefix(agentType);
+      fs.mkdirSync(prefixDir, { recursive: true });
       // Use --save so npm tracks the package in package.json (prevents pruning on next install)
-      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --save').replace(' -g ', ` --prefix "${prefixDir2}" `);
+      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --save').replace(' -g ', ` --prefix "${prefixDir}" `);
       cmd = this._resolveNpmCommand(args);
     } else if (rawCmd.startsWith('pip install') || rawCmd.startsWith('pipx install')) {
       cmd = rawCmd; // pip commands stay as-is
@@ -281,14 +281,14 @@ class Installer {
     }
 
     const installCmd = this._getInstallCommand(entry.install);
-    const uninstallCmd = this._deriveUninstallCommand(installCmd);
+    const uninstallCmd = this._deriveUninstallCommand(installCmd, agentType);
     if (!uninstallCmd) {
       throw new Error(`Cannot derive uninstall command for ${agentType}`);
     }
 
     const output = await this._execShell(uninstallCmd);
     this._markUninstalled(agentType);
-    // Clean stale shims on Windows (npm sometimes leaves .cmd/.ps1 files behind)
+    // Clean stale shims (npm sometimes leaves .cmd/.ps1 files behind)
     this._cleanStaleShims(agentType);
     return { success: true, output };
   }
@@ -297,9 +297,15 @@ class Installer {
     const entry = this.registry.getEntry(agentType);
     const binary = entry && entry.install ? entry.install.binary : agentType;
     if (!binary) return;
-    const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
-    const binDir = path.join(portableDir, 'node_modules', '.bin');
-    for (const dir of [portableDir, binDir]) {
+
+    // Clean from isolated runtime prefix
+    const runtimeBin = path.join(getRuntimePrefix(agentType), 'node_modules', '.bin');
+
+    // Clean from legacy shared prefix
+    const legacyDir = path.join(os.homedir(), '.openagents', 'nodejs');
+    const legacyBin = path.join(legacyDir, 'node_modules', '.bin');
+
+    for (const dir of [runtimeBin, legacyDir, legacyBin]) {
       for (const ext of ['', '.cmd', '.ps1']) {
         const shimPath = path.join(dir, binary + ext);
         try { if (fs.existsSync(shimPath)) fs.unlinkSync(shimPath); } catch {}
@@ -318,7 +324,7 @@ class Installer {
     }
 
     const installCmd = this._getInstallCommand(entry.install);
-    let rawCmd = this._deriveUninstallCommand(installCmd);
+    let rawCmd = this._deriveUninstallCommand(installCmd, agentType);
     if (!rawCmd) {
       throw new Error(`Cannot derive uninstall command for ${agentType}`);
     }
@@ -372,13 +378,15 @@ class Installer {
 
   /**
    * Derive uninstall command from install command.
+   * @param {string} installCmd
+   * @param {string} [agentType] - used to resolve the isolated runtime prefix
    */
-  _deriveUninstallCommand(installCmd) {
+  _deriveUninstallCommand(installCmd, agentType) {
     if (!installCmd) return null;
 
-    // npm install -g <pkg> → npm uninstall --prefix <dir> <pkg>
+    // npm install -g <pkg> → npm uninstall --prefix <runtimeDir> <pkg>
     if (installCmd.includes('npm install')) {
-      const prefixDir = path.join(os.homedir(), '.openagents', 'nodejs');
+      const prefixDir = agentType ? getRuntimePrefix(agentType) : path.join(os.homedir(), '.openagents', 'nodejs');
       return installCmd
         .replace('npm install -g', `npm uninstall --prefix "${prefixDir}"`)
         .replace('npm install', 'npm uninstall')
