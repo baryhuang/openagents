@@ -23,6 +23,14 @@ curl -fsSL https://openagents.org/install.sh | bash    # install
 agn                                                      # launch
 ```
 
+<div align="center">
+
+![Install → Add agents → Connect → Collaborate](docs/assets/images/readme-demo.gif)
+
+*Install the launcher, add agents, connect to a workspace, and collaborate — all from your terminal.*
+
+</div>
+
 ---
 
 ## Three Products, One Ecosystem
