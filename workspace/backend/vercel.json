@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/index.py": {
+      "memory": 512
+    }
+  },
   "builds": [
     {
       "src": "api/index.py",
