@@ -176,7 +176,8 @@ function copyDirSync(src, dest) {
 }
 
 function findNpmCommand() {
-  const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+  const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node');
+  const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node');
   if (!fs.existsSync(nodeBin)) return null;
   // Always prefer node.exe + npm-cli.js (avoids cmd.exe Unicode path encoding issues)
   const candidates = [
@@ -483,8 +484,9 @@ function setupIPC() {
 
   ipcMain.handle('runtime:info', async () => {
     const info = { nodeVersion: null, npmVersion: null, coreVersion: coreVersion || null, latestVersion: null };
-    // Node.js version
-    const nodeBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+    // Node.js version — check unified path (symlink on Unix), then legacy bin/
+    const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node');
+    const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node');
     if (fs.existsSync(nodeBin)) {
       try { info.nodeVersion = execSync(`"${nodeBin}" --version`, { encoding: 'utf-8', timeout: 5000 }).trim(); } catch {}
     }
@@ -570,7 +572,8 @@ function setupIPC() {
 
   // Core library update
   ipcMain.handle('core:update', async () => {
-    const npmBin = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+    const npmUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'npm.cmd' : 'npm');
+    const npmBin = fs.existsSync(npmUnified) ? npmUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'npm');
     try {
       execSync(`"${npmBin}" install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`, {
         stdio: 'ignore', timeout: 120000,
@@ -693,7 +696,8 @@ app.whenReady().then(async () => {
   createTray();
 
   // ── Splash screen ──
-  const nodeExists = fs.existsSync(path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'bin/node'));
+  const nodeExists = fs.existsSync(path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node'))
+    || fs.existsSync(path.join(PORTABLE_NODE_DIR, 'bin', 'node'));
   const coreExists = fs.existsSync(path.join(GLOBAL_MODULES, CORE_PKG, 'package.json'));
 
   // Always show splash — used for Node.js download, core install, AND core updates

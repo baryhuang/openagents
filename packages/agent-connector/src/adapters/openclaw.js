@@ -247,9 +247,9 @@ class OpenClawAdapter extends BaseAdapter {
 
       // Always spawn node + openclaw.mjs directly (no shims, no cmd.exe, cross-platform)
       const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
-      const nodeBin = IS_WINDOWS
-        ? path.join(portableDir, 'node.exe')
-        : path.join(portableDir, 'bin', 'node');
+      // Unified path first (symlink on Unix), then legacy bin/ fallback
+      const nodeUnified = path.join(portableDir, IS_WINDOWS ? 'node.exe' : 'node');
+      const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(portableDir, 'bin', 'node');
       // Check isolated runtime first, then legacy
       const runtimeMjs = path.join(getRuntimePrefix('openclaw'), 'node_modules', 'openclaw', 'openclaw.mjs');
       const legacyMjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');

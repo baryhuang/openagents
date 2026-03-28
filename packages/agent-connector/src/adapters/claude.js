@@ -111,8 +111,8 @@ class ClaudeAdapter extends BaseAdapter {
     const home = os.homedir();
     const candidates = IS_WINDOWS
       ? [path.join(home, '.openagents', 'nodejs', 'node.exe')]
-      : [path.join(home, '.openagents', 'nodejs', 'bin', 'node'),
-         path.join(home, '.openagents', 'nodejs', 'node')];
+      : [path.join(home, '.openagents', 'nodejs', 'node'),
+         path.join(home, '.openagents', 'nodejs', 'bin', 'node')];
     for (const c of candidates) {
       if (fs.existsSync(c)) return c;
     }
