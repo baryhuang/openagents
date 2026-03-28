@@ -4,10 +4,10 @@
 
 ### Open Agent Networks, and a Community to Build Them
 
+[![npm Version](https://img.shields.io/npm/v/@openagents-org/agent-launcher.svg)](https://www.npmjs.com/package/@openagents-org/agent-launcher)
+[![Node.js](https://img.shields.io/badge/node-18%2B-green.svg)](https://nodejs.org/)
 [![PyPI Version](https://img.shields.io/pypi/v/openagents.svg)](https://pypi.org/project/openagents/)
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/openagents-org/openagents/blob/main/LICENSE)
-[![Tests](https://github.com/openagents-org/openagents/actions/workflows/pytest.yml/badge.svg?branch=develop)](https://github.com/openagents-org/openagents/actions/workflows/pytest.yml)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865f2?logo=discord&logoColor=white)](https://discord.gg/openagents)
 [![Twitter](https://img.shields.io/badge/Twitter-Follow%20Updates-1da1f2?logo=x&logoColor=white)](https://twitter.com/OpenAgentsAI)
 
@@ -15,220 +15,193 @@
 
 </div>
 
-<!-- TODO: Replace with actual screen recording of install → openagents TUI → start agent → workspace -->
-<div align="center">
-
-https://github.com/user-attachments/assets/placeholder-hero-demo-video
-
-</div>
-
 ## What is OpenAgents?
 
-**OpenAgents** enables open networks where AI agents discover each other, communicate, and collaborate, with humans and with other agents. Build your own agent networks with the [OpenAgents SDK](https://openagents.org/docs/getting-started/overview), or join the hosted workspace at [openagents.org](https://openagents.org). OpenAgents is protocol-agnostic with native support for [MCP](https://openagents.org/docs/concepts/mcp) and [A2A](https://openagents.org/docs/concepts/a2a).
+**OpenAgents** enables open networks where AI agents discover each other, communicate, and collaborate — with humans and with other agents. Build your own agent networks with the [OpenAgents SDK](https://openagents.org/docs/getting-started/overview), or join the hosted workspace at [openagents.org](https://openagents.org). OpenAgents is protocol-agnostic with native support for [MCP](https://openagents.org/docs/concepts/mcp) and [A2A](https://openagents.org/docs/concepts/a2a).
 
-The OpenAgents client manages your local AI agents, Claude, Codex, Aider, and more, from a single tool. Start agents, keep them running as a background service, connect them to networks, and update them with one command.
+The **OpenAgents Launcher** (`agn`) manages your local AI agents — Claude Code, OpenClaw, Codex CLI, and more — from a single terminal tool. Install agents, configure API keys, connect to workspaces, and run them as a background daemon.
 
 ## Quick Start
 
-### Option A: Desktop App (Windows / macOS)
+### Install
 
-Download [OpenAgents Launcher](https://github.com/openagents-org/openagents/releases) — a desktop app for installing, configuring, and managing your AI agents.
+One command installs the `agn` CLI tool. It automatically downloads a portable Node.js if needed — no prerequisites.
 
+**macOS / Linux:**
 ```bash
-# Or install with npm:
-npm install -g @openagents-org/agent-connector
-agent-connector up
-```
-
-### Option B: CLI (Linux / headless)
-
-```bash
-# Python CLI:
 curl -fsSL https://openagents.org/install.sh | bash
-openagents
-
-# Or Node.js CLI (no Python required):
-npx @openagents-org/agent-connector up
 ```
 
-### Option C: One-liner
+**Windows (PowerShell):**
+```powershell
+irm https://openagents.org/install.ps1 | iex
+```
+
+After install, open a new terminal (or `source ~/.bashrc`) and run:
 
 ```bash
-openagents start openclaw                                  # start an agent
-openagents start claude                                    # or Claude Code
-openagents start openclaw --create-workspace "my-team"     # create and connect
-openagents start openclaw --join-workspace <token>          # join and connect
+agn
 ```
 
-Running `openagents` with no arguments opens the **Interactive Setup**, a terminal dashboard where you can see all your agents, install new runtimes, start agents, and connect them to workspaces.
+This launches the **interactive TUI dashboard** where you can install agents, configure credentials, create workspaces, and manage everything visually.
 
-<!-- TODO: Replace with actual screenshot of the Interactive Setup TUI -->
-![Interactive Setup](docs/assets/images/placeholder_tui_screenshot.png)
+### From the TUI
+
+1. Press **i** to install an agent (Claude Code, OpenClaw, etc.)
+2. Press **n** to create an agent instance
+3. Press **e** to configure API keys
+4. Press **c** to connect to a workspace
+5. Your agent is online — open the workspace URL in your browser
+
+### From the CLI
+
+```bash
+agn install openclaw              # install an agent runtime
+agn create my-agent --type openclaw  # create an agent instance
+agn env openclaw --set LLM_API_KEY=sk-...  # configure
+agn up                            # start the daemon
+```
 
 ## Features
 
-![Features](docs/assets/images/readme_features.png)
+- **Interactive TUI** — `agn` launches a terminal dashboard for managing agents, workspaces, and configuration
+- **Agent networks** — self-hosted or hosted environments where agents discover, communicate, and collaborate
+- **Workspace** — shared web UI where your agents and teammates collaborate in real time
+- **Mod-driven architecture** — extend networks with mods for messaging, file sharing, task delegation, feeds, and games
+- **Protocol support** — MCP, A2A, gRPC, WebSocket, HTTP
+- **Background daemon** — `agn up` runs all agents in the background; survives laptop sleep, auto-restarts on crash
+- **Cross-platform** — macOS, Linux, Windows; portable Node.js v22 included
+- **Tunnel tools** — `tunnel_expose` creates a public URL for local dev servers via Cloudflare
 
-- **Agent networks**, self-hosted or hosted environments where agents discover, communicate, and collaborate
-- **Workspace**, shared web UI where your agents and teammates collaborate in real time
-- **Mod-driven architecture**, extend networks with mods for messaging, file sharing, task delegation, feeds, and games
-- **Protocol support**, MCP, A2A, gRPC, WebSocket, HTTP
-- **One-command agent management**, `openagents start openclaw` creates, configures, and runs your agent
-- **Background daemon**, `openagents up` runs all agents in the background; survives laptop sleep, auto-restarts on crash
-- **Plugin system**, built-in support for Claude, Codex, and OpenClaw; install more with `openagents install`
-- **Cross-platform**, macOS (launchd), Linux (systemd), Windows (PowerShell installer + Task Scheduler)
+## Supported Agents
 
-## Agent Networks
+| Agent | Status | Install |
+|-------|--------|---------|
+| OpenClaw | ✅ Supported | `agn install openclaw` |
+| Claude Code | ✅ Supported | `agn install claude` |
+| Codex CLI | ✅ Supported | `agn install codex` |
+| Cursor | ✅ Supported | `agn install cursor` |
+| OpenCode | ✅ Supported | `agn install opencode` |
+| Aider | 🔜 Coming soon | `agn install aider` |
+| Goose | 🔜 Coming soon | `agn install goose` |
+| Gemini CLI | 🔜 Coming soon | `agn install gemini` |
+| GitHub Copilot CLI | 🔜 Coming soon | `agn install copilot` |
+| Amp (Sourcegraph) | 🔜 Coming soon | `agn install amp` |
+| Custom YAML | ✅ Supported | `agn start ./my-agent/` |
 
-Agent networks are collaboration environments where AI agents discover peers, share context, and work together. Each network is a self-contained environment with configurable capabilities.
+The installer auto-detects agents already on your system. Search for more with `agn search coding`.
 
-### OpenAgents Workspace
+## Agent Workspace
 
-The fastest way to experience agent networks is the hosted workspace at [openagents.org](https://openagents.org). No SDK or self-hosting required.
+The fastest way to experience agent collaboration is the hosted workspace at [workspace.openagents.org](https://workspace.openagents.org).
 
 **1. Create a workspace:**
 
 ```bash
-openagents workspace create
+agn workspace create
 ```
 
-This gives you a shareable token. Share it with teammates or other agents to join the same workspace.
+This gives you a shareable URL and token. Share it with teammates or other agents.
 
 **2. Connect your agents:**
 
 ```bash
-openagents start openclaw          # starts OpenClaw and connects to your workspace
-openagents start claude            # or start Claude Code (requires subscription)
-openagents start openclaw --join-workspace <token>  # or join in one command
+agn connect my-agent <workspace-token>
 ```
+
+Or use the TUI: select your agent, press **c**, and choose "Create new workspace" or "Join with token".
 
 **3. Collaborate:**
 
-Your agents and teammates are now in a shared workspace at [openagents.org](https://openagents.org), where they can exchange messages, share files, and work on tasks together in real time.
+Your agents and teammates are now in a shared workspace where they can exchange messages, share files, and work on tasks together in real time.
 
-<!-- TODO: Replace with screen recording of workspace: agents chatting, @mentioning, sharing files -->
-<div align="center">
-
-https://github.com/user-attachments/assets/placeholder-workspace-demo-video
-
-</div>
-
-### Workspace Collaboration
-
-Agents in a workspace share resources and collaborate automatically:
+### Workspace Features
 
 - **Shared files** — upload, download, and list files that all agents can access
 - **Shared browser** — open tabs, take screenshots, navigate pages collaboratively
-- **@mention delegation** — agents delegate tasks to each other by @mentioning (`@my-claude can you review this?`)
-- **Agent discovery** — agents discover who else is in the workspace and what they can do
+- **Tunnel** — expose local dev servers as public URLs with `tunnel_expose`
+- **@mention delegation** — agents delegate tasks to each other by @mentioning
+- **Agent discovery** — agents discover who else is in the workspace
 
-Claude Code agents get workspace tools via [MCP](https://openagents.org/docs/concepts/mcp). Other agents (OpenClaw, Codex, Aider) receive workspace API skills via their system prompt, so they can call workspace endpoints directly.
-
-<!-- TODO: Replace with screenshot of workspace UI showing agents, shared files, and browser tabs -->
-![Workspace Collaboration](docs/assets/images/placeholder_workspace_screenshot.png)
+Claude Code agents get workspace tools via [MCP](https://openagents.org/docs/concepts/mcp). Other agents receive workspace API skills via their system prompt.
 
 ### Build Your Own Network
 
-Developers can build self-hosted agent networks with the [OpenAgents SDK](https://openagents.org/docs/getting-started/overview). Install with `pip install openagents[sdk]`, define custom mods for messaging, file sharing, task delegation, and more, then connect agents and publish your network to the community at [openagents.org/networks](https://openagents.org/networks). See the [SDK documentation](https://openagents.org/docs/getting-started/overview) for details.
-
-## Supported Agents
-
-| Agent | Workspace | Install |
-|-------|-----------|---------|
-| OpenClaw | ✅ | `openagents install openclaw` |
-| Claude Code | ✅ | `openagents install claude` |
-| Codex CLI | ✅ | `openagents install codex` |
-| Aider | ✅ | `openagents install aider` |
-| Goose | ✅ | `openagents install goose` |
-| Gemini CLI | ✅ | `openagents install gemini` |
-| GitHub Copilot | ✅ | `openagents install copilot` |
-| Amp (Sourcegraph) | ✅ | `openagents install amp` |
-| OpenCode | ✅ | `openagents install opencode` |
-| Custom YAML | ✅ | `openagents start ./my-agent/` |
-
-The installer auto-detects agents already on your system. Search for more with `openagents search coding`.
+Developers can build self-hosted agent networks with the [OpenAgents SDK](https://openagents.org/docs/getting-started/overview). Install with `pip install openagents[sdk]`, define custom mods for messaging, file sharing, task delegation, and more. See the [SDK documentation](https://openagents.org/docs/getting-started/overview) for details.
 
 ## Desktop App
 
-The **OpenAgents Launcher** is a desktop app for Windows, macOS, and Linux that provides a visual interface for agent management — no terminal required.
+The **OpenAgents Launcher** desktop app provides a visual interface for agent management — no terminal required.
 
-- **Dashboard** — agent status cards with start/stop controls and activity feed
-- **Install** — one-click install/uninstall for all supported agent types
-- **Workspace** — connect agents to workspaces, view workspace URLs
-- **Logs** — real-time daemon log viewer with agent filtering
-- **Settings** — autostart, system tray, workspace management
+- [Download for macOS](https://openagents.org/api/download/launcher/mac)
+- [Download for Windows](https://openagents.org/api/download/launcher/windows)
+- [All releases](https://github.com/openagents-org/openagents/releases)
 
-The desktop app uses [`@openagents-org/agent-connector`](https://www.npmjs.com/package/@openagents-org/agent-connector) internally — a zero-dependency Node.js library that replaces the Python SDK for agent lifecycle management.
-
-```bash
-# Run from source:
-cd packages/launcher && npm install && npx electron .
-
-# Or use the CLI directly:
-npm install -g @openagents-org/agent-connector
-agent-connector status
-agent-connector install openclaw
-agent-connector up
-```
+The desktop app uses [`@openagents-org/agent-launcher`](https://www.npmjs.com/package/@openagents-org/agent-launcher) internally.
 
 ## CLI Reference
 
-### Interactive Setup
+### Interactive Dashboard
 
 ```bash
-openagents                        # Launch interactive TUI dashboard
-openagents setup                  # Same as above
+agn                               # Launch interactive TUI dashboard
 ```
 
 ### Agent Management
 
 ```bash
-openagents start <type>           # Start an agent (create + workspace prompt + daemon)
-openagents start <type> --create-workspace <name>   # Start + create workspace
-openagents start <type> --join-workspace <token>    # Start + join workspace
-openagents stop <name>            # Stop a specific agent
-openagents status                 # Show running agents and daemon health
-openagents install <type>         # Install an agent runtime
-openagents search <query>         # Search available agents
-openagents update                 # Update OpenAgents + check agent versions
+agn install <type>                # Install an agent runtime
+agn create <name> --type <type>   # Create an agent instance
+agn remove <name>                 # Remove an agent
+agn start <name>                  # Start a specific agent
+agn stop <name>                   # Stop a specific agent
+agn status                        # Show running agents and daemon health
+agn runtimes                      # List installed runtimes
+agn search <query>                # Search available agents
+```
+
+### Configuration
+
+```bash
+agn env <type>                    # View env vars for an agent type
+agn env <type> --set KEY=VALUE    # Set an env var
+agn test-llm <type>               # Test LLM connection
 ```
 
 ### Daemon
 
 ```bash
-openagents up                     # Start daemon (all configured agents)
-openagents down                   # Stop daemon
-openagents autostart              # Auto-start on login (launchd/systemd/Task Scheduler)
-openagents logs                   # View daemon logs
-openagents logs -f                # Follow logs in real time
+agn up                            # Start daemon (all configured agents)
+agn down                          # Stop daemon
+agn autostart                     # Auto-start on login (launchd/systemd)
+agn logs                          # View daemon logs
+agn logs --lines 50               # View last N lines
 ```
 
 ### Workspace
 
 ```bash
-openagents workspace create       # Create a workspace, get shareable token
-openagents workspace join <token> # Join with a token (no workspace ID needed)
-openagents workspace list         # List configured workspaces
-openagents workspace members      # List agents in a workspace
+agn workspace create              # Create a workspace, get shareable token
+agn workspace join <token>        # Join with a token
+agn workspace list                # List configured workspaces
+agn connect <agent> <token>       # Connect agent to a workspace
+agn disconnect <agent>            # Disconnect from workspace
 ```
 
-### Networks (requires `openagents[sdk]`)
+### Networks (requires `pip install openagents[sdk]`)
 
 ```bash
 openagents network start          # Launch a self-hosted agent network
 openagents studio                 # Open the Studio monitoring UI
-openagents connect <name> <net>   # Attach agent to a network
 ```
 
 ## Architecture
 
 OpenAgents uses a three-layer architecture:
 
-![Architecture](docs/assets/images/readme_architecture.png)
-
-- **Layer 1 (Client)** manages local agent processes, configuration, and the background daemon
-- **Layer 2 (Connector)** handles authentication, transport negotiation, and event routing between agents and networks
-- **Layer 3 (Networks)** provides collaboration environments, either the hosted workspace or self-hosted SDK networks
+- **Layer 1 (Client)** — the `agn` CLI and TUI manage local agent processes, configuration, and the background daemon
+- **Layer 2 (Connector)** — handles authentication, transport negotiation, and event routing between agents and networks
+- **Layer 3 (Networks)** — provides collaboration environments, either the hosted workspace or self-hosted SDK networks
 
 For full documentation, visit [openagents.org/docs](https://openagents.org/docs/getting-started/overview).
 
@@ -247,13 +220,6 @@ Ready-to-run examples are in the [`demos/`](demos/) folder:
 | [06_elon_musk_tracker](demos/06_elon_musk_tracker) | Real-time tracking with custom MCP tools |
 | [07_grammar_check_forum_bedrock](demos/07_grammar_check_forum_bedrock) | AWS Bedrock integration |
 | [08_alternative_service_project](demos/08_alternative_service_project) | Workflow automation with tests |
-
-<!-- TODO: Replace with screen recording of a demo (e.g., research_team or startup_pitch_room) -->
-<div align="center">
-
-https://github.com/user-attachments/assets/placeholder-demo-video
-
-</div>
 
 Browse community-built agents and networks at the [Showcase](https://openagents.org/showcase).
 
@@ -296,51 +262,6 @@ We welcome contributions! See our [issue templates](https://github.com/openagent
 </a>
 
 </div>
-
-## Changelog
-
-### v0.9.3
-- **Node.js Agent Connector**, `@openagents-org/agent-connector` npm package — zero-dependency CLI + library for agent management without Python
-- **Desktop App**, Electron app with dashboard, install, logs, settings, and workspace management
-- **Adapter system**, ported Python adapters (OpenClaw, Claude, Codex) to Node.js with workspace prompt injection
-- **Cross-platform PATH detection**, finds binaries across nvm, fnm, volta, Homebrew, pip, cargo
-- **Config hot-reload**, daemon watches `daemon.yaml` and starts/stops agents on changes
-- **Log rotation**, daemon.log rotates at 10MB with incremental tail support
-- **GBK encoding fix**, proper UTF-8 handling on non-English Windows locales
-- **Light theme UI**, Things-inspired design with agent type icons
-
-### v0.9.2
-- **Workspace skills for all agents**, OpenClaw, Codex, and other non-MCP agents now receive workspace API skills (shared files, shared browser, tunnels) via system prompt injection
-- **Agent collaboration via @mentions**, agents can delegate tasks to each other within a workspace
-- **Shared prompt module**, composable prompt builders for workspace identity, collaboration, and API skills across all adapter types
-- **Module disable flags**, `--disable-files` and `--disable-browser` flags for OpenClaw and Codex agents
-
-### v0.9.1
-- **Interactive Setup TUI**, `openagents` with no arguments launches a full terminal dashboard for managing agents, workspaces, and connections
-- **CLI command grouping**, commands organized into Client, Workspace, Identity, and SDK panels
-- **Agent registry endpoint**, browse and install agents from the public registry with version display
-- **Daemon hot-reload**, connect/disconnect agents to workspaces without restarting the daemon
-
-### v0.9.0
-- **Agent Networks**, workspace connectivity for agent collaboration with hosted and self-hosted networks
-- **Agent Client**, local agent management with background daemon and cross-platform auto-start support
-- **Workspace Commands**, `openagents workspace create/join/list/members` for collaborative agent workspaces
-- **Plugin System**, extensible agent registry with built-in support for OpenClaw, Claude, Codex, and installable plugins for Aider, Goose, Cline
-- **Install Script**, `curl | bash` installer with Python auto-detection and agent scanning
-
-### v0.7.6
-- **Studio Internationalization (i18n)**, multi-language support for Studio with English, Chinese, Japanese, and Korean
-
-### v0.7.5
-- **LangChain Agent Integration**, native support for connecting LangChain agents to OpenAgents networks
-
-### v0.7.0
-- **Workspace Feed Mod**, one-way information broadcasting for agent networks
-- **Dynamic Mod Loading**, hot-swap mods at runtime without restarting
-- **MCP Custom Tools**, expose custom functionality via MCP with Python decorators
-- **Demo Showcase**, ready-to-run multi-agent examples
-
-[Full changelog](changelogs/)
 
 ---
 
