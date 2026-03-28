@@ -19,6 +19,7 @@ const { spawn, execSync } = require('child_process');
 const BaseAdapter = require('./base');
 const { formatAttachmentsForPrompt } = require('./utils');
 const { buildOpenclawSkillMd, buildOpenclawSystemPrompt } = require('./workspace-prompt');
+const { getRuntimePrefix } = require('../paths');
 
 const IS_WINDOWS = process.platform === 'win32';
 const OPENCLAW_STATE_DIR = path.join(
@@ -55,8 +56,13 @@ class OpenClawAdapter extends BaseAdapter {
   // ------------------------------------------------------------------
 
   _findOpenclawBinary() {
-    // We know exactly where openclaw is — installed via --prefix ~/.openagents/nodejs
     const home = process.env.USERPROFILE || process.env.HOME || '';
+
+    // Tier 0: Isolated runtime prefix (~/.openagents/runtimes/openclaw/)
+    const runtimeMjs = path.join(getRuntimePrefix('openclaw'), 'node_modules', 'openclaw', 'openclaw.mjs');
+    if (fs.existsSync(runtimeMjs)) return runtimeMjs;
+
+    // Tier 0b: Legacy shared prefix
     const portableDir = path.join(home, '.openagents', 'nodejs');
     const mjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');
     if (fs.existsSync(mjs)) return mjs;
@@ -194,8 +200,9 @@ class OpenClawAdapter extends BaseAdapter {
       if (IS_WINDOWS) {
         const nodeBinDir = path.dirname(process.execPath);
         const npmBin = path.join(process.env.APPDATA || '', 'npm');
-        const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
-        for (const p of [nodeBinDir, npmBin, portableDir]) {
+        const portableDir2 = path.join(os.homedir(), '.openagents', 'nodejs');
+        const runtimeBin = path.join(getRuntimePrefix('openclaw'), 'node_modules', '.bin');
+        for (const p of [runtimeBin, nodeBinDir, npmBin, portableDir2]) {
           if (p && !(spawnEnv.PATH || '').includes(p)) {
             spawnEnv.PATH = p + path.delimiter + (spawnEnv.PATH || '');
           }
@@ -243,7 +250,10 @@ class OpenClawAdapter extends BaseAdapter {
       const nodeBin = IS_WINDOWS
         ? path.join(portableDir, 'node.exe')
         : path.join(portableDir, 'bin', 'node');
-      const openclawMjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');
+      // Check isolated runtime first, then legacy
+      const runtimeMjs = path.join(getRuntimePrefix('openclaw'), 'node_modules', 'openclaw', 'openclaw.mjs');
+      const legacyMjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');
+      const openclawMjs = fs.existsSync(runtimeMjs) ? runtimeMjs : legacyMjs;
 
       let spawnBin, spawnArgs;
       if (fs.existsSync(nodeBin) && fs.existsSync(openclawMjs)) {
