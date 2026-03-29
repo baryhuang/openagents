@@ -343,10 +343,28 @@ def _extract_leading_mention(content: str, known_agents: List[str]) -> Optional[
     return None
 
 
+def _fallback_targets(event, channel, mentions: List[str]) -> List[str]:
+    """Determine target agents when LLM router is unavailable.
+
+    Priority: explicit @mentions → master (for human/member msgs) → all participants.
+    """
+    if mentions:
+        return [mentions[0]]
+    if channel.master_agent:
+        if event.source.startswith("openagents:"):
+            sender = event.source[len("openagents:"):]
+            # Master's own messages: no self-trigger
+            if sender == channel.master_agent:
+                return []
+        return [channel.master_agent]
+    # No master — target the first participant
+    participants = [p.agent_name for p in (channel.participants or [])]
+    return [participants[0]] if participants else []
+
+
 _ROUTER_PROMPT = """\
 You are a conversation router for a multi-agent workspace. Your job is to \
-decide whether another agent should be triggered to respond, or if the \
-conversation is complete and should wait for human input.
+decide which agent(s) should respond next.
 
 Channel participants: {participants}
 Master agent: {master}
@@ -358,15 +376,16 @@ New message from {sender}:
 {content}
 
 Rules:
-- If the sender is delegating a task to a specific agent, output that agent.
+- If the message contains @agent-name mentions, those are strong hints — route to the mentioned agent(s).
+- If the sender (human or agent) is delegating a task, route to the most appropriate agent for that task.
 - If the sender is reporting results and the master should review or synthesize, output the master.
-- If the response is a final answer, summary, or conclusion meant for the human user, output STOP.
+- If a human asks a general question or gives a broad instruction, route to the master agent.
+- If the response is a final answer or conclusion meant for the human user, output STOP.
 - If the task appears complete and no further agent action is needed, output STOP.
-- When in doubt, prefer STOP — let the human decide next steps.
+- When in doubt between STOP and routing, prefer routing to the master agent.
 
 Output EXACTLY one line, no explanation:
-- "next:<agent_name>" to trigger a single agent
-- "next:<agent1>,<agent2>" to trigger multiple agents
+- "next:<agent_name>" to trigger exactly one agent
 - "stop" if no agent should be triggered"""
 
 
@@ -504,14 +523,12 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
         logger.info("LLM router decision: %s (channel=%s, sender=%s, provider=%s)", result, channel.name, sender, provider)
 
         if result.startswith("next:"):
-            agents_str = result[len("next:"):].strip()
-            agent_names = [a.strip() for a in agents_str.split(",") if a.strip()]
+            agent_name = result[len("next:"):].strip().split(",")[0].strip()
             # Validate against actual participants
             valid_participants = {p.agent_name for p in (channel.participants or [])}
-            valid = [a for a in agent_names if a in valid_participants]
-            if valid:
-                return valid
-            logger.warning("LLM router returned unknown agents: %s (valid: %s)", agent_names, valid_participants)
+            if agent_name in valid_participants:
+                return [agent_name]
+            logger.warning("LLM router returned unknown agent: %s (valid: %s)", agent_name, valid_participants)
             return []
         else:
             # "stop" or any unrecognized output → stop
@@ -588,49 +605,35 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
             )
         ).scalar_one_or_none()
 
-    # Agent messages: use LLM router for multi-agent threads
-    if event.source.startswith("openagents:"):
-        if channel and len(channel.participants or []) >= 2:
-            # Multi-agent thread → LLM router decides next speaker
-            from app.config import config
-            if config.ROUTER_LLM_ENABLED and _get_router_api_key():
-                targets = await _route_with_llm(channel, event, db, workspace)
-                if targets:
-                    event.metadata["target_agents"] = targets
-                # else: stop — no targeting, conversation rests
-                return event
+    # Auto-name channel from first human message if title is default/empty
+    if event.source.startswith("human:") and channel:
+        _auto_title_channel(channel, content, db)
 
-        # Fallback for single-agent threads or router disabled:
-        # Route member messages back to master so it can review.
-        if channel and channel.master_agent:
-            sender = event.source[len("openagents:"):]
-            if sender != channel.master_agent:
-                event.metadata["target_agents"] = [channel.master_agent]
-        return event
-
-    # Human messages → route to channel master
-    if not event.source.startswith("human:"):
+    # Skip non-human, non-agent sources
+    if not event.source.startswith("human:") and not event.source.startswith("openagents:"):
         return event
 
     if not channel:
         return event
 
-    # Auto-name channel from first human message if title is default/empty
-    _auto_title_channel(channel, content, db)
-
-    # If message starts with @agent-name, route directly to that agent.
-    # Other @mentions in the body are just references, not routing targets.
-    leading = _extract_leading_mention(content, known_agents)
-    if leading:
-        event.metadata["target_agents"] = [leading]
-    elif channel.master_agent:
-        # Default: route to channel master
-        event.metadata["target_agents"] = [channel.master_agent]
+    # ── Multi-agent channel: always use LLM router ──────────────────
+    if len(channel.participants or []) >= 2:
+        from app.config import config
+        if config.ROUTER_LLM_ENABLED and _get_router_api_key():
+            targets = await _route_with_llm(channel, event, db, workspace)
+            if targets:
+                event.metadata["target_agents"] = targets
+            # else: stop — conversation rests, no targeting
+        else:
+            # LLM router not available — fallback to mention or master
+            targets = _fallback_targets(event, channel, mentions)
+            if targets:
+                event.metadata["target_agents"] = targets
+    # ── Single-agent channel ────────────────────────────────────────
     else:
-        # Fall back to all channel participants
-        event.metadata["target_agents"] = [
-            p.agent_name for p in (channel.participants or [])
-        ]
+        targets = _fallback_targets(event, channel, mentions)
+        if targets:
+            event.metadata["target_agents"] = targets
 
     # Auto-add targeted agents as channel participants so they can poll
     # for messages on this channel.

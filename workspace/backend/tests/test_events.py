@@ -176,12 +176,8 @@ class TestSendEvent:
         # Member's response should be routed back to the master
         assert data["metadata"]["target_agents"] == ["agent-alpha"]
 
-    def test_member_message_routes_to_master_in_fallback(self, client, workspace):
-        """Member agent messages in single-agent channels route to master (fallback).
-
-        With the LLM router disabled (no API key in tests), member messages
-        always route back to the channel master regardless of @mentions.
-        """
+    def test_member_message_with_mention_routes_to_mentioned_agent(self, client, workspace):
+        """Agent messages with explicit @mentions route to the mentioned agent."""
         # Add member agents to workspace (not to channel — so channel stays single-participant)
         for name in ["agent-beta", "agent-gamma"]:
             client.post("/v1/join", json={
@@ -201,8 +197,8 @@ class TestSendEvent:
 
         assert resp.status_code == 200
         data = resp.json()["data"]
-        # Fallback: member messages route to master
-        assert data["metadata"]["target_agents"] == ["agent-alpha"]
+        # Explicit @mention routes directly to the mentioned agent
+        assert data["metadata"]["target_agents"] == ["agent-gamma"]
 
 
 class TestPollEvents:
