@@ -128,10 +128,10 @@ class AgentManager {
     try {
       catalog = await this._connector.getCatalog();
     } catch {
-      catalog = this._connector.registry.getCatalogSync().map((e) => ({
-        ...e,
-        installed: this._connector.isInstalled(e.name),
-      }));
+      catalog = this._connector.registry.getCatalogSync().map((e) => {
+        const info = this._connector.installer.getInstallInfo(e.name);
+        return { ...e, installed: info.installed, managed: info.managed, location: info.location };
+      });
     }
     // Ensure bundled fields (check_ready, env_config, launch) are always present
     const bundled = this._connector.registry._loadBundled();

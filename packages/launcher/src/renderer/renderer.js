@@ -785,14 +785,16 @@ async function refreshCatalog() {
         </div>
         <div class="catalog-status">
           ${c.installed
-            ? '<span class="badge badge-success">installed</span>'
+            ? (c.managed === false
+              ? '<span class="badge badge-info" title="Installed outside OpenAgents (system/global)">global</span>'
+              : '<span class="badge badge-success">installed</span>')
             : '<span class="badge badge-warning">not installed</span>'}
         </div>
         <div class="catalog-actions">
           <button class="btn btn-sm" data-action="install-catalog" data-name="${esc(c.name)}" data-installed="${c.installed}">
-            ${c.installed ? 'Update' : 'Install'}
+            ${c.installed && c.managed !== false ? 'Update' : 'Install'}
           </button>
-          ${c.installed ? `<button class="btn btn-sm btn-danger" data-action="uninstall-catalog" data-name="${esc(c.name)}">Uninstall</button>` : ''}
+          ${c.installed && c.managed !== false ? `<button class="btn btn-sm btn-danger" data-action="uninstall-catalog" data-name="${esc(c.name)}">Uninstall</button>` : ''}
         </div>
       </div>
     `).join('');

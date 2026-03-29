@@ -33,10 +33,10 @@ class AgentConnector {
   async getCatalog() {
     const catalog = await this.registry.getCatalog();
     // Always re-check installed status (don't trust cached value)
-    return catalog.map((entry) => ({
-      ...entry,
-      installed: this.installer.isInstalled(entry.name),
-    }));
+    return catalog.map((entry) => {
+      const info = this.installer.getInstallInfo(entry.name);
+      return { ...entry, installed: info.installed, managed: info.managed, location: info.location };
+    });
   }
 
   /**

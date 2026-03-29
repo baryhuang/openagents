@@ -207,10 +207,10 @@ async function cmdSearch(connector, flags, positional) {
   try {
     catalog = await connector.getCatalog();
   } catch {
-    catalog = connector.registry.getCatalogSync().map((e) => ({
-      ...e,
-      installed: connector.isInstalled(e.name),
-    }));
+    catalog = connector.registry.getCatalogSync().map((e) => {
+      const info = connector.installer.getInstallInfo(e.name);
+      return { ...e, installed: info.installed, managed: info.managed, location: info.location };
+    });
   }
 
   if (query) {
@@ -253,9 +253,10 @@ async function cmdRuntimes(connector) {
   try {
     catalog = await connector.getCatalog();
   } catch {
-    catalog = connector.registry.getCatalogSync().map((e) => ({
-      ...e, installed: connector.isInstalled(e.name),
-    }));
+    catalog = connector.registry.getCatalogSync().map((e) => {
+      const info = connector.installer.getInstallInfo(e.name);
+      return { ...e, installed: info.installed, managed: info.managed, location: info.location };
+    });
   }
 
   const installed = catalog.filter((e) => e.installed);

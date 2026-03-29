@@ -803,6 +803,11 @@ h1 {
   color: var(--warning-text);
 }
 
+.badge-info {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
 .badge-success-sm, .badge-warning-sm, .badge-muted-sm {
   font-size: 10px;
   padding: 2px 6px;

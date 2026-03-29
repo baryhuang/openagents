@@ -35,7 +35,22 @@ class Installer {
    * Check if an agent type is installed.
    * Checks binary on PATH first, then marker files.
    */
+  /**
+   * Check if an agent type is installed.
+   * @returns {boolean} true if installed (any location)
+   */
   isInstalled(agentType) {
+    return this.getInstallInfo(agentType).installed;
+  }
+
+  /**
+   * Get detailed install info for an agent type.
+   * @returns {{ installed: boolean, managed: boolean, location: string|null }}
+   *   - installed: true if the agent is found anywhere
+   *   - managed: true if installed inside ~/.openagents/ (can be uninstalled by launcher)
+   *   - location: 'runtime' | 'legacy' | 'global' | null
+   */
+  getInstallInfo(agentType) {
     const entry = this.registry.getEntry(agentType);
     const npmPkg = entry && entry.install ? entry.install.npm_package : null;
     const binary = entry && entry.install ? entry.install.binary : agentType;
@@ -49,17 +64,21 @@ class Installer {
 
     // Check isolated runtime prefix first (~/.openagents/runtimes/<type>/)
     const runtimeModules = path.join(getRuntimePrefix(agentType), 'node_modules');
-    if (fs.existsSync(path.join(runtimeModules, pkgName, 'package.json'))) return true;
+    if (fs.existsSync(path.join(runtimeModules, pkgName, 'package.json'))) {
+      return { installed: true, managed: true, location: 'runtime' };
+    }
 
     // Legacy: check shared prefix (~/.openagents/nodejs/node_modules/)
     const legacyModules = path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules');
-    if (fs.existsSync(path.join(legacyModules, pkgName, 'package.json'))) return true;
+    if (fs.existsSync(path.join(legacyModules, pkgName, 'package.json'))) {
+      return { installed: true, managed: true, location: 'legacy' };
+    }
 
     // Fallback: check if binary exists on PATH (system install)
     const binaryPath = this._whichBinary(agentType);
     if (!binaryPath) {
       try { fs.unlinkSync(path.join(this.markersDir, agentType)); } catch {}
-      return false;
+      return { installed: false, managed: false, location: null };
     }
 
     // Verify it's not a stale shim pointing to a missing package
@@ -72,11 +91,13 @@ class Installer {
         for (const ext of ['', '.cmd', '.ps1']) {
           try { const p = path.join(path.dirname(binaryPath), binary + ext); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
         }
-        return false;
+        return { installed: false, managed: false, location: null };
       }
+      return { installed: true, managed: true, location: 'legacy' };
     }
 
-    return true;
+    // Binary found outside ~/.openagents/ — global/system install
+    return { installed: true, managed: false, location: 'global' };
   }
 
   /**
