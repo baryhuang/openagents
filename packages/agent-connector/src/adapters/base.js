@@ -68,6 +68,8 @@ class BaseAdapter {
       await this.client.joinNetwork(this.agentName, this.token, {
         network: this.workspaceId,
         agentType: this.agentType || 'agent',
+        serverHost: require('os').hostname(),
+        workingDir: this.workingDir || process.cwd(),
       });
       this._log(`Joined workspace ${this.workspaceId}`);
     } catch (e) {
