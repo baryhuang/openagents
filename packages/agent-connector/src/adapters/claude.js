@@ -130,7 +130,7 @@ class ClaudeAdapter extends BaseAdapter {
     if (IS_WINDOWS && binPath.toLowerCase().endsWith('.cmd')) {
       const cmdDir = path.dirname(path.resolve(binPath));
       const cmdContent = fs.readFileSync(binPath, 'utf-8');
-      const jsMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.js)/i);
+      const jsMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.m?js)/i);
       if (jsMatch) {
         return [nodeBin, path.resolve(cmdDir, jsMatch[1])];
       }

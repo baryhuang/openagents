@@ -68,12 +68,60 @@ class OpenClawAdapter extends BaseAdapter {
     if (fs.existsSync(mjs)) return mjs;
 
     // Fallback: check if openclaw is on PATH (system install)
+    // On Windows, resolve .cmd shim to actual .mjs path to avoid spawn issues
     try {
-      const cmd = IS_WINDOWS ? 'where openclaw' : 'which openclaw';
+      const cmd = IS_WINDOWS ? 'where openclaw.cmd' : 'which openclaw';
       const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
         .split(/\r?\n/)[0].trim();
-      if (result) return result;
+      if (result) {
+        const resolved = this._resolveShimToMjs(result);
+        if (resolved) return resolved;
+        // On Unix, which returns the actual binary/symlink
+        if (!IS_WINDOWS) return result;
+      }
     } catch {}
+    // Windows: also try without .cmd extension (for system installs on PATH)
+    if (IS_WINDOWS) {
+      try {
+        const result = execSync('where openclaw', { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
+          .split(/\r?\n/)[0].trim();
+        if (result) {
+          // Try the .cmd variant of this path
+          const cmdPath = result.replace(/(?:\.cmd)?$/i, '.cmd');
+          const resolved = this._resolveShimToMjs(cmdPath);
+          if (resolved) return resolved;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  /**
+   * Resolve a .cmd shim or Unix symlink to the actual openclaw.mjs path.
+   * On Windows: parses the .cmd shim to extract %dp0%\..\openclaw\openclaw.mjs
+   * On Unix: follows symlink to the .mjs file
+   */
+  _resolveShimToMjs(binPath) {
+    if (IS_WINDOWS) {
+      try {
+        if (!binPath.toLowerCase().endsWith('.cmd')) return null;
+        const cmdContent = fs.readFileSync(binPath, 'utf-8');
+        const match = cmdContent.match(/%dp0%\\([^\s"*?]+\.mjs)/i)
+          || cmdContent.match(/%dp0%\\([^\s"*?]+\.js)/i);
+        if (match) {
+          const cmdDir = path.dirname(path.resolve(binPath));
+          return path.resolve(cmdDir, match[1]);
+        }
+      } catch {}
+    } else {
+      try {
+        let target = binPath;
+        if (fs.lstatSync(binPath).isSymbolicLink()) {
+          target = path.resolve(path.dirname(binPath), fs.readlinkSync(binPath));
+        }
+        if (target.endsWith('.mjs') || target.endsWith('.js')) return target;
+      } catch {}
+    }
     return null;
   }
 
@@ -246,23 +294,38 @@ class OpenClawAdapter extends BaseAdapter {
       this._log('Spawn: stderr → ' + stderrFile);
 
       // Always spawn node + openclaw.mjs directly (no shims, no cmd.exe, cross-platform)
+      // This avoids Windows .cmd shim issues and Unicode path encoding problems.
       const portableDir = path.join(os.homedir(), '.openagents', 'nodejs');
-      // Unified path first (symlink on Unix), then legacy bin/ fallback
+      // Unified path first (symlink on Unix), then legacy bin/ fallback, then system node
       const nodeUnified = path.join(portableDir, IS_WINDOWS ? 'node.exe' : 'node');
-      const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(portableDir, 'bin', 'node');
-      // Check isolated runtime first, then legacy
-      const runtimeMjs = path.join(getRuntimePrefix('openclaw'), 'node_modules', 'openclaw', 'openclaw.mjs');
-      const legacyMjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');
-      const openclawMjs = fs.existsSync(runtimeMjs) ? runtimeMjs : legacyMjs;
+      let nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(portableDir, 'bin', 'node');
+      if (!fs.existsSync(nodeBin)) {
+        try {
+          const cmd = IS_WINDOWS ? 'where node.exe' : 'which node';
+          nodeBin = execSync(cmd, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] })
+            .split(/\r?\n/)[0].trim();
+        } catch { nodeBin = 'node'; }
+      }
 
+      // binary from _findOpenclawBinary() is already resolved to .mjs when possible
       let spawnBin, spawnArgs;
-      if (fs.existsSync(nodeBin) && fs.existsSync(openclawMjs)) {
+      if (binary && binary.endsWith('.mjs')) {
+        // Direct node + .mjs invocation (works for managed, legacy, AND global installs)
         spawnBin = nodeBin;
-        spawnArgs = [openclawMjs, ...args];
+        spawnArgs = [binary, ...args];
       } else {
-        // Fallback: try the binary path directly (system install)
-        spawnBin = binary;
-        spawnArgs = args;
+        // Check managed locations explicitly
+        const runtimeMjs = path.join(getRuntimePrefix('openclaw'), 'node_modules', 'openclaw', 'openclaw.mjs');
+        const legacyMjs = path.join(portableDir, 'node_modules', 'openclaw', 'openclaw.mjs');
+        const openclawMjs = fs.existsSync(runtimeMjs) ? runtimeMjs : (fs.existsSync(legacyMjs) ? legacyMjs : null);
+        if (openclawMjs) {
+          spawnBin = nodeBin;
+          spawnArgs = [openclawMjs, ...args];
+        } else {
+          // Last resort: spawn binary directly with shell (handles .cmd on Windows)
+          spawnBin = binary;
+          spawnArgs = args;
+        }
       }
       const proc = spawn(spawnBin, spawnArgs, {
         stdio: ['ignore', 'pipe', stderrFd],
