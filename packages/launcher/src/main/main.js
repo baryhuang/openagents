@@ -121,26 +121,7 @@ async function downloadNodejs(nodejsDir, onProgress) {
     const url = `https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-${platName}-${arch}.${ext}`;
     const tarPath = path.join(os.tmpdir(), `node-${nodeVersion}.${ext}`);
 
-    await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(tarPath);
-      https.get(url, (res) => {
-        if (res.statusCode === 302 || res.statusCode === 301) {
-          https.get(res.headers.location, (r2) => {
-            const total = parseInt(r2.headers['content-length'] || '0');
-            let downloaded = 0;
-            r2.on('data', (chunk) => { downloaded += chunk.length; file.write(chunk); if (total && onProgress) onProgress(Math.round(downloaded/total*100), `${(downloaded/1e6).toFixed(1)} MB`); });
-            r2.on('end', () => { file.end(); resolve(); });
-            r2.on('error', reject);
-          }).on('error', reject);
-          return;
-        }
-        const total = parseInt(res.headers['content-length'] || '0');
-        let downloaded = 0;
-        res.on('data', (chunk) => { downloaded += chunk.length; file.write(chunk); if (total && onProgress) onProgress(Math.round(downloaded/total*100), `${(downloaded/1e6).toFixed(1)} MB`); });
-        res.on('end', () => { file.end(); resolve(); });
-        res.on('error', reject);
-      }).on('error', reject);
-    });
+    await downloadFile(https, url, tarPath, onProgress);
 
     if (onProgress) onProgress(90, 'Extracting...');
     const flag = ext === 'tar.gz' ? '-xzf' : '-xJf';
