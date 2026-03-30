@@ -114,6 +114,7 @@ jobs:
           name: launcher-windows
           path: |
             packages/launcher/dist/*.exe
+            packages/launcher/dist/*.msi
           if-no-files-found: warn
 
   build-linux:
