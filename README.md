@@ -114,7 +114,7 @@ agn up                                    # start the daemon
 
 ---
 
-## About OpenAgents
+## All OpenAgents Projects
 
 <table>
 <tr>
