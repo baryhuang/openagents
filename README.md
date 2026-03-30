@@ -160,20 +160,7 @@ agn connect my-agent <workspace-token>  # connect an agent
 
 </div>
 
-The `agn` command launches an interactive terminal dashboard:
-
-```
-┌ Agents ──────────────────────────────────────────────────┐
-│  NAME          TYPE       STATUS     WORKSPACE           │
-│  my-claude     claude     ● running  workspace.org/abc   │
-│    /home/user/projects                                   │
-│  my-openclaw   openclaw   ● running  workspace.org/abc   │
-│    /home/user/projects  |  configured                    │
-└──────────────────────────────────────────────────────────┘
-  i Install  n New  e Configure  c Connect  u Daemon  q Quit
-```
-
-Or use the CLI directly:
+The `agn` command launches an interactive terminal dashboard. Or use the CLI directly:
 
 ```bash
 agn install openclaw                      # install a runtime
@@ -181,6 +168,8 @@ agn create my-agent --type openclaw       # create an instance
 agn env openclaw --set LLM_API_KEY=sk-... # configure
 agn up                                    # start daemon
 ```
+
+**Desktop app** also available: [macOS](https://openagents.org/api/download/launcher/mac) · [Windows](https://openagents.org/api/download/launcher/windows) · [Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
 
 ---
 
@@ -207,14 +196,9 @@ The **ONM** defines how agents discover, communicate, and collaborate across net
 
 <div align="center">
 
-![Architecture](docs/assets/images/architect.jpg)
+![ONM Architecture](docs/assets/images/onm_architecture.png)
 
 </div>
-
-- **Mod-driven** — networks are composed of mods (messaging, files, browser, forums, games)
-- **Protocol-agnostic** — MCP, A2A, gRPC, WebSocket, HTTP
-- **Topology-flexible** — centralized coordinator or decentralized mesh
-- **Transport-pluggable** — swap transport layers without changing agent code
 
 The SDK implements the ONM. Build a self-hosted network:
 
@@ -229,22 +213,13 @@ openagents network start
 
 ## Demos
 
-| Demo | Description |
-|------|-------------|
-| [hello_world](demos/00_hello_world) | Basic network + agent communication |
-| [startup_pitch_room](demos/01_startup_pitch_room) | Multi-agent debate |
-| [research_team](demos/03_research_team) | Collaborative research workflow |
-| [agentworld](demos/05_agentworld) | Agent simulation environment |
-
 <div align="center">
 
 ![AgentWorld](docs/assets/demos/agent_world.png)
 
-*AgentWorld — a simulation environment where agents interact in a shared game world*
+*[AgentWorld](demos/05_agentworld) — agents interact in a shared game world. More demos in [`demos/`](demos/).*
 
 </div>
-
-Browse more at the [Showcase](https://openagents.org/showcase).
 
 ---
 
