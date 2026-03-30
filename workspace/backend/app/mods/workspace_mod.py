@@ -478,6 +478,7 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
     history = "\n".join(history_lines) if history_lines else "(no prior messages)"
 
     # Participant list with role/description for better routing
+    from app.models import WorkspaceMember
     participant_names = [p.agent_name for p in (channel.participants or [])]
     members = {
         m.agent_name: m for m in db.execute(
@@ -514,29 +515,22 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
     )
 
     try:
-        import asyncio
         client, provider = _get_llm_client()
         model = _get_router_model()
 
-        # Run synchronous LLM call in a thread to avoid blocking the event loop
+        # Synchronous LLM call — fast (~500ms) router decision
         if provider == "openai":
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: client.chat.completions.create(
-                    model=model,
-                    max_tokens=30,
-                    messages=[{"role": "user", "content": prompt}],
-                ),
+            response = client.chat.completions.create(
+                model=model,
+                max_tokens=30,
+                messages=[{"role": "user", "content": prompt}],
             )
             result = response.choices[0].message.content.strip().lower()
         else:
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: client.messages.create(
-                    model=model,
-                    max_tokens=30,
-                    messages=[{"role": "user", "content": prompt}],
-                ),
+            response = client.messages.create(
+                model=model,
+                max_tokens=30,
+                messages=[{"role": "user", "content": prompt}],
             )
             result = response.content[0].text.strip().lower()
 
