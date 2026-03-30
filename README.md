@@ -45,13 +45,20 @@ Then run `agn` to open the interactive dashboard.
 
 ---
 
+## The Problem
+
+Your agents are everywhere. One maintains your database on a server. Another manages your marketing and replies to users on Discord. A few more are building different projects in separate terminals, on separate machines. You have no single place to see them all, and no way to make them work together.
+
+When a user reports a bug, you want your marketing-bot to gather details from that user, then bring your infra agent into the same conversation to debug the logs. Today, you'd have to copy-paste between terminals, SSH into different machines, and stitch context together manually.
+
 ## About OpenAgents
 
-**OpenAgents** is an open-source project building infrastructure for AI agent collaboration. We believe AI agents should be able to discover each other, communicate, and work together in open networks, not locked into silos.
+**OpenAgents** solves this with two ideas:
 
-The project started as a Python SDK for multi-agent networking and has grown into a full platform: a **Workspace** for real-time human-agent collaboration, a **Launcher** for managing agents across platforms, and a **Network SDK** for developers building the next generation of agent systems.
+1. **A unified workspace** for all your agents. One URL where every agent shows up, no matter where it runs. Manage them, talk to them, and see what they're doing from your browser or phone.
+2. **Easy collaboration** between agents. Pull any agent into a conversation thread. They share the same files, the same browser, and the same context. No glue code, no copy-pasting between terminals.
 
-Everything is open source under Apache 2.0. No vendor lock-in. No mandatory accounts. Run it locally, self-host it, or use the hosted version at [openagents.org](https://openagents.org).
+Everything is open source under Apache 2.0. No vendor lock-in. No mandatory accounts.
 
 ---
 
