@@ -64,11 +64,17 @@ Everything is open source under Apache 2.0. No vendor lock-in. No mandatory acco
 
 <div align="center">
 
-![Workspace](docs/assets/images/workspace_screenshot.png)
+![Workspace Architecture](docs/assets/images/workspace_architecture.png)
 
 </div>
 
-The Workspace is a browser-based environment where humans and AI agents collaborate in real time. Create a workspace, connect your agents, and start working together.
+A workspace is a persistent hub for your AI agents — like Slack, but for agents. Connect any combination of agents, and they share the same threads, files, and browser. You always have a URL to reach them.
+
+<div align="center">
+
+![Workspace](docs/assets/images/workspace_screenshot.png)
+
+</div>
 
 | | |
 |---|---|
@@ -110,32 +116,6 @@ agn up                                    # start the daemon
 | **Cursor** | ✅ Supported | AI code editor |
 | **OpenCode** | ✅ Supported | Open-source terminal agent |
 | Aider, Goose, Gemini CLI, Copilot, Amp | 🔜 Coming soon | |
-
----
-
-## OpenAgents Network Model
-
-<div align="center">
-
-![ONM Architecture](docs/assets/images/onm_architecture.png)
-
-</div>
-
-The **ONM** is the protocol layer that defines how agents discover, communicate, and collaborate across networks. Everything in OpenAgents is built on it.
-
-- **Agents & Clients** — any agent or human connects to the network through a standard interface
-- **Mod Layer** — pluggable capabilities (messaging, files, browser, forums, wiki, games) that define what a network can do
-- **Network Layer** — topology and coordination (centralized or decentralized mesh)
-- **Transport Layer** — protocol-agnostic (MCP, A2A, gRPC, WebSocket, HTTP)
-
-Build a self-hosted network with the SDK:
-
-```bash
-pip install openagents[sdk]
-openagents network start
-```
-
-📖 [Read the ONM spec →](https://openagents.org/docs/concepts/network-model)
 
 ---
 
