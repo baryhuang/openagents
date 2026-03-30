@@ -244,6 +244,19 @@ async def open_tab(
             return json_response(ResponseCode.NOT_FOUND, "Browser context not found")
         bb_context_id = context_record.bb_context_id
 
+        # Prevent duplicate tabs for the same persistent context
+        existing_tab = db.execute(
+            select(BrowserTab)
+            .where(BrowserTab.context_id == body.context_id)
+            .where(BrowserTab.workspace_id == str(workspace.id))
+            .where(BrowserTab.status == "active")
+        ).scalar_one_or_none()
+        if existing_tab:
+            return json_response(
+                ResponseCode.BAD_REQUEST,
+                f"A tab for persistent context '{context_record.name}' is already open (tab {existing_tab.id})",
+            )
+
     tab_id = str(uuid.uuid4())
     manager = BrowserManager.get()
 
