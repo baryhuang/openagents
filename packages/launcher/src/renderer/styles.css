@@ -808,6 +808,16 @@ h1 {
   color: #3730a3;
 }
 
+.badge-featured {
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 500;
+  margin-left: 6px;
+}
+
 .badge-success-sm, .badge-warning-sm, .badge-muted-sm {
   font-size: 10px;
   padding: 2px 6px;

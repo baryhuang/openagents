@@ -779,7 +779,7 @@ async function refreshCatalog() {
         <div class="catalog-info">
           ${agentIcon(c.name, 28)}
           <div class="catalog-text">
-            <span class="catalog-name">${esc(c.label || c.name)}</span>
+            <span class="catalog-name">${esc(c.label || c.name)}${c.featured ? ' <span class="badge badge-featured">featured</span>' : ''}</span>
             <span class="catalog-desc">${esc(c.description || '')}</span>
           </div>
         </div>

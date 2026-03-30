@@ -8,6 +8,19 @@ const CACHE_FILE = 'agent_catalog.json';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
+ * Sort catalog: featured entries first (by order), then the rest alphabetically.
+ */
+function _sortCatalog(catalog) {
+  return catalog.sort((a, b) => {
+    const af = a.featured ? 1 : 0;
+    const bf = b.featured ? 1 : 0;
+    if (af !== bf) return bf - af; // featured first
+    if (af && bf) return (a.order || 999) - (b.order || 999); // by order within featured
+    return (a.label || a.name).localeCompare(b.label || b.name); // alphabetical for the rest
+  });
+}
+
+/**
  * Agent registry — fetches the catalog of available agent types.
  *
  * Priority: remote API → local cache (24h) → bundled registry.json
@@ -30,7 +43,7 @@ class Registry {
     // Try cache first (avoids network on every call)
     const cached = this._loadCache();
     if (cached) {
-      this._catalog = this._mergeBundled(cached);
+      this._catalog = _sortCatalog(this._mergeBundled(cached));
       this._refreshInBackground();
       return this._catalog;
     }
@@ -38,12 +51,12 @@ class Registry {
     // No cache — try remote
     const remote = await this._fetchRemote();
     if (remote) {
-      this._catalog = this._mergeBundled(remote);
+      this._catalog = _sortCatalog(this._mergeBundled(remote));
       return this._catalog;
     }
 
     // Fallback to bundled
-    this._catalog = this._loadBundled();
+    this._catalog = _sortCatalog(this._loadBundled());
     return this._catalog;
   }
 
@@ -54,10 +67,10 @@ class Registry {
     if (this._catalog) return this._catalog;
     const cached = this._loadCache();
     if (cached) {
-      this._catalog = this._mergeBundled(cached);
+      this._catalog = _sortCatalog(this._mergeBundled(cached));
       return this._catalog;
     }
-    this._catalog = this._loadBundled();
+    this._catalog = _sortCatalog(this._loadBundled());
     return this._catalog;
   }
 
@@ -127,7 +140,7 @@ class Registry {
    */
   async refresh() {
     const remote = await this._fetchRemote();
-    if (remote) this._catalog = this._mergeBundled(remote);
+    if (remote) this._catalog = _sortCatalog(this._mergeBundled(remote));
     return this._catalog || this.getCatalogSync();
   }
 
