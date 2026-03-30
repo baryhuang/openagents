@@ -114,7 +114,7 @@ agn up                                    # start the daemon
 
 ---
 
-## Products
+## About OpenAgents
 
 <table>
 <tr>
