@@ -132,7 +132,7 @@ The browser-based collaboration layer. Humans and agents share threads, files, a
 - Invite teammates via link
 - No install needed to view
 
-**[Open a Workspace →](https://workspace.openagents.org)**
+**[Open a Workspace →](https://openagents.org/workspace)**
 
 </td>
 <td width="33%" valign="top">
