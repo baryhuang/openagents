@@ -180,10 +180,15 @@ class BrowserManager:
             return {"clicked": selector, "url": page.url, "title": await page.title()}
 
     async def type_text(self, tab_id: str, selector: str, text: str) -> dict:
-        """Type text into an element."""
+        """Type text into an element. Handles both regular inputs and contenteditable."""
         page = self._get_page(tab_id)
         async with self._get_lock(tab_id):
-            await page.fill(selector, text, timeout=10000)
+            try:
+                await page.fill(selector, text, timeout=5000)
+            except Exception:
+                # Fallback for contenteditable elements: click then type via keyboard
+                await page.click(selector, timeout=5000)
+                await page.keyboard.type(text, delay=20)
             return {"filled": selector, "text": text}
 
     async def screenshot(self, tab_id: str) -> bytes:
