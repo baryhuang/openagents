@@ -2,10 +2,7 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "memory": 512
-      }
+      "use": "@vercel/python"
     }
   ],
   "routes": [
