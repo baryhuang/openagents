@@ -8,9 +8,18 @@ const CACHE_FILE = 'agent_catalog.json';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
+ * Default support status — install only.
+ */
+const DEFAULT_SUPPORT = { install: true, workspace: false, collaboration: false };
+
+/**
  * Sort catalog: featured entries first (by order), then the rest alphabetically.
+ * Also ensures every entry has a support field.
  */
 function _sortCatalog(catalog) {
+  for (const entry of catalog) {
+    if (!entry.support) entry.support = { ...DEFAULT_SUPPORT };
+  }
   return catalog.sort((a, b) => {
     const af = a.featured ? 1 : 0;
     const bf = b.featured ? 1 : 0;

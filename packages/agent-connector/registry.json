@@ -46,6 +46,7 @@
     ],
     "featured": true,
     "order": 1,
+    "support": { "install": true, "workspace": true, "collaboration": true },
     "builtin": true,
     "install": {
       "binary": "claude",
@@ -111,6 +112,7 @@
     ],
     "featured": true,
     "order": 3,
+    "support": { "install": true, "workspace": true, "collaboration": true },
     "builtin": true,
     "install": {
       "binary": "codex",
@@ -358,6 +360,7 @@
     ],
     "featured": true,
     "order": 2,
+    "support": { "install": true, "workspace": true, "collaboration": true },
     "builtin": true,
     "install": {
       "binary": "openclaw",

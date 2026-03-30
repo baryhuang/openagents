@@ -779,8 +779,13 @@ async function refreshCatalog() {
         <div class="catalog-info">
           ${agentIcon(c.name, 28)}
           <div class="catalog-text">
-            <span class="catalog-name">${esc(c.label || c.name)}${c.featured ? ' <span class="badge badge-featured">featured</span>' : ''}</span>
+            <span class="catalog-name">${esc(c.label || c.name)}</span>
             <span class="catalog-desc">${esc(c.description || '')}</span>
+            <span class="support-icons">
+              <span class="support-icon ${c.support && c.support.install ? 'on' : 'off'}" title="Install supported">&#x2B07;</span>
+              <span class="support-icon ${c.support && c.support.workspace ? 'on' : 'off'}" title="Workspace supported">&#x1F310;</span>
+              <span class="support-icon ${c.support && c.support.collaboration ? 'on' : 'off'}" title="Collaboration supported">&#x1F91D;</span>
+            </span>
           </div>
         </div>
         <div class="catalog-status">
