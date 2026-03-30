@@ -104,11 +104,14 @@ function buildToolDefs(disabledModules) {
     tools.push(
       {
         name: 'workspace_browser_open',
-        description: 'Open a new shared browser tab.',
+        description:
+          'Open a new shared browser tab. Use context_name to open in a persistent browser context ' +
+          '(preserves cookies/login sessions). List contexts with workspace_browser_list_contexts.',
         inputSchema: {
           type: 'object',
           properties: {
             url: { type: 'string', description: 'URL to open (default: about:blank)' },
+            context_name: { type: 'string', description: 'Name of a persistent browser context (e.g. "Hackernews"). Preserves login cookies across sessions.' },
           },
         },
       },
@@ -186,6 +189,11 @@ function buildToolDefs(disabledModules) {
           },
           required: ['tab_id'],
         },
+      },
+      {
+        name: 'workspace_browser_list_contexts',
+        description: 'List available persistent browser contexts (saved login sessions).',
+        inputSchema: { type: 'object', properties: {} },
       },
     );
   }
@@ -416,12 +424,28 @@ class McpServer {
       // ── Browser ──
 
       case 'workspace_browser_open': {
-        const result = await this.ws.browserOpenTab(this.workspaceId, this.token, {
+        const opts = {
           url: args.url || 'about:blank',
           source: `openagents:${this.agentName}`,
-        });
+        };
+        // Resolve context_name to context_id
+        if (args.context_name) {
+          const ctxData = await this.ws.browserListContexts(this.workspaceId, this.token);
+          const contexts = (ctxData && ctxData.contexts) || [];
+          const match = contexts.find(
+            (c) => c.name.toLowerCase() === args.context_name.toLowerCase(),
+          );
+          if (match) {
+            opts.context_id = match.id;
+          } else {
+            const names = contexts.map((c) => c.name).join(', ') || '(none)';
+            return text(`Context "${args.context_name}" not found. Available: ${names}`);
+          }
+        }
+        const result = await this.ws.browserOpenTab(this.workspaceId, this.token, opts);
         const tabId = result.tab_id || result.id || 'unknown';
-        return text(`Browser tab opened: ${tabId} → ${args.url || 'about:blank'}`);
+        const persistent = result.persistent ? ' (persistent)' : '';
+        return text(`Browser tab opened${persistent}: ${tabId} → ${args.url || 'about:blank'}`);
       }
 
       case 'workspace_browser_navigate': {
@@ -464,6 +488,16 @@ class McpServer {
       case 'workspace_browser_close': {
         await this.ws.browserCloseTab(this.workspaceId, this.token, args.tab_id);
         return text(`Browser tab closed: ${args.tab_id}`);
+      }
+
+      case 'workspace_browser_list_contexts': {
+        const data = await this.ws.browserListContexts(this.workspaceId, this.token);
+        const contexts = (data && data.contexts) || [];
+        if (!contexts.length) return text('No persistent browser contexts.');
+        const lines = contexts.map((c) =>
+          `- ${c.name} (domain: ${c.domain || 'any'}, id: ${c.id})`
+        );
+        return text(lines.join('\n'));
       }
 
       // ── Tunnel ──

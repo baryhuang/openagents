@@ -347,10 +347,10 @@ class WorkspaceClient {
   /**
    * Open a new browser tab via POST /v1/browser/tabs.
    */
-  async browserOpenTab(workspaceId, token, { url = 'about:blank', source = 'human:user' } = {}) {
-    const data = await this._post('/v1/browser/tabs', {
-      url, network: workspaceId, source,
-    }, this._wsHeaders(token));
+  async browserOpenTab(workspaceId, token, { url = 'about:blank', source = 'human:user', context_id } = {}) {
+    const body = { url, network: workspaceId, source };
+    if (context_id) body.context_id = context_id;
+    const data = await this._post('/v1/browser/tabs', body, this._wsHeaders(token));
     return data.data || data;
   }
 
@@ -409,6 +409,15 @@ class WorkspaceClient {
    */
   async browserCloseTab(workspaceId, token, tabId) {
     const data = await this._delete(`/v1/browser/tabs/${tabId}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  /**
+   * List persistent browser contexts via GET /v1/browser/contexts.
+   */
+  async browserListContexts(workspaceId, token) {
+    const params = new URLSearchParams({ network: workspaceId });
+    const data = await this._get(`/v1/browser/contexts?${params}`, this._wsHeaders(token));
     return data.data || data;
   }
 
