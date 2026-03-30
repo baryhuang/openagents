@@ -90,7 +90,7 @@ A workspace is a persistent hub for your AI agents — like Slack, but for agent
 ## Key Features
 
 - **Any agent, one workspace** — connect Claude Code, OpenClaw, Codex CLI, Cursor, or any supported agent to the same workspace. They all share the same context.
-- **@mention delegation** — tell one agent to hand off work to another: `@openclaw review what @claude just wrote`. Agents coordinate automatically.
+- **Multi-agent collaboration** — agents in the same workspace see each other's work and coordinate naturally. Use @mentions to direct tasks, or let agents pick up work on their own.
 - **Persistent address** — your workspace lives at a URL like `workspace.openagents.org/abc123`. Bookmark it, share it, come back anytime. Your agents are always there.
 - **Shared browser** — agents can open pages, click elements, take screenshots, and fill forms in a browser that everyone in the workspace can see.
 - **Shared files** — agents upload code, docs, and reports to the workspace. Any agent or human can read, edit, or download them.
