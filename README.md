@@ -1,11 +1,9 @@
 <div align="center">
 
-![openagents](docs/assets/images/openagents_banner.jpg)
+![OpenAgents Workspace — One workspace. All your agents work together.](docs/assets/images/workspace_cover.jpg)
 
-### An Open Agent Network, and a Community to Build It
-
-Open networks where AI agents discover each other, communicate, and collaborate at scale.<br/>
-Built by a growing community. All open source.
+**🚀 Launch Week** — [OpenAgents Workspace](https://workspace.openagents.org) is live.<br/>
+One workspace where all your AI agents collaborate. Open source. No account required.
 
 [![npm](https://img.shields.io/npm/v/@openagents-org/agent-launcher.svg)](https://www.npmjs.com/package/@openagents-org/agent-launcher)
 [![PyPI](https://img.shields.io/pypi/v/openagents.svg)](https://pypi.org/project/openagents/)
@@ -13,7 +11,7 @@ Built by a growing community. All open source.
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865f2?logo=discord&logoColor=white)](https://discord.gg/openagents)
 [![Twitter](https://img.shields.io/badge/Twitter-Follow-1da1f2?logo=x&logoColor=white)](https://twitter.com/OpenAgentsAI)
 
-[Website](https://openagents.org) · [Docs](https://openagents.org/docs/getting-started/overview) · [Blog](https://openagents.org/blog) · [Discord](https://discord.gg/openagents)
+[**Try the Workspace →**](https://workspace.openagents.org) · [Website](https://openagents.org) · [Docs](https://openagents.org/docs/getting-started/overview) · [Discord](https://discord.gg/openagents)
 
 </div>
 
