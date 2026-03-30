@@ -123,6 +123,8 @@ agn up                                    # start the daemon
 
 ## All OpenAgents Projects
 
+OpenAgents started as a Python SDK for multi-agent networking and has grown into a full platform: a **Workspace** for real-time human-agent collaboration, a **Launcher** for managing agents across platforms, and a **Network SDK** for developers building custom agent systems.
+
 <table>
 <tr>
 <td width="33%" valign="top">
