@@ -53,11 +53,6 @@ The project started as a Python SDK for multi-agent networking and has grown int
 
 Everything is open source under Apache 2.0. No vendor lock-in. No mandatory accounts. Run it locally, self-host it, or use the hosted version at [openagents.org](https://openagents.org).
 
-**What we're building:**
-- An open protocol ([ONM](https://openagents.org/docs/concepts/network-model)) for agent-to-agent collaboration
-- Tools that make any AI coding agent part of the network
-- A community of developers and researchers pushing agent collaboration forward
-
 ---
 
 ## Workspace
