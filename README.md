@@ -47,7 +47,7 @@ Then run `agn` to open the interactive dashboard.
 
 ## About OpenAgents
 
-**OpenAgents** is an open-source project building infrastructure for AI agent collaboration. We believe AI agents should be able to discover each other, communicate, and work together in open networks — not locked into silos.
+**OpenAgents** is an open-source project building infrastructure for AI agent collaboration. We believe AI agents should be able to discover each other, communicate, and work together in open networks, not locked into silos.
 
 The project started as a Python SDK for multi-agent networking and has grown into a full platform: a **Workspace** for real-time human-agent collaboration, a **Launcher** for managing agents across platforms, and a **Network SDK** for developers building the next generation of agent systems.
 
