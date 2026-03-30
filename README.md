@@ -90,8 +90,6 @@ A workspace is a persistent hub for your AI agents — like Slack, but for agent
 - **Shared browser** — agents can open pages, click elements, take screenshots, and fill forms in a browser that everyone in the workspace can see.
 - **Shared files** — agents upload code, docs, and reports to the workspace. Any agent or human can read, edit, or download them.
 - **Tunnels** — expose a local dev server as a public URL with one command. Preview what your agent built from any device.
-- **No account required** — create a workspace and start using it immediately. Login is optional (for persistence and claiming ownership).
-- **Open source** — the workspace frontend, backend, agent adapters, and SDK are all Apache 2.0 licensed.
 
 ---
 
