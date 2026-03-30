@@ -114,47 +114,121 @@ jobs:
     needs: build-windows
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/launcher-v') || startsWith(github.ref, 'refs/tags/desktop-v') || github.event_name == 'workflow_dispatch'
+    env:
+      SIGNPATH_API: https://app.signpath.io/API/v1/298e12fc-6d10-491f-814d-3418cd924ec8
 
     steps:
-      - name: Get artifact ID
-        id: get-artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Download unsigned artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: launcher-windows-unsigned
+          path: unsigned
+
+      - name: Sign EXE via SignPath REST API
         run: |
-          ARTIFACT_ID=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts --jq '.artifacts[] | select(.name=="launcher-windows-unsigned") | .id')
-          echo "artifact_id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+          # Submit signing request for EXE
+          RESPONSE=$(curl -s -X POST "$SIGNPATH_API/SigningRequests" \
+            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "projectSlug": "OpenAgents_Launcher",
+              "signingPolicySlug": "OpenAgents_Launcher_Policy",
+              "artifactConfigurationSlug": "OpenAgents_Launcher_EXE"
+            }')
+          echo "Create response: $RESPONSE"
+          SIGNING_REQUEST_ID=$(echo "$RESPONSE" | jq -r '.signingRequestId')
+          UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.signingRequestUrl // .uploadUrl // empty')
 
-      - name: Sign EXE with SignPath
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: "298e12fc-6d10-491f-814d-3418cd924ec8"
-          project-slug: "OpenAgents_Launcher"
-          signing-policy-slug: "OpenAgents_Launcher_Policy"
-          artifact-configuration-slug: "OpenAgents_Launcher_EXE"
-          github-artifact-id: ${{ steps.get-artifact.outputs.artifact_id }}
-          wait-for-completion: true
-          output-artifact-directory: signed-exe
+          if [ -z "$SIGNING_REQUEST_ID" ] || [ "$SIGNING_REQUEST_ID" = "null" ]; then
+            echo "Failed to create signing request"
+            exit 1
+          fi
 
-      - name: Sign MSI with SignPath
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: "298e12fc-6d10-491f-814d-3418cd924ec8"
-          project-slug: "OpenAgents_Launcher"
-          signing-policy-slug: "OpenAgents_Launcher_Policy"
-          artifact-configuration-slug: "OpenAgents_Launcher_MSI"
-          github-artifact-id: ${{ steps.get-artifact.outputs.artifact_id }}
-          wait-for-completion: true
-          output-artifact-directory: signed-msi
+          # Upload the artifact
+          EXE_FILE=$(ls unsigned/*.exe | head -1)
+          echo "Uploading $EXE_FILE..."
+          curl -s -X PUT "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID/InputArtifact" \
+            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@$EXE_FILE"
+
+          # Poll for completion
+          echo "Waiting for signing to complete..."
+          for i in $(seq 1 60); do
+            sleep 10
+            STATUS=$(curl -s "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID" \
+              -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" | jq -r '.status')
+            echo "Status: $STATUS (attempt $i/60)"
+            if [ "$STATUS" = "Completed" ]; then
+              echo "Signing completed!"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Denied" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "Signing failed with status: $STATUS"
+              exit 1
+            fi
+          done
+
+          # Download signed artifact
+          mkdir -p signed
+          curl -s -o "signed/$(basename $EXE_FILE)" \
+            "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID/SignedArtifact" \
+            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}"
+          echo "Downloaded signed EXE"
+
+      - name: Sign MSI via SignPath REST API
+        run: |
+          # Submit signing request for MSI
+          RESPONSE=$(curl -s -X POST "$SIGNPATH_API/SigningRequests" \
+            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "projectSlug": "OpenAgents_Launcher",
+              "signingPolicySlug": "OpenAgents_Launcher_Policy",
+              "artifactConfigurationSlug": "OpenAgents_Launcher_MSI"
+            }')
+          echo "Create response: $RESPONSE"
+          SIGNING_REQUEST_ID=$(echo "$RESPONSE" | jq -r '.signingRequestId')
+
+          if [ -z "$SIGNING_REQUEST_ID" ] || [ "$SIGNING_REQUEST_ID" = "null" ]; then
+            echo "Failed to create signing request"
+            exit 1
+          fi
+
+          # Upload the artifact
+          MSI_FILE=$(ls unsigned/*.msi | head -1)
+          echo "Uploading $MSI_FILE..."
+          curl -s -X PUT "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID/InputArtifact" \
+            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@$MSI_FILE"
+
+          # Poll for completion
+          echo "Waiting for signing to complete..."
+          for i in $(seq 1 60); do
+            sleep 10
+            STATUS=$(curl -s "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID" \
+              -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" | jq -r '.status')
+            echo "Status: $STATUS (attempt $i/60)"
+            if [ "$STATUS" = "Completed" ]; then
+              echo "Signing completed!"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Denied" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "Signing failed with status: $STATUS"
+              exit 1
+            fi
+          done
+
+          # Download signed artifact
+          curl -s -o "signed/$(basename $MSI_FILE)" \
+            "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID/SignedArtifact" \
+            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}"
+          echo "Downloaded signed MSI"
 
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
         with:
           name: launcher-windows
-          path: |
-            signed-exe/*
-            signed-msi/*
+          path: signed/*
           if-no-files-found: warn
 
   build-linux:
