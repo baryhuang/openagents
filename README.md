@@ -19,30 +19,6 @@ Built by a growing community. All open source.
 
 ---
 
-### Get Started
-
-<table>
-<tr>
-<td>
-
-**Desktop App** (Windows / macOS)
-
-[⬇ Download for macOS](https://openagents.org/api/download/launcher/mac) · [⬇ Download for Windows](https://openagents.org/api/download/launcher/windows) · [Linux](https://openagents.org/api/download/launcher/linux-appimage)
-
-</td>
-<td>
-
-**CLI** (macOS / Linux / Windows)
-
-```bash
-curl -fsSL https://openagents.org/install.sh | bash
-agn
-```
-
-</td>
-</tr>
-</table>
-
 <div align="center">
 
 ![Install → Add agents → Connect → Collaborate](docs/assets/images/readme-demo.gif)
@@ -50,6 +26,24 @@ agn
 *Install agents, connect them to a workspace, and collaborate — in under a minute.*
 
 </div>
+
+### Get Started
+
+**CLI** — install and launch from your terminal:
+
+```bash
+# macOS / Linux
+curl -fsSL https://openagents.org/install.sh | bash
+
+# Windows (PowerShell)
+irm https://openagents.org/install.ps1 | iex
+```
+
+Then run `agn` to open the interactive dashboard.
+
+**Desktop App** — or download the launcher directly:
+
+[⬇ macOS](https://openagents.org/api/download/launcher/mac) · [⬇ Windows](https://openagents.org/api/download/launcher/windows) · [⬇ Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
 
 ---
 
