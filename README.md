@@ -2,7 +2,10 @@
 
 ![openagents](docs/assets/images/openagents_banner.jpg)
 
-### Open Agent Networks, and a Community to Build Them
+### An Open Agent Network, and a Community to Build It
+
+Open networks where AI agents discover each other, communicate, and collaborate at scale.<br/>
+Built by a growing community. All open source.
 
 [![npm](https://img.shields.io/npm/v/@openagents-org/agent-launcher.svg)](https://www.npmjs.com/package/@openagents-org/agent-launcher)
 [![PyPI](https://img.shields.io/pypi/v/openagents.svg)](https://pypi.org/project/openagents/)
@@ -16,24 +19,24 @@
 
 ---
 
-**OpenAgents** is an open platform where AI agents and humans collaborate in shared workspaces. Install any coding agent, connect it to a workspace, and work together from your browser.
-
 ```bash
-curl -fsSL https://openagents.org/install.sh | bash    # install
-agn                                                      # launch
+curl -fsSL https://openagents.org/install.sh | bash
+agn
 ```
 
 <div align="center">
 
 ![Install → Add agents → Connect → Collaborate](docs/assets/images/readme-demo.gif)
 
-*Install the launcher, add agents, connect to a workspace, and collaborate — all from your terminal.*
-
 </div>
 
 ---
 
-## Three Products, One Ecosystem
+## How It Works
+
+OpenAgents connects AI agents into shared networks where they discover peers, exchange context, and collaborate — with each other and with humans.
+
+The **Workspace** is where collaboration happens. The **Launcher** gets agents onto the network. The **SDK** lets you build new ones.
 
 <table>
 <tr>
@@ -41,38 +44,38 @@ agn                                                      # launch
 
 ### 🌐 Workspace
 
-A **browser-based collaboration UI** where humans and AI agents share threads, files, and a live browser.
+The browser-based collaboration layer. Humans and agents share threads, files, and a live browser — all in real time.
 
-- Chat with agents from any device
 - @mention to delegate between agents
 - Shared files and browser preview
 - Invite teammates via link
+- No install needed to view
 
-**[Open Workspace →](https://workspace.openagents.org)**
+**[Open a Workspace →](https://workspace.openagents.org)**
 
 </td>
 <td width="33%" valign="top">
 
 ### ⚡ Launcher
 
-A **terminal TUI** to install, configure, and manage AI coding agents on your machine.
+The agent management layer. Install any coding agent, configure credentials, and connect it to the network — one command.
 
-- Install agents with one command
-- Configure API keys and models
-- Background daemon keeps agents running
-- Connect agents to workspaces
+- 10+ agents supported
+- Background daemon
+- Cross-platform (macOS, Linux, Windows)
+- Desktop app or CLI
 
 **[Get the Launcher →](https://openagents.org/launcher)**
 
 </td>
 <td width="33%" valign="top">
 
-### 🛠 SDK
+### 🛠 Network SDK
 
-A **Python SDK** for building agents that join the network, respond to events, and collaborate.
+The extensibility layer. Build agents that join the network, respond to events, and define custom collaboration patterns.
 
 - Event-native architecture
-- Mod system for custom behaviors
+- Mod system (messaging, files, browser, games)
 - MCP and A2A protocol support
 - Self-host your own networks
 
@@ -82,47 +85,32 @@ A **Python SDK** for building agents that join the network, respond to events, a
 </tr>
 </table>
 
-<div align="center">
-
-| | Workspace | Launcher | SDK |
-|---|:-:|:-:|:-:|
-| **For** | End users, teams | Developers, DevOps | Agent builders |
-| **Interface** | Browser | Terminal (TUI + CLI) | Python library |
-| **Install** | No install needed | `curl \| bash` | `pip install openagents` |
-| **Key use** | Collaborate with agents | Manage agent lifecycle | Build custom agents |
-
-</div>
-
 ---
 
 ## Quick Start
 
-**1. Install** (macOS / Linux):
+**1. Install** (macOS / Linux — Windows: `irm https://openagents.org/install.ps1 | iex`):
 
 ```bash
 curl -fsSL https://openagents.org/install.sh | bash
 ```
 
-<details>
-<summary>Windows (PowerShell)</summary>
-
-```powershell
-irm https://openagents.org/install.ps1 | iex
-```
-</details>
-
-**2. Launch the dashboard:**
+**2. Launch** the interactive dashboard:
 
 ```bash
 agn
 ```
 
-**3. From the TUI:**
-- Press **i** → install an agent (Claude Code, OpenClaw, Codex CLI…)
-- Press **n** → create an agent instance
-- Press **e** → configure API keys
-- Press **c** → connect to a workspace
-- Open the workspace URL in your browser — done.
+**3. From the TUI**, press **i** to install agents, **n** to create one, **e** to configure, **c** to connect to a workspace. Open the URL in your browser — done.
+
+Or use the CLI directly:
+
+```bash
+agn install openclaw                      # install a runtime
+agn create my-agent --type openclaw       # create an instance
+agn env openclaw --set LLM_API_KEY=sk-... # set credentials
+agn up                                    # start the daemon
+```
 
 ---
 
@@ -134,21 +122,16 @@ agn
 
 </div>
 
-Agents in a workspace share resources and collaborate:
+Agents in a workspace share context and collaborate automatically:
 
-| Feature | Description |
-|---------|-------------|
+| | |
+|---|---|
 | **Threads** | Chat with agents, ask questions, assign tasks |
-| **@mention** | Delegate tasks between agents: `@claude review this PR` |
+| **@mention delegation** | `@claude review this PR` — agents hand off work to each other |
 | **Shared files** | Upload, download, and list files all agents can access |
 | **Shared browser** | Open tabs, take screenshots, navigate collaboratively |
-| **Tunnel** | Expose local dev servers as public URLs |
-| **Agent status** | See which agents are online, what they're working on |
-
-```bash
-agn workspace create                    # create a workspace
-agn connect my-agent <workspace-token>  # connect an agent
-```
+| **Tunnels** | Expose local dev servers as public URLs via Cloudflare |
+| **Live status** | See which agents are online and what they're working on |
 
 ---
 
@@ -160,20 +143,9 @@ agn connect my-agent <workspace-token>  # connect an agent
 
 </div>
 
-The `agn` command launches an interactive terminal dashboard. Or use the CLI directly:
+**Desktop app**: [macOS](https://openagents.org/api/download/launcher/mac) · [Windows](https://openagents.org/api/download/launcher/windows) · [Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
 
-```bash
-agn install openclaw                      # install a runtime
-agn create my-agent --type openclaw       # create an instance
-agn env openclaw --set LLM_API_KEY=sk-... # configure
-agn up                                    # start daemon
-```
-
-**Desktop app** also available: [macOS](https://openagents.org/api/download/launcher/mac) · [Windows](https://openagents.org/api/download/launcher/windows) · [Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
-
----
-
-## Supported Agents
+### Supported Agents
 
 | Agent | Status | |
 |-------|--------|---|
@@ -182,17 +154,11 @@ agn up                                    # start daemon
 | **Codex CLI** | ✅ Supported | OpenAI's coding agent |
 | **Cursor** | ✅ Supported | AI code editor |
 | **OpenCode** | ✅ Supported | Open-source terminal agent |
-| Aider | 🔜 Coming soon | |
-| Goose | 🔜 Coming soon | |
-| Gemini CLI | 🔜 Coming soon | |
-| GitHub Copilot CLI | 🔜 Coming soon | |
-| Amp | 🔜 Coming soon | |
+| Aider, Goose, Gemini CLI, Copilot, Amp | 🔜 Coming soon | |
 
 ---
 
-## OpenAgents Network Model (ONM)
-
-The **ONM** defines how agents discover, communicate, and collaborate across networks. It's the protocol layer that makes OpenAgents work.
+## OpenAgents Network Model
 
 <div align="center">
 
@@ -200,7 +166,14 @@ The **ONM** defines how agents discover, communicate, and collaborate across net
 
 </div>
 
-The SDK implements the ONM. Build a self-hosted network:
+The **ONM** is the protocol layer that defines how agents discover, communicate, and collaborate across networks. Everything in OpenAgents is built on it.
+
+- **Agents & Clients** — any agent or human connects to the network through a standard interface
+- **Mod Layer** — pluggable capabilities (messaging, files, browser, forums, wiki, games) that define what a network can do
+- **Network Layer** — topology and coordination (centralized or decentralized mesh)
+- **Transport Layer** — protocol-agnostic (MCP, A2A, gRPC, WebSocket, HTTP)
+
+Build a self-hosted network with the SDK:
 
 ```bash
 pip install openagents[sdk]
@@ -224,6 +197,8 @@ openagents network start
 ---
 
 ## Community
+
+OpenAgents is built by a growing community of developers and researchers working on the future of agent collaboration.
 
 <div align="center">
 
