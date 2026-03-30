@@ -99,22 +99,60 @@ jobs:
           npm install
 
       - name: Build Windows app
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
-          AZURE_CODE_SIGNING_ACCOUNT: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
-          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
         run: npm run build:win
 
-      - name: Upload Windows artifacts
+      - name: Upload unsigned artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-windows-unsigned
+          path: |
+            packages/launcher/dist/*.exe
+            packages/launcher/dist/*.msi
+          if-no-files-found: warn
+
+  sign-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/launcher-v') || startsWith(github.ref, 'refs/tags/desktop-v') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Download unsigned artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: launcher-windows-unsigned
+          path: unsigned
+
+      - name: Sign EXE with SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: "298e12fc-6d10-491f-814d-3418cd924ec8"
+          project-slug: "OpenAgents_Launcher"
+          signing-policy-slug: "OpenAgents_Launcher_Policy"
+          artifact-configuration-slug: "OpenAgents_Launcher_EXE"
+          github-artifact-id: launcher-windows-unsigned
+          wait-for-completion: true
+          output-artifact-directory: signed-exe
+
+      - name: Sign MSI with SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: "298e12fc-6d10-491f-814d-3418cd924ec8"
+          project-slug: "OpenAgents_Launcher"
+          signing-policy-slug: "OpenAgents_Launcher_Policy"
+          artifact-configuration-slug: "OpenAgents_Launcher_MSI"
+          github-artifact-id: launcher-windows-unsigned
+          wait-for-completion: true
+          output-artifact-directory: signed-msi
+
+      - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
         with:
           name: launcher-windows
           path: |
-            packages/launcher/dist/*.exe
-            packages/launcher/dist/*.msi
+            signed-exe/*
+            signed-msi/*
           if-no-files-found: warn
 
   build-linux:
@@ -150,7 +188,7 @@ jobs:
           if-no-files-found: warn
 
   release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos, sign-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/launcher-v') || startsWith(github.ref, 'refs/tags/desktop-v')
 
