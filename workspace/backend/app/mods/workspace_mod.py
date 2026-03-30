@@ -366,7 +366,8 @@ _ROUTER_PROMPT = """\
 You are a conversation router for a multi-agent workspace. Your job is to \
 decide which agent(s) should respond next.
 
-Channel participants: {participants}
+Channel participants:
+{participants}
 Master agent: {master}
 
 Recent conversation:
@@ -476,8 +477,27 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
 
     history = "\n".join(history_lines) if history_lines else "(no prior messages)"
 
-    # Participant list
-    participants = [p.agent_name for p in (channel.participants or [])]
+    # Participant list with role/description for better routing
+    participant_names = [p.agent_name for p in (channel.participants or [])]
+    members = {
+        m.agent_name: m for m in db.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace.id,
+                WorkspaceMember.agent_name.in_(participant_names),
+            )
+        ).scalars().all()
+    }
+    participant_lines = []
+    for name in participant_names:
+        m = members.get(name)
+        role = m.role if m else "member"
+        desc = m.description if m and m.description else ""
+        line = f"  - {name} (role: {role})"
+        if desc:
+            line += f" — {desc}"
+        participant_lines.append(line)
+    participants_str = "\n".join(participant_lines) if participant_lines else "  (none)"
+
     master = channel.master_agent or "(none)"
     sender = new_event.source
     if sender.startswith("openagents:"):
@@ -486,7 +506,7 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
     content = (new_event.payload or {}).get("content", "")[:500]
 
     prompt = _ROUTER_PROMPT.format(
-        participants=", ".join(participants),
+        participants=participants_str,
         master=master,
         history=history,
         sender=sender,
