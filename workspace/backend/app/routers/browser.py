@@ -2,16 +2,18 @@
 """
 Shared browser endpoints — open, navigate, click, type, screenshot, snapshot.
 
-POST   /v1/browser/tabs                    Open a new tab
-GET    /v1/browser/tabs                    List active tabs
-GET    /v1/browser/tabs/{tab_id}           Get tab info
-POST   /v1/browser/tabs/{tab_id}/navigate  Navigate to URL
-POST   /v1/browser/tabs/{tab_id}/click     Click element
-POST   /v1/browser/tabs/{tab_id}/type      Type text
-GET    /v1/browser/tabs/{tab_id}/screenshot Get PNG screenshot
-GET    /v1/browser/tabs/{tab_id}/snapshot   Get accessibility tree
-POST   /v1/browser/tabs/{tab_id}/share     Share with agent
-DELETE /v1/browser/tabs/{tab_id}           Close tab
+POST   /v1/browser/tabs                       Open a new tab
+GET    /v1/browser/tabs                       List active tabs
+GET    /v1/browser/tabs/{tab_id}              Get tab info
+POST   /v1/browser/tabs/{tab_id}/navigate     Navigate to URL
+POST   /v1/browser/tabs/{tab_id}/click        Click element
+POST   /v1/browser/tabs/{tab_id}/type         Type text (supports contenteditable append)
+POST   /v1/browser/tabs/{tab_id}/press_key    Press a keyboard key
+POST   /v1/browser/tabs/{tab_id}/evaluate     Execute JavaScript
+GET    /v1/browser/tabs/{tab_id}/screenshot   Get PNG screenshot
+GET    /v1/browser/tabs/{tab_id}/snapshot      Get accessibility tree
+POST   /v1/browser/tabs/{tab_id}/share        Share with agent
+DELETE /v1/browser/tabs/{tab_id}              Close tab
 """
 
 import logging
@@ -63,6 +65,15 @@ class ClickRequest(BaseModel):
 class TypeRequest(BaseModel):
     selector: str
     text: str
+    append: bool = False  # If True, move cursor to end before typing (for contenteditable)
+
+
+class PressKeyRequest(BaseModel):
+    key: str  # e.g. "Enter", "Tab", "End", "Control+a"
+
+
+class EvaluateRequest(BaseModel):
+    expression: str  # JavaScript to execute in page context
 
 
 class ShareRequest(BaseModel):
@@ -531,7 +542,7 @@ async def type_in_tab(
     await _ensure_connected(tab, db)
     manager = BrowserManager.get()
     try:
-        await manager.type_text(tab_id, body.selector, body.text)
+        await manager.type_text(tab_id, body.selector, body.text, append=body.append)
     except KeyError:
         return json_response(ResponseCode.NOT_FOUND, "Browser tab not found in browser")
     except Exception as e:
@@ -542,6 +553,82 @@ async def type_in_tab(
     db.flush()
 
     return success_response({"tab_id": tab_id, "typed": body.selector})
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/browser/tabs/{tab_id}/press_key
+# ---------------------------------------------------------------------------
+
+@router.post("/tabs/{tab_id}/press_key")
+async def press_key_in_tab(
+    tab_id: str,
+    body: PressKeyRequest,
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    tab = _get_tab(db, tab_id)
+    if not tab or tab.status != "active":
+        return json_response(ResponseCode.NOT_FOUND, "Tab not found")
+
+    workspace = _resolve_workspace(db, str(tab.workspace_id))
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+
+    await _ensure_connected(tab, db)
+    manager = BrowserManager.get()
+    try:
+        await manager.press_key(tab_id, body.key)
+    except KeyError:
+        return json_response(ResponseCode.NOT_FOUND, "Browser tab not found in browser")
+    except Exception as e:
+        logger.error("Press key failed: %s", e)
+        return json_response(ResponseCode.INTERNAL_ERROR, f"Press key failed: {e}")
+
+    _touch(tab)
+    db.flush()
+
+    return success_response({"tab_id": tab_id, "pressed": body.key})
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/browser/tabs/{tab_id}/evaluate
+# ---------------------------------------------------------------------------
+
+@router.post("/tabs/{tab_id}/evaluate")
+async def evaluate_in_tab(
+    tab_id: str,
+    body: EvaluateRequest,
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    tab = _get_tab(db, tab_id)
+    if not tab or tab.status != "active":
+        return json_response(ResponseCode.NOT_FOUND, "Tab not found")
+
+    workspace = _resolve_workspace(db, str(tab.workspace_id))
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+
+    await _ensure_connected(tab, db)
+    manager = BrowserManager.get()
+    try:
+        result = await manager.evaluate(tab_id, body.expression)
+    except KeyError:
+        return json_response(ResponseCode.NOT_FOUND, "Browser tab not found in browser")
+    except Exception as e:
+        logger.error("Evaluate failed: %s", e)
+        return json_response(ResponseCode.INTERNAL_ERROR, f"Evaluate failed: {e}")
+
+    _touch(tab)
+    db.flush()
+
+    return success_response({"tab_id": tab_id, "result": result.get("result")})
 
 
 # ---------------------------------------------------------------------------

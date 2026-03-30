@@ -110,7 +110,8 @@ class TestRouteWithLLM:
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
     @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
-    def test_router_multiple_agents(self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace):
+    def test_router_multiple_agents_picks_first(self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace):
+        """When the LLM returns comma-separated agents, only the first is used."""
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_anthropic_response("next:agent-master,agent-worker")
         mock_get_client.return_value = (mock_client, "anthropic")
@@ -120,7 +121,7 @@ class TestRouteWithLLM:
         event = _make_event("openagents:agent-master", "channel/session-test", "Both agents need to act")
 
         result = _run(_route_with_llm(ch, event, db, ws))
-        assert set(result) == {"agent-master", "agent-worker"}
+        assert result == ["agent-master"]
 
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")

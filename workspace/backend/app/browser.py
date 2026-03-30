@@ -179,17 +179,47 @@ class BrowserManager:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
             return {"clicked": selector, "url": page.url, "title": await page.title()}
 
-    async def type_text(self, tab_id: str, selector: str, text: str) -> dict:
-        """Type text into an element. Handles both regular inputs and contenteditable."""
+    async def type_text(self, tab_id: str, selector: str, text: str, append: bool = False) -> dict:
+        """Type text into an element. Handles both regular inputs and contenteditable.
+
+        If append=True, moves cursor to the end of existing content before typing
+        (useful for adding to contenteditable elements without overwriting).
+        """
         page = self._get_page(tab_id)
         async with self._get_lock(tab_id):
             try:
+                if append:
+                    raise Exception("skip fill for append mode")
                 await page.fill(selector, text, timeout=5000)
             except Exception:
                 # Fallback for contenteditable elements: click then type via keyboard
                 await page.click(selector, timeout=5000)
-                await page.keyboard.type(text, delay=20)
+                if append:
+                    # Move cursor to end of existing content
+                    await page.keyboard.press("End")
+                    await page.keyboard.press("Control+End")
+                # Type in chunks to avoid overwhelming rich-text editors
+                chunk_size = 200
+                for i in range(0, len(text), chunk_size):
+                    chunk = text[i:i + chunk_size]
+                    await page.keyboard.type(chunk, delay=15)
+                    # Brief pause between chunks for editor to process
+                    await asyncio.sleep(0.1)
             return {"filled": selector, "text": text}
+
+    async def press_key(self, tab_id: str, key: str) -> dict:
+        """Press a keyboard key (e.g. 'Enter', 'Tab', 'End', 'Control+a')."""
+        page = self._get_page(tab_id)
+        async with self._get_lock(tab_id):
+            await page.keyboard.press(key)
+            return {"pressed": key}
+
+    async def evaluate(self, tab_id: str, expression: str) -> dict:
+        """Execute JavaScript in the page context and return the result."""
+        page = self._get_page(tab_id)
+        async with self._get_lock(tab_id):
+            result = await page.evaluate(expression)
+            return {"result": result}
 
     async def screenshot(self, tab_id: str) -> bytes:
         """Take a PNG screenshot of the tab."""

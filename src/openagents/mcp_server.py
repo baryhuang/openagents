@@ -78,7 +78,8 @@ def create_mcp_server(
     _FILE_TOOLS = {"workspace_write_file", "workspace_read_file", "workspace_list_files", "workspace_delete_file"}
     _BROWSER_TOOLS = {"workspace_browser_open", "workspace_browser_navigate", "workspace_browser_click",
                       "workspace_browser_type", "workspace_browser_screenshot", "workspace_browser_snapshot",
-                      "workspace_browser_list_tabs", "workspace_browser_close"}
+                      "workspace_browser_list_tabs", "workspace_browser_close",
+                      "workspace_browser_press_key", "workspace_browser_evaluate"}
     _TUNNEL_TOOLS = {"tunnel_expose", "tunnel_close", "tunnel_list"}
 
     # Active tunnels: port → Tunnel instance
@@ -230,15 +231,40 @@ def create_mcp_server(
             ),
             types.Tool(
                 name="workspace_browser_type",
-                description="Type text into an element in a shared browser tab.",
+                description="Type text into an element in a shared browser tab. For contenteditable elements (rich text editors like Medium, Google Docs), set append=true to move cursor to end before typing. Text is typed in chunks to avoid overwhelming editors.",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "tab_id": {"type": "string", "description": "Tab ID"},
                         "selector": {"type": "string", "description": "CSS selector of element to type into"},
                         "text": {"type": "string", "description": "Text to type"},
+                        "append": {"type": "boolean", "description": "If true, move cursor to end before typing (for adding to existing content in contenteditable elements)", "default": False},
                     },
                     "required": ["tab_id", "selector", "text"],
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_press_key",
+                description="Press a keyboard key in a shared browser tab. Useful for Enter, Tab, Escape, arrow keys, or key combos like Control+a, Control+End.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID"},
+                        "key": {"type": "string", "description": "Key to press (e.g. 'Enter', 'Tab', 'End', 'Control+a', 'Shift+Enter')"},
+                    },
+                    "required": ["tab_id", "key"],
+                },
+            ),
+            types.Tool(
+                name="workspace_browser_evaluate",
+                description="Execute JavaScript in a shared browser tab and return the result. Useful for complex DOM manipulation that can't be done with click/type.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tab_id": {"type": "string", "description": "Tab ID"},
+                        "expression": {"type": "string", "description": "JavaScript expression to evaluate"},
+                    },
+                    "required": ["tab_id", "expression"],
                 },
             ),
             types.Tool(
@@ -519,13 +545,38 @@ def create_mcp_server(
                 tab_id = arguments.get("tab_id", "")
                 selector = arguments.get("selector", "")
                 text = arguments.get("text", "")
+                append = arguments.get("append", False)
                 await client.browser_type(
                     workspace_id=workspace_id, token=token,
-                    tab_id=tab_id, selector=selector, text=text,
+                    tab_id=tab_id, selector=selector, text=text, append=append,
                 )
                 return [types.TextContent(
                     type="text",
-                    text=f"Typed into {selector}: {text[:50]}",
+                    text=f"Typed into {selector}: {text[:50]}{'...' if len(text) > 50 else ''}",
+                )]
+
+            elif name == "workspace_browser_press_key":
+                tab_id = arguments.get("tab_id", "")
+                key = arguments.get("key", "")
+                await client.browser_press_key(
+                    workspace_id=workspace_id, token=token,
+                    tab_id=tab_id, key=key,
+                )
+                return [types.TextContent(
+                    type="text",
+                    text=f"Pressed key: {key}",
+                )]
+
+            elif name == "workspace_browser_evaluate":
+                tab_id = arguments.get("tab_id", "")
+                expression = arguments.get("expression", "")
+                result = await client.browser_evaluate(
+                    workspace_id=workspace_id, token=token,
+                    tab_id=tab_id, expression=expression,
+                )
+                return [types.TextContent(
+                    type="text",
+                    text=f"Evaluate result: {result}",
                 )]
 
             elif name == "workspace_browser_screenshot":

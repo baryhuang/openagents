@@ -753,18 +753,51 @@ class WorkspaceClient:
                 data = await resp.json(content_type=None)
                 return data.get("data", data)
 
-    async def browser_type(self, workspace_id: str, token: str, tab_id: str, selector: str, text: str) -> dict:
+    async def browser_type(self, workspace_id: str, token: str, tab_id: str, selector: str, text: str, append: bool = False) -> dict:
         """Type text via POST /v1/browser/tabs/{id}/type."""
         import aiohttp
+        payload = {"selector": selector, "text": text}
+        if append:
+            payload["append"] = True
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.endpoint}/v1/browser/tabs/{tab_id}/type",
-                json={"selector": selector, "text": text},
+                json=payload,
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status not in (200, 201):
+                    raise ConnectionError(f"Type failed: {await self._read_error(resp)}")
+                data = await resp.json(content_type=None)
+                return data.get("data", data)
+
+    async def browser_press_key(self, workspace_id: str, token: str, tab_id: str, key: str) -> dict:
+        """Press a keyboard key via POST /v1/browser/tabs/{id}/press_key."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}/press_key",
+                json={"key": key},
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status not in (200, 201):
+                    raise ConnectionError(f"Press key failed: {await self._read_error(resp)}")
+                data = await resp.json(content_type=None)
+                return data.get("data", data)
+
+    async def browser_evaluate(self, workspace_id: str, token: str, tab_id: str, expression: str) -> dict:
+        """Evaluate JavaScript via POST /v1/browser/tabs/{id}/evaluate."""
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.endpoint}/v1/browser/tabs/{tab_id}/evaluate",
+                json={"expression": expression},
                 headers=self._ws_headers(token),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 if resp.status not in (200, 201):
-                    raise ConnectionError(f"Type failed: {await self._read_error(resp)}")
+                    raise ConnectionError(f"Evaluate failed: {await self._read_error(resp)}")
                 data = await resp.json(content_type=None)
                 return data.get("data", data)
 
