@@ -56,6 +56,10 @@ contextBridge.exposeInMainWorld('api', {
   updateCore: () => ipcRenderer.invoke('core:update'),
   onCoreUpdate: (cb) => ipcRenderer.on('core-update-available', (_e, info) => cb(info)),
 
+  // Icons
+  getIconPath: (name) => ipcRenderer.invoke('icons:get-path', name),
+  getIconsDir: () => ipcRenderer.invoke('icons:get-dir'),
+
   // Debug
   debugEnv: () => ipcRenderer.invoke('debug:env'),
 });

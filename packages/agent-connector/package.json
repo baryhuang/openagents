@@ -34,6 +34,7 @@
   "files": [
     "src/",
     "bin/",
+    "icons/",
     "registry.json",
     "README.md"
   ],

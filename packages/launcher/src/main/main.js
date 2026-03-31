@@ -631,6 +631,20 @@ function setupIPC() {
   });
 
   // Debug: expose env for troubleshooting
+  // Icons — serve from core library, fall back to bundled
+  ipcMain.handle('icons:get-dir', () => {
+    const coreIconsDir = path.join(GLOBAL_MODULES, CORE_PKG, 'icons');
+    if (fs.existsSync(coreIconsDir)) return coreIconsDir;
+    return null;
+  });
+
+  ipcMain.handle('icons:get-path', (_e, name) => {
+    const slug = (name || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const coreIcon = path.join(GLOBAL_MODULES, CORE_PKG, 'icons', `${slug}.svg`);
+    if (fs.existsSync(coreIcon)) return coreIcon;
+    return null;
+  });
+
   ipcMain.handle('debug:env', () => {
     return {
       ComSpec: process.env.ComSpec,

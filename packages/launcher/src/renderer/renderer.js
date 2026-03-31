@@ -62,23 +62,11 @@ function showToast(message, type = 'info') {
 
 // ---- Agent icon helper ----
 
-const AGENT_ICON_MAP = {
-  openclaw: 'icons/openclaw.svg',
-  claude: 'icons/claude.svg',
-  codex: 'icons/codex.svg',
-  aider: 'icons/aider.svg',
-  goose: 'icons/goose.svg',
-  gemini: 'icons/gemini.svg',
-  openai: 'icons/openai.svg',
-  amp: 'icons/amp.svg',
-  cline: 'icons/cline.svg',
-  copilot: 'icons/copilot.svg',
-};
-
-function agentIconHtml(type, size = 24) {
-  const src = AGENT_ICON_MAP[type] || 'icons/default.svg';
-  return `<img class="agent-icon" src="${src}" width="${size}" height="${size}" alt="${esc(type)}" onerror="this.src='icons/default.svg'">`;
-}
+// Core library icons directory (resolved once at startup)
+let _coreIconsDir = null;
+(async () => {
+  try { _coreIconsDir = await window.api.getIconsDir(); } catch {}
+})();
 
 function showModal(html) {
   document.getElementById('modal-content').innerHTML = html;
@@ -102,7 +90,12 @@ document.addEventListener('keydown', (e) => {
 
 function agentIcon(type, size = 24) {
   const slug = (type || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-  return `<img class="agent-icon" src="icons/${slug}.svg" width="${size}" height="${size}" alt="${esc(type)}" onerror="this.src='icons/default.svg'">`;
+  // Try core library icons first (auto-updated), fall back to bundled
+  const coreSrc = _coreIconsDir ? `file://${_coreIconsDir}/${slug}.svg` : null;
+  const bundledSrc = `icons/${slug}.svg`;
+  const defaultSrc = _coreIconsDir ? `file://${_coreIconsDir}/default.svg` : 'icons/default.svg';
+  const src = coreSrc || bundledSrc;
+  return `<img class="agent-icon" src="${src}" width="${size}" height="${size}" alt="${esc(type)}" onerror="this.onerror=null; this.src='${bundledSrc}'; this.onerror=function(){this.src='${defaultSrc}'};">`;
 }
 
 // ---- Dashboard ----
