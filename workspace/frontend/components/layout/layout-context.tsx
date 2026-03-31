@@ -37,6 +37,9 @@ interface LayoutState {
   /** Experimental: show browser tab side-by-side with chat */
   splitBrowser: boolean;
   setSplitBrowser: (v: boolean) => void;
+  /** Whether the browser live preview panel is currently showing */
+  showBrowserPreview: boolean;
+  setShowBrowserPreview: (v: boolean) => void;
 }
 
 const LayoutContext = createContext<LayoutState | undefined>(undefined);
@@ -57,6 +60,8 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
     setSplitBrowser(v);
     localStorage.setItem('x-split-browser', v ? '1' : '0');
   };
+
+  const [showBrowserPreview, setShowBrowserPreview] = useState(false);
 
   const isAgentPanelOpen = selectedAgentName !== null;
   const openMobileDetail = () => setMobilePane('detail');
@@ -106,6 +111,8 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
       toggleDetailExpanded,
       splitBrowser,
       setSplitBrowser: handleSetSplitBrowser,
+      showBrowserPreview,
+      setShowBrowserPreview,
     }}>
       <div data-slot="layout-wrapper" className="flex grow">
         <TooltipProvider delayDuration={0}>

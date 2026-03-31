@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
@@ -87,7 +87,7 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 
 export function ChatView() {
   const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, renameSession, addParticipant, removeParticipant } = useWorkspace();
-  const { isMobile, openMobileList } = useLayout();
+  const { isMobile, openMobileList, splitBrowser, showBrowserPreview, setShowBrowserPreview } = useLayout();
 
   // Continuously refresh message caches for top recent sessions in the background.
   // This ensures clicking any recent thread shows messages instantly and up-to-date.
@@ -553,6 +553,22 @@ export function ChatView() {
               title={showAllSteps ? 'Showing all intermediate steps' : 'Showing only latest steps'}
             >
               <ListTree className="size-3.5" />
+            </Button>
+          )}
+
+          {/* Browser live preview toggle — only when split browser is enabled */}
+          {splitBrowser && !isMobile && (
+            <Button
+              variant={showBrowserPreview ? 'outline' : 'ghost'}
+              size="sm"
+              onClick={() => setShowBrowserPreview(!showBrowserPreview)}
+              className={cn(
+                'gap-1.5 h-7 text-xs font-medium',
+                showBrowserPreview && 'border-primary/30 text-primary bg-primary/5'
+              )}
+              title={showBrowserPreview ? 'Hide browser preview' : 'Show browser preview'}
+            >
+              <Globe className="size-3.5" />
             </Button>
           )}
 

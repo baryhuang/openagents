@@ -15,7 +15,7 @@ import { MonitorGrid } from '@/components/monitor/monitor-grid';
 import { useWorkspace } from '@/lib/workspace-context';
 
 export function Wrapper() {
-  const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen, isDetailExpanded, mobilePane, splitBrowser } = useLayout();
+  const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen, isDetailExpanded, mobilePane, splitBrowser, showBrowserPreview } = useLayout();
   const { monitorMode } = useWorkspace();
 
   // ── Mobile layout: single-pane with list/detail switching ──
@@ -81,8 +81,9 @@ export function Wrapper() {
             </div>
           ) : (
             <>
-              {/* Middle pane — thread list or file list (hidden for connect view or when expanded) */}
-              {viewMode !== 'connect' && !isDetailExpanded && (
+              {/* Middle pane — thread list or file list
+                  Hidden for: connect view, expanded detail, or when browser preview is active */}
+              {viewMode !== 'connect' && !isDetailExpanded && !(splitBrowser && showBrowserPreview && viewMode === 'threads') && (
                 <div className="shrink-0 w-[300px] xl:w-[400px] bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
                   {viewMode === 'threads' && <ThreadList />}
                   {viewMode === 'files' && <FileList />}
@@ -91,8 +92,8 @@ export function Wrapper() {
               )}
 
               {/* Right pane — chat view, file preview, or connect agent */}
-              {viewMode === 'threads' && splitBrowser ? (
-                /* Split view: chat + browser side by side */
+              {viewMode === 'threads' && splitBrowser && showBrowserPreview ? (
+                /* Split view: chat + browser side by side (thread list hidden) */
                 <div className="flex flex-1 min-w-0 gap-2.5">
                   <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
                     <main className="h-full" role="content">
@@ -100,7 +101,7 @@ export function Wrapper() {
                     </main>
                     {isAgentPanelOpen && <AgentProfilePanel />}
                   </div>
-                  <div className="relative w-[45%] min-w-[360px] bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+                  <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
                     <BrowserView />
                   </div>
                 </div>
