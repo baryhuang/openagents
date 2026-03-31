@@ -194,6 +194,8 @@
       "cli",
       "ai"
     ],
+    "featured": true,
+    "order": 4,
     "builtin": true,
     "install": {
       "binary": "cursor",
@@ -444,6 +446,8 @@
       "cli",
       "terminal"
     ],
+    "featured": true,
+    "order": 5,
     "builtin": true,
     "install": {
       "binary": "opencode",
