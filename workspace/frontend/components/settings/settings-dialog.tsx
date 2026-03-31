@@ -13,9 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Settings, Copy, Check, Bot } from 'lucide-react';
+import { Settings, Copy, Check, Bot, FlaskConical } from 'lucide-react';
 import { workspaceApi } from '@/lib/api';
 import { useWorkspace } from '@/lib/workspace-context';
+import { useLayout } from '@/components/layout/layout-context';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
@@ -31,6 +32,7 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
   const [saving, setSaving] = useState(false);
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const { refreshWorkspace } = useWorkspace();
+  const { splitBrowser, setSplitBrowser } = useLayout();
   const { isCopied: urlCopied, copyToClipboard: copyUrl } = useCopyToClipboard();
   const { isCopied: tokenCopied, copyToClipboard: copyToken } = useCopyToClipboard();
 
@@ -163,6 +165,28 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
               </div>
             </div>
           )}
+
+          {/* Experimental — hidden section, not for end users */}
+          <div className="space-y-3 border-t border-dashed pt-4 opacity-60 hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-2">
+              <FlaskConical className="size-4 text-muted-foreground" />
+              <Label className="text-xs text-muted-foreground">Experimental</Label>
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={splitBrowser}
+                onChange={(e) => setSplitBrowser(e.target.checked)}
+                className="rounded border-input"
+              />
+              <div>
+                <p className="text-sm">Split browser view</p>
+                <p className="text-xs text-muted-foreground">
+                  Show browser tab side-by-side with chat when viewing threads
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
         <DialogFooter>

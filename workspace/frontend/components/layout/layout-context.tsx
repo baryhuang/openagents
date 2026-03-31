@@ -34,6 +34,9 @@ interface LayoutState {
   /** Whether the detail pane is expanded to full width (hides sidebar + list) */
   isDetailExpanded: boolean;
   toggleDetailExpanded: () => void;
+  /** Experimental: show browser tab side-by-side with chat */
+  splitBrowser: boolean;
+  setSplitBrowser: (v: boolean) => void;
 }
 
 const LayoutContext = createContext<LayoutState | undefined>(undefined);
@@ -45,6 +48,15 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
   const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>('list');
   const [isDetailExpanded, setIsDetailExpanded] = useState(false);
+  const [splitBrowser, setSplitBrowser] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('x-split-browser') === '1';
+  });
+
+  const handleSetSplitBrowser = (v: boolean) => {
+    setSplitBrowser(v);
+    localStorage.setItem('x-split-browser', v ? '1' : '0');
+  };
 
   const isAgentPanelOpen = selectedAgentName !== null;
   const openMobileDetail = () => setMobilePane('detail');
@@ -92,6 +104,8 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
       openMobileList,
       isDetailExpanded,
       toggleDetailExpanded,
+      splitBrowser,
+      setSplitBrowser: handleSetSplitBrowser,
     }}>
       <div data-slot="layout-wrapper" className="flex grow">
         <TooltipProvider delayDuration={0}>
