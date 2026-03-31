@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
+import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi } from './api';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
 import type { BrowserPersistentContext, BrowserTab, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
@@ -108,6 +108,20 @@ export function WorkspaceProvider({
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
+
+  // Auto-select newly opened browser tabs (for split browser view)
+  const prevTabIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(browserTabs.map(t => t.id));
+    const prevIds = prevTabIdsRef.current;
+    // Find tabs that are new (in current but not in previous)
+    const newTabs = browserTabs.filter(t => !prevIds.has(t.id));
+    if (newTabs.length > 0 && prevIds.size > 0) {
+      // Auto-select the newest tab (last opened)
+      setSelectedBrowserTabId(newTabs[newTabs.length - 1].id);
+    }
+    prevTabIdsRef.current = currentIds;
+  }, [browserTabs]);
 
   // Notification sound — client-side preference stored in localStorage
   const [notificationSound, _setNotificationSound] = useState(false);
