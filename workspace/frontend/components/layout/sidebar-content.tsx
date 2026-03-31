@@ -485,6 +485,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   const { isCopied: urlCopied, copyToClipboard: copyUrl } = useCopyToClipboard();
   const { isCopied: tokenCopied, copyToClipboard: copyToken } = useCopyToClipboard();
   const { notificationSound, setNotificationSound } = useWorkspace();
+  const { splitBrowser, setSplitBrowser } = useLayout();
 
   useEffect(() => {
     if (open && workspace) {
@@ -566,6 +567,21 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
               </p>
             </div>
             <Switch checked={notificationSound} onCheckedChange={setNotificationSound} size="sm" />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Label>Split Browser View</Label>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-medium">
+                  Experimental
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Show browser tab side-by-side with chat when viewing threads.
+              </p>
+            </div>
+            <Switch checked={splitBrowser} onCheckedChange={setSplitBrowser} size="sm" />
           </div>
 
         </div>
