@@ -109,16 +109,31 @@ export function WorkspaceProvider({
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
-  // Auto-select newly opened browser tabs (for split browser view)
+  // Auto-select browser tabs for split browser view:
+  // - On first load: select the most recently created agent tab (if any)
+  // - On subsequent polls: select any newly appearing tab
   const prevTabIdsRef = useRef<Set<string>>(new Set());
+  const initialSelectDoneRef = useRef(false);
   useEffect(() => {
+    if (browserTabs.length === 0) return;
     const currentIds = new Set(browserTabs.map(t => t.id));
     const prevIds = prevTabIdsRef.current;
-    // Find tabs that are new (in current but not in previous)
-    const newTabs = browserTabs.filter(t => !prevIds.has(t.id));
-    if (newTabs.length > 0 && prevIds.size > 0) {
-      // Auto-select the newest tab (last opened)
-      setSelectedBrowserTabId(newTabs[newTabs.length - 1].id);
+
+    if (!initialSelectDoneRef.current) {
+      // First load — pick the most recent agent-opened tab if nothing is selected
+      initialSelectDoneRef.current = true;
+      if (!selectedBrowserTabId) {
+        const agentTabs = browserTabs.filter(t => t.createdBy?.startsWith('openagents:'));
+        if (agentTabs.length > 0) {
+          setSelectedBrowserTabId(agentTabs[agentTabs.length - 1].id);
+        }
+      }
+    } else {
+      // Subsequent polls — auto-select any newly appearing tab
+      const newTabs = browserTabs.filter(t => !prevIds.has(t.id));
+      if (newTabs.length > 0) {
+        setSelectedBrowserTabId(newTabs[newTabs.length - 1].id);
+      }
     }
     prevTabIdsRef.current = currentIds;
   }, [browserTabs]);
