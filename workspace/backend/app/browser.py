@@ -83,13 +83,16 @@ class BrowserManager:
         bb = self._bb_client()
 
         create_kwargs = {"project_id": BROWSERBASE_PROJECT_ID}
+        # Use a compact viewport so the live view is readable in split panels
+        browser_settings: dict = {
+            "viewport": {"width": 1024, "height": 768},
+        }
         if bb_context_id:
-            create_kwargs["browser_settings"] = {
-                "context": {
-                    "id": bb_context_id,
-                    "persist": True,
-                }
+            browser_settings["context"] = {
+                "id": bb_context_id,
+                "persist": True,
             }
+        create_kwargs["browser_settings"] = browser_settings
 
         session = bb.sessions.create(**create_kwargs)
         self._sessions[tab_id] = session.id
