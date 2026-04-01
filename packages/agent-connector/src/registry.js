@@ -97,6 +97,10 @@ class Registry {
         if (!entry.install && b.install) entry.install = b.install;
         if (!entry.check_ready && b.check_ready) entry.check_ready = b.check_ready;
         if (!entry.launch && b.launch) entry.launch = b.launch;
+        // Always take featured/order/support from bundled (source of truth for ordering)
+        if (b.featured !== undefined) entry.featured = b.featured;
+        if (b.order !== undefined) entry.order = b.order;
+        if (b.support) entry.support = b.support;
       }
     }
     // Add bundled entries not in catalog
