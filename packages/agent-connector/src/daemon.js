@@ -25,6 +25,7 @@ class Daemon {
 
     // State
     this._processes = {};     // agentName → { proc, state, restarts, startedAt, lastError }
+    this._adapters = {};      // agentName → adapter instance
     this._stoppedAgents = new Set();
     this._shuttingDown = false;
     this._statusInterval = null;
@@ -273,6 +274,12 @@ class Daemon {
     const name = agentCfg.name;
     const type = agentCfg.type || 'openclaw';
 
+    // Prevent duplicate launches — if an adapter is already running, skip
+    if (this._adapters && this._adapters[name]) {
+      this._log(`${name} already running, skipping duplicate launch`);
+      return;
+    }
+
     this._stoppedAgents.delete(name);
 
     const info = {
@@ -418,8 +425,7 @@ class Daemon {
       return;
     }
 
-    // Store adapter reference for stop
-    this._adapters = this._adapters || {};
+    // Store adapter reference for stop and duplicate detection
     this._adapters[name] = adapter;
 
     info.state = 'running';
