@@ -266,9 +266,11 @@ class Installer {
     const shell = process.platform === 'win32'
       ? (process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe')
       : true;
+    // Set cwd to runtime prefix dir (avoids running from System32 on Windows)
+    const installCwd = rawCmd.startsWith('npm install') ? getRuntimePrefix(agentType) : os.homedir();
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(cmd, [], { shell, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn(cmd, [], { shell, env, cwd: installCwd, stdio: ['ignore', 'pipe', 'pipe'] });
 
       if (proc.stdout) proc.stdout.setEncoding('utf-8');
       if (proc.stderr) proc.stderr.setEncoding('utf-8');
@@ -513,6 +515,10 @@ class Installer {
       try {
         const bundledDir = path.join(this.configDir, 'nodejs');
         if (fs.existsSync(bundledDir)) {
+          // Node.js may be directly in nodejs/ (launcher symlink style) or in nodejs/node-v*/
+          if (fs.existsSync(path.join(bundledDir, 'node.exe'))) {
+            extraDirs.push(bundledDir);
+          }
           const entries = fs.readdirSync(bundledDir).filter(e => e.startsWith('node-'));
           if (entries.length > 0) {
             extraDirs.push(path.join(bundledDir, entries[0]));
