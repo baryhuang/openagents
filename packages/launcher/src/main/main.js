@@ -659,15 +659,9 @@ function setupIPC() {
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  // Another instance is already running — show message and quit
-  const { dialog } = require('electron');
-  dialog.showMessageBoxSync({
-    type: 'info',
-    title: 'OpenAgents Launcher',
-    message: 'OpenAgents Launcher is already running.',
-    detail: 'Check the system tray for the running instance.',
-    buttons: ['OK'],
-  });
+  // Another instance is already running — quit silently
+  // Note: dialog.showMessageBoxSync() cannot be used here because
+  // the app may not be ready yet, which crashes on Windows.
   app.quit();
 } else {
   // When a second instance tries to start, focus the existing window
