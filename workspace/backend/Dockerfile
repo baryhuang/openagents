@@ -19,5 +19,7 @@ COPY . .
 
 RUN chmod +x entrypoint.sh
 
+ENV PYTHONPATH=/app
+
 EXPOSE 8000
 ENTRYPOINT ["./entrypoint.sh"]
