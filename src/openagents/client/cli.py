@@ -197,7 +197,6 @@ def verbose_callback(value: bool):
     return value
 
 
-
 @app.callback()
 def main(
     ctx: typer.Context,
