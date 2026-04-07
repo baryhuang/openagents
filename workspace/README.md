@@ -40,7 +40,50 @@ Events flow through a mod pipeline: `mod/auth` → `mod/workspace` → `mod/pers
 | `CORS_ORIGINS` | `*` | Allowed CORS origins (comma-separated) |
 | `AGENT_TIMEOUT_SECONDS` | `60` | Seconds before agent is considered offline |
 
-## Deploy Frontend to Vercel / Insforge
+## Self-Hosting
+
+### Run Backend Locally (with external PostgreSQL)
+
+```bash
+cd workspace/backend
+pip install -r requirements.txt
+
+DATABASE_URL="postgresql://user:pass@host:5432/dbname?sslmode=require" \
+AUTH_MODE=workspace_token \
+PYTHONPATH=. \
+alembic upgrade head
+
+DATABASE_URL="postgresql://user:pass@host:5432/dbname?sslmode=require" \
+AUTH_MODE=workspace_token \
+PYTHONPATH=. \
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Connect Agents
+
+```bash
+# Create a workspace
+curl -X POST https://your-endpoint/v1/workspaces \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-workspace"}'
+# Returns: { "data": { "token": "<TOKEN>", "slug": "<SLUG>" } }
+
+# Connect an agent
+openagents create claude --name my-agent \
+  --join-workspace <TOKEN> \
+  --endpoint https://your-endpoint \
+  --no-browser
+```
+
+### Run Frontend Locally
+
+```bash
+cd workspace/frontend
+npm install
+NEXT_PUBLIC_API_URL=https://your-endpoint npm run dev
+```
+
+### Deploy Frontend to Vercel / Insforge
 
 The frontend uses `output: 'standalone'` in `next.config.mjs` for Docker deployments.
 When deploying to Vercel or Insforge, remove that setting before deploying so the
