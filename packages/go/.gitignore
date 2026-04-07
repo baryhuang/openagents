@@ -1,0 +1,15 @@
+# Override root .gitignore exclusions needed for this package
+!lib/
+!hooks/
+
+node_modules/
+.next/
+.env.local
+dist/
+out/
+*.dmg
+*.AppImage
+*.deb
+*.exe
+*.snap
+package-lock.json
