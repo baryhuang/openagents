@@ -715,6 +715,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Ignore Enter during IME composition (Chinese, Japanese, Korean input)
+    if (e.nativeEvent.isComposing || e.key === 'Process') return;
+
     // Handle mention navigation
     if (showMentions && filteredAgents.length > 0) {
       if (e.key === "ArrowDown") {
