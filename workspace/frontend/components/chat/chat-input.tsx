@@ -135,6 +135,9 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ignore Enter during IME composition (Chinese, Japanese, Korean input)
+    if (e.nativeEvent.isComposing || e.key === 'Process') return;
+
     if (showMentions && filteredAgents.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
