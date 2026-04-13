@@ -48,6 +48,7 @@ class ClaudeAdapter(BaseAdapter):
         self._channel_sessions: dict[str, str] = {}  # channel_name → Claude CLI session_id
         self._current_process: Optional[asyncio.subprocess.Process] = None
         self._channel_processes: dict[str, asyncio.subprocess.Process] = {}  # channel → subprocess
+        self._attached_file_ids: set[str] = set()  # files already attached to responses
         self._sessions_file = (
             Path.home() / ".openagents" / "sessions"
             / f"{workspace_id}_{agent_name}.json"
@@ -126,6 +127,33 @@ class ClaudeAdapter(BaseAdapter):
                 )
             except Exception:
                 pass
+
+    async def _collect_uploaded_files(self, channel: str):
+        """Query for files uploaded by this agent to the channel and track them."""
+        try:
+            result = await self.client.list_files(
+                workspace_id=self.workspace_id,
+                token=self.token,
+                channel_name=channel,
+                uploaded_by=f"openagents:{self.agent_name}",
+                limit=20,
+            )
+            files = result.get("files", [])
+            for f in files:
+                file_id = f.get("id")
+                if not file_id:
+                    continue
+                # Skip files already attached in previous responses
+                if file_id in self._attached_file_ids:
+                    continue
+                self._attached_file_ids.add(file_id)
+                self.track_uploaded_file(channel, {
+                    "fileId": file_id,
+                    "filename": f.get("filename", ""),
+                    "contentType": f.get("content_type", "application/octet-stream"),
+                })
+        except Exception as e:
+            logger.debug(f"Failed to collect uploaded files for channel {channel}: {e}")
 
     def _build_claude_cmd(self, prompt: str, channel_name: str) -> list[str]:
         """Build the claude CLI command for a specific channel."""
@@ -523,6 +551,10 @@ class ClaudeAdapter(BaseAdapter):
                 stderr_text = stderr.decode("utf-8", errors="replace").strip()
                 if stderr_text:
                     logger.warning(f"CLI stderr: {stderr_text[:300]}")
+
+            # Collect files uploaded by this agent during processing
+            # and attach them to the final response message.
+            await self._collect_uploaded_files(msg_channel)
 
             # Post the final response.  last_response_text holds text
             # from the last assistant turn (after all tool calls).

@@ -51,6 +51,9 @@ class BaseAdapter(ABC):
         # Per-channel task tracking for parallel execution
         self._channel_tasks: dict[str, asyncio.Task] = {}
         self._channel_queues: dict[str, list[dict]] = {}
+        # Per-channel uploaded file tracking — files uploaded during message
+        # handling are attached to the final response message.
+        self._channel_uploaded_files: dict[str, list[dict]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -310,8 +313,18 @@ class BaseAdapter(ABC):
         except Exception:
             pass
 
+    def track_uploaded_file(self, channel: str, file_info: dict):
+        """Track a file uploaded during message handling for later attachment.
+
+        Args:
+            channel: Channel name where the file was uploaded.
+            file_info: Dict with at least ``fileId``, ``filename``, ``contentType``.
+        """
+        self._channel_uploaded_files.setdefault(channel, []).append(file_info)
+
     async def _send_response(self, channel: str, content: str):
-        """Send a chat response to a channel."""
+        """Send a chat response to a channel, attaching any tracked files."""
+        attachments = self._channel_uploaded_files.pop(channel, None)
         await self.client.send_message(
             workspace_id=self.workspace_id,
             channel_name=channel,
@@ -319,6 +332,7 @@ class BaseAdapter(ABC):
             content=content,
             sender_type="agent",
             sender_name=self.agent_name,
+            attachments=attachments or None,
         )
 
     async def _send_error(self, channel: str, error: str):

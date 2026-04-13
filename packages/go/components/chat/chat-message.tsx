@@ -22,6 +22,8 @@ interface Attachment {
 function isPreviewable(contentType: string, filename: string): boolean {
   if (contentType?.startsWith('image/')) return true;
   if (contentType === 'text/html' || /\.html?$/i.test(filename)) return true;
+  if (contentType === 'text/markdown' || /\.mdx?$/i.test(filename)) return true;
+  if (contentType?.startsWith('text/') || /\.(json|js|ts|tsx|jsx|py|rs|go|java|rb|sh|yaml|yml)$/i.test(filename)) return true;
   return false;
 }
 
