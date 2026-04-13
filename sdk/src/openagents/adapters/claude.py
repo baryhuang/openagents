@@ -128,6 +128,38 @@ class ClaudeAdapter(BaseAdapter):
             except Exception:
                 pass
 
+    async def _upload_local_file(self, channel: str, file_path: str, content: str):
+        """Upload a locally-written file to workspace shared storage."""
+        if not file_path or not content:
+            return
+        try:
+            import mimetypes
+            import os
+            filename = os.path.basename(file_path)
+            mime, _ = mimetypes.guess_type(filename)
+            if not mime:
+                mime = "text/plain"
+            result = await self.client.upload_file(
+                workspace_id=self.workspace_id,
+                token=self.token,
+                filename=filename,
+                content=content.encode("utf-8"),
+                content_type=mime,
+                source=f"openagents:{self.agent_name}",
+                channel_name=channel,
+            )
+            file_id = result.get("id")
+            if file_id:
+                self._attached_file_ids.add(file_id)
+                self.track_uploaded_file(channel, {
+                    "fileId": file_id,
+                    "filename": filename,
+                    "contentType": mime,
+                })
+                logger.info(f"Auto-uploaded local file {filename} (id={file_id})")
+        except Exception as e:
+            logger.debug(f"Failed to auto-upload local file {file_path}: {e}")
+
     async def _collect_uploaded_files(self, channel: str):
         """Query for files uploaded by this agent to the channel and track them."""
         try:
@@ -508,11 +540,20 @@ class ClaudeAdapter(BaseAdapter):
                             # as the final "chat" response.
                             last_response_text = []
                             tool_name = block.get("name", "")
-                            tool_input = str(block.get("input", ""))[:200]
+                            tool_input_raw = block.get("input", {})
+                            tool_input = str(tool_input_raw)[:200]
                             await self._send_status(
                                 msg_channel,
                                 f"**Using tool:** `{tool_name}`\n```\n{tool_input}\n```",
                             )
+
+                            # Auto-upload files created via local Write tool
+                            if tool_name == "Write" and isinstance(tool_input_raw, dict):
+                                await self._upload_local_file(
+                                    msg_channel,
+                                    tool_input_raw.get("file_path", ""),
+                                    tool_input_raw.get("content", ""),
+                                )
 
                 elif event_type == "result":
                     # Save session_id per channel for conversation continuity
