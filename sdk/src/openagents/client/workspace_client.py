@@ -604,6 +604,8 @@ class WorkspaceClient:
         token: str,
         limit: int = 50,
         offset: int = 0,
+        channel_name: Optional[str] = None,
+        uploaded_by: Optional[str] = None,
     ) -> dict:
         """List files via GET /v1/files."""
         import aiohttp
@@ -612,6 +614,10 @@ class WorkspaceClient:
             "limit": limit,
             "offset": offset,
         }
+        if channel_name:
+            params["channel_name"] = channel_name
+        if uploaded_by:
+            params["uploaded_by"] = uploaded_by
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{self.endpoint}/v1/files",
