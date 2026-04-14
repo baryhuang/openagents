@@ -223,6 +223,8 @@ async def upload_file_base64(
 async def list_files(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     status: str = Query("active", description="Filter by status"),
+    channel_name: Optional[str] = Query(None, description="Filter by channel name"),
+    uploaded_by: Optional[str] = Query(None, description="Filter by uploader (e.g. openagents:agent-name)"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     x_workspace_token: Optional[str] = Header(None),
@@ -241,10 +243,12 @@ async def list_files(
         select(FileRecord)
         .where(FileRecord.workspace_id == str(workspace.id))
         .where(FileRecord.status == status)
-        .order_by(FileRecord.created_at.desc())
-        .offset(offset)
-        .limit(limit)
     )
+    if channel_name:
+        query = query.where(FileRecord.channel_name == channel_name)
+    if uploaded_by:
+        query = query.where(FileRecord.uploaded_by == uploaded_by)
+    query = query.order_by(FileRecord.created_at.desc()).offset(offset).limit(limit)
     rows = db.execute(query).scalars().all()
 
     total = db.execute(
