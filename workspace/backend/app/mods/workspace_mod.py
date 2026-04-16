@@ -451,8 +451,12 @@ pick the addressed agent, not the mentioned one.
 B. If the LATEST message is from a HUMAN:
    - Always pick exactly one agent. Humans expect a reply — never output \
 "stop" for a human message.
-   - Prefer whoever is directly addressed. If nobody is clearly \
-addressed, pick the agent whose role/description best fits the topic; \
+   - Prefer whoever is directly addressed.
+   - If nobody is directly addressed, check CONVERSATIONAL CONTINUITY: \
+if the user was just conversing with a specific agent (the last agent \
+reply was from agent X, or X asked the user a question that this message \
+appears to answer), continue with that agent X.
+   - Otherwise pick the agent whose role/description best fits the topic; \
 fall back to the master agent.
 
 C. If the LATEST message is from an AGENT:
@@ -471,6 +475,13 @@ EXAMPLES:
   Agent alice: "@bob can you verify?"                → next:bob
   Agent alice: "Done — results attached."            → stop
   Agent bob (master): "Here's the final answer ..."  → stop
+
+  Conversational continuity examples:
+    alice: "I'm here. What do you need?"
+    Human: "do you know about X?"                    → next:alice     (continuing with alice)
+
+    alice: "I pulled these results: [...]."
+    Human: "thanks, can you also check Y?"           → next:alice     (follow-up to alice)
 
 Output EXACTLY one line, lowercase, no punctuation or explanation:
   next:<agent_name>
