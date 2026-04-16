@@ -227,9 +227,13 @@ class TestMessagePostedTargetAgents:
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
     @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
-    def test_target_agents_set_to_empty_on_stop(
+    def test_human_message_always_routed_even_if_router_says_stop(
         self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
     ):
+        """A human message must never fall through to the sentinel.
+        If the router mistakenly says 'stop' for a human question, the
+        safety net routes to the master/fallback so the user gets a reply.
+        """
         from app.mods.workspace_mod import _handle_message_posted
         from openagents.core.onm_mods import PipelineContext
 
@@ -238,14 +242,32 @@ class TestMessagePostedTargetAgents:
         mock_get_client.return_value = (mock_client, "anthropic")
 
         ws = multi_agent_workspace["workspace"]
-        event = _make_event("human:user", "channel/session-test", "hey all just sharing progress")
+        event = _make_event("human:user", "channel/session-test", "how about Julia?")
         ctx = PipelineContext(network_id=str(ws.id), agent_address="human:user", db=db, workspace=ws)
 
         out = _run(_handle_message_posted(event, ctx))
+        # Master is the fallback; must NOT be the sentinel
+        assert out.metadata.get("target_agents") == ["agent-master"]
 
-        # MUST be present as the sentinel (not missing, not empty —
-        # legacy clients broadcast on empty, so we use a non-empty
-        # sentinel that matches no real agent).
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_agent_message_gets_sentinel_on_stop(
+        self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
+    ):
+        """Agent-sourced 'stop' still produces the sentinel (no human to satisfy)."""
+        from app.mods.workspace_mod import _handle_message_posted
+        from openagents.core.onm_mods import PipelineContext
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _mock_anthropic_response("stop")
+        mock_get_client.return_value = (mock_client, "anthropic")
+
+        ws = multi_agent_workspace["workspace"]
+        event = _make_event("openagents:agent-master", "channel/session-test", "done — here is the final answer.")
+        ctx = PipelineContext(network_id=str(ws.id), agent_address="openagents:agent-master", db=db, workspace=ws)
+
+        out = _run(_handle_message_posted(event, ctx))
         assert out.metadata.get("target_agents") == ["__no_response__"]
 
     @patch("app.mods.workspace_mod._get_llm_client")
@@ -271,13 +293,11 @@ class TestMessagePostedTargetAgents:
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
     @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
-    def test_target_agents_set_to_empty_on_llm_failure(
+    def test_human_message_routed_to_fallback_on_llm_failure(
         self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
     ):
-        """LLM router exception → empty target_agents, not missing. This is
-        the exact bug that caused every agent to respond when the router
-        transiently failed.
-        """
+        """LLM router exception on a human message → fallback target, not sentinel.
+        Humans must always get a response, even if routing fails."""
         from app.mods.workspace_mod import _handle_message_posted
         from openagents.core.onm_mods import PipelineContext
 
@@ -290,4 +310,4 @@ class TestMessagePostedTargetAgents:
         ctx = PipelineContext(network_id=str(ws.id), agent_address="human:user", db=db, workspace=ws)
 
         out = _run(_handle_message_posted(event, ctx))
-        assert out.metadata.get("target_agents") == ["__no_response__"]
+        assert out.metadata.get("target_agents") == ["agent-master"]

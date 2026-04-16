@@ -426,31 +426,39 @@ def _fallback_targets(event, channel, mentions: List[str]) -> List[str]:
 
 
 _ROUTER_PROMPT = """\
-You are a conversation router for a multi-agent workspace. Your job is to \
-decide which agent(s) should respond next.
+You are a conversation router for a multi-agent workspace. Decide which \
+agent responds to the LATEST message next.
 
 Channel participants:
 {participants}
 Master agent: {master}
 
-Recent conversation:
+Recent conversation (oldest → newest):
 {history}
 
-New message from {sender}:
+LATEST message from {sender}:
 {content}
 
-Rules:
-- If the message contains @agent-name mentions, those are strong hints — route to the mentioned agent(s).
-- If the sender (human or agent) is delegating a task, route to the most appropriate agent for that task.
-- If the sender is reporting results and the master should review or synthesize, output the master.
-- If a human asks a general question or gives a broad instruction, route to the master agent.
-- If the response is a final answer or conclusion meant for the human user, output STOP.
-- If the task appears complete and no further agent action is needed, output STOP.
-- When in doubt between STOP and routing, prefer routing to the master agent.
+RULES (in priority order):
 
-Output EXACTLY one line, no explanation:
-- "next:<agent_name>" to trigger exactly one agent
-- "stop" if no agent should be triggered"""
+1. If the LATEST message is from a HUMAN:
+   - ALWAYS pick exactly one agent. Humans always expect a response.
+   - If the message has @agent-name mentions, pick the first one that is a participant.
+   - Otherwise pick the most appropriate agent based on who the question is about \
+or who owns the domain; default to the master agent.
+   - DO NOT output "stop" for a human message.
+
+2. If the LATEST message is from an AGENT:
+   - If it is a delegation or handoff (asks another agent to do something), route to that agent.
+   - If it is a report-back or status update directed at the master, route to the master.
+   - If it is a FINAL answer to a previous human question, output "stop".
+   - If the conversation is clearly complete (e.g. acknowledgement, "done", "saved"), output "stop".
+   - NEVER route back to the same agent that just spoke.
+   - When unsure, prefer "stop" over continuing (avoid infinite agent loops).
+
+Output EXACTLY one line, lowercase, no punctuation or explanation:
+  next:<agent_name>        — to trigger exactly one agent
+  stop                     — if no agent should be triggered (only after an agent reply to human)"""
 
 
 def _get_router_api_key() -> str:
@@ -605,24 +613,49 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
             valid_participants = {p.agent_name for p in (channel.participants or [])}
             if agent_name not in valid_participants:
                 logger.warning("LLM router returned unknown agent: %s (valid: %s)", agent_name, valid_participants)
-                return []
-            # Reject self-loops — the router sometimes picks the same
-            # agent that just spoke, which would cause the sender's
-            # adapter to see its own message (skipped anyway) AND
-            # keep target_agents pointing at it (old clients then
-            # try to respond repeatedly).
-            if new_event.source and new_event.source.startswith("openagents:"):
-                sender = new_event.source[len("openagents:"):]
-                if agent_name == sender:
-                    logger.info("LLM router self-loop rejected: %s → %s", sender, agent_name)
+                # For human senders, fall through to the safety net below
+                # so the user always gets a reply.
+                if not (new_event.source or "").startswith("human:"):
                     return []
-            return [agent_name]
+                agent_name = None
+            else:
+                # Reject self-loops — router sometimes picks the agent
+                # who just spoke. Sender's adapter skips own messages but
+                # legacy clients would still see the target and retry.
+                if (new_event.source or "").startswith("openagents:"):
+                    sender = new_event.source[len("openagents:"):]
+                    if agent_name == sender:
+                        logger.info("LLM router self-loop rejected: %s", sender)
+                        return []
+                return [agent_name]
         else:
-            # "stop" or any unrecognized output → stop
-            return []
+            agent_name = None  # "stop" or unrecognized
+
+        # Safety net: humans ALWAYS get a response. If the router said
+        # "stop" (or returned an invalid agent) for a human message,
+        # fall back to the master/fallback target. Without this, the
+        # router can silently drop a legitimate follow-up question like
+        # "how about Julia?" after a previous "final answer" message.
+        if (new_event.source or "").startswith("human:"):
+            fallback = _fallback_targets(new_event, channel, [])
+            if fallback:
+                logger.info(
+                    "LLM router returned stop/invalid for human message — "
+                    "routing to fallback %s instead", fallback,
+                )
+                return fallback
+        return []
 
     except Exception as e:
-        logger.error("LLM router failed, defaulting to stop: %s", e)
+        logger.error("LLM router failed, defaulting to fallback: %s", e)
+        # Same safety net on exception: humans still get a reply.
+        if (new_event.source or "").startswith("human:"):
+            try:
+                fallback = _fallback_targets(new_event, channel, [])
+                if fallback:
+                    return fallback
+            except Exception:
+                pass
         return []
 
 
