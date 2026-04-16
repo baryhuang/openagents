@@ -612,29 +612,45 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
                 max_tokens=30,
                 messages=[{"role": "user", "content": prompt}],
             )
-            result = response.choices[0].message.content.strip().lower()
+            raw_result = response.choices[0].message.content.strip()
         else:
             response = client.messages.create(
                 model=model,
                 max_tokens=30,
                 messages=[{"role": "user", "content": prompt}],
             )
-            result = response.content[0].text.strip().lower()
+            raw_result = response.content[0].text.strip()
 
-        logger.info("LLM router decision: %s (channel=%s, sender=%s, provider=%s)", result, channel.name, sender, provider)
+        # Case-insensitive keyword detection but preserve original case
+        # of the agent name so we can match it against participants
+        # (agent names are case-sensitive in the workspace).
+        result = raw_result.lower()
+
+        logger.info("LLM router decision: %s (channel=%s, sender=%s, provider=%s)", raw_result, channel.name, sender, provider)
 
         if result.startswith("next:"):
-            agent_name = result[len("next:"):].strip().split(",")[0].strip()
-            # Validate against actual participants
-            valid_participants = {p.agent_name for p in (channel.participants or [])}
-            if agent_name not in valid_participants:
-                logger.warning("LLM router returned unknown agent: %s (valid: %s)", agent_name, valid_participants)
+            # Preserve the original case from the model output so we can
+            # match against participant names, which ARE case-sensitive.
+            agent_name = raw_result[len("next:"):].strip().split(",")[0].strip()
+            # Case-insensitive participant lookup, then canonicalize to
+            # the stored case.
+            participants_by_lower = {
+                p.agent_name.lower(): p.agent_name
+                for p in (channel.participants or [])
+            }
+            canonical = participants_by_lower.get(agent_name.lower())
+            if canonical is None:
+                logger.warning(
+                    "LLM router returned unknown agent: %r (valid: %s)",
+                    agent_name, list(participants_by_lower.values()),
+                )
                 # For human senders, fall through to the safety net below
                 # so the user always gets a reply.
                 if not (new_event.source or "").startswith("human:"):
                     return []
                 agent_name = None
             else:
+                agent_name = canonical
                 # Reject self-loops — router sometimes picks the agent
                 # who just spoke. Sender's adapter skips own messages but
                 # legacy clients would still see the target and retry.

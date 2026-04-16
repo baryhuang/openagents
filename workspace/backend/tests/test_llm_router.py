@@ -166,6 +166,35 @@ class TestRouteWithLLM:
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
     @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_router_agent_name_case_insensitive_match(self, _mock_model, _mock_key, mock_get_client, db):
+        """Model may return next:julia-robot but the stored agent name is Julia-Robot.
+        We must match case-insensitively and return the original-case name."""
+        from app.models import Channel, ChannelMember, WorkspaceMember, Workspace
+        ws = Workspace(name="case-ws", slug="case-ws", password_hash="t")
+        db.add(ws); db.flush()
+        db.add(WorkspaceMember(workspace_id=ws.id, agent_name="Julia-Robot", role="master", status="online"))
+        db.add(WorkspaceMember(workspace_id=ws.id, agent_name="bary-bot", role="member", status="online"))
+        db.flush()
+        ch = Channel(workspace_id=ws.id, name="c1", master_agent="Julia-Robot", status="active")
+        db.add(ch); db.flush()
+        db.add(ChannelMember(channel_id=ch.id, agent_name="Julia-Robot"))
+        db.add(ChannelMember(channel_id=ch.id, agent_name="bary-bot"))
+        db.flush()
+        db.refresh(ch)
+
+        mock_client = MagicMock()
+        # Model returns lowercased name (common with OpenAI-compatible endpoints)
+        mock_client.messages.create.return_value = _mock_anthropic_response("next:julia-robot")
+        mock_get_client.return_value = (mock_client, "anthropic")
+
+        event = _make_event("human:user", "channel/c1", "@Julia-Robot what's up?")
+        result = _run(_route_with_llm(ch, event, db, ws))
+        # Must canonicalize back to the stored case
+        assert result == ["Julia-Robot"]
+
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
     def test_router_rejects_self_loop(self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace):
         """Router must not return the same agent that just spoke; otherwise
         the agent ends up listed as a target for its own message which
