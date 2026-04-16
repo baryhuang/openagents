@@ -27,11 +27,12 @@ function buildToolDefs(disabledModules) {
     // -- Workspace core (always enabled) --
     {
       name: 'workspace_get_history',
-      description: 'Read recent messages in the current workspace channel.',
+      description: 'Read recent messages in a workspace channel. Defaults to the current channel; pass channel to query another.',
       inputSchema: {
         type: 'object',
         properties: {
           limit: { type: 'integer', description: 'Number of messages to return (default 20)', default: 20 },
+          channel: { type: 'string', description: 'Channel name (e.g. "channel-9bcd8e66"); omit to use the current channel.' },
         },
       },
     },
@@ -341,7 +342,8 @@ class McpServer {
 
       case 'workspace_get_history': {
         const limit = args.limit || 20;
-        const data = await this.ws.pollMessages(this.workspaceId, this.channelName, this.token, { limit });
+        const channel = args.channel || this.channelName;
+        const data = await this.ws.pollMessages(this.workspaceId, channel, this.token, { limit });
         const events = data.events || data || [];
         if (!events.length) return text('No messages yet.');
         const lines = events.map((e) => {

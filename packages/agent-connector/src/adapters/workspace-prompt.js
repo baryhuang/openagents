@@ -21,8 +21,12 @@ function buildWorkspaceIdentity(agentName, workspaceId, channelName, mode = 'exe
     '— just write your answer naturally.\n\n' +
     '## Workspace Context\n' +
     `- Workspace ID: ${workspaceId}\n` +
-    `- Channel: ${channelName}\n` +
-    `- Mode: ${mode}\n`
+    `- Channel: ${channelName}  (this is the channel you are currently speaking in)\n` +
+    `- Mode: ${mode}\n\n` +
+    'When you need prior context, call `workspace_get_history` with ' +
+    `\`channel="${channelName}"\` (the current channel). Without the ` +
+    'channel argument the tool falls back to a default channel that may ' +
+    'be different from where you are.\n'
   );
 }
 
