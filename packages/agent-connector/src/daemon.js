@@ -30,6 +30,7 @@ class Daemon {
     this._shuttingDown = false;
     this._statusInterval = null;
     this._cmdInterval = null;
+    this._reloadInFlight = null;  // serialize concurrent _reload() calls
   }
 
   // ---------------------------------------------------------------------------
@@ -182,6 +183,22 @@ class Daemon {
     const bin = execPath || process.execPath;
 
     fs.mkdirSync(configDir, { recursive: true });
+
+    // Refuse to start if an existing daemon is already running.
+    // Without this check, repeated `agn up` invocations would spawn
+    // multiple daemons that each process the same message → duplicate
+    // bot replies.
+    const existingPid = Daemon._readPid(pidFile);
+    if (existingPid && Daemon._isAlive(existingPid)) {
+      console.error(`Daemon already running (PID ${existingPid}).`);
+      console.error(`Run 'agn down' first, or 'agn status' to check.`);
+      process.exit(1);
+    }
+    // Stale pid file — clean up before spawning fresh
+    if (existingPid) {
+      try { fs.unlinkSync(pidFile); } catch {}
+    }
+
     const logFd = fs.openSync(logFile, 'a');
 
     // Build env with enhanced PATH (ensures node/npm are findable)
@@ -636,6 +653,27 @@ class Daemon {
   }
 
   async _reload() {
+    // Serialize reloads. fs.watch, the 'reload' command, and SIGHUP can
+    // all fire concurrently. Without a mutex, two _reload() calls in flight
+    // may both observe the same stale `this._adapters[name]` entry between
+    // stopAgent() and _launchAgent(), leaving a ghost adapter running
+    // alongside the new one → duplicate bot replies per message.
+    if (this._reloadInFlight) {
+      // Wait for the in-flight reload to finish, then run once more
+      // (the config may have changed again since it started).
+      this._reloadInFlight = this._reloadInFlight.then(
+        () => this._reloadUnsafe(),
+        () => this._reloadUnsafe(),
+      );
+      return this._reloadInFlight;
+    }
+    this._reloadInFlight = this._reloadUnsafe().finally(() => {
+      this._reloadInFlight = null;
+    });
+    return this._reloadInFlight;
+  }
+
+  async _reloadUnsafe() {
     this._log('Reloading config...');
     const oldNames = this._cachedAgentNames || new Set();
     const oldConfigs = this._cachedAgentConfigs || {};
@@ -657,12 +695,14 @@ class Daemon {
     // Start new agents or restart agents whose network changed
     for (const agent of newAgents) {
       if (!oldNames.has(agent.name)) {
+        await this._ensureAdapterCleared(agent.name);
         this._launchAgent(agent);
         this._log(`Reload: started new agent '${agent.name}'`);
       } else if ((oldConfigs[agent.name] || '') !== (agent.network || '')) {
         // Network config changed — restart agent
         await this.stopAgent(agent.name);
         this._stoppedAgents.delete(agent.name);
+        await this._ensureAdapterCleared(agent.name);
         this._launchAgent(agent);
         this._log(`Reload: restarted '${agent.name}' (network changed)`);
       }
@@ -671,6 +711,28 @@ class Daemon {
     this._cachedAgentNames = newNames;
     this._cachedAgentConfigs = newConfigs;
     this._writeStatus();
+  }
+
+  /**
+   * Wait until the old adapter (if any) has fully released its slot in
+   * this._adapters before relaunching. stopAgent already waits up to 5s,
+   * but on slow shutdowns that can be too short — and _launchAgent's
+   * duplicate-check would then silently skip the relaunch, leaving the
+   * OLD adapter running instead of starting the new one.
+   */
+  async _ensureAdapterCleared(name) {
+    for (let i = 0; i < 20; i++) {
+      if (!this._adapters || !this._adapters[name]) return;
+      await this._sleep(500);
+    }
+    // Last resort: force-clear the slot so the new adapter can start.
+    // The old adapter will exit on its next poll iteration since its
+    // entry in _stoppedAgents triggers adapter.stop() via checkStop.
+    if (this._adapters && this._adapters[name]) {
+      this._log(`WARNING: adapter '${name}' did not clear after 10s — force-releasing slot to avoid duplicate`);
+      try { this._adapters[name].stop(); } catch {}
+      delete this._adapters[name];
+    }
   }
 
   _writePid() {

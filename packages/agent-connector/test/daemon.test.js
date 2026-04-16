@@ -158,4 +158,69 @@ describe('Daemon', () => {
     // PID validation removed — returns raw value (liveness checked elsewhere)
     assert.equal(Daemon.readDaemonPid(tmpDir), 99999999);
   });
+
+  it('_reload is serialized (concurrent calls queue)', async () => {
+    const config = new Config(tmpDir);
+    const env = new EnvManager(tmpDir);
+    const reg = new Registry(tmpDir);
+    const daemon = new Daemon(config, env, reg);
+
+    // Track how many times _reloadUnsafe actually runs concurrently vs. serially.
+    const order = [];
+    let inFlight = 0;
+    let maxConcurrent = 0;
+    daemon._reloadUnsafe = async () => {
+      inFlight++;
+      maxConcurrent = Math.max(maxConcurrent, inFlight);
+      order.push('start');
+      await new Promise((r) => setTimeout(r, 30));
+      order.push('end');
+      inFlight--;
+    };
+
+    // Fire 3 reloads concurrently; they should all run (each sees the config
+    // might have changed) but never overlap.
+    await Promise.all([daemon._reload(), daemon._reload(), daemon._reload()]);
+
+    assert.equal(maxConcurrent, 1, '_reloadUnsafe must never run concurrently');
+    // 3 start/end pairs, always alternating
+    assert.equal(order.length, 6);
+    for (let i = 0; i < order.length; i += 2) {
+      assert.equal(order[i], 'start');
+      assert.equal(order[i + 1], 'end');
+    }
+  });
+
+  it('_ensureAdapterCleared force-releases stuck adapter', async () => {
+    const config = new Config(tmpDir);
+    const env = new EnvManager(tmpDir);
+    const reg = new Registry(tmpDir);
+    const daemon = new Daemon(config, env, reg);
+
+    let stopped = false;
+    daemon._adapters['stuck'] = {
+      stop: () => { stopped = true; },
+    };
+    // Override _sleep to make the test fast (returns immediately)
+    daemon._sleep = () => Promise.resolve();
+
+    await daemon._ensureAdapterCleared('stuck');
+
+    assert.equal(stopped, true, 'adapter.stop() must be called when slot is stuck');
+    assert.equal(daemon._adapters['stuck'], undefined, 'stuck adapter slot must be cleared');
+  });
+
+  it('_ensureAdapterCleared returns quickly when slot is already free', async () => {
+    const config = new Config(tmpDir);
+    const env = new EnvManager(tmpDir);
+    const reg = new Registry(tmpDir);
+    const daemon = new Daemon(config, env, reg);
+
+    // No adapter in the slot
+    const t0 = Date.now();
+    await daemon._ensureAdapterCleared('nonexistent');
+    const elapsed = Date.now() - t0;
+
+    assert.ok(elapsed < 100, `should return immediately, took ${elapsed}ms`);
+  });
 });
