@@ -427,7 +427,8 @@ def _fallback_targets(event, channel, mentions: List[str]) -> List[str]:
 
 _ROUTER_PROMPT = """\
 You are a conversation router for a multi-agent workspace. Decide which \
-agent responds to the LATEST message next.
+agent should respond next to the LATEST message. Use judgment — read the \
+message carefully and think about who is actually being addressed.
 
 Channel participants:
 {participants}
@@ -439,26 +440,41 @@ Recent conversation (oldest → newest):
 LATEST message from {sender}:
 {content}
 
-RULES (in priority order):
+HOW TO DECIDE:
 
-1. If the LATEST message is from a HUMAN:
-   - ALWAYS pick exactly one agent. Humans always expect a response.
-   - If the message has @agent-name mentions, pick the first one that is a participant.
-   - Otherwise pick the most appropriate agent based on who the question is about \
-or who owns the domain; default to the master agent.
-   - DO NOT output "stop" for a human message.
+A. Identify who (if anyone) is being directly addressed.
+   Treat @agent-name as ADDRESSING that agent only when the agent is the \
+subject being asked to do/say something. If the agent is merely referenced \
+("check @Alice's note, Bob" — Alice is referred to, Bob is addressed), \
+pick the addressed agent, not the mentioned one.
 
-2. If the LATEST message is from an AGENT:
-   - If it is a delegation or handoff (asks another agent to do something), route to that agent.
-   - If it is a report-back or status update directed at the master, route to the master.
-   - If it is a FINAL answer to a previous human question, output "stop".
-   - If the conversation is clearly complete (e.g. acknowledgement, "done", "saved"), output "stop".
-   - NEVER route back to the same agent that just spoke.
-   - When unsure, prefer "stop" over continuing (avoid infinite agent loops).
+B. If the LATEST message is from a HUMAN:
+   - Always pick exactly one agent. Humans expect a reply — never output \
+"stop" for a human message.
+   - Prefer whoever is directly addressed. If nobody is clearly \
+addressed, pick the agent whose role/description best fits the topic; \
+fall back to the master agent.
+
+C. If the LATEST message is from an AGENT:
+   - If it delegates or hands off to another agent ("@Alice please do X", \
+"Alice, could you check X"), route to that agent.
+   - If it reports back to the master or asks the master to decide, route to the master.
+   - If it is a FINAL answer to the previous human question or an \
+acknowledgement ("done", "saved", "sounds good"), output "stop".
+   - Never route back to the same agent that just spoke (no self-loops).
+   - When unsure, prefer "stop" to avoid infinite agent-to-agent loops.
+
+EXAMPLES:
+  Human: "@alice what's the status?"                → next:alice
+  Human: "check @alice's notes, @bob"                → next:bob       (bob is addressed)
+  Human: "how about julia?"  (julia is not an agent) → next:<master>  (who owns that topic)
+  Agent alice: "@bob can you verify?"                → next:bob
+  Agent alice: "Done — results attached."            → stop
+  Agent bob (master): "Here's the final answer ..."  → stop
 
 Output EXACTLY one line, lowercase, no punctuation or explanation:
-  next:<agent_name>        — to trigger exactly one agent
-  stop                     — if no agent should be triggered (only after an agent reply to human)"""
+  next:<agent_name>
+  stop"""
 
 
 def _get_router_api_key() -> str:
