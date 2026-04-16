@@ -138,8 +138,9 @@ class TestSendEvent:
 
         assert resp.status_code == 200
         data = resp.json()["data"]
-        # Master's message in a single-agent channel — no targeting (empty, not missing)
-        assert data["metadata"].get("target_agents") == []
+        # Master's message in a single-agent channel — no real targets
+        # (sentinel list, not missing, so legacy clients don't broadcast)
+        assert data["metadata"].get("target_agents") == ["__no_response__"]
 
     def test_master_message_without_mentions_no_target_agents(self, client, workspace):
         """Master agent messages without mentions produce empty target_agents (no self-trigger)."""
@@ -154,8 +155,9 @@ class TestSendEvent:
 
         assert resp.status_code == 200
         data = resp.json()["data"]
-        # Master's own messages should NOT trigger itself (empty list, not missing field)
-        assert data["metadata"].get("target_agents") == []
+        # Master's own messages should NOT trigger itself — sentinel
+        # list (not missing field, not empty) so legacy clients skip.
+        assert data["metadata"].get("target_agents") == ["__no_response__"]
 
     def test_member_message_without_mentions_routes_to_master(self, client, workspace):
         """Member agent messages without mentions route back to channel master."""

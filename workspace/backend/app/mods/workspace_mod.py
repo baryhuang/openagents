@@ -603,10 +603,20 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
             agent_name = result[len("next:"):].strip().split(",")[0].strip()
             # Validate against actual participants
             valid_participants = {p.agent_name for p in (channel.participants or [])}
-            if agent_name in valid_participants:
-                return [agent_name]
-            logger.warning("LLM router returned unknown agent: %s (valid: %s)", agent_name, valid_participants)
-            return []
+            if agent_name not in valid_participants:
+                logger.warning("LLM router returned unknown agent: %s (valid: %s)", agent_name, valid_participants)
+                return []
+            # Reject self-loops — the router sometimes picks the same
+            # agent that just spoke, which would cause the sender's
+            # adapter to see its own message (skipped anyway) AND
+            # keep target_agents pointing at it (old clients then
+            # try to respond repeatedly).
+            if new_event.source and new_event.source.startswith("openagents:"):
+                sender = new_event.source[len("openagents:"):]
+                if agent_name == sender:
+                    logger.info("LLM router self-loop rejected: %s → %s", sender, agent_name)
+                    return []
+            return [agent_name]
         else:
             # "stop" or any unrecognized output → stop
             return []
@@ -723,11 +733,16 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     else:
         targets = _fallback_targets(event, channel, mentions)
 
-    # ALWAYS set target_agents (even if empty). The empty case means
-    # "routing decided nobody should respond" — without this explicit
-    # marker, legacy clients fall through to broadcast-to-all which
-    # caused every agent in a multi-agent channel to reply at once.
-    event.metadata["target_agents"] = targets or []
+    # ALWAYS set target_agents, even when nobody should respond.
+    #
+    # Use a non-empty sentinel list ["__no_response__"] instead of []
+    # because legacy clients (pre-0.2.106) check `!targets.length ||
+    # targets.includes(agentName)` — an empty list is truthy-skipped
+    # and falls through to broadcast, so every agent in the channel
+    # replies at once. A non-empty list that contains no real agent
+    # name causes old clients to reject (they fail the includes check)
+    # and new clients to treat it as "nobody" (the sentinel is ignored).
+    event.metadata["target_agents"] = targets if targets else ["__no_response__"]
 
     # Auto-add targeted agents as channel participants so they can poll
     # for messages on this channel.

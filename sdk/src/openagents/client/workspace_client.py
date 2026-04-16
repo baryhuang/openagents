@@ -517,12 +517,17 @@ class WorkspaceClient:
                     raw_last_id = events[-1].get("id")
 
                 # Filter for events targeted at this agent.
-                # Distinguish "target_agents not present" (legacy server,
-                # broadcast for humans) from "target_agents present but
-                # empty" (new server routed the message and decided
-                # nobody should respond). Without this distinction, every
-                # agent in a multi-agent channel would reply at once
-                # whenever routing returned "stop".
+                #
+                # target_agents semantics (backend-emitted):
+                #   • absent — legacy server with no routing decision;
+                #     broadcast human messages for back-compat
+                #   • ["agent-a", ...] — only listed agents respond
+                #   • ["__no_response__"] — sentinel meaning "nobody
+                #     should respond". A non-empty sentinel is used
+                #     instead of [] because pre-0.2.106 clients treat
+                #     empty arrays as broadcast and every agent would
+                #     reply. The sentinel matches no real agent name,
+                #     so the includes() check below naturally skips it.
                 messages = []
                 for e in events:
                     meta = e.get("metadata") or {}

@@ -118,7 +118,8 @@ class TestRouteWithLLM:
 
         ws = multi_agent_workspace["workspace"]
         ch = multi_agent_workspace["channel"]
-        event = _make_event("openagents:agent-master", "channel/session-test", "Both agents need to act")
+        # Human sender so the first of the comma-list isn't a self-loop.
+        event = _make_event("human:user", "channel/session-test", "Both agents need to act")
 
         result = _run(_route_with_llm(ch, event, db, ws))
         assert result == ["agent-master"]
@@ -161,6 +162,25 @@ class TestRouteWithLLM:
 
         result = _run(_route_with_llm(ch, event, db, ws))
         assert result == []
+
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_router_rejects_self_loop(self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace):
+        """Router must not return the same agent that just spoke; otherwise
+        the agent ends up listed as a target for its own message which
+        pre-0.2.106 clients then try to respond to."""
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _mock_anthropic_response("next:agent-master")
+        mock_get_client.return_value = (mock_client, "anthropic")
+
+        ws = multi_agent_workspace["workspace"]
+        ch = multi_agent_workspace["channel"]
+        # agent-master just sent this message; router must not re-target it
+        event = _make_event("openagents:agent-master", "channel/session-test", "some update")
+
+        result = _run(_route_with_llm(ch, event, db, ws))
+        assert result == [], "self-loop must be rejected"
 
 
 class TestRouteWithOpenAI:
@@ -223,9 +243,10 @@ class TestMessagePostedTargetAgents:
 
         out = _run(_handle_message_posted(event, ctx))
 
-        # MUST be present as an empty list, not absent
-        assert "target_agents" in out.metadata
-        assert out.metadata["target_agents"] == []
+        # MUST be present as the sentinel (not missing, not empty —
+        # legacy clients broadcast on empty, so we use a non-empty
+        # sentinel that matches no real agent).
+        assert out.metadata.get("target_agents") == ["__no_response__"]
 
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
@@ -269,5 +290,4 @@ class TestMessagePostedTargetAgents:
         ctx = PipelineContext(network_id=str(ws.id), agent_address="human:user", db=db, workspace=ws)
 
         out = _run(_handle_message_posted(event, ctx))
-        assert "target_agents" in out.metadata
-        assert out.metadata["target_agents"] == []
+        assert out.metadata.get("target_agents") == ["__no_response__"]

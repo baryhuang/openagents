@@ -200,17 +200,23 @@ class WorkspaceClient {
       cursor = events[events.length - 1].id || null;
     }
 
-    // Filter for messages targeted at this agent
+    // Filter for messages targeted at this agent.
+    //
+    // target_agents semantics:
+    //   • absent            → legacy server with no routing decision
+    //                         (broadcast for human messages, ignore for agents)
+    //   • [...agentNames]   → only listed agents should respond
+    //   • ["__no_response__"]
+    //                       → routing happened and decided nobody
+    //                         should respond. Sentinel is used instead
+    //                         of [] because pre-0.2.106 clients treat
+    //                         empty array as "broadcast" and every
+    //                         agent would reply. The sentinel is
+    //                         non-empty and matches no real agent.
     const messages = [];
     for (const e of events) {
       const source = e.source || '';
       const meta = e.metadata || {};
-      // Distinguish between "target_agents not present" (legacy server,
-      // no routing decision made → broadcast semantics for humans) and
-      // "target_agents present but empty" (router explicitly said
-      // nobody should respond). Without this distinction, every agent
-      // in a multi-agent channel would reply at once whenever routing
-      // returned "stop".
       const targetAgents = meta.target_agents;
       const hasTargetList = Array.isArray(targetAgents);
 
@@ -218,18 +224,16 @@ class WorkspaceClient {
       if (source === `openagents:${agentName}`) continue;
 
       if (source.startsWith('human:')) {
-        // Human messages:
-        //   - new server (target_agents set): only respond if listed
-        //   - legacy server (no target_agents): broadcast for compat
         if (hasTargetList) {
           if (targetAgents.includes(agentName)) {
             messages.push(this._eventToMessage(e));
           }
         } else {
+          // Legacy server (no target_agents): broadcast for compat
           messages.push(this._eventToMessage(e));
         }
       } else if (source.startsWith('openagents:')) {
-        // Agent messages: only pick up if explicitly mentioned
+        // Agent messages: only pick up if explicitly listed
         if (hasTargetList && targetAgents.includes(agentName)) {
           messages.push(this._eventToMessage(e));
         }
