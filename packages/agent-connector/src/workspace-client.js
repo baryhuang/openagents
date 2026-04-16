@@ -205,19 +205,32 @@ class WorkspaceClient {
     for (const e of events) {
       const source = e.source || '';
       const meta = e.metadata || {};
-      const targetAgents = meta.target_agents || [];
+      // Distinguish between "target_agents not present" (legacy server,
+      // no routing decision made → broadcast semantics for humans) and
+      // "target_agents present but empty" (router explicitly said
+      // nobody should respond). Without this distinction, every agent
+      // in a multi-agent channel would reply at once whenever routing
+      // returned "stop".
+      const targetAgents = meta.target_agents;
+      const hasTargetList = Array.isArray(targetAgents);
 
       // Skip own messages
       if (source === `openagents:${agentName}`) continue;
 
       if (source.startsWith('human:')) {
-        // Human messages: pick up if targeted at this agent or broadcast
-        if (!targetAgents.length || targetAgents.includes(agentName)) {
+        // Human messages:
+        //   - new server (target_agents set): only respond if listed
+        //   - legacy server (no target_agents): broadcast for compat
+        if (hasTargetList) {
+          if (targetAgents.includes(agentName)) {
+            messages.push(this._eventToMessage(e));
+          }
+        } else {
           messages.push(this._eventToMessage(e));
         }
       } else if (source.startsWith('openagents:')) {
         // Agent messages: only pick up if explicitly mentioned
-        if (targetAgents.includes(agentName)) {
+        if (hasTargetList && targetAgents.includes(agentName)) {
           messages.push(this._eventToMessage(e));
         }
       }

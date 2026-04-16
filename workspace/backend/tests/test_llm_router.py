@@ -195,3 +195,79 @@ class TestRouteWithOpenAI:
 
         result = _run(_route_with_llm(ch, event, db, ws))
         assert result == []
+
+
+class TestMessagePostedTargetAgents:
+    """_handle_message_posted must ALWAYS set target_agents, even when
+    routing decides nobody should respond. Otherwise legacy clients
+    interpret missing target_agents as 'broadcast to all' and every
+    agent in the channel replies at once.
+    """
+
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_target_agents_set_to_empty_on_stop(
+        self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
+    ):
+        from app.mods.workspace_mod import _handle_message_posted
+        from openagents.core.onm_mods import PipelineContext
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _mock_anthropic_response("stop")
+        mock_get_client.return_value = (mock_client, "anthropic")
+
+        ws = multi_agent_workspace["workspace"]
+        event = _make_event("human:user", "channel/session-test", "hey all just sharing progress")
+        ctx = PipelineContext(network_id=str(ws.id), agent_address="human:user", db=db, workspace=ws)
+
+        out = _run(_handle_message_posted(event, ctx))
+
+        # MUST be present as an empty list, not absent
+        assert "target_agents" in out.metadata
+        assert out.metadata["target_agents"] == []
+
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_target_agents_set_on_next(
+        self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
+    ):
+        from app.mods.workspace_mod import _handle_message_posted
+        from openagents.core.onm_mods import PipelineContext
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _mock_anthropic_response("next:agent-worker")
+        mock_get_client.return_value = (mock_client, "anthropic")
+
+        ws = multi_agent_workspace["workspace"]
+        event = _make_event("human:user", "channel/session-test", "agent-worker please help")
+        ctx = PipelineContext(network_id=str(ws.id), agent_address="human:user", db=db, workspace=ws)
+
+        out = _run(_handle_message_posted(event, ctx))
+        assert out.metadata["target_agents"] == ["agent-worker"]
+
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_target_agents_set_to_empty_on_llm_failure(
+        self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
+    ):
+        """LLM router exception → empty target_agents, not missing. This is
+        the exact bug that caused every agent to respond when the router
+        transiently failed.
+        """
+        from app.mods.workspace_mod import _handle_message_posted
+        from openagents.core.onm_mods import PipelineContext
+
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = Exception("router transient failure")
+        mock_get_client.return_value = (mock_client, "anthropic")
+
+        ws = multi_agent_workspace["workspace"]
+        event = _make_event("human:user", "channel/session-test", "some message")
+        ctx = PipelineContext(network_id=str(ws.id), agent_address="human:user", db=db, workspace=ws)
+
+        out = _run(_handle_message_posted(event, ctx))
+        assert "target_agents" in out.metadata
+        assert out.metadata["target_agents"] == []

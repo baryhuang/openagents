@@ -114,11 +114,15 @@ class TestSendEvent:
 
 
     def test_agent_message_master_no_targeting_in_single_agent_channel(self, client, workspace):
-        """Master agent messages in single-agent channels have no target_agents.
+        """Master agent messages in single-agent channels have empty target_agents.
 
         With the LLM router, multi-agent routing uses the router.
         In single-agent channels (or when router is disabled), the fallback
         applies: master's own messages get no targeting.
+
+        As of the routing fix: target_agents is ALWAYS set (to an empty
+        list if nobody should respond) so clients don't fall through to
+        broadcast-to-all on missing field.
         """
         channel_name = workspace["channel"]["name"]
         resp = client.post("/v1/events", json={
@@ -134,11 +138,11 @@ class TestSendEvent:
 
         assert resp.status_code == 200
         data = resp.json()["data"]
-        # Master's message in a single-agent channel — no targeting
-        assert "target_agents" not in data["metadata"]
+        # Master's message in a single-agent channel — no targeting (empty, not missing)
+        assert data["metadata"].get("target_agents") == []
 
     def test_master_message_without_mentions_no_target_agents(self, client, workspace):
-        """Master agent messages without mentions have no target_agents (no self-trigger)."""
+        """Master agent messages without mentions produce empty target_agents (no self-trigger)."""
         channel_name = workspace["channel"]["name"]
         resp = client.post("/v1/events", json={
             "type": "workspace.message.posted",
@@ -150,8 +154,8 @@ class TestSendEvent:
 
         assert resp.status_code == 200
         data = resp.json()["data"]
-        # Master's own messages should NOT trigger itself
-        assert "target_agents" not in data["metadata"]
+        # Master's own messages should NOT trigger itself (empty list, not missing field)
+        assert data["metadata"].get("target_agents") == []
 
     def test_member_message_without_mentions_routes_to_master(self, client, workspace):
         """Member agent messages without mentions route back to channel master."""

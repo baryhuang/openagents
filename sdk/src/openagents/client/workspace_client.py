@@ -516,24 +516,36 @@ class WorkspaceClient:
                 if events:
                     raw_last_id = events[-1].get("id")
 
-                # Filter for events targeted at this agent
+                # Filter for events targeted at this agent.
+                # Distinguish "target_agents not present" (legacy server,
+                # broadcast for humans) from "target_agents present but
+                # empty" (new server routed the message and decided
+                # nobody should respond). Without this distinction, every
+                # agent in a multi-agent channel would reply at once
+                # whenever routing returned "stop".
                 messages = []
                 for e in events:
                     meta = e.get("metadata") or {}
-                    target_agents = meta.get("target_agents") or []
                     source = e.get("source", "")
 
                     # Exclude own messages
                     if source == f"openagents:{agent_name}":
                         continue
 
+                    raw_targets = meta.get("target_agents")
+                    has_target_list = isinstance(raw_targets, list)
+                    target_agents = raw_targets if has_target_list else []
+
                     if source.startswith("human:"):
-                        # Human messages: pick up if targeted at this agent or broadcast
-                        if not target_agents or agent_name in target_agents:
+                        if has_target_list:
+                            if agent_name in target_agents:
+                                messages.append(self._event_to_message(e))
+                        else:
+                            # Legacy server (no routing decision) → broadcast
                             messages.append(self._event_to_message(e))
                     elif source.startswith("openagents:"):
-                        # Agent messages: only pick up if explicitly mentioned
-                        if agent_name in target_agents:
+                        # Agent messages: only pick up if explicitly listed
+                        if has_target_list and agent_name in target_agents:
                             messages.append(self._event_to_message(e))
 
                 return messages, raw_last_id

@@ -716,19 +716,18 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
         from app.config import config
         if config.ROUTER_LLM_ENABLED and _get_router_api_key():
             targets = await _route_with_llm(channel, event, db, workspace)
-            if targets:
-                event.metadata["target_agents"] = targets
-            # else: stop — conversation rests, no targeting
         else:
             # LLM router not available — fallback to mention or master
             targets = _fallback_targets(event, channel, mentions)
-            if targets:
-                event.metadata["target_agents"] = targets
     # ── Single-agent channel ────────────────────────────────────────
     else:
         targets = _fallback_targets(event, channel, mentions)
-        if targets:
-            event.metadata["target_agents"] = targets
+
+    # ALWAYS set target_agents (even if empty). The empty case means
+    # "routing decided nobody should respond" — without this explicit
+    # marker, legacy clients fall through to broadcast-to-all which
+    # caused every agent in a multi-agent channel to reply at once.
+    event.metadata["target_agents"] = targets or []
 
     # Auto-add targeted agents as channel participants so they can poll
     # for messages on this channel.
