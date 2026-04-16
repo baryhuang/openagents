@@ -6,6 +6,19 @@ const http = require('http');
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
 
 /**
+ * Thrown when the workspace rejects a request because our session_id has
+ * been revoked by a newer /v1/join as the same agent. Callers should
+ * stop the adapter rather than retry.
+ */
+class SessionRevokedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'SessionRevokedError';
+    this.code = 'session_revoked';
+  }
+}
+
+/**
  * HTTP client for workspace API operations.
  *
  * Mirrors the Python SDK's WorkspaceClient — same endpoints, same
@@ -84,12 +97,18 @@ class WorkspaceClient {
 
   /**
    * Send heartbeat via POST /v1/heartbeat.
+   *
+   * @param {string} [sessionId] - optional session id returned by /v1/join.
+   *   If the server's current session for this agent differs, _post()
+   *   throws SessionRevokedError and the caller should stop its adapter.
    */
-  async heartbeat(workspaceId, agentName, token) {
-    const data = await this._post('/v1/heartbeat', {
+  async heartbeat(workspaceId, agentName, token, sessionId) {
+    const body = {
       agent_name: agentName,
       network: workspaceId,
-    }, this._wsHeaders(token));
+    };
+    if (sessionId) body.session_id = sessionId;
+    const data = await this._post('/v1/heartbeat', body, this._wsHeaders(token));
     return data.data || data;
   }
 
@@ -107,9 +126,15 @@ class WorkspaceClient {
 
   /**
    * Post a raw event via POST /v1/events.
+   *
+   * @param {string} [sessionId] - if given, embedded in event.metadata so
+   *   the server can reject stale sessions with SessionRevokedError.
    */
-  async sendEvent(workspaceId, event, token) {
+  async sendEvent(workspaceId, event, token, sessionId) {
     event.network = workspaceId;
+    if (sessionId) {
+      event.metadata = { ...(event.metadata || {}), session_id: sessionId };
+    }
     const data = await this._post('/v1/events', event, this._wsHeaders(token));
     return data.data || data;
   }
@@ -118,7 +143,7 @@ class WorkspaceClient {
    * Send a chat message to a workspace channel.
    */
   async sendMessage(workspaceId, channelName, token, content, {
-    senderType = 'agent', senderName, messageType = 'chat', metadata, attachments,
+    senderType = 'agent', senderName, messageType = 'chat', metadata, attachments, sessionId,
   } = {}) {
     const sourcePrefix = senderType === 'agent' ? 'openagents' : 'human';
     const source = senderName ? `${sourcePrefix}:${senderName}` : `${sourcePrefix}:unknown`;
@@ -132,7 +157,7 @@ class WorkspaceClient {
       target: `channel/${channelName}`,
       payload,
       metadata: metadata || {},
-    }, token);
+    }, token, sessionId);
   }
 
   /**
@@ -545,7 +570,11 @@ class WorkspaceClient {
             const parsed = JSON.parse(data);
             if (res.statusCode >= 400) {
               const msg = parsed.message || `HTTP ${res.statusCode}`;
-              reject(new Error(msg));
+              if (typeof msg === 'string' && msg.toLowerCase().includes('session_revoked')) {
+                reject(new SessionRevokedError(msg));
+              } else {
+                reject(new Error(msg));
+              }
             } else {
               resolve(parsed);
             }
@@ -634,4 +663,4 @@ class WorkspaceClient {
   }
 }
 
-module.exports = { WorkspaceClient };
+module.exports = { WorkspaceClient, SessionRevokedError };

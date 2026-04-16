@@ -62,6 +62,7 @@ class RemoveRequest(BaseModel):
 class HeartbeatRequest(BaseModel):
     agent_name: str
     network: str
+    session_id: Optional[str] = None  # issued by /v1/join; mismatch → session_revoked
 
 class TokenResolveRequest(BaseModel):
     token: str
@@ -184,6 +185,7 @@ async def join_network(
         "agent_name": body.agent_name,
         "role": result.metadata.get("role", "member"),
         "status": "online",
+        "session_id": result.metadata.get("session_id"),
     })
 
 
@@ -276,12 +278,21 @@ async def heartbeat(
         target="core",
         payload={
             "agent_name": body.agent_name,
+            "session_id": body.session_id,
         },
     )
 
     result = await _emit_event(event, workspace, db, token=workspace.password_hash)
     if result is None:
         return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
+
+    if result.metadata.get("session_error") == "session_revoked":
+        # Another client has since joined as this agent; tell the caller
+        # to stop its adapter for this agent.
+        return json_response(
+            ResponseCode.UNAUTHORIZED,
+            "session_revoked: another client is now running as this agent",
+        )
 
     return success_response({"agent_name": body.agent_name, "status": "online"})
 

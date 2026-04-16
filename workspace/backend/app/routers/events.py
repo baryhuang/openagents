@@ -103,6 +103,15 @@ async def send_event(
     except EventRejected:
         return json_response(ResponseCode.UNAUTHORIZED, "Event rejected by pipeline")
 
+    # Session revocation: another client has since joined as this agent.
+    # Return a clear error so the stale client can stop its adapter.
+    if result.metadata.get("session_error") == "session_revoked":
+        db.rollback()
+        return json_response(
+            ResponseCode.UNAUTHORIZED,
+            "session_revoked: another client is now running as this agent",
+        )
+
     db.commit()
 
     return success_response({

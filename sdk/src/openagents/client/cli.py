@@ -7,10 +7,12 @@ This is the main CLI entry point. Commands are organized into domain modules:
 - cli_network.py  — network start/init/list/interact/publish
 - cli_agent.py    — agent start/list, agents start/list (bulk)
 - cli_identity.py — certs generate/verify, agentid commands
-- cli_daemon.py   — daemon lifecycle (up/down/status/start/stop/connect) + workspace
-- cli_packages.py — install/search/update/runtimes/autostart/remove
-- cli_legacy.py   — connect-legacy adapters + account commands
+- cli_packages.py — install/search/update/runtimes
 - cli_shared.py   — shared state (app, console, constants)
+
+Daemon/launcher commands (up/down/status/start/stop/create/connect/autostart)
+were removed; use the Node-based ``agn`` CLI from the
+``@openagents-org/agent-launcher`` npm package instead.
 """
 
 import sys
@@ -42,9 +44,7 @@ from openagents.client.cli_helpers import (  # noqa: F401
 import openagents.client.cli_network   # noqa: F401  — network_app
 import openagents.client.cli_agent     # noqa: F401  — agent_app, agents_app
 import openagents.client.cli_identity  # noqa: F401  — certs_app, agentid_app
-import openagents.client.cli_daemon    # noqa: F401  — workspace_app + daemon commands
-import openagents.client.cli_packages  # noqa: F401  — install/search/update/runtimes/autostart
-import openagents.client.cli_legacy    # noqa: F401  — connect-legacy + account commands
+import openagents.client.cli_packages  # noqa: F401  — install/search/update/runtimes
 
 
 # =============================================================================
@@ -174,13 +174,6 @@ def list_agents_cmd():
     _show_agent_scan()
 
 
-@app.command("setup", rich_help_panel="Client")
-def setup_cmd():
-    """🖥  Interactive setup dashboard — manage agents, workspaces, and connections"""
-    from openagents.client.cli_tui import launch_tui
-    launch_tui()
-
-
 # =============================================================================
 # Callbacks
 # =============================================================================
@@ -224,12 +217,6 @@ def main(
     """
     setup_logging(log_level, verbose)
 
-    # If no subcommand was provided, launch interactive TUI
-    if ctx.invoked_subcommand is None:
-        from openagents.client.cli_tui import launch_tui
-        launch_tui()
-        raise typer.Exit(0)
-
     # Show banner for studio command
     if not no_banner and len(sys.argv) > 1 and sys.argv[1] == 'studio':
         show_banner()
@@ -238,8 +225,6 @@ def main(
 def _show_agent_scan():
     """Scan machine for agents and show readiness status."""
     from openagents.client.plugin_registry import registry
-    from openagents.client.daemon import read_daemon_pid
-    from openagents.client.daemon_config import load_config, read_status
 
     console.print("\n[bold blue]OpenAgents[/bold blue] — scanning for agents...\n")
 
@@ -251,12 +236,10 @@ def _show_agent_scan():
     table.add_column("Notes", style="dim")
 
     installed_count = 0
-    ready_count = 0
     for agent in scan:
         if agent["installed"]:
             installed_count += 1
             if agent["ready"]:
-                ready_count += 1
                 status = "[green]ready[/green]"
             else:
                 status = "[yellow]needs setup[/yellow]"
@@ -270,38 +253,13 @@ def _show_agent_scan():
 
     console.print(table)
 
-    cfg = load_config()
-    if cfg.agents:
-        console.print(f"[dim]{len(cfg.agents)} agent(s) configured[/dim]")
-        for a in cfg.agents:
-            net_label = f"-> {a.network}" if a.network else "(local)"
-            path_label = f" [dim]{a.path}[/dim]" if a.path else ""
-            console.print(f"  [cyan]{a.name}[/cyan] ({a.type}) {net_label}{path_label}")
-        console.print()
-
-    pid = read_daemon_pid()
-    if pid:
-        console.print(f"[green]Daemon running[/green] (PID {pid})")
-        status_data = read_status()
-        if status_data and "agents" in status_data:
-            for name, info in status_data["agents"].items():
-                state = info.get("state", "unknown")
-                net = info.get("network", info.get("workspace", ""))
-                console.print(f"  [cyan]{name}[/cyan] — {state} {net}")
-        console.print()
-
     if installed_count == 0:
         console.print("Install an agent: [bold]openagents install claude[/bold]")
-    elif ready_count > 0 and not cfg.agents:
-        ready_names = [a["name"] for a in scan if a["ready"]]
-        console.print(f"Create an agent:  [bold]openagents create {ready_names[0]}[/bold]")
-    elif cfg.agents and not pid:
-        console.print("Start agents:     [bold]openagents up[/bold]")
-    elif not pid:
-        not_ready = [a for a in scan if a["installed"] and not a["ready"]]
-        if not_ready:
-            console.print(f"Setup needed:     {not_ready[0]['message']}")
-    console.print()
+    console.print(
+        "\n[dim]To run agents as a workspace daemon, install the Node CLI:\n"
+        "  npm install -g @openagents-org/agent-launcher\n"
+        "then use  [bold]agn up[/bold]  /  [bold]agn down[/bold].[/dim]\n"
+    )
 
 
 def cli_main():

@@ -540,8 +540,16 @@ class AgentNetwork:
                 and getattr(self.config, 'identity_auto_register', True)
             ):
                 try:
-                    from openagents.connect import connect as identity_connect
-                    identity_result = await identity_connect(
+                    # openagents.connect was removed with the legacy daemon.
+                    # Identity auto-register is no longer supported inline;
+                    # users should register via the Node agent-launcher
+                    # or the /v1/agentid/register workspace endpoint.
+                    raise NotImplementedError(
+                        "identity_auto_register has been removed; "
+                        "use the agent-launcher npm package or call "
+                        "/v1/agentid/register directly"
+                    )
+                    identity_result = await identity_connect(  # unreachable
                         name=agent_id,
                         api_key=self.config.identity_api_key,
                         origin=getattr(self.config, 'identity_origin', 'network'),

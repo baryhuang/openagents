@@ -329,3 +329,121 @@ class TestNetworkProfile:
         """Profile for nonexistent network returns 404."""
         resp = client.get("/v1/profile", params={"network": "nonexistent"})
         assert resp.status_code == 404
+
+
+class TestSessionEnforcement:
+    """Session rotation + validation prevents duplicate clients from replying as the same agent."""
+
+    def test_join_returns_session_id(self, client, workspace):
+        """Every join receives a fresh session_id."""
+        resp = client.post("/v1/join", json={
+            "agent_name": "agent-sess1",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data.get("session_id"), "join response must include session_id"
+        assert len(data["session_id"]) >= 16
+
+    def test_rejoin_rotates_session_id(self, client, workspace):
+        """A second join as the same agent rotates the session, invalidating the first."""
+        r1 = client.post("/v1/join", json={
+            "agent_name": "agent-sess2",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        s1 = r1.json()["data"]["session_id"]
+
+        r2 = client.post("/v1/join", json={
+            "agent_name": "agent-sess2",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        s2 = r2.json()["data"]["session_id"]
+
+        assert s1 and s2 and s1 != s2, "rejoin must rotate session_id"
+
+    def test_heartbeat_with_stale_session_is_rejected(self, client, workspace):
+        """Heartbeat with a revoked session_id returns 401 session_revoked."""
+        r1 = client.post("/v1/join", json={
+            "agent_name": "agent-sess3",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        stale_session = r1.json()["data"]["session_id"]
+
+        # Rejoin (rotates the session)
+        client.post("/v1/join", json={
+            "agent_name": "agent-sess3",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+
+        # Old client heartbeats with its now-stale session_id
+        hb = client.post("/v1/heartbeat", json={
+            "agent_name": "agent-sess3",
+            "network": workspace["id"],
+            "session_id": stale_session,
+        })
+        assert hb.status_code == 401
+        assert "session_revoked" in hb.json().get("message", "").lower()
+
+    def test_heartbeat_with_current_session_ok(self, client, workspace):
+        """Heartbeat with the current session_id succeeds."""
+        r = client.post("/v1/join", json={
+            "agent_name": "agent-sess4",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        sid = r.json()["data"]["session_id"]
+
+        hb = client.post("/v1/heartbeat", json={
+            "agent_name": "agent-sess4",
+            "network": workspace["id"],
+            "session_id": sid,
+        })
+        assert hb.status_code == 200
+
+    def test_heartbeat_without_session_id_legacy_ok(self, client, workspace):
+        """Legacy clients that don't send session_id still work during transition."""
+        client.post("/v1/join", json={
+            "agent_name": "agent-sess5",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+
+        hb = client.post("/v1/heartbeat", json={
+            "agent_name": "agent-sess5",
+            "network": workspace["id"],
+            # no session_id
+        })
+        assert hb.status_code == 200
+
+    def test_message_post_with_stale_session_is_rejected(self, client, workspace):
+        """Events posted with a stale session_id are rejected."""
+        r1 = client.post("/v1/join", json={
+            "agent_name": "agent-sess6",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        stale_session = r1.json()["data"]["session_id"]
+
+        # Rejoin (rotates)
+        client.post("/v1/join", json={
+            "agent_name": "agent-sess6",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+
+        # Create a channel so the event has somewhere to go
+        resp = client.post("/v1/events", json={
+            "network": workspace["id"],
+            "type": "workspace.message.posted",
+            "source": "openagents:agent-sess6",
+            "target": "channel/general",
+            "payload": {"content": "ghost reply", "message_type": "chat"},
+            "metadata": {"session_id": stale_session},
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 401
+        assert "session_revoked" in resp.json().get("message", "").lower()

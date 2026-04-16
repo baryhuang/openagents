@@ -49,7 +49,8 @@ class WorkspaceMod(TransformMod):
 # ---------------------------------------------------------------------------
 
 async def _handle_agent_join(event: Event, ctx: PipelineContext) -> Optional[Event]:
-    """network.agent.join → upsert WorkspaceMember, set online."""
+    """network.agent.join → upsert WorkspaceMember, set online, rotate session."""
+    import uuid as _uuid
     from app.models import WorkspaceMember
 
     db = ctx.extra["db"]
@@ -72,15 +73,28 @@ async def _handle_agent_join(event: Event, ctx: PipelineContext) -> Optional[Eve
     server_host = event.payload.get("server_host") if event.payload else None
     working_dir = event.payload.get("working_dir") if event.payload else None
 
+    # Rotate session on every join. Any prior client holding the old
+    # session_id (ghost adapter, duplicate daemon) gets rejected when it
+    # next heartbeats or posts, which tells it to stop.
+    new_session_id = _uuid.uuid4().hex
+
     if existing:
+        prior_session = existing.session_id
         existing.status = "online"
         existing.last_heartbeat = now
+        existing.session_id = new_session_id
+        existing.session_started_at = now
         if agent_type and not existing.agent_type:
             existing.agent_type = agent_type
         if server_host:
             existing.server_host = server_host
         if working_dir:
             existing.working_dir = working_dir
+        if prior_session and prior_session != new_session_id:
+            logger.info(
+                "workspace_mod: rotated session for %s in %s (prior session revoked)",
+                agent_name, workspace.id,
+            )
     else:
         role = event.payload.get("role", "member")
         member = WorkspaceMember(
@@ -92,16 +106,49 @@ async def _handle_agent_join(event: Event, ctx: PipelineContext) -> Optional[Eve
             working_dir=working_dir,
             status="online",
             last_heartbeat=now,
+            session_id=new_session_id,
+            session_started_at=now,
         )
         db.add(member)
 
     workspace.last_activity_at = now
     db.flush()
 
-    # Enrich event metadata with resolved info
+    # Enrich event metadata with resolved info + session_id so the
+    # router returns it to the joining client.
     event.metadata["role"] = existing.role if existing else event.payload.get("role", "member")
     event.metadata["network_id"] = str(workspace.id)
+    event.metadata["session_id"] = new_session_id
     return event
+
+
+def _validate_session(db, workspace_id, agent_name: str, claimed_session: Optional[str]) -> Optional[str]:
+    """Check that claimed_session matches the current session for this agent.
+
+    Returns None if valid or legacy (nothing to enforce), else an error code
+    string ("session_revoked" | "session_missing") that callers can surface.
+
+    Semantics:
+      - stored=None      → legacy member, accept anything (transition)
+      - stored=X, claim=None → legacy client, accept (transition)
+      - stored=X, claim=X → valid
+      - stored=X, claim=Y → revoked: another client joined as this agent
+    """
+    from app.models import WorkspaceMember
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not member or not member.session_id:
+        return None  # legacy or not-yet-joined
+    if not claimed_session:
+        return None  # legacy client that hasn't learned session_id yet
+    if claimed_session != member.session_id:
+        return "session_revoked"
+    return None
 
 
 async def _handle_agent_leave(event: Event, ctx: PipelineContext) -> Optional[Event]:
@@ -188,7 +235,13 @@ async def _handle_agent_remove(event: Event, ctx: PipelineContext) -> Optional[E
 
 
 async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
-    """network.ping → update heartbeat timestamp."""
+    """network.ping → update heartbeat timestamp.
+
+    Validates session_id if the client sent one. A mismatch means a newer
+    client has joined as this agent; we drop this heartbeat and mark the
+    event metadata so the caller can surface session_revoked to the
+    stale client, which will then stop.
+    """
     from app.models import WorkspaceMember
 
     db = ctx.extra["db"]
@@ -196,6 +249,16 @@ async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
     agent_name = event.payload.get("agent_name") if event.payload else None
     if not agent_name:
         return None
+
+    claimed_session = (event.payload or {}).get("session_id")
+    err = _validate_session(db, workspace.id, agent_name, claimed_session)
+    if err == "session_revoked":
+        event.metadata["session_error"] = err
+        logger.info(
+            "workspace_mod: rejected heartbeat for %s in %s (stale session_id)",
+            agent_name, workspace.id,
+        )
+        return event
 
     member = db.execute(
         select(WorkspaceMember).where(
@@ -592,6 +655,24 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     payload = event.payload or {}
     content = payload.get("content", "")
     message_type = payload.get("message_type", "chat")
+
+    # Reject posts from stale agent sessions. If the sender is an agent
+    # and its claimed session_id does not match the current one in
+    # WorkspaceMember, drop the event and flag it so the router can
+    # return session_revoked to the client.
+    if event.source and event.source.startswith("openagents:"):
+        sender = event.source[len("openagents:"):]
+        claimed_session = event.metadata.get("session_id") if event.metadata else None
+        err = _validate_session(db, workspace.id, sender, claimed_session)
+        if err == "session_revoked":
+            event.metadata["session_error"] = err
+            logger.info(
+                "workspace_mod: rejected message from %s in %s (stale session_id)",
+                sender, workspace.id,
+            )
+            # Return the event with the error flag but no content changes;
+            # the router checks session_error and returns an error response.
+            return event
 
     # "thinking" and "status" messages are intermediate agent output —
     # they should NOT trigger other agents.

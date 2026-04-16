@@ -106,6 +106,12 @@ class WorkspaceMember(Base):
     status = Column(Text, default="offline")         # online | offline
     last_heartbeat = Column(DateTime(timezone=True), nullable=True)
     joined_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    # Opaque token assigned on each /v1/join. Subsequent heartbeats and
+    # message posts must carry this id; a newer join rotates it so any
+    # stale client (e.g. ghost adapter, second daemon on same config)
+    # posting with the old id gets rejected and stops.
+    session_id = Column(Text, nullable=True)
+    session_started_at = Column(DateTime(timezone=True), nullable=True)
 
     workspace = relationship("Workspace", back_populates="members")
 

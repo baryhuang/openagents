@@ -30,7 +30,6 @@ from openagents.client.cli_helpers import (
     validate_api_key,
 )
 from openagents.launchers.network_launcher import launch_network
-from openagents.launchers.terminal_console import launch_console
 
 network_app = typer.Typer(
     name="network",
@@ -741,28 +740,6 @@ def network_list(
         table.add_row("No networks found", "—")
     
     console.print(table)
-
-
-@network_app.command("interact")
-def network_interact(
-    network: Optional[str] = typer.Option(None, "--network", "-n", help="Network ID to connect to"),
-    host: str = typer.Option("localhost", "--host", "-h", help="Server host address"),
-    port: int = typer.Option(8570, "--port", "-p", help="Server port"),
-    agent_id: Optional[str] = typer.Option(None, "--id", help="Agent ID"),
-):
-    """💬 Connect to a network interactively"""
-    console.print(f"[bold blue]🔗 Connecting to network at {host}:{port}[/bold blue]")
-    
-    # Validate that either host or network-id is provided
-    if not host and not network:
-        console.print("[red]❌ Either --host or --network must be provided[/red]")
-        raise typer.Exit(1)
-
-    # If network-id is provided but host is not, use a default host
-    if network and not host:
-        host = "localhost"
-
-    launch_console(host, port, agent_id, network)
 
 
 @network_app.command("publish")

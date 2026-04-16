@@ -80,17 +80,13 @@ def create_mcp_server(
                       "workspace_browser_type", "workspace_browser_screenshot", "workspace_browser_snapshot",
                       "workspace_browser_list_tabs", "workspace_browser_close",
                       "workspace_browser_press_key", "workspace_browser_evaluate"}
-    _TUNNEL_TOOLS = {"tunnel_expose", "tunnel_close", "tunnel_list"}
-
-    # Active tunnels: port → Tunnel instance
-    _active_tunnels: dict = {}
+    # Tunnel tools were removed along with the legacy Python daemon.
+    _TUNNEL_TOOLS: set = set()
 
     def _is_tool_enabled(tool_name: str) -> bool:
         if "files" in _disabled and tool_name in _FILE_TOOLS:
             return False
         if "browser" in _disabled and tool_name in _BROWSER_TOOLS:
-            return False
-        if "tunnel" in _disabled and tool_name in _TUNNEL_TOOLS:
             return False
         return True
 
@@ -306,48 +302,6 @@ def create_mcp_server(
                         "tab_id": {"type": "string", "description": "Tab ID to close"},
                     },
                     "required": ["tab_id"],
-                },
-            ),
-            # ── Tunnel tools ──
-            types.Tool(
-                name="tunnel_expose",
-                description=(
-                    "Expose a local port as a public URL via tunnel. "
-                    "Use this to let workspace users preview a local dev server "
-                    "(e.g. React, Next.js, Flask running on localhost). "
-                    "Returns the public URL."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "port": {
-                            "type": "integer",
-                            "description": "Local port to expose (e.g. 3000, 8080)",
-                        },
-                    },
-                    "required": ["port"],
-                },
-            ),
-            types.Tool(
-                name="tunnel_close",
-                description="Close a tunnel that was previously opened with tunnel_expose.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "port": {
-                            "type": "integer",
-                            "description": "Port of the tunnel to close",
-                        },
-                    },
-                    "required": ["port"],
-                },
-            ),
-            types.Tool(
-                name="tunnel_list",
-                description="List all active tunnels.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {},
                 },
             ),
         ]
@@ -622,61 +576,6 @@ def create_mcp_server(
                     workspace_id=workspace_id, token=token, tab_id=tab_id,
                 )
                 return [types.TextContent(type="text", text=f"Browser tab closed: {tab_id}")]
-
-            # ── Tunnel tool handlers ──
-
-            elif name == "tunnel_expose":
-                from openagents.tunnel import Tunnel, is_available
-
-                port = arguments.get("port", 0)
-                if not port:
-                    return [types.TextContent(type="text", text="Error: port is required")]
-
-                if port in _active_tunnels:
-                    existing = _active_tunnels[port]
-                    return [types.TextContent(
-                        type="text",
-                        text=f"Tunnel already open for port {port}: {existing.url}",
-                    )]
-
-                if not is_available():
-                    return [types.TextContent(
-                        type="text",
-                        text="Error: cloudflared is not installed. Install it:\n"
-                             "  macOS:  brew install cloudflared\n"
-                             "  Linux:  curl -fsSL https://github.com/cloudflare/cloudflared/"
-                             "releases/latest/download/cloudflared-linux-amd64 "
-                             "-o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared",
-                    )]
-
-                tunnel = Tunnel(port)
-                try:
-                    url = await tunnel.start()
-                except RuntimeError as exc:
-                    return [types.TextContent(type="text", text=f"Error: {exc}")]
-                _active_tunnels[port] = tunnel
-
-                return [types.TextContent(
-                    type="text",
-                    text=f"Tunnel open: localhost:{port} → {url}",
-                )]
-
-            elif name == "tunnel_close":
-                port = arguments.get("port", 0)
-                tunnel = _active_tunnels.pop(port, None)
-                if not tunnel:
-                    return [types.TextContent(type="text", text=f"No tunnel open for port {port}")]
-                await tunnel.stop()
-                return [types.TextContent(type="text", text=f"Tunnel closed for port {port}")]
-
-            elif name == "tunnel_list":
-                if not _active_tunnels:
-                    return [types.TextContent(type="text", text="No active tunnels.")]
-                lines = []
-                for port, tunnel in _active_tunnels.items():
-                    status = "running" if tunnel.is_running else "stopped"
-                    lines.append(f"- localhost:{port} → {tunnel.url} ({status})")
-                return [types.TextContent(type="text", text="\n".join(lines))]
 
             else:
                 return [types.TextContent(type="text", text=f"Unknown tool: {name}")]

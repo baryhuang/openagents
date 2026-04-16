@@ -25,6 +25,14 @@ IDENTITY_DIR = Path.home() / ".openagents"
 IDENTITY_FILE = IDENTITY_DIR / "identity.json"
 
 
+class SessionRevokedError(ConnectionError):
+    """Raised when the workspace rejects a request because our session_id
+    has been revoked by a newer /v1/join as the same agent. Callers
+    should stop the adapter rather than retry.
+    """
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -269,17 +277,32 @@ class WorkspaceClient:
 
     async def heartbeat(
         self, workspace_id: str, agent_name: str, token: str,
+        session_id: Optional[str] = None,
     ) -> dict:
-        """Send heartbeat via POST /v1/heartbeat."""
+        """Send heartbeat via POST /v1/heartbeat.
+
+        If ``session_id`` is given, the server validates it against the
+        current session for this agent and returns 401 session_revoked
+        if a newer client has taken over. This is surfaced as
+        SessionRevokedError so callers can stop the adapter.
+        """
         import aiohttp
+        body: Dict[str, Any] = {"agent_name": agent_name, "network": workspace_id}
+        if session_id:
+            body["session_id"] = session_id
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.endpoint}/v1/heartbeat",
-                json={"agent_name": agent_name, "network": workspace_id},
+                json=body,
                 headers=self._ws_headers(token),
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 data = await resp.json()
+                if resp.status >= 400:
+                    msg = data.get("message", f"HTTP {resp.status}")
+                    if "session_revoked" in str(msg).lower():
+                        raise SessionRevokedError(msg)
+                    raise ConnectionError(f"Heartbeat failed: {msg}")
                 return data.get("data", data)
 
     async def disconnect(
@@ -310,8 +333,14 @@ class WorkspaceClient:
         message_type: str = "chat",
         metadata: Optional[dict] = None,
         attachments: Optional[list] = None,
+        session_id: Optional[str] = None,
     ) -> dict:
-        """Send message via POST /v1/events (workspace.message.posted event)."""
+        """Send message via POST /v1/events (workspace.message.posted event).
+
+        If ``session_id`` is given, it's embedded in event metadata; the
+        server rejects the post if it doesn't match the current session
+        for this agent (SessionRevokedError).
+        """
         import aiohttp
         source_prefix = "openagents" if sender_type == "agent" else "human"
         source = f"{source_prefix}:{sender_name}" if sender_name else f"{source_prefix}:unknown"
@@ -323,12 +352,16 @@ class WorkspaceClient:
         if attachments:
             event_payload["attachments"] = attachments
 
+        merged_meta: Dict[str, Any] = dict(metadata or {})
+        if session_id:
+            merged_meta["session_id"] = session_id
+
         event_body: Dict[str, Any] = {
             "type": "workspace.message.posted",
             "source": source,
             "target": f"channel/{channel_name}",
             "payload": event_payload,
-            "metadata": metadata or {},
+            "metadata": merged_meta,
             "network": workspace_id,
         }
 
@@ -342,6 +375,8 @@ class WorkspaceClient:
                 data = await resp.json()
                 if resp.status not in (200, 201):
                     msg = data.get("message", f"HTTP {resp.status}")
+                    if "session_revoked" in str(msg).lower():
+                        raise SessionRevokedError(msg)
                     raise ConnectionError(f"Failed to send message: {msg}")
                 result = data.get("data", data)
                 # Convert event response to message-compatible dict

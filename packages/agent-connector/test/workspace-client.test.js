@@ -2,7 +2,8 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { WorkspaceClient } = require('../src/workspace-client');
+const { WorkspaceClient, SessionRevokedError } = require('../src/workspace-client');
+const http = require('http');
 
 describe('WorkspaceClient', () => {
   it('constructs with default endpoint', () => {
@@ -50,5 +51,56 @@ describe('WorkspaceClient', () => {
       .replace('workspace-endpoint', 'workspace')
       .replace('/v1', '');
     assert.equal(frontendUrl, 'https://workspace.openagents.org');
+  });
+
+  it('SessionRevokedError is thrown when server returns session_revoked message', async () => {
+    // Spin up a one-shot HTTP server that returns the error shape.
+    const server = http.createServer((_req, res) => {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        code: 401,
+        message: 'session_revoked: another client is now running as this agent',
+      }));
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = server.address().port;
+    try {
+      const client = new WorkspaceClient(`http://127.0.0.1:${port}`);
+      let caught = null;
+      try {
+        await client._post('/v1/heartbeat', { agent_name: 'x', network: 'n', session_id: 'stale' });
+      } catch (e) {
+        caught = e;
+      }
+      assert.ok(caught, 'expected error to be thrown');
+      assert.ok(caught instanceof SessionRevokedError, 'expected SessionRevokedError');
+      assert.equal(caught.code, 'session_revoked');
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  it('sendEvent embeds session_id in event.metadata when provided', () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    // Capture what _post receives by stubbing it
+    let capturedBody = null;
+    client._post = async (_path, body) => { capturedBody = body; return { data: {} }; };
+    return client.sendEvent('ws-1', { type: 't', source: 's', target: 'ch' }, 'tok', 'sess-xyz')
+      .then(() => {
+        assert.equal(capturedBody.metadata.session_id, 'sess-xyz');
+        assert.equal(capturedBody.network, 'ws-1');
+      });
+  });
+
+  it('heartbeat includes session_id when provided', () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedBody = null;
+    client._post = async (_path, body) => { capturedBody = body; return { data: {} }; };
+    return client.heartbeat('ws-1', 'bary-bot', 'tok', 'sess-abc')
+      .then(() => {
+        assert.equal(capturedBody.agent_name, 'bary-bot');
+        assert.equal(capturedBody.network, 'ws-1');
+        assert.equal(capturedBody.session_id, 'sess-abc');
+      });
   });
 });

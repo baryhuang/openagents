@@ -19,8 +19,13 @@ from openagents.adapters.workspace_prompt import (
     build_opencode_skill_md,
     build_opencode_system_prompt,
 )
-from openagents.client.daemon_config import AGENTS_DIR
 from openagents.workspace_client import DEFAULT_ENDPOINT
+from pathlib import Path as _Path
+
+# Per-agent home directory used by the opencode adapter to isolate sessions.
+# (Used to live in openagents.client.daemon_config; hoisted here since the
+# daemon was removed but this adapter still runs embedded.)
+AGENTS_DIR = _Path.home() / ".openagents" / "agents"
 
 logger = logging.getLogger(__name__)
 

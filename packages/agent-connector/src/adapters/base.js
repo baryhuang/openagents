@@ -17,7 +17,7 @@
 
 'use strict';
 
-const { WorkspaceClient } = require('../workspace-client');
+const { WorkspaceClient, SessionRevokedError } = require('../workspace-client');
 const { generateSessionTitle, SESSION_DEFAULT_RE } = require('./utils');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
@@ -43,6 +43,7 @@ class BaseAdapter {
     this.client = new WorkspaceClient(this.endpoint);
     this._lastEventId = null;
     this._running = false;
+    this._sessionId = null;  // issued by server on /v1/join; used to prove liveness
     this._processedIds = new Set();
     this._titledSessions = new Set();
     this._mode = 'execute';
@@ -65,13 +66,14 @@ class BaseAdapter {
 
     // Announce agent to workspace
     try {
-      await this.client.joinNetwork(this.agentName, this.token, {
+      const joinResult = await this.client.joinNetwork(this.agentName, this.token, {
         network: this.workspaceId,
         agentType: this.agentType || 'agent',
         serverHost: require('os').hostname(),
         workingDir: this.workingDir || process.cwd(),
       });
-      this._log(`Joined workspace ${this.workspaceId}`);
+      this._sessionId = (joinResult && joinResult.session_id) || null;
+      this._log(`Joined workspace ${this.workspaceId}${this._sessionId ? ` (session ${this._sessionId.slice(0, 8)})` : ''}`);
     } catch (e) {
       this._log(`Warning: join failed: ${e.message}`);
     }
@@ -130,8 +132,13 @@ class BaseAdapter {
 
   async _heartbeat() {
     try {
-      await this.client.heartbeat(this.workspaceId, this.agentName, this.token);
+      await this.client.heartbeat(this.workspaceId, this.agentName, this.token, this._sessionId);
     } catch (e) {
+      if (e instanceof SessionRevokedError) {
+        this._log(`SESSION REVOKED: another client joined as '${this.agentName}'. Stopping adapter.`);
+        this._running = false;
+        return;
+      }
       this._log(`Heartbeat failed: ${e.message}`);
     }
   }
@@ -312,8 +319,11 @@ class BaseAdapter {
         senderName: this.agentName,
         messageType: 'status',
         metadata: { agent_mode: this._mode },
+        sessionId: this._sessionId,
       });
-    } catch {}
+    } catch (e) {
+      if (e instanceof SessionRevokedError) this._onSessionRevoked();
+    }
   }
 
   async sendThinking(channel, content) {
@@ -323,15 +333,27 @@ class BaseAdapter {
         senderName: this.agentName,
         messageType: 'thinking',
         metadata: { agent_mode: this._mode },
+        sessionId: this._sessionId,
       });
-    } catch {}
+    } catch (e) {
+      if (e instanceof SessionRevokedError) this._onSessionRevoked();
+    }
   }
 
   async sendResponse(channel, content) {
-    await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
-      senderType: 'agent',
-      senderName: this.agentName,
-    });
+    try {
+      await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
+        senderType: 'agent',
+        senderName: this.agentName,
+        sessionId: this._sessionId,
+      });
+    } catch (e) {
+      if (e instanceof SessionRevokedError) {
+        this._onSessionRevoked();
+        return;
+      }
+      throw e;
+    }
   }
 
   async sendError(channel, error) {
@@ -339,8 +361,16 @@ class BaseAdapter {
       await this.client.sendMessage(this.workspaceId, channel, this.token, error, {
         senderType: 'agent',
         senderName: this.agentName,
+        sessionId: this._sessionId,
       });
-    } catch {}
+    } catch (e) {
+      if (e instanceof SessionRevokedError) this._onSessionRevoked();
+    }
+  }
+
+  _onSessionRevoked() {
+    this._log(`SESSION REVOKED: another client joined as '${this.agentName}'. Stopping adapter.`);
+    this._running = false;
   }
 
   // ------------------------------------------------------------------

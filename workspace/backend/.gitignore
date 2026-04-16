@@ -1,0 +1,4 @@
+.vercel
+.env
+.env.*
+railway-env.json

@@ -22,6 +22,30 @@ logger = logging.getLogger(__name__)
 _INSTALLED_MARKERS_PATH = Path.home() / ".openagents" / "installed_agents.json"
 
 
+def _load_agent_env_from_yaml(agent_name: str) -> dict:
+    """Read an agent's env block from ``~/.openagents/daemon.yaml``.
+
+    The Python daemon was removed, but installers still record API keys
+    in that file and the Node ``agent-launcher`` uses it. We just need
+    the env dict for readiness detection.
+    """
+    try:
+        import yaml as _yaml  # type: ignore
+    except ImportError:
+        return {}
+    path = Path.home() / ".openagents" / "daemon.yaml"
+    if not path.exists():
+        return {}
+    try:
+        data = _yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    for agent in data.get("agents") or []:
+        if agent.get("name") == agent_name:
+            return agent.get("env") or {}
+    return {}
+
+
 def _load_installed_markers() -> set:
     """Load the set of agent names that have been explicitly installed."""
     try:
@@ -361,10 +385,11 @@ def _make_plugin_from_yaml(data: dict):
             saved_key = check_cfg.get("saved_env_key")
             if saved_key and os.environ.get(saved_key):
                 return True, f"Ready (API key set)"
-            # Check saved env config
+            # Check saved env config (legacy daemon.yaml env block — the
+            # Python daemon has been removed; readers can still inspect
+            # the file for API-key presence).
             if saved_key:
-                from openagents.client.daemon_config import load_agent_env
-                saved = load_agent_env(data["name"])
+                saved = _load_agent_env_from_yaml(data["name"])
                 if saved.get(saved_key):
                     model = saved.get("LLM_MODEL", "default")
                     return True, f"Ready ({model})"
