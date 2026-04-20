@@ -28,11 +28,12 @@ if _is_sqlite:
 _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite
-    # 6 workers × (4 + 6) = 60 max DB connections. Supabase plan is 120
-    # so we leave room for other clients (admin, migrations, one-off
-    # queries). pool_recycle=300s ensures idle-in-transaction connections
-    # get cycled out so stuck sessions don't pile up.
-    else {"pool_pre_ping": True, "pool_size": 4, "max_overflow": 6, "pool_recycle": 300, "pool_timeout": 10, "poolclass": QueuePool}
+    # 8 workers × (6 + 8) = 112 max DB connections, under Supabase's
+    # 120 limit with small headroom for admin/migrations/one-off queries.
+    # pool_recycle=300s cycles stuck idle-in-transaction connections.
+    # pool_timeout=10s fails fast so uvicorn --limit-concurrency can
+    # propagate back-pressure to the client instead of queuing forever.
+    else {"pool_pre_ping": True, "pool_size": 6, "max_overflow": 8, "pool_recycle": 300, "pool_timeout": 10, "poolclass": QueuePool}
 )
 
 # PgBouncer (e.g. Supabase port 6543) doesn't support prepared statements
