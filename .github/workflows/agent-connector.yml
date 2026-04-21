@@ -30,6 +30,9 @@ jobs:
 
     - name: Run tests
       working-directory: packages/agent-connector
+      # shell: bash ensures the `test/*.test.js` glob is expanded by bash
+      # even on Windows runners (PowerShell doesn't expand globs).
+      shell: bash
       run: node --test test/*.test.js
 
   publish:
