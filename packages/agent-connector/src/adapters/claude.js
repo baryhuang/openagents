@@ -272,71 +272,55 @@ class ClaudeAdapter extends BaseAdapter {
     if (this.disabledModules.has('files')) mcpArgs.push('--disable-files');
     if (this.disabledModules.has('browser')) mcpArgs.push('--disable-browser');
 
-    // Find openagents binary (multi-tier)
-    let oaBin = null;
-    const home3 = os.homedir();
-    // Tier 0: Check all isolated runtime prefixes for openagents binary
-    const oaExt = IS_WINDOWS ? '.cmd' : '';
-    const runtimesRoot = path.join(home3, '.openagents', 'runtimes');
-    try {
-      for (const d of fs.readdirSync(runtimesRoot, { withFileTypes: true })) {
-        if (d.isDirectory()) {
-          const candidate = path.join(runtimesRoot, d.name, 'node_modules', '.bin', `openagents${oaExt}`);
-          if (fs.existsSync(candidate)) { oaBin = candidate; break; }
+    // Resolve the MCP server entry point. Prefer the sibling bin inside this
+    // very package — it's guaranteed to exist whenever claude.js is executing,
+    // so it never falls through to a broken PATH lookup. If Claude Code can't
+    // spawn the MCP server, it silently hides every workspace tool and the
+    // agent reports "workspace_read_file isn't in my tool set".
+    let mcpCommand = this._findNodeBin();
+    let mcpFinalArgs = mcpArgs;
+    const siblingBin = path.resolve(__dirname, '..', '..', 'bin', 'agent-connector.js');
+    if (fs.existsSync(siblingBin)) {
+      mcpFinalArgs = [siblingBin, ...mcpArgs];
+    } else {
+      // Fallback: search installed locations (older layouts, global installs)
+      let oaBin = null;
+      const home3 = os.homedir();
+      const oaExt = IS_WINDOWS ? '.cmd' : '';
+      const runtimesRoot = path.join(home3, '.openagents', 'runtimes');
+      try {
+        for (const d of fs.readdirSync(runtimesRoot, { withFileTypes: true })) {
+          if (d.isDirectory()) {
+            const candidate = path.join(runtimesRoot, d.name, 'node_modules', '.bin', `openagents${oaExt}`);
+            if (fs.existsSync(candidate)) { oaBin = candidate; break; }
+          }
+        }
+      } catch {}
+      if (!oaBin) {
+        const oaPortable = path.join(home3, '.openagents', 'nodejs', 'node_modules', '.bin', `openagents${oaExt}`);
+        if (fs.existsSync(oaPortable)) oaBin = oaPortable;
+      }
+      if (!oaBin) try {
+        if (IS_WINDOWS) {
+          oaBin = execSync('where openagents.cmd 2>nul || where openagents.exe 2>nul || where openagents 2>nul', {
+            encoding: 'utf-8', timeout: 5000,
+          }).split(/\r?\n/)[0].trim();
+        } else {
+          oaBin = execSync('which openagents', { encoding: 'utf-8', timeout: 5000 }).trim();
+        }
+      } catch {}
+      if (!oaBin) {
+        this._log('Could not find openagents binary — MCP tools may not be available');
+        mcpCommand = 'openagents';
+      } else {
+        const resolved = this._resolveToNodeCmd(oaBin);
+        if (resolved) {
+          mcpCommand = resolved[0];
+          mcpFinalArgs = [resolved[1], ...mcpArgs];
+        } else {
+          mcpCommand = oaBin;
         }
       }
-    } catch {}
-    // Tier 0b: Legacy portable install
-    if (!oaBin) {
-      const oaPortable = path.join(home3, '.openagents', 'nodejs', 'node_modules', '.bin', `openagents${oaExt}`);
-      if (fs.existsSync(oaPortable)) oaBin = oaPortable;
-    }
-    // Tier 1: PATH
-    if (!oaBin) try {
-      if (IS_WINDOWS) {
-        oaBin = execSync('where openagents.cmd 2>nul || where openagents.exe 2>nul || where openagents 2>nul', {
-          encoding: 'utf-8', timeout: 5000,
-        }).split(/\r?\n/)[0].trim();
-      } else {
-        oaBin = execSync('which openagents', { encoding: 'utf-8', timeout: 5000 }).trim();
-      }
-    } catch {}
-    // Tier 2: Next to Node.js
-    if (!oaBin) {
-      const nodeBinDir2 = path.dirname(process.execPath);
-      const oaExt = IS_WINDOWS ? '.cmd' : '';
-      const nearNode2 = path.join(nodeBinDir2, `openagents${oaExt}`);
-      if (fs.existsSync(nearNode2)) oaBin = nearNode2;
-    }
-    // Tier 3: Common locations
-    if (!oaBin) {
-      const home2 = os.homedir();
-      const oaCandidates = IS_WINDOWS ? [
-        path.join(process.env.APPDATA || '', 'npm', 'openagents.cmd'),
-      ] : [
-        path.join(home2, '.openagents', 'npm-global', 'bin', 'openagents'),
-        path.join(home2, '.local', 'bin', 'openagents'),
-        path.join(home2, '.npm-global', 'bin', 'openagents'),
-        '/opt/homebrew/bin/openagents',
-        '/usr/local/bin/openagents',
-      ];
-      for (const c of oaCandidates) {
-        if (fs.existsSync(c)) { oaBin = c; break; }
-      }
-    }
-    if (!oaBin) {
-      oaBin = 'openagents';
-      this._log('Could not find openagents binary — MCP tools may not be available');
-    }
-
-    // Resolve shim/symlink to node + JS entry point for MCP server
-    // (.cmd shims and #!/usr/bin/env node shebangs both fail as MCP commands)
-    let mcpCommand = oaBin;
-    let mcpFinalArgs = mcpArgs;
-    const mcpResolved = this._resolveToNodeCmd(oaBin);
-    if (mcpResolved) {
-      mcpCommand = mcpResolved[0];
-      mcpFinalArgs = [mcpResolved[1], ...mcpArgs];
     }
 
     const mcpConfig = {
