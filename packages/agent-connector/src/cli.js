@@ -459,6 +459,28 @@ async function cmdVersion() {
   print(`${pkg.name} v${pkg.version}`);
 }
 
+async function cmdUpdate() {
+  const { checkForUpdate, runUpdate, currentVersion } = require('./update-check');
+  const info = await checkForUpdate();
+  if (!info) {
+    print('Could not reach the npm registry. Check your network.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!info.isNewer) {
+    print(`Already on the latest version (${currentVersion()}).`);
+    return;
+  }
+  print(`Updating ${info.current} → ${info.latest}...`);
+  const ok = runUpdate();
+  if (!ok) {
+    print('Update failed.');
+    process.exitCode = 1;
+    return;
+  }
+  print(`Updated to ${info.latest}.`);
+}
+
 async function cmdHelp() {
   print(`Usage: agn <command> [options]
 
@@ -485,6 +507,7 @@ Commands:
   workspace join <token>      Join workspace with token
   workspace list              List configured workspaces
   mcp-server                  Start MCP server (stdio) for workspace tools
+  update                      Upgrade launcher to the latest npm release
   version                     Show version
   help                        Show this help
 
@@ -502,6 +525,26 @@ async function main() {
 
   if (cmd === 'help' || flags.help) { await cmdHelp(); return; }
   if (cmd === 'version' || flags.version) { await cmdVersion(); return; }
+
+  // Check for a newer launcher version and offer to install it. Skip for:
+  //   - mcp-server: JSON-RPC subprocess spawned by Claude Code
+  //   - up --foreground: the backgrounded daemon child
+  //   - tui / auto-TUI: interactive UI manages its own rendering
+  //   - update: already updating; avoid recursion
+  const skipUpdateCheck =
+    cmd === 'mcp-server' ||
+    (cmd === 'up' && flags.foreground) ||
+    cmd === 'tui' ||
+    cmd === 'update' ||
+    flags['no-update-check'] ||
+    process.env.OPENAGENTS_SKIP_UPDATE_CHECK === '1' ||
+    (cmd === 'status' && process.argv.length <= 2 && process.stdin.isTTY);
+  if (!skipUpdateCheck) {
+    try {
+      const { notifyAndMaybeUpdate } = require('./update-check');
+      await notifyAndMaybeUpdate();
+    } catch {}
+  }
 
   const connector = getConnector(flags);
 
@@ -542,6 +585,7 @@ async function main() {
     workspace: () => cmdWorkspace(connector, flags, positional),
     env: () => cmdEnv(connector, flags, positional),
     'test-llm': () => cmdTestLLM(connector, flags, positional),
+    update: () => cmdUpdate(),
     'mcp-server': () => {
       const { runMcpServer } = require('./mcp-server');
       const workspaceId = flags['workspace-id'] || process.env.OPENAGENTS_WORKSPACE_ID;
