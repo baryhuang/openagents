@@ -535,5 +535,37 @@
       "linux": "pip install sweagent",
       "windows": "pip install sweagent"
     }
+  },
+  {
+    "name": "hermes",
+    "label": "Hermes Agent",
+    "description": "Nous Hermes Agent — self-improving AI with tools, profiles, memory, and messaging",
+    "homepage": "https://github.com/NousResearch/hermes-agent",
+    "tags": [
+      "coding",
+      "tools",
+      "orchestration",
+      "profiles"
+    ],
+    "featured": true,
+    "order": 6,
+    "support": { "install": true, "workspace": true, "collaboration": true },
+    "builtin": true,
+    "install": {
+      "binary": "hermes",
+      "requires": ["python3"],
+      "macos": "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash",
+      "linux": "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash",
+      "windows": "echo 'Hermes requires WSL2 on Windows — see https://github.com/NousResearch/hermes-agent'"
+    },
+    "launch": {
+      "args": []
+    },
+    "check_ready": {
+      "creds_file": "~/.hermes/config.yaml",
+      "status_command": "hermes status",
+      "login_command": "hermes setup",
+      "not_ready_message": "Hermes not configured — run: hermes setup"
+    }
   }
 ]

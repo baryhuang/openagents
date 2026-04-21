@@ -288,6 +288,7 @@ detect_agent "Gemini CLI"     gemini
 detect_agent "Copilot CLI"    copilot
 detect_agent "Amp"            amp
 detect_agent "OpenCode"       opencode
+detect_agent "Hermes Agent"   hermes
 
 # =========================================================================
 # Done
