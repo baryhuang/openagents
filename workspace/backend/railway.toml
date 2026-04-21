@@ -1,5 +1,11 @@
 [build]
-dockerfilePath = "Dockerfile"
+# NOTE: filename is intentionally NOT "Dockerfile". The repo also has a
+# /Dockerfile (for the full OpenAgents Network + Studio image) and we
+# observed Railway picking up that one instead of workspace/backend's
+# local Dockerfile, then failing because the build context (rootDirectory
+# = /workspace/backend) doesn't contain docker-entrypoint.sh / sdk/src/.
+# Using a unique name removes the ambiguity.
+dockerfilePath = "backend.Dockerfile"
 watchPatterns = ["**"]
 
 [deploy]
