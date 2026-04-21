@@ -28,12 +28,16 @@ if _is_sqlite:
 _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite
-    # 8 workers × (6 + 8) = 112 max DB connections, under Supabase's
-    # 120 limit with small headroom for admin/migrations/one-off queries.
+    # 4 workers × (20 + 5) = 100 max DB connections, under Supabase's
+    # ~120 limit with headroom for admin/migrations/one-off queries.
+    # Previous config was 8 workers × 14 conns = 112; but per-worker
+    # pools of 14 were saturating under poll load (40+ agents × 2s poll
+    # interval), causing "QueuePool limit reached" and 502s. Fewer workers
+    # with bigger per-worker pools gives each worker enough connections
+    # to cover its FastAPI threadpool (40 threads default) concurrency.
     # pool_recycle=300s cycles stuck idle-in-transaction connections.
-    # pool_timeout=10s fails fast so uvicorn --limit-concurrency can
-    # propagate back-pressure to the client instead of queuing forever.
-    else {"pool_pre_ping": True, "pool_size": 6, "max_overflow": 8, "pool_recycle": 300, "pool_timeout": 10, "poolclass": QueuePool}
+    # pool_timeout=30s absorbs short bursts without failing the request.
+    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 5, "pool_recycle": 300, "pool_timeout": 30, "poolclass": QueuePool}
 )
 
 # PgBouncer (e.g. Supabase port 6543) doesn't support prepared statements
