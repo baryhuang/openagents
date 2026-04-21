@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for psycopg2 and Playwright
+# System deps for psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -11,8 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers (chromium only to keep image small)
-RUN playwright install --with-deps chromium
+# Production uses Browserbase (cloud) via BROWSERBASE_API_KEY — no local
+# Chromium is needed in the runtime image. The Playwright Python SDK is
+# still installed (from requirements.txt) so `from playwright.async_api
+# import async_playwright` works; only the ~620MB browser binaries are
+# skipped. For local-browser dev mode, run `playwright install chromium`
+# outside the container or in a dev-specific image.
 
 # Copy application code
 COPY . .
