@@ -496,6 +496,7 @@ function setupIPC() {
   // Agent CRUD
   ipcMain.handle('agents:list', () => agentManager.getAgents());
   ipcMain.handle('agents:supported-types', () => agentManager.getSupportedAgentTypes());
+  ipcMain.handle('agents:core-info', () => agentManager.getCoreInfo());
   ipcMain.handle('agents:add', (_e, config) => agentManager.addAgent(config));
   ipcMain.handle('agents:remove', (_e, name) => agentManager.removeAgent(name));
   ipcMain.handle('agents:update', (_e, name, config) => agentManager.updateAgent(name, config));
@@ -536,6 +537,8 @@ function setupIPC() {
   ipcMain.handle('agents:env-fields', (_e, agentType) => agentManager.getEnvFields(agentType));
   ipcMain.handle('agents:get-env', (_e, agentType) => agentManager.getAgentEnv(agentType));
   ipcMain.handle('agents:save-env', (_e, agentType, env) => agentManager.saveAgentEnv(agentType, env));
+  ipcMain.handle('agents:get-instance-env', (_e, agentName) => agentManager.getAgentInstanceEnv(agentName));
+  ipcMain.handle('agents:save-instance-env', (_e, agentName, env) => agentManager.saveAgentInstanceEnv(agentName, env));
   ipcMain.handle('agents:test-llm', (_e, env) => agentManager.testLLM(env));
   ipcMain.handle('agents:signal-reload', () => agentManager.signalReload());
 

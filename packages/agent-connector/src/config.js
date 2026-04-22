@@ -50,13 +50,14 @@ class Config {
     fs.writeFileSync(this.configFile, serializeYaml(config), 'utf-8');
   }
 
-  addAgent({ name, type, role, path: agentPath }) {
+  addAgent({ name, type, role, path: agentPath, env }) {
     const config = this.load();
     if (config.agents.some((a) => a.name === name)) {
       throw new Error(`Agent '${name}' already exists`);
     }
     const entry = { name, type: type || 'openclaw', role: role || 'worker' };
     if (agentPath) entry.path = agentPath;
+    if (env && Object.keys(env).length > 0) entry.env = env;
     config.agents.push(entry);
     this.save(config);
     return entry;
@@ -78,6 +79,27 @@ class Config {
     Object.assign(agent, updates);
     this.save(config);
     return agent;
+  }
+
+  updateAgentEnv(name, env) {
+    const config = this.load();
+    const agent = config.agents.find((a) => a.name === name);
+    if (!agent) throw new Error(`Agent '${name}' not found`);
+
+    const merged = { ...(agent.env || {}), ...(env || {}) };
+    const cleaned = {};
+    for (const [key, value] of Object.entries(merged)) {
+      if (value !== null && value !== undefined && value !== '') cleaned[key] = value;
+    }
+
+    if (Object.keys(cleaned).length > 0) {
+      agent.env = cleaned;
+    } else {
+      delete agent.env;
+    }
+
+    this.save(config);
+    return agent.env || {};
   }
 
   setAgentNetwork(agentName, networkSlug) {

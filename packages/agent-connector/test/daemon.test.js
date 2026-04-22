@@ -55,6 +55,28 @@ describe('Daemon', () => {
     assert.equal(result.OPENAI_API_KEY, 'sk-test');
   });
 
+  it('_buildAgentEnv lets per-agent env override type defaults', () => {
+    const config = new Config(tmpDir);
+    const env = new EnvManager(tmpDir);
+    const reg = new Registry(tmpDir);
+    const daemon = new Daemon(config, env, reg);
+
+    env.save('opencode', {
+      LLM_BASE_URL: 'https://openrouter.ai/api/v1',
+      LLM_MODEL: 'default-model',
+    });
+
+    const result = daemon._buildAgentEnv({
+      name: 'agent-a',
+      type: 'opencode',
+      env: { LLM_MODEL: 'custom-model' },
+    });
+
+    assert.equal(result.LLM_BASE_URL, 'https://openrouter.ai/api/v1');
+    assert.equal(result.LLM_MODEL, 'custom-model');
+    assert.equal(result.OPENCODE_MODEL, 'custom-model');
+  });
+
   it('_getLaunchCommand returns command from registry', () => {
     const config = new Config(tmpDir);
     const env = new EnvManager(tmpDir);

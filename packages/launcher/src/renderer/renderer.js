@@ -137,7 +137,7 @@ async function refreshDashboard() {
 
         // Status indicators
         const configStatus = isUnsupported
-          ? '<span class="badge badge-danger-sm">Launcher unsupported</span>'
+          ? '<span class="badge badge-danger-sm">Launcher core update required</span>'
           : (health.ready
             ? `<span class="badge badge-success-sm">${esc(configLabel)}</span>`
             : `<span class="badge badge-warning-sm">${esc(configLabel)}</span>`);
@@ -272,7 +272,7 @@ function showAgentActions(name, type, state, network) {
     actions.push(`<button class="btn modal-action-btn" data-action="toggle-agent" data-name="${esc(name)}" data-state="${esc(state)}">Start</button>`);
   }
 
-  actions.push(`<button class="btn modal-action-btn" data-action="configure" data-type="${esc(type)}">Configure</button>`);
+  actions.push(`<button class="btn modal-action-btn" data-action="configure" data-name="${esc(name)}" data-type="${esc(type)}">Configure</button>`);
   actions.push(`<button class="btn modal-action-btn" data-action="agent-login" data-type="${esc(type)}">Login</button>`);
 
   if (network) {
@@ -327,14 +327,16 @@ async function openWorkspaceInBrowser(name) {
 
 // ---- Configure Agent Screen ----
 
-async function openConfigureScreen(agentType) {
+async function openConfigureScreen(agentName, agentType) {
   showModal(`<div class="loading-text">Loading configuration...</div>`);
 
   try {
-    const [fields, saved] = await Promise.all([
+    const [fields, typeSaved, instanceSaved] = await Promise.all([
       window.api.getEnvFields(agentType),
       window.api.getAgentEnv(agentType),
+      agentName ? window.api.getAgentInstanceEnv(agentName) : Promise.resolve({}),
     ]);
+    const saved = { ...(typeSaved || {}), ...(instanceSaved || {}) };
 
     if (!fields || fields.length === 0) {
       // Check if agent type requires login (e.g., Claude Code)
@@ -351,7 +353,7 @@ async function openConfigureScreen(agentType) {
         } catch {}
 
         showModal(`
-          <h3>Configure ${esc(agentType)}</h3>
+          <h3>Configure ${esc(agentName || agentType)}</h3>
           <p class="hint">This agent uses login-based authentication.</p>
           <div style="margin:16px 0;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);">
             <span style="font-size:18px;">${loggedIn ? '✅' : '⚠️'}</span>
@@ -373,7 +375,7 @@ async function openConfigureScreen(agentType) {
             // Open login command in a visible terminal window
             await window.api.openTerminal(cmd);
             // Give user time to complete login, then refresh
-            setTimeout(() => openConfigureScreen(agentType), 5000);
+            setTimeout(() => openConfigureScreen(agentName, agentType), 5000);
           } catch (err) {
             showToast(`Failed to open terminal: ${err.message}`, 'error');
           }
@@ -382,7 +384,7 @@ async function openConfigureScreen(agentType) {
       }
 
       showModal(`
-        <h3>Configure ${esc(agentType)}</h3>
+        <h3>Configure ${esc(agentName || agentType)}</h3>
         <p class="hint">No configuration required for this agent type.</p>
         <button class="btn" data-action="close-modal">Close</button>
       `);
@@ -402,14 +404,14 @@ async function openConfigureScreen(agentType) {
     }).join('');
 
     showModal(`
-      <h3>Configure ${esc(agentType)}</h3>
-      <p class="hint">Settings saved to ~/.openagents/env/</p>
+      <h3>Configure ${esc(agentName || agentType)}</h3>
+      <p class="hint">${agentName ? 'Settings saved for this agent. Type defaults remain available as fallbacks.' : 'Settings saved to ~/.openagents/env/'}</p>
       <div class="configure-form">
         ${fieldsHtml}
       </div>
       <div id="test-result"></div>
       <div class="modal-button-row">
-        <button class="btn btn-primary" data-action="save-config" data-type="${esc(agentType)}">Save</button>
+        <button class="btn btn-primary" data-action="save-config" data-name="${esc(agentName || '')}" data-type="${esc(agentType)}">Save</button>
         <button class="btn" data-action="test-llm" data-type="${esc(agentType)}">Test Connection</button>
         <button class="btn" data-action="close-modal">Cancel</button>
       </div>
@@ -423,7 +425,7 @@ async function openConfigureScreen(agentType) {
   }
 }
 
-async function saveConfig(agentType) {
+async function saveConfig(agentName, agentType) {
   const fields = document.querySelectorAll('.configure-form input');
   const env = {};
   fields.forEach((input) => {
@@ -433,7 +435,11 @@ async function saveConfig(agentType) {
   });
 
   try {
-    await window.api.saveAgentEnv(agentType, env);
+    if (agentName) {
+      await window.api.saveAgentInstanceEnv(agentName, env);
+    } else {
+      await window.api.saveAgentEnv(agentType, env);
+    }
     showToast('Configuration saved', 'success');
     closeModal();
     refreshDashboard();
@@ -687,7 +693,7 @@ async function doAddAgent() {
     await window.api.addAgent({ name, type, path: agentPath || undefined });
     showToast(`Agent '${name}' created`, 'success');
     // Open configure screen for the new agent
-    openConfigureScreen(type);
+    openConfigureScreen(name, type);
     refreshAgentList();
     refreshDashboard();
   } catch (err) {
@@ -726,7 +732,7 @@ async function refreshAgentList() {
               </div>
               <span class="agent-type-label">${esc(a.type)}</span>
               <span class="agent-config-hint">
-                ${unsupported ? '<span class="text-danger">Launcher unsupported</span>' : health.ready ? `&#128273; ${esc(readyLabel)}` : `<span class="text-warning">&#9888; ${esc(readyLabel)}</span>`}
+                ${unsupported ? '<span class="text-danger">Launcher core update required</span>' : health.ready ? `&#128273; ${esc(readyLabel)}` : `<span class="text-warning">&#9888; ${esc(readyLabel)}</span>`}
                 ${envDisplay.length ? ' &middot; ' + envDisplay.map(esc).join(' &middot; ') : ''}
               </span>
               ${a.lastError ? `<span class="agent-error">${esc(a.lastError)}</span>` : ''}
@@ -742,7 +748,7 @@ async function refreshAgentList() {
               <button class="btn btn-sm${isRunning ? '' : ' btn-primary'}" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">
                 ${isRunning ? 'Stop' : 'Start'}
               </button>
-              <button class="btn btn-sm" data-action="configure" data-type="${esc(a.type)}">Configure</button>
+              <button class="btn btn-sm" data-action="configure" data-name="${esc(a.name)}" data-type="${esc(a.type)}">Configure</button>
               ${a.network
                 ? `<button class="btn btn-sm" data-action="disconnect" data-name="${esc(a.name)}">Disconnect</button>
                    <button class="btn btn-sm" data-action="open-ws" data-name="${esc(a.name)}">Open Workspace</button>`
@@ -1175,8 +1181,7 @@ function statusClass(state) {
 }
 
 function isUnsupportedAgent(agent) {
-  const msg = String(agent?.lastError || '');
-  return msg.includes('Unknown agent type:');
+  return !!agent?.runtimeMismatch;
 }
 
 // ---- D25: Activity log ----
@@ -1360,7 +1365,7 @@ document.addEventListener('click', (e) => {
     case 'switch-tab': switchTab(tab); break;
     case 'toggle-agent': toggleAgent(name, state); break;
     case 'show-agent-actions': showAgentActions(name, type, state, network); break;
-    case 'configure': openConfigureScreen(type); break;
+    case 'configure': openConfigureScreen(name, type); break;
     case 'disconnect': disconnectAgent(name); break;
     case 'open-ws': openWorkspaceInBrowser(name); break;
     case 'remove-agent': removeAgent(name); break;
@@ -1371,7 +1376,7 @@ document.addEventListener('click', (e) => {
     case 'do-create-workspace': doCreateWorkspace(name); break;
     case 'do-join-token': doJoinWithToken(name); break;
     case 'do-add-agent': doAddAgent(); break;
-    case 'save-config': saveConfig(type); break;
+    case 'save-config': saveConfig(name, type); break;
     case 'test-llm': testLLMConfig(type); break;
     case 'close-modal': closeModal(); break;
     case 'install-catalog': installCatalogItem(name, btn.dataset.installed === 'true'); break;
@@ -1404,7 +1409,7 @@ async function agentLogin(agentType) {
   }
   if (!cmd) {
     showToast(`No login command for ${agentType}. Configure API key instead.`, 'info');
-    openConfigureScreen(agentType);
+    openConfigureScreen('', agentType);
     return;
   }
   showToast(`Opening ${agentType} login... Follow the prompts in the terminal.`, 'info');

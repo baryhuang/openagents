@@ -45,6 +45,15 @@ class AgentManager {
     return supported.sort();
   }
 
+  getCoreInfo() {
+    return {
+      version: this.coreVersion,
+      supportedTypes: this.getSupportedAgentTypes(),
+      globalCorePath: GLOBAL_CORE,
+      globalCorePresent: fs.existsSync(path.join(GLOBAL_CORE, 'package.json')),
+    };
+  }
+
   /** Reload core library after install/update */
   reloadCore() {
     // Clear require cache for global path
@@ -96,13 +105,23 @@ class AgentManager {
       }
     }
 
-    return agents.map((a) => ({
-      ...a,
-      state: status[a.name]?.state || 'stopped',
-      restarts: status[a.name]?.restarts || 0,
-      lastError: status[a.name]?.last_error || null,
-      health: healthByType.get(a.type || 'openclaw'),
-    }));
+    const supportedTypes = new Set(this.getSupportedAgentTypes());
+    return agents.map((a) => {
+      const type = a.type || 'openclaw';
+      const runtimeMismatch = !supportedTypes.has(type);
+      const runtimeMessage = runtimeMismatch
+        ? `Agent runtime '${type}' is not available in the currently loaded core. This usually means the Launcher core is outdated or did not reload correctly. Update Launcher and restart it.`
+        : null;
+      const statusError = status[a.name]?.last_error || null;
+      return {
+        ...a,
+        state: status[a.name]?.state || 'stopped',
+        restarts: status[a.name]?.restarts || 0,
+        lastError: statusError || runtimeMessage,
+        health: healthByType.get(type),
+        runtimeMismatch,
+      };
+    });
   }
 
   // ------------------------------------------------------------------
@@ -118,12 +137,7 @@ class AgentManager {
       throw new Error(`Agent type '${type}' is not supported in Launcher yet. Supported: ${supportedTypes.join(', ')}`);
     }
 
-    this._connector.addAgent({ name, type, role: 'worker' });
-
-    // Save env vars for the agent type
-    if (agentConfig.env && Object.keys(agentConfig.env).length > 0) {
-      this._connector.saveAgentEnv(type, agentConfig.env);
-    }
+    this._connector.addAgent({ name, type, role: 'worker', path: agentConfig.path, env: agentConfig.env });
 
     return { success: true, agent: agentConfig };
   }
@@ -136,10 +150,7 @@ class AgentManager {
 
   async updateAgent(name, updates) {
     if (updates.env) {
-      const agents = this._connector.listAgents();
-      const agent = agents.find((a) => a.name === name);
-      const type = agent ? agent.type : 'openclaw';
-      this._connector.saveAgentEnv(type, updates.env);
+      this._connector.saveAgentInstanceEnv(name, updates.env);
     }
     return { success: true };
   }
@@ -180,6 +191,10 @@ class AgentManager {
     return this._connector.getAgentEnv(agentType);
   }
 
+  getAgentInstanceEnv(agentName) {
+    return this._connector.getAgentInstanceEnv(agentName);
+  }
+
   saveAgentEnv(agentType, env) {
     this._connector.saveAgentEnv(agentType, env);
 
@@ -191,6 +206,12 @@ class AgentManager {
       }
     } catch {}
 
+    this.signalReload();
+    return { success: true };
+  }
+
+  saveAgentInstanceEnv(agentName, env) {
+    this._connector.saveAgentInstanceEnv(agentName, env);
     this.signalReload();
     return { success: true };
   }

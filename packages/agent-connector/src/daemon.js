@@ -70,7 +70,7 @@ class Daemon {
     this._writeStatus();
     this._cachedAgentNames = new Set(agents.map(a => a.name));
     this._cachedAgentConfigs = {};
-    for (const a of agents) this._cachedAgentConfigs[a.name] = a.network || '';
+    for (const a of agents) this._cachedAgentConfigs[a.name] = this._agentConfigFingerprint(a);
     this._log(`Daemon started with ${agents.length} agent(s)`);
 
     // Block until shutdown
@@ -553,9 +553,17 @@ class Daemon {
   _buildAgentEnv(agentCfg) {
     const type = agentCfg.type || 'openclaw';
     const saved = this.envManager.load(type);
-    const resolved = this.envManager.resolve(type, saved, this.registry);
-    const merged = { ...saved, ...resolved, ...(agentCfg.env || {}) };
+    const mergedSaved = { ...saved, ...(agentCfg.env || {}) };
+    const resolved = this.envManager.resolve(type, mergedSaved, this.registry);
+    const merged = { ...mergedSaved, ...resolved };
     return { ...process.env, ...merged };
+  }
+
+  _agentConfigFingerprint(agentCfg) {
+    return JSON.stringify({
+      network: agentCfg.network || '',
+      env: agentCfg.env || {},
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -682,7 +690,7 @@ class Daemon {
     const newAgents = this.config.getAgents();
     const newNames = new Set(newAgents.map(a => a.name));
     const newConfigs = {};
-    for (const a of newAgents) newConfigs[a.name] = a.network || '';
+    for (const a of newAgents) newConfigs[a.name] = this._agentConfigFingerprint(a);
 
     // Stop removed agents
     for (const name of oldNames) {
@@ -698,13 +706,13 @@ class Daemon {
         await this._ensureAdapterCleared(agent.name);
         this._launchAgent(agent);
         this._log(`Reload: started new agent '${agent.name}'`);
-      } else if ((oldConfigs[agent.name] || '') !== (agent.network || '')) {
-        // Network config changed — restart agent
+      } else if ((oldConfigs[agent.name] || '') !== newConfigs[agent.name]) {
+        // Network or env config changed — restart agent
         await this.stopAgent(agent.name);
         this._stoppedAgents.delete(agent.name);
         await this._ensureAdapterCleared(agent.name);
         this._launchAgent(agent);
-        this._log(`Reload: restarted '${agent.name}' (network changed)`);
+        this._log(`Reload: restarted '${agent.name}' (config changed)`);
       }
     }
 

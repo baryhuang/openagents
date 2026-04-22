@@ -51,19 +51,28 @@ networks:
     assert.equal(result.agents[0].builtin, true);
     assert.equal(result.agents[0].path, null);
   });
+
+  it('parses inline object values such as per-agent env', () => {
+    const result = parseYaml('version: 2\nagents:\n- name: a\n  type: opencode\n  env: {"LLM_MODEL":"model-a","LLM_BASE_URL":"https://openrouter.ai/api/v1"}\nnetworks: []');
+    assert.deepEqual(result.agents[0].env, {
+      LLM_MODEL: 'model-a',
+      LLM_BASE_URL: 'https://openrouter.ai/api/v1',
+    });
+  });
 });
 
 describe('serializeYaml', () => {
   it('round-trips through parse/serialize', () => {
     const config = {
       version: 2,
-      agents: [{ name: 'bot', type: 'claude', role: 'worker' }],
+      agents: [{ name: 'bot', type: 'claude', role: 'worker', env: { LLM_MODEL: 'claude-sonnet' } }],
       networks: [{ id: '1', slug: 'ws1', name: 'Workspace 1' }],
     };
     const yaml = serializeYaml(config);
     const parsed = parseYaml(yaml);
     assert.equal(parsed.agents[0].name, 'bot');
     assert.equal(parsed.agents[0].type, 'claude');
+    assert.deepEqual(parsed.agents[0].env, { LLM_MODEL: 'claude-sonnet' });
     assert.equal(parsed.networks[0].slug, 'ws1');
   });
 
@@ -100,6 +109,18 @@ describe('Config', () => {
     cfg.addAgent({ name: 'b1', type: 'claude', role: 'worker' });
     cfg.updateAgent('b1', { role: 'orchestrator' });
     assert.equal(cfg.getAgent('b1').role, 'orchestrator');
+  });
+
+  it('updateAgentEnv stores per-agent env independently', () => {
+    const cfg = new Config(tmpDir);
+    cfg.addAgent({ name: 'a1', type: 'opencode', role: 'worker' });
+    cfg.addAgent({ name: 'a2', type: 'opencode', role: 'worker' });
+
+    cfg.updateAgentEnv('a1', { LLM_MODEL: 'model-a' });
+    cfg.updateAgentEnv('a2', { LLM_MODEL: 'model-b' });
+
+    assert.equal(cfg.getAgent('a1').env.LLM_MODEL, 'model-a');
+    assert.equal(cfg.getAgent('a2').env.LLM_MODEL, 'model-b');
   });
 
   it('addNetwork / removeNetwork disconnects agents', () => {
