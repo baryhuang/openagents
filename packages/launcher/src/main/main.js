@@ -508,6 +508,8 @@ function setupIPC() {
   ipcMain.handle('agents:stop-all', () => agentManager.stopAll());
   ipcMain.handle('agents:status', () => agentManager.getAllStatus());
   ipcMain.handle('agents:logs', (_e, name, lines) => agentManager.getLogs(name, lines));
+  ipcMain.handle('agents:tail-logs', (_e, name, lines, offset) => agentManager.tailLogs(name, lines, offset));
+  ipcMain.handle('agents:clear-logs-range', (_e, start, end) => agentManager.clearLogsInRange(start, end));
 
   // Agent install (openclaw, etc.)
   ipcMain.handle('agents:install-type', (_e, agentType) => agentManager.installAgentType(agentType));

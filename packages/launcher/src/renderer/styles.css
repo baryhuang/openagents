@@ -855,6 +855,40 @@ h1 {
   padding: 24px 0;
 }
 
+.skeleton-card,
+.skeleton-list-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 10px;
+}
+
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 999px;
+  margin-bottom: 10px;
+  background: linear-gradient(90deg, #ececf1 25%, #f6f6f8 50%, #ececf1 75%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.1s linear infinite;
+}
+
+.skeleton-line-lg { width: 62%; }
+.skeleton-line-md { width: 42%; }
+.skeleton-line-sm { width: 26%; margin-bottom: 0; }
+
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* ============================================
    Modal — Frosted glass
    ============================================ */
@@ -926,6 +960,10 @@ h1 {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-bg);
   background: #ffffff;
+}
+
+.modal .form-group input[type="datetime-local"] {
+  min-height: 40px;
 }
 
 .modal-button-row {

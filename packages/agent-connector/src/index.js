@@ -225,6 +225,14 @@ class AgentConnector {
     return this.config.getLogs(agentName, lines);
   }
 
+  tailLogs(opts = {}) {
+    return this.config.tailLogs(opts);
+  }
+
+  clearLogsInRange(opts = {}) {
+    return this.config.clearLogsInRange(opts);
+  }
+
   // -- Workspace API --
 
   async createWorkspace(opts) {

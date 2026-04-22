@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('api', {
   stopAll: () => ipcRenderer.invoke('agents:stop-all'),
   agentStatus: () => ipcRenderer.invoke('agents:status'),
   agentLogs: (name, lines) => ipcRenderer.invoke('agents:logs', name, lines),
+  tailAgentLogs: (name, lines, offset) => ipcRenderer.invoke('agents:tail-logs', name, lines, offset),
+  clearLogsInRange: (start, end) => ipcRenderer.invoke('agents:clear-logs-range', start, end),
 
   // Agent type install & catalog
   installAgentType: (type) => ipcRenderer.invoke('agents:install-type', type),

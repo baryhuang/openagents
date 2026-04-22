@@ -7,12 +7,6 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach((el) => {
     el.classList.toggle('active', el.id === `tab-${tabName}`);
   });
-
-  if (tabName === 'dashboard') refreshDashboard();
-  if (tabName === 'agents') refreshAgentList();
-  if (tabName === 'install') refreshInstallStatus();
-  if (tabName === 'logs') refreshLogs();
-  if (tabName === 'settings') { refreshSettingsWorkspaces(); refreshSettingsRuntime(); }
 }
 
 document.querySelectorAll('.nav-item').forEach((el) => {
@@ -22,13 +16,31 @@ document.querySelectorAll('.nav-item').forEach((el) => {
 // Auto-refresh active tab every 5 seconds
 let _currentTab = 'dashboard';
 const _origSwitchTab = switchTab;
+let _refreshDashboardInFlight = null;
+let _refreshDashboardQueued = false;
+let _refreshAgentListInFlight = null;
+let _refreshAgentListQueued = false;
+const _pendingAgentActions = new Set();
+let _tabLoadToken = 0;
+const TAB_LOAD_DELAY_MS = 120;
+let _logsOffset = 0;
+let _logsFilter = '';
+let _clearLogsInFlight = false;
+const LOGS_INITIAL_LINES = 200;
+const LOGS_MAX_BUFFER_LINES = 400;
+
 switchTab = function(tabName) {
   _currentTab = tabName;
   _origSwitchTab(tabName);
+  showTabSkeleton(tabName);
+  const token = ++_tabLoadToken;
+  requestAnimationFrame(() => {
+    setTimeout(() => loadTabContent(tabName, token), TAB_LOAD_DELAY_MS);
+  });
 };
 setInterval(() => {
-  if (_currentTab === 'dashboard') refreshDashboard();
-  else if (_currentTab === 'agents') refreshAgentList();
+  if (_currentTab === 'dashboard') scheduleRefreshDashboard();
+  else if (_currentTab === 'agents') scheduleRefreshAgentList();
 }, 5000);
 
 // Keyboard shortcuts: Ctrl+1..5 for tabs
@@ -112,10 +124,142 @@ function formatHealthLabel(health) {
 
 // ---- Dashboard ----
 
+function scheduleRefreshDashboard() {
+  if (_refreshDashboardInFlight) {
+    _refreshDashboardQueued = true;
+    return _refreshDashboardInFlight;
+  }
+  _refreshDashboardInFlight = (async () => {
+    try {
+      await refreshDashboard();
+    } finally {
+      _refreshDashboardInFlight = null;
+      if (_refreshDashboardQueued) {
+        _refreshDashboardQueued = false;
+        scheduleRefreshDashboard();
+      }
+    }
+  })();
+  return _refreshDashboardInFlight;
+}
+
+async function loadTabContent(tabName, token) {
+  if (token !== _tabLoadToken) return;
+
+  if (tabName === 'dashboard') {
+    await scheduleRefreshDashboard();
+    return;
+  }
+
+  if (tabName === 'agents') {
+    await scheduleRefreshAgentList();
+    return;
+  }
+
+  if (tabName === 'install') {
+    if (token !== _tabLoadToken) return;
+    refreshInstallStatus();
+    return;
+  }
+
+  if (tabName === 'logs') {
+    if (token !== _tabLoadToken) return;
+    refreshLogs();
+    return;
+  }
+
+  if (tabName === 'settings') {
+    if (token !== _tabLoadToken) return;
+    refreshSettingsWorkspaces();
+    refreshSettingsRuntime();
+  }
+}
+
+function showTabSkeleton(tabName) {
+  if (tabName === 'dashboard') {
+    const el = document.getElementById('agent-cards');
+    if (el) {
+      el.innerHTML = `
+        <div class="skeleton-card">
+          <div class="skeleton-line skeleton-line-lg"></div>
+          <div class="skeleton-line skeleton-line-md"></div>
+          <div class="skeleton-line skeleton-line-sm"></div>
+        </div>
+        <div class="skeleton-card">
+          <div class="skeleton-line skeleton-line-lg"></div>
+          <div class="skeleton-line skeleton-line-md"></div>
+          <div class="skeleton-line skeleton-line-sm"></div>
+        </div>`;
+    }
+    return;
+  }
+
+  if (tabName === 'agents') {
+    const el = document.getElementById('agent-list');
+    if (el) {
+      el.innerHTML = `
+        <div class="skeleton-list">
+          <div class="skeleton-list-item">
+            <div class="skeleton-line skeleton-line-lg"></div>
+            <div class="skeleton-line skeleton-line-md"></div>
+          </div>
+          <div class="skeleton-list-item">
+            <div class="skeleton-line skeleton-line-lg"></div>
+            <div class="skeleton-line skeleton-line-md"></div>
+          </div>
+          <div class="skeleton-list-item">
+            <div class="skeleton-line skeleton-line-lg"></div>
+            <div class="skeleton-line skeleton-line-md"></div>
+          </div>
+        </div>`;
+    }
+    return;
+  }
+
+  if (tabName === 'install') {
+    const el = document.getElementById('catalog-table-container');
+    if (el) {
+      el.innerHTML = `
+        <div class="skeleton-list">
+          <div class="skeleton-list-item">
+            <div class="skeleton-line skeleton-line-lg"></div>
+            <div class="skeleton-line skeleton-line-md"></div>
+          </div>
+          <div class="skeleton-list-item">
+            <div class="skeleton-line skeleton-line-lg"></div>
+            <div class="skeleton-line skeleton-line-md"></div>
+          </div>
+        </div>`;
+    }
+    return;
+  }
+
+  if (tabName === 'logs') {
+    _logsOffset = 0;
+    const el = document.getElementById('log-viewer');
+    if (el) {
+      el.textContent = 'Loading logs...';
+    }
+    return;
+  }
+
+  if (tabName === 'settings') {
+    const ws = document.getElementById('settings-workspaces');
+    if (ws) ws.innerHTML = '<div class="loading-text">Loading...</div>';
+    const ids = ['settings-nodejs-version', 'settings-npm-version', 'settings-core-version', 'settings-core-latest'];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = 'Loading...';
+    });
+  }
+}
+
 async function refreshDashboard() {
+  if (_currentTab !== 'dashboard') return;
   let agents = [];
   try {
     agents = await window.api.listAgents() || [];
+    if (_currentTab !== 'dashboard') return;
     const cardsEl = document.getElementById('agent-cards');
 
     if (agents.length === 0) {
@@ -148,12 +292,12 @@ async function refreshDashboard() {
         // Simplified buttons
         let buttons = '';
         if (isRunning) {
-          buttons += `<button class="btn btn-sm" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">Stop</button>`;
+          buttons += `<button class="btn btn-sm" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}"${_pendingAgentActions.has(a.name) ? ' disabled' : ''}>${renderAgentActionLabel(a.name, true)}</button>`;
           if (isConnected) {
             buttons += `<button class="btn btn-sm btn-primary" data-action="open-ws" data-name="${esc(a.name)}">Open Workspace</button>`;
           }
         } else {
-          buttons += `<button class="btn btn-sm btn-primary" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">Start</button>`;
+          buttons += `<button class="btn btn-sm btn-primary" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}"${_pendingAgentActions.has(a.name) ? ' disabled' : ''}>${renderAgentActionLabel(a.name, false)}</button>`;
         }
 
         return `
@@ -194,6 +338,25 @@ async function refreshDashboard() {
   } catch {}
 }
 
+function scheduleRefreshAgentList() {
+  if (_refreshAgentListInFlight) {
+    _refreshAgentListQueued = true;
+    return _refreshAgentListInFlight;
+  }
+  _refreshAgentListInFlight = (async () => {
+    try {
+      await refreshAgentList();
+    } finally {
+      _refreshAgentListInFlight = null;
+      if (_refreshAgentListQueued) {
+        _refreshAgentListQueued = false;
+        scheduleRefreshAgentList();
+      }
+    }
+  })();
+  return _refreshAgentListInFlight;
+}
+
 function updateDaemonStatusFromAgents(agents) {
   const el = document.getElementById('daemon-status');
   const hasOnline = agents.some((a) => a.state === 'online' || a.state === 'running' || a.state === 'idle' || a.state === 'idle');
@@ -210,6 +373,13 @@ function updateDaemonStatusFromAgents(agents) {
   }
 }
 
+function renderAgentActionLabel(name, isRunning) {
+  if (_pendingAgentActions.has(name)) {
+    return isRunning ? 'Stopping...' : 'Starting...';
+  }
+  return isRunning ? 'Stop' : 'Start';
+}
+
 async function updateDaemonStatus() {
   try {
     const agents = await window.api.listAgents() || [];
@@ -221,6 +391,11 @@ async function updateDaemonStatus() {
 }
 
 async function toggleAgent(name, currentState) {
+  if (_pendingAgentActions.has(name)) return;
+  _pendingAgentActions.add(name);
+  scheduleRefreshDashboard();
+  scheduleRefreshAgentList();
+
   try {
     if (currentState === 'online' || currentState === 'running' || currentState === 'idle') {
       await window.api.stopAgent(name);
@@ -228,14 +403,14 @@ async function toggleAgent(name, currentState) {
       // Poll until stopped (up to 15s — daemon checks commands every 5s)
       for (let i = 0; i < 5; i++) {
         await new Promise(r => setTimeout(r, 3000));
-        refreshDashboard();
-        refreshAgentList();
         const status = await window.api.agentStatus();
         const agent = status[name];
         if (!agent || agent.state === 'stopped') {
           showToast(`${name} stopped`, 'success');
           break;
         }
+        scheduleRefreshDashboard();
+        scheduleRefreshAgentList();
       }
     } else {
       await window.api.startAgent(name);
@@ -243,17 +418,22 @@ async function toggleAgent(name, currentState) {
       // Poll until running (up to 30s — daemon needs time to connect)
       for (let i = 0; i < 10; i++) {
         await new Promise(r => setTimeout(r, 3000));
-        await refreshDashboard();
         const status = await window.api.agentStatus();
         const agent = status[name];
         if (agent && (agent.state === 'running' || agent.state === 'online')) {
           showToast(`${name} is now running`, 'success');
           break;
         }
+        scheduleRefreshDashboard();
+        scheduleRefreshAgentList();
       }
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
+  } finally {
+    _pendingAgentActions.delete(name);
+    scheduleRefreshDashboard();
+    scheduleRefreshAgentList();
   }
 }
 
@@ -298,8 +478,8 @@ async function disconnectAgent(name) {
     await window.api.disconnectWorkspace(name);
     showToast(`Disconnected ${name} from workspace`, 'success');
     window.api.signalReload();
-    refreshDashboard();
-    refreshAgentList();
+    scheduleRefreshDashboard();
+    scheduleRefreshAgentList();
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
@@ -442,8 +622,8 @@ async function saveConfig(agentName, agentType) {
     }
     showToast('Configuration saved', 'success');
     closeModal();
-    refreshDashboard();
-    refreshAgentList();
+    scheduleRefreshDashboard();
+    scheduleRefreshAgentList();
   } catch (err) {
     showToast(`Error saving: ${err.message}`, 'error');
   }
@@ -518,8 +698,8 @@ async function doConnectWorkspace(agentName, slug) {
     await window.api.connectWorkspace(agentName, slug);
     window.api.signalReload();
     showToast(`Connected to ${slug}`, 'success');
-    refreshDashboard();
-    refreshAgentList();
+    scheduleRefreshDashboard();
+    scheduleRefreshAgentList();
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
@@ -556,8 +736,8 @@ async function doCreateWorkspace(agentName) {
       window.api.signalReload();
       showToast(`Connected ${agentName} to ${name}`, 'success');
     }
-    refreshDashboard();
-    refreshAgentList();
+    scheduleRefreshDashboard();
+    scheduleRefreshAgentList();
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
@@ -588,8 +768,8 @@ async function doJoinWithToken(agentName) {
     await window.api.connectWorkspace(agentName, token);
     window.api.signalReload();
     showToast('Joined workspace', 'success');
-    refreshDashboard();
-    refreshAgentList();
+    scheduleRefreshDashboard();
+    scheduleRefreshAgentList();
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
@@ -694,16 +874,18 @@ async function doAddAgent() {
     showToast(`Agent '${name}' created`, 'success');
     // Open configure screen for the new agent
     openConfigureScreen(name, type);
-    refreshAgentList();
-    refreshDashboard();
+    scheduleRefreshAgentList();
+    scheduleRefreshDashboard();
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
 }
 
 async function refreshAgentList() {
+  if (_currentTab !== 'agents') return;
   try {
     const agents = await window.api.listAgents();
+    if (_currentTab !== 'agents') return;
     const listEl = document.getElementById('agent-list');
 
     if (!agents || agents.length === 0) {
@@ -745,8 +927,8 @@ async function refreshAgentList() {
           </div>
           <div class="agent-list-bottom">
             <div class="agent-list-actions">
-              <button class="btn btn-sm${isRunning ? '' : ' btn-primary'}" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}">
-                ${isRunning ? 'Stop' : 'Start'}
+              <button class="btn btn-sm${isRunning ? '' : ' btn-primary'}" data-action="toggle-agent" data-name="${esc(a.name)}" data-state="${esc(a.state)}"${_pendingAgentActions.has(a.name) ? ' disabled' : ''}>
+                ${renderAgentActionLabel(a.name, isRunning)}
               </button>
               <button class="btn btn-sm" data-action="configure" data-name="${esc(a.name)}" data-type="${esc(a.type)}">Configure</button>
               ${a.network
@@ -770,8 +952,8 @@ async function removeAgent(name) {
   try {
     await window.api.removeAgent(name);
     showToast(`Agent '${name}' removed`, 'success');
-    refreshAgentList();
-    refreshDashboard();
+    scheduleRefreshAgentList();
+    scheduleRefreshDashboard();
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
@@ -1091,15 +1273,34 @@ async function uninstallCatalogItem(name) {
 // ---- Logs tab ----
 
 async function refreshLogs() {
+  if (_currentTab !== 'logs') return;
   try {
     const filter = document.getElementById('log-agent-filter').value;
-    const result = await window.api.agentLogs(filter, 500);
     const viewer = document.getElementById('log-viewer');
-    if (result.lines && result.lines.length > 0) {
-      viewer.textContent = result.lines.join('\n');
+    const reset = filter !== _logsFilter || _logsOffset === 0;
+
+    const result = reset
+      ? await window.api.tailAgentLogs(filter, LOGS_INITIAL_LINES, 0)
+      : await window.api.tailAgentLogs(filter, LOGS_INITIAL_LINES, _logsOffset);
+    if (_currentTab !== 'logs') return;
+
+    _logsFilter = filter;
+    _logsOffset = result.size || 0;
+
+    if (reset) {
+      if (result.lines && result.lines.length > 0) {
+        viewer.textContent = result.lines.join('\n');
+      } else {
+        viewer.textContent = 'No logs available.\n\nLogs appear here after the daemon starts.';
+      }
       viewer.scrollTop = viewer.scrollHeight;
     } else {
-      viewer.textContent = 'No logs available.\n\nLogs appear here after the daemon starts.';
+      if (result.lines && result.lines.length > 0) {
+        const existing = viewer.textContent ? viewer.textContent.split('\n').filter(Boolean) : [];
+        const merged = existing.concat(result.lines).slice(-LOGS_MAX_BUFFER_LINES);
+        viewer.textContent = merged.join('\n');
+        viewer.scrollTop = viewer.scrollHeight;
+      }
     }
   } catch (err) {
     document.getElementById('log-viewer').textContent = 'Error loading logs: ' + err.message;
@@ -1108,6 +1309,7 @@ async function refreshLogs() {
   // Populate agent filter dropdown
   try {
     const agents = await window.api.listAgents();
+    if (_currentTab !== 'logs') return;
     const select = document.getElementById('log-agent-filter');
     const current = select.value;
     const existingOptions = new Set();
@@ -1125,7 +1327,97 @@ async function refreshLogs() {
   } catch {}
 }
 
-document.getElementById('btn-refresh-logs').addEventListener('click', refreshLogs);
+function toDateTimeLocalValue(date) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    '-',
+    pad(date.getMonth() + 1),
+    '-',
+    pad(date.getDate()),
+    'T',
+    pad(date.getHours()),
+    ':',
+    pad(date.getMinutes()),
+  ].join('');
+}
+
+function showClearLogsModal() {
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  showModal(`
+    <h3>Clear Logs</h3>
+    <p class="hint">Delete log entries from <code>daemon.log</code> whose timestamps fall inside the selected time range.</p>
+    <div class="form-group">
+      <label for="clear-logs-start">Start Time</label>
+      <input type="datetime-local" id="clear-logs-start" value="${toDateTimeLocalValue(oneHourAgo)}">
+    </div>
+    <div class="form-group">
+      <label for="clear-logs-end">End Time</label>
+      <input type="datetime-local" id="clear-logs-end" value="${toDateTimeLocalValue(now)}">
+    </div>
+    <div id="clear-logs-error" class="hint" style="min-height:18px;color:var(--danger-text);"></div>
+    <div class="modal-button-row">
+      <button class="btn" data-action="close-modal">Cancel</button>
+      <button class="btn btn-danger" id="confirm-clear-logs">Delete</button>
+    </div>
+  `);
+
+  const confirmBtn = document.getElementById('confirm-clear-logs');
+  confirmBtn.addEventListener('click', clearLogsInRange);
+}
+
+async function clearLogsInRange() {
+  if (_clearLogsInFlight) return;
+
+  const startEl = document.getElementById('clear-logs-start');
+  const endEl = document.getElementById('clear-logs-end');
+  const errorEl = document.getElementById('clear-logs-error');
+  const confirmBtn = document.getElementById('confirm-clear-logs');
+
+  const start = startEl?.value ? new Date(startEl.value) : null;
+  const end = endEl?.value ? new Date(endEl.value) : null;
+
+  if (!start || Number.isNaN(start.getTime()) || !end || Number.isNaN(end.getTime())) {
+    if (errorEl) errorEl.textContent = 'Please select a valid start and end time.';
+    return;
+  }
+  if (start.getTime() > end.getTime()) {
+    if (errorEl) errorEl.textContent = 'Start time must be before end time.';
+    return;
+  }
+
+  _clearLogsInFlight = true;
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Deleting...';
+  }
+  if (errorEl) errorEl.textContent = '';
+
+  try {
+    const result = await window.api.clearLogsInRange(start.toISOString(), end.toISOString());
+    closeModal();
+    _logsOffset = 0;
+    await refreshLogs();
+    showToast(`Deleted ${result.removed || 0} log lines from the selected range`, 'success');
+  } catch (err) {
+    if (errorEl) errorEl.textContent = err.message || 'Failed to clear logs.';
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Delete';
+    }
+  } finally {
+    _clearLogsInFlight = false;
+  }
+}
+
+document.getElementById('btn-refresh-logs').addEventListener('click', () => {
+  _logsOffset = 0;
+  refreshLogs();
+});
+document.getElementById('btn-clear-logs').addEventListener('click', () => {
+  showClearLogsModal();
+});
 document.getElementById('btn-copy-logs').addEventListener('click', () => {
   const logs = document.getElementById('log-viewer').textContent;
   navigator.clipboard.writeText(logs).then(() => {
@@ -1134,7 +1426,10 @@ document.getElementById('btn-copy-logs').addEventListener('click', () => {
     showToast('Failed to copy logs', 'error');
   });
 });
-document.getElementById('log-agent-filter').addEventListener('change', refreshLogs);
+document.getElementById('log-agent-filter').addEventListener('change', () => {
+  _logsOffset = 0;
+  refreshLogs();
+});
 document.getElementById('catalog-search-input').addEventListener('input', (e) => filterCatalog(e.target.value));
 
 // ---- Settings tab ----
@@ -1240,10 +1535,12 @@ startLogAutoRefresh();
 // ---- D29: Workspace URL display in Settings ----
 
 async function refreshSettingsWorkspaces() {
+  if (_currentTab !== 'settings') return;
   const el = document.getElementById('settings-workspaces');
   if (!el) return;
   try {
     const workspaces = await window.api.listWorkspaces();
+    if (_currentTab !== 'settings') return;
     if (!workspaces || workspaces.length === 0) {
       el.innerHTML = '<span class="hint">No workspaces configured.</span>';
       return;
@@ -1263,8 +1560,10 @@ async function refreshSettingsWorkspaces() {
 }
 
 async function refreshSettingsRuntime() {
+  if (_currentTab !== 'settings') return;
   try {
     const info = await window.api.runtimeInfo();
+    if (_currentTab !== 'settings') return;
     const set = (id, value, color) => {
       const el = document.getElementById(id);
       if (el) { el.textContent = value; el.style.color = color; }
@@ -1297,7 +1596,7 @@ setInterval(() => {
   const activeTab = document.querySelector('.nav-item.active');
   if (activeTab) {
     const tab = activeTab.dataset.tab;
-    if (tab === 'dashboard') refreshDashboard();
+    if (tab === 'dashboard') scheduleRefreshDashboard();
     if (tab === 'settings') { refreshSettingsWorkspaces(); refreshSettingsRuntime(); }
   }
   updateDaemonStatus();
@@ -1345,6 +1644,7 @@ if (window.api.onCoreUpdate) {
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
+  if (btn.disabled) return;
 
   const action = btn.dataset.action;
   const name = btn.dataset.name || '';
@@ -1434,7 +1734,7 @@ async function toggleDaemon() {
       await window.api.startAll();
       showToast('Daemon starting...', 'info');
     }
-    setTimeout(() => refreshDashboard(), 2000);
+    setTimeout(() => scheduleRefreshDashboard(), 2000);
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
@@ -1442,5 +1742,5 @@ async function toggleDaemon() {
 
 // ---- Initial load ----
 
-refreshDashboard();
+scheduleRefreshDashboard();
 renderActivity();
