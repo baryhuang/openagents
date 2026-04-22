@@ -43,10 +43,30 @@ _pool_kwargs = (
     else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 5, "pool_recycle": 60, "pool_timeout": 30, "poolclass": QueuePool}
 )
 
+# Keep the TCP connection alive to survive NAT / firewall idle timeouts
+# between Railway egress and Supabase. Without these, idle connections
+# get silently FIN/RST'd and we see "SSL connection has been closed
+# unexpectedly" mid-query.
+# keepalives_idle=30: start probing after 30s of idle
+# keepalives_interval=10: probe every 10s
+# keepalives_count=3: drop the conn after 3 failed probes
+_connect_args = {}
+if not _is_sqlite:
+    _connect_args.update({
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 3,
+        # TCP-level timeout for the initial connect.
+        "connect_timeout": 10,
+    })
+
 # PgBouncer transaction mode doesn't support prepared statements or the
 # 'options' startup parameter. Disable SQLAlchemy statement caching so
 # no PREPARE/DEALLOCATE is issued.
 _engine_kwargs = {**_pool_kwargs}
+if _connect_args:
+    _engine_kwargs["connect_args"] = _connect_args
 if _is_pgbouncer:
     _engine_kwargs["execution_options"] = {"no_cache": True}
 
