@@ -20,6 +20,5 @@ restartPolicyMaxRetries = 5
 # (we're doing both: A1 caches /v1/events, A2 scales replicas).
 numReplicas = 2
 
-[[deploy.multiRegionConfig]]
-region = "us-west2"
+[deploy.multiRegionConfig.us-west2]
 numReplicas = 2
