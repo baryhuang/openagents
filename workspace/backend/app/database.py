@@ -25,25 +25,27 @@ if _is_sqlite:
         SQLiteTypeCompiler.visit_JSONB = lambda self, type_, **kw: "JSON"
         SQLiteTypeCompiler.visit_UUID = lambda self, type_, **kw: "TEXT"
 
+# PgBouncer (e.g. Supabase port 6543) maintains its own connection pool;
+# app-level pooling is redundant and causes stale-connection failures
+# ("SSL connection has been closed unexpectedly") because pgbouncer may
+# rotate or idle-kill the TCP connection our app still thinks is fresh.
+# Use NullPool in pgbouncer mode: each request opens a short-lived conn
+# that goes straight to pgbouncer (local to Supabase, ~1-2ms overhead).
+_is_pgbouncer = ":6543/" in config.DATABASE_URL
+
 _pool_kwargs = (
     {"poolclass": NullPool}
-    if _is_serverless or _is_sqlite
-    # 4 workers × (20 + 5) = 100 max DB connections, under Supabase's
-    # ~120 limit with headroom for admin/migrations/one-off queries.
-    # Previous config was 8 workers × 14 conns = 112; but per-worker
-    # pools of 14 were saturating under poll load (40+ agents × 2s poll
-    # interval), causing "QueuePool limit reached" and 502s. Fewer workers
-    # with bigger per-worker pools gives each worker enough connections
-    # to cover its FastAPI threadpool (40 threads default) concurrency.
-    # pool_recycle=300s cycles stuck idle-in-transaction connections.
-    # pool_timeout=30s absorbs short bursts without failing the request.
-    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 5, "pool_recycle": 300, "pool_timeout": 30, "poolclass": QueuePool}
+    if _is_serverless or _is_sqlite or _is_pgbouncer
+    # Direct-PG mode (port 5432): keep a bounded per-worker pool.
+    # 4 workers × (20 + 5) = 100 max DB conns, under Supabase's ~120 limit.
+    # pool_pre_ping catches dead conns; pool_recycle cycles them
+    # before Supabase's idle-kill; pool_timeout absorbs short bursts.
+    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 5, "pool_recycle": 60, "pool_timeout": 30, "poolclass": QueuePool}
 )
 
-# PgBouncer (e.g. Supabase port 6543) doesn't support prepared statements
-# or the 'options' startup parameter.  Use execution_options to disable
-# implicit statement caching so SQLAlchemy never issues PREPARE/DEALLOCATE.
-_is_pgbouncer = ":6543/" in config.DATABASE_URL
+# PgBouncer transaction mode doesn't support prepared statements or the
+# 'options' startup parameter. Disable SQLAlchemy statement caching so
+# no PREPARE/DEALLOCATE is issued.
 _engine_kwargs = {**_pool_kwargs}
 if _is_pgbouncer:
     _engine_kwargs["execution_options"] = {"no_cache": True}
