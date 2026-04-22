@@ -37,10 +37,14 @@ _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite or _is_pgbouncer
     # Direct-PG mode (port 5432): keep a bounded per-worker pool.
-    # 4 workers × (20 + 5) = 100 max DB conns, under Supabase's ~120 limit.
+    # 2 replicas × 4 workers × (10 + 3) = 104 max DB conns, under
+    # Supabase's ~120 limit. Per-worker pool is smaller now because
+    # most poll traffic is served from Redis cache (see app/cache.py
+    # + the /v1/events read-through) — actual DB hits are ~1/s per
+    # distinct query, not 1/request.
     # pool_pre_ping catches dead conns; pool_recycle cycles them
     # before Supabase's idle-kill; pool_timeout absorbs short bursts.
-    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 5, "pool_recycle": 60, "pool_timeout": 30, "poolclass": QueuePool}
+    else {"pool_pre_ping": True, "pool_size": 10, "max_overflow": 3, "pool_recycle": 60, "pool_timeout": 30, "poolclass": QueuePool}
 )
 
 # Keep the TCP connection alive to survive NAT / firewall idle timeouts

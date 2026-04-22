@@ -6,6 +6,7 @@ POST /v1/events    Send any event into the mod pipeline
 GET  /v1/events    Poll events (filter by after, target, channel, type)
 """
 
+import hashlib
 import logging
 from typing import Optional
 
@@ -14,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, case, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
 
+from app import cache
 from app.database import get_db
 from app.models import Channel, ChannelMember, EventRecord, Workspace
 from app.pipeline_factory import pipeline
@@ -162,6 +164,35 @@ async def poll_events(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    # Short-TTL read-through cache for poll traffic. 30+ agents polling
+    # identical (network, type, channel, after) queries every ~1-2s was
+    # saturating the FastAPI threadpool and DB pool; with a 1s TTL we
+    # collapse that to at most 1 DB hit/sec per distinct query.
+    # We intentionally skip caching when `search` is set (low-cardinality
+    # cache key, usually one-off), when `member` is set (result depends
+    # on channel membership state that changes), and when no cursor is
+    # given AND no sort is specified (reduces cache key fragmentation).
+    cache_key = None
+    if not search and not member:
+        key_parts = [
+            str(workspace.id), target or "", channel or "",
+            type or "", conversation or "",
+            after or "", before or "",
+            sort or "asc", str(limit),
+        ]
+        cache_key = "v1events:" + hashlib.sha1(
+            "|".join(key_parts).encode("utf-8")
+        ).hexdigest()
+
+        cached = cache.get_bytes(cache_key)
+        if cached is not None:
+            try:
+                import json as _json
+                return _json.loads(cached)
+            except Exception:
+                # fall through and recompute on corrupt cache entry
+                pass
+
     query = select(EventRecord).where(EventRecord.network_id == workspace.id)
 
     # Filter events to only channels where the agent is a member
@@ -244,7 +275,7 @@ async def poll_events(
     has_more = len(rows) > limit
     events = rows[:limit]
 
-    return success_response({
+    response = success_response({
         "events": [
             {
                 "id": e.id,
@@ -262,6 +293,21 @@ async def poll_events(
         "oldest_id": (events[-1].id if sort == "desc" else events[0].id) if events else None,
         "newest_id": (events[0].id if sort == "desc" else events[-1].id) if events else None,
     })
+
+    # Populate cache for subsequent identical polls within the 1s window.
+    # success_response returns a dict; Redis stores the serialized JSON.
+    if cache_key is not None and isinstance(response, dict):
+        try:
+            import json as _json
+            cache.set_bytes(
+                cache_key,
+                _json.dumps(response, default=str, separators=(",", ":")).encode("utf-8"),
+                ttl_seconds=1.0,
+            )
+        except Exception:
+            pass
+
+    return response
 
 
 # ---------------------------------------------------------------------------

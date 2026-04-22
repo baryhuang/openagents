@@ -13,3 +13,13 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
+# Two replicas so one pod's degradation doesn't take the whole service down.
+# Each pod runs 4 uvicorn workers × pool_size=20 = 80 DB conns, 2 pods = 160
+# which exceeds Supabase's ~120 direct-conn cap — so with 2 replicas we need
+# to drop per-worker pool to ~12 OR front DB access with a Redis read cache
+# (we're doing both: A1 caches /v1/events, A2 scales replicas).
+numReplicas = 2
+
+[[deploy.multiRegionConfig]]
+region = "us-west2"
+numReplicas = 2
