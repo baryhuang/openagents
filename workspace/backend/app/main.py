@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import config
 from app.routers import browser, events, files, network, workspaces
@@ -40,7 +41,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# CORS — added FIRST so it's innermost in the stack. That way CORS
+# headers (and OPTIONS preflight handling) are applied BEFORE gzip, so
+# CORS-aware responses still work when compressed.
 origins = [o.strip() for o in config.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +52,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# GZip — added LAST so it's outermost. Compresses all responses above
+# `minimum_size` bytes when the client sends `Accept-Encoding: gzip`.
+# Event polling responses are JSON and compress ~4-5x. Current egress is
+# dominated by /v1/events poll bodies (~500GB/mo observed); gzip should
+# cut that to ~100-130GB/mo. Level 6 is the standard tradeoff between
+# CPU cost and ratio.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
 
 # Routers
 app.include_router(browser.router)
