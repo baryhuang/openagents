@@ -16,10 +16,16 @@ const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents
 
 // Load core library from global install (not bundled asar)
 function loadCore() {
+  // 1. In development, prefer the local workspace package first
+  const localDevPath = path.resolve(__dirname, '../../../agent-connector');
+  if (fs.existsSync(path.join(localDevPath, 'package.json'))) {
+    try { return require(localDevPath); } catch (err) { console.error('Failed to load local core:', err); }
+  }
+  // 2. Otherwise load global install
   if (fs.existsSync(path.join(GLOBAL_CORE, 'package.json'))) {
     try { return require(GLOBAL_CORE); } catch {}
   }
-  // Fallback to bundled (for dev mode or if global not yet installed)
+  // 3. Fallback to bundled
   try { return require('@openagents-org/agent-launcher'); } catch {}
   return null;
 }
@@ -402,7 +408,9 @@ class AgentManager {
     // Find CLI entry point on disk (NOT in asar)
     // All platforms use --prefix ~/.openagents/nodejs → node_modules/
     let cliPath = null;
+    const localDevCli = path.resolve(__dirname, '../../../agent-connector/bin/agent-connector.js');
     const cliCandidates = [
+      localDevCli,
       path.join(portableNodeDir, 'node_modules', '@openagents-org', 'agent-launcher', 'bin', 'agent-connector.js'),
     ];
     for (const c of cliCandidates) {
