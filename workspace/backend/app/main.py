@@ -9,9 +9,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
 from app.routers import browser, events, files, network, workspaces
@@ -53,13 +54,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# GZip — added LAST so it's outermost. Compresses all responses above
-# `minimum_size` bytes when the client sends `Accept-Encoding: gzip`.
-# Event polling responses are JSON and compress ~4-5x. Current egress is
-# dominated by /v1/events poll bodies (~500GB/mo observed); gzip should
-# cut that to ~100-130GB/mo. Level 6 is the standard tradeoff between
-# CPU cost and ratio.
+# GZip — Compresses all responses above `minimum_size` bytes when the
+# client sends `Accept-Encoding: gzip`. Event polling responses are JSON
+# and compress ~4-5x. Current egress is dominated by /v1/events poll
+# bodies (~500GB/mo observed); gzip should cut that to ~100-130GB/mo.
+# Level 6 is the standard tradeoff between CPU cost and ratio.
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
+
+
+class NoTransformCompressionHeadersMiddleware(BaseHTTPMiddleware):
+    """Tell intermediate CDNs (Railway's Fastly layer) not to decompress
+    our gzipped responses.
+
+    Railway puts a Fastly CDN in front of the service by default. Without
+    these headers the CDN was decompressing /v1/events responses at the
+    edge, so clients received 21KB uncompressed JSON despite our origin
+    sending 3.7KB gzipped bodies — ~5x egress waste.
+
+    `no-transform` directs intermediaries not to modify the Content-Encoding
+    (RFC 7234). `private` signals that the response is per-client (poll
+    data is scoped by workspace token), so the CDN shouldn't cache and
+    share across clients.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Don't override if the handler already set cache-control explicitly.
+        if "cache-control" not in response.headers:
+            response.headers["cache-control"] = "private, no-transform, max-age=0"
+        return response
+
+
+app.add_middleware(NoTransformCompressionHeadersMiddleware)
 
 # Routers
 app.include_router(browser.router)
