@@ -7,6 +7,7 @@ import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { MarkdownContent } from '@/components/chat/markdown-content';
+import { FileGrid } from './file-grid';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -126,15 +127,7 @@ export function FilePreview() {
   }, [file?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!file) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-        <div className="opacity-20 mb-3">
-          <FileText className="size-10" />
-        </div>
-        <p className="text-sm font-medium">Select a file</p>
-        <p className="text-xs mt-1">Choose a file from the list to preview.</p>
-      </div>
-    );
+    return <FileGrid />;
   }
 
   const handleDownload = () => {
@@ -159,14 +152,16 @@ export function FilePreview() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-2 px-2 lg:px-4 py-2 lg:py-3 border-b shrink-0">
-        {isMobile && (
-          <button
-            onClick={openMobileList}
-            className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
-          >
-            <ChevronLeft className="size-5" />
-          </button>
-        )}
+        <button
+          onClick={() => {
+            if (isMobile) openMobileList();
+            else setSelectedFileId(null);
+          }}
+          className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
+          title="Back to files"
+        >
+          <ChevronLeft className="size-5" />
+        </button>
         <FileText className="size-4 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{file.filename.split('/').pop() || file.filename}</p>

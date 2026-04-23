@@ -2,114 +2,22 @@
 
 import { useRef, useState, useMemo, useCallback } from 'react';
 import {
-  Search, Upload, FolderOpen, FileText, FileCode, Image,
-  File as FileIcon, Trash2, Folder, ChevronRight, FolderPlus,
+  Search, Upload, FolderOpen, Trash2, Folder, ChevronRight, FolderPlus,
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { WorkspaceFile } from '@/lib/types';
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function getFileIcon(contentType: string | undefined, filename: string) {
-  const ct = contentType || '';
-  if (ct.startsWith('image/')) return <Image className="size-4 text-purple-500" />;
-  if (ct.startsWith('text/') || filename.match(/\.(md|txt|csv)$/i))
-    return <FileText className="size-4 text-blue-500" />;
-  if (
-    filename.match(/\.(js|ts|tsx|jsx|py|rs|go|java|rb|c|cpp|h|sh|yaml|yml|json|toml)$/i) ||
-    ct.includes('javascript') ||
-    ct.includes('json')
-  )
-    return <FileCode className="size-4 text-emerald-500" />;
-  return <FileIcon className="size-4 text-zinc-400" />;
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-/** Get the basename of a path (last segment after /) */
-function basename(path: string): string {
-  const parts = path.split('/');
-  return parts[parts.length - 1] || path;
-}
-
-interface FolderEntry {
-  type: 'folder';
-  name: string;
-  fileCount: number;
-}
-
-interface FileEntry {
-  type: 'file';
-  file: WorkspaceFile;
-  displayName: string;
-}
-
-type ListEntry = FolderEntry | FileEntry;
-
-/**
- * Given files and a current path, compute the folder entries and file entries
- * visible at this level.
- */
-function getEntriesAtPath(files: WorkspaceFile[], currentPath: string): ListEntry[] {
-  const prefix = currentPath ? currentPath + '/' : '';
-  const folders = new Map<string, number>(); // folderName -> fileCount
-  const fileEntries: FileEntry[] = [];
-
-  for (const file of files) {
-    const name = file.filename;
-    // Only consider files that are at or below the current path
-    if (prefix && !name.startsWith(prefix)) continue;
-
-    const remainder = prefix ? name.slice(prefix.length) : name;
-    const slashIdx = remainder.indexOf('/');
-
-    if (slashIdx === -1) {
-      // This file is directly at the current level
-      fileEntries.push({ type: 'file', file, displayName: remainder });
-    } else {
-      // This file is inside a subfolder
-      const folderName = remainder.slice(0, slashIdx);
-      folders.set(folderName, (folders.get(folderName) || 0) + 1);
-    }
-  }
-
-  const entries: ListEntry[] = [];
-
-  // Folders first, sorted alphabetically
-  const sortedFolders = Array.from(folders.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  for (const [name, count] of sortedFolders) {
-    entries.push({ type: 'folder', name, fileCount: count });
-  }
-
-  // Then files, sorted alphabetically
-  fileEntries.sort((a, b) => a.displayName.localeCompare(b.displayName));
-  entries.push(...fileEntries);
-
-  return entries;
-}
+import type { FileEntry } from './file-utils';
+import { formatSize, getFileIcon, timeAgo, basename, getEntriesAtPath } from './file-utils';
 
 export function FileList() {
-  const { files, selectedFileId, setSelectedFileId, uploadFile, deleteFile, refreshFiles } = useWorkspace();
+  const { files, selectedFileId, setSelectedFileId, uploadFile, deleteFile, refreshFiles, currentFilePath, setCurrentFilePath } = useWorkspace();
   const { isMobile, openMobileDetail } = useLayout();
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [currentPath, setCurrentPath] = useState('');
+  const currentPath = currentFilePath;
+  const setCurrentPath = setCurrentFilePath;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // When searching, show flat results across all folders; otherwise show current folder
@@ -132,9 +40,9 @@ export function FileList() {
   }, [currentPath]);
 
   const navigateToFolder = useCallback((folderName: string) => {
-    setCurrentPath((prev) => prev ? `${prev}/${folderName}` : folderName);
+    setCurrentPath(currentPath ? `${currentPath}/${folderName}` : folderName);
     setSearch('');
-  }, []);
+  }, [currentPath, setCurrentPath]);
 
   const navigateToBreadcrumb = useCallback((index: number) => {
     if (index < 0) {

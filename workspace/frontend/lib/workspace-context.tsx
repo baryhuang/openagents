@@ -18,6 +18,7 @@ interface WorkspaceContextValue {
   sessions: WorkspaceSession[];
   files: WorkspaceFile[];
   selectedFileId: string | null;
+  currentFilePath: string;
   currentSessionId: string | null;
   loading: boolean;
   error: string | null;
@@ -34,6 +35,7 @@ interface WorkspaceContextValue {
   stopAllAgents: () => Promise<void>;
   setCurrentSessionId: (id: string | null) => void;
   setSelectedFileId: (id: string | null) => void;
+  setCurrentFilePath: (path: string) => void;
   createSession: (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   updateSession: (sessionId: string, updates: { starred?: boolean; status?: string }) => Promise<void>;
@@ -106,6 +108,7 @@ export function WorkspaceProvider({
   const [agentModes, setAgentModes] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [currentFilePath, setCurrentFilePath] = useState('');
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
@@ -742,6 +745,8 @@ export function WorkspaceProvider({
         stopAllAgents,
         setCurrentSessionId,
         setSelectedFileId,
+        currentFilePath,
+        setCurrentFilePath,
         createSession,
         renameSession,
         updateSession,
