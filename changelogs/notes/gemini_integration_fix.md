@@ -1,26 +1,26 @@
-# Gemini CLI 集成与 Launcher 本地联调修复总结
+# Gemini CLI Integration & Launcher Local Development Fixes Summary
 
-**日期**: 2026-04-23
-**涉及组件**: `agent-connector`, `launcher`
+**Date**: 2026-04-23
+**Components**: `agent-connector`, `launcher`
 
-## 1. Gemini Adapter 核心解析修复 (`gemini.js`)
-* **Bug 表现**: Gemini CLI 运行正常但在网页端 Workspace 中对话时，始终提示 `No response generated. Please try again.`
-* **原因**: 在解析 `gemini -o stream-json` 的输出数据流时，错误地使用了转义字符串 `split('\\n')` 作为按行分割符，导致所有 JSON 输出黏连在一起引发解析异常，触发了底层的超时兜底逻辑。
-* **修复**: 将按行读取缓冲区的分割符修正为原生的 `split('\n')`，使底层 JSON 事件能够被逐行且正确地解析，彻底解决了 Gemini 响应为空的问题。
+## 1. Gemini Adapter Core Parsing Fix (`gemini.js`)
+* **Bug**: The Gemini CLI was running correctly, but the web Workspace constantly returned `No response generated. Please try again.`
+* **Root Cause**: When parsing the `stream-json` output from the Gemini CLI, the code mistakenly used the escaped string `split('\\n')` as the line delimiter. This caused all JSON outputs to stick together, throwing a parsing exception and triggering the timeout fallback logic.
+* **Fix**: Corrected the delimiter to the native newline character `split('\n')`. This allows the underlying JSON events to be parsed line-by-line correctly, completely resolving the empty response issue.
 
-## 2. Gemini 登录鉴权流改造 (`registry.json`)
-* **改造前**: UI 强制要求用户输入 `GEMINI_API_KEY`，体验不佳。
-* **改造后**: 移除了针对 Gemini 的 `env_config` 强制校验，新增了 `login_command: "gemini login"`。看齐 Claude 的交互流程，现在会引导用户直接调起终端，进行标准的 Google OAuth 网页授权。
+## 2. Gemini Authentication Flow Rewrite (`registry.json`)
+* **Before**: The UI forced users to input `GEMINI_API_KEY`, which was a poor user experience.
+* **After**: Removed the mandatory `env_config` validation for Gemini and added `login_command: "gemini login"`. Aligning with Claude's interaction flow, the app now guides users to open the terminal for standard Google OAuth web authentication.
 
-## 3. Launcher 调试环境与性能优化 (`agent-manager.js` & `main.js`)
-* **开发热更新修复**: 修改了 `AgentManager.loadCore()` 和守护进程执行路径逻辑。在开发环境下（`npm run start`）会优先判定并加载工程本地目录的 `agent-connector` 代码，而非默认调用全局安装的 `@openagents-org/agent-launcher`。解决了“无论怎么改本地代码，后台都不生效”的开发痛点。
-* **界面卡顿优化**: 在 `package.json` 和 `main.js` 中新增了无头模式与 `--disable-gpu` (对应 `npm run dev:nogpu`) 启动选项，极大缓解了本地测试时 Launcher 图形界面极度卡顿、难以操作的问题。
+## 3. Launcher Development Environment & Performance Optimization (`agent-manager.js` & `main.js`)
+* **Hot Reload Fix**: Modified `AgentManager.loadCore()` and the daemon execution path logic. In development mode (`npm run start`), it now prioritizes loading the `agent-connector` code from the local repository directory instead of defaulting to the globally installed `@openagents-org/agent-launcher`. This resolves the pain point where local code changes had no effect.
+* **UI Lag Optimization**: Added a headless mode and the `--disable-gpu` startup option (mapped to `npm run dev:nogpu`) in `package.json` and `main.js`. This greatly alleviates the severe UI lag when testing the Launcher locally.
 
-## 4. 守护进程 (Daemon) 通信机制优化 (`base.js`)
-* **响应速度大幅提升**: 重构了 `BaseAdapter._pollLoop()` 的长轮询策略（Adaptive Polling）。将空闲状态下，Daemon 询问远端 Workspace 消息的最大轮询等待时间**从 15 秒压缩至 3 秒**。大幅降低了消息延迟，使得人类与本地 Agent 的交互体感更加顺畅。
-* **连接错误可观测性提升**: 为网络错误抛出处增加了详细的堆栈（`e.stack`）输出。在排查“假死”问题时，可直接在 `daemon.log` 中捕捉到 `ECONNREFUSED` 或 `Network not found` 的底层抛错。
+## 4. Daemon Communication Mechanism Optimization (`base.js`)
+* **Response Speed Boost**: Refactored the long polling strategy (Adaptive Polling) in `BaseAdapter._pollLoop()`. The maximum polling interval during idle states was **reduced from 15 seconds to 3 seconds**. This significantly lowers message latency, making the human-agent interaction feel much smoother.
+* **Connection Error Observability**: Added detailed stack trace (`e.stack`) output for network errors. When troubleshooting unresponsiveness, `ECONNREFUSED` or `Network not found` underlying errors can now be easily captured in `daemon.log`.
 
-## 📝 调试排坑记录 (Workspace 串台问题)
-测试时曾遇到后端响应 `Network not found` 且拒绝连接：
-* 原因是：**将本地后端的 Token 用在了线上生成环境中**。此前在本地运行 `http://localhost:8000` 后端时生成了一个名为 `Local Debug Workspace` 的配置文件，当拿着这个关联着本地接口的 Token 到线上（`workspace.openagents.org`）去连接时，跨服导致 404 拒绝。
-* **经验教训**：线上版 Workspace 与本地私有化部署 Workspace 互不相通，测试时必须保证所获取 Token 的发放平台与当前 Launcher 运行指向的接口完全一致。
+## 📝 Troubleshooting Log (Workspace Routing Confusion)
+During testing, the backend responded with `Network not found` and refused the connection:
+* **Reason**: **A local backend token was used in the production environment.** Previously, running the backend at `http://localhost:8000` generated a profile named `Local Debug Workspace`. When taking this token (associated with the local API) to connect on the production site (`workspace.openagents.org`), it resulted in a 404 rejection.
+* **Lesson Learned**: The production Workspace and the local self-hosted Workspace are entirely isolated. When testing, ensure that the environment where the Token was issued matches the endpoint the Launcher is currently communicating with.

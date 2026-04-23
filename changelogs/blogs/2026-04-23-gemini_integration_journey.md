@@ -1,88 +1,88 @@
-# OpenAgents 源码改造实录：彻底打通 Gemini CLI 的桌面端集成
+# OpenAgents Source Code Modification Record: Fully Integrating Gemini CLI into the Desktop App
 
-**作者**: 开发团队
-**日期**: 2026-04-23
-**标签**: #OpenAgents #Gemini #Electron #Nodejs #源码剖析
+**Author**: Development Team
+**Date**: 2026-04-23
+**Tags**: #OpenAgents #Gemini #Electron #Nodejs #SourceCode
 
-在最近的开发迭代中，我们的核心目标是将 Google 的 Gemini CLI 完美地集成到 OpenAgents 的桌面端（Launcher）生态中。虽然官方源码中已经预留了 `gemini.js` 适配器的骨架，但在实际运行中却遇到了重重阻碍——不仅本地联调困难，而且 Agent 根本无法正常回复消息。
+In our latest development iteration, our core objective was to seamlessly integrate the Google Gemini CLI into the OpenAgents desktop app (Launcher) ecosystem. Although the official source code had reserved a skeleton for the `gemini.js` adapter, we encountered multiple roadblocks in practice—not only was local debugging difficult, but the Agent couldn't respond to messages at all.
 
-本文将详细记录我们是如何一步步排查源码、修复底层通信 Bug，并最终实现顺畅的本地多智能体协同体验的。
+This article details how we step-by-step investigated the source code, fixed underlying communication bugs, and ultimately achieved a smooth local multi-agent collaboration experience.
 
 ---
 
-## 挑战一：打破“改了代码不生效”的黑盒（开发环境改造）
+## Challenge 1: Breaking the "Code Changes Don't Take Effect" Black Box (Dev Environment Fix)
 
-**问题现象**：
-一开始我们在 `packages/agent-connector` 中修改了适配器代码，然后在 `packages/launcher` 中执行 `npm run start`，却发现所有的改动都不生效。
+**The Problem**:
+Initially, we modified the adapter code in `packages/agent-connector` and then ran `npm run start` in `packages/launcher`, only to find that none of our changes took effect.
 
-**源码剖析与修复**：
-深入 `agent-manager.js` 的源码后，我们发现 Launcher 在启动后台守护进程（Daemon）时，有一套严格的依赖寻址逻辑。它优先去 `~/.openagents/nodejs/node_modules/` 寻找全局安装的生产环境代码，如果找不到才会退回打包的 asar。**这意味着它完全无视了我们正在开发的本地源码！**
+**Source Code Analysis & Fix**:
+Diving into `agent-manager.js`, we found that the Launcher uses a strict dependency resolution logic when starting the background daemon. It prioritized searching for globally installed production code in `~/.openagents/nodejs/node_modules/`, and if missing, fell back to the bundled asar. **This meant it completely ignored our local source code in development!**
 
-为此，我们重构了 `loadCore()` 和 CLI 执行路径逻辑：
+To solve this, we refactored `loadCore()` and the CLI execution path logic:
 ```javascript
 // packages/launcher/src/main/agent-manager.js
 const localDevPath = path.resolve(__dirname, '../../../agent-connector');
 if (fs.existsSync(path.join(localDevPath, 'package.json'))) {
-  try { return require(localDevPath); } // 优先加载本地工程目录的源码
+  try { return require(localDevPath); } // Prioritize loading local project source code
 }
 ```
-经过改造，Launcher 终于能够实时拉起我们本地的 `agent-connector`，为后续的断点调试铺平了道路。此外，我们还在 `package.json` 中加入了 `--disable-gpu` 启动参数，彻底解决了开发模式下 Electron 界面卡顿的问题。
+With this change, the Launcher could finally spin up our local `agent-connector` in real-time, paving the way for subsequent debugging. Additionally, we added the `--disable-gpu` flag to `package.json` to completely resolve Electron UI lag issues in dev mode.
 
 ---
 
-## 挑战二：看齐 Claude，重构优雅的鉴权流
+## Challenge 2: Matching Claude with an Elegant Authentication Flow
 
-**问题现象**：
-源码中 Gemini 的配置极其简陋，点击运行后强制要求用户在 UI 界面输入长长的 `GEMINI_API_KEY`，这完全背离了现代 CLI 工具 OAuth 授权的优雅体验。
+**The Problem**:
+The original Gemini configuration was extremely barebones. Running it forced users to manually enter a long `GEMINI_API_KEY` into the UI, which deviated entirely from the elegant OAuth experience of modern CLI tools.
 
-**源码剖析与修复**：
-我们直接动手修改了 `packages/agent-connector/registry.json`：
-1. **删除了强制的 ENV 校验**：去掉了针对 Gemini 的 `env_config` 强校验。
-2. **引入 CLI 登录指令**：新增了 `login_command: "gemini login"` 字段。
+**Source Code Analysis & Fix**:
+We directly modified `packages/agent-connector/registry.json`:
+1. **Removed strict ENV validation**: Stripped out the `env_config` validation specifically for Gemini.
+2. **Introduced CLI login command**: Added the `login_command: "gemini login"` field.
 
-现在，当用户第一次使用 Gemini 时，OpenAgents 会像对待 Claude 一样，贴心地调起系统原生终端，引导用户通过浏览器完成 Google 账号的一键授权。密钥全程交由官方 CLI 管理，安全且优雅。
+Now, on their first use of Gemini, OpenAgents behaves just like it does with Claude: it conveniently opens the native terminal and guides the user through standard Google OAuth web authentication. Keys are entirely managed by the official CLI—secure and elegant.
 
 ---
 
-## 挑战三：沉默的 Agent 与致命的转移符 Bug
+## Challenge 3: The Silent Agent and the Fatal Escape Character Bug
 
-**问题现象**：
-鉴权打通后，我们成功在网页版 Workspace 看到了 Gemini 上线。然而，当输入任何问题时，网页总是秒回：`No response generated. Please try again.`（未生成响应，请重试）。
+**The Problem**:
+After auth was sorted, Gemini successfully appeared online in the Workspace web interface. However, when we asked a question, the web app instantly replied: `No response generated. Please try again.`
 
-**源码剖析与修复**：
-这是本次排查中最隐蔽，也是最“令人吐血”的一个 Bug。
-当深入 `src/adapters/gemini.js` 阅读其读取 CLI 标准输出流（stdout）的代码时，我们发现了罪魁祸首：
+**Source Code Analysis & Fix**:
+This was the most elusive and frustrating bug of this iteration.
+Reading through `src/adapters/gemini.js` where it parses the standard output (stdout) of the CLI, we found the culprit:
 
 ```javascript
-// 修复前的源码：
+// Original code:
 const lines = lineBuffer.split('\\n'); 
 
-// 修复后的代码：
+// Fixed code:
 const lines = lineBuffer.split('\n'); 
 ```
 
-**就多了一个反斜杠！**
-由于多写了一个转义符，Node.js 引擎一直在傻傻地寻找字面上的“反斜杠加n”来分割字符串，而 `gemini -o stream-json` 输出的是真正的换行符（`\n`）。这就导致成百上千行的 JSON 输出被全部粘连成了一个畸形的超大字符串，底层的 `JSON.parse` 直接抛出语法异常被 `catch` 吞噬，最终触发了超时兜底逻辑，返回空响应。
+**Just one extra backslash!**
+Due to the extra escape character, the Node.js engine was literally searching for the string "backslash + n" to split the text, while `gemini -o stream-json` actually outputs real newline characters (`\n`). This caused hundreds of lines of JSON output to stick together into one massive, malformed string. The underlying `JSON.parse` threw a syntax error which was quietly caught, ultimately triggering the timeout fallback logic and returning an empty response.
 
-修正这个转义符后，底层 JSON 事件流瞬间顺畅，Gemini 的思考过程和回答被完美解析并推送到前端界面。
+By fixing this escape character, the underlying JSON event stream immediately flowed smoothly. Gemini's thinking process and answers were perfectly parsed and pushed to the frontend.
 
 ---
 
-## 彩蛋：极致的轮询性能优化
+## Bonus: Pushing Polling Performance to the Limit
 
-在链路完全跑通后，我们发现从发送消息到 Agent 开始回复，中间总有几秒钟的“便秘感”。
+Once the pipeline was fully functional, we noticed a few seconds of "sluggishness" between sending a message and the Agent starting its reply.
 
-我们深挖了 `BaseAdapter._pollLoop()` 逻辑。原来，为了节省网络带宽，守护进程向远程 Workspace 请求消息时采用的是“自适应轮询”（Adaptive Polling）。在原逻辑下，如果 Agent 空闲，它最多会等待 **15秒** 才会去服务器看一眼有没有新活儿！
+We dug deep into the `BaseAdapter._pollLoop()` logic. To save network bandwidth, the daemon used "Adaptive Polling" to fetch messages from the remote Workspace. Under the original logic, if the Agent was idle, it would wait up to **15 seconds** before checking the server for new tasks!
 
-我们果断下调了轮询延迟：
+We decisively lowered the polling delay:
 ```javascript
 // Aggressive polling for snappier experience: 1s active, up to 3s idle
 const delay = incoming.length > 0 ? 1000 : Math.min(1000 + idleCount * 500, 3000);
 ```
-将最大空闲等待时间压缩至 **3秒** 后，消息延迟肉眼可见地降低，人类与 AI 之间的多端协作体验得到了史诗级加强！
+By compressing the maximum idle wait time to **3 seconds**, message latency visibly dropped, and the multi-device collaboration experience between humans and AI received an epic upgrade!
 
 ---
 
-## 结语
+## Conclusion
 
-通过这次对 OpenAgents 源码的剖析与改造，我们不仅修复了潜藏的致命 Bug，完善了 Gemini 的鉴权工作流，还从根本上提升了开发环境的可用性与系统的响应速度。这证明了在打造出色的 Agentic 协作平台时，底层通信管道的健壮性与细节处理（哪怕是一个换行符）究竟有多么重要。
+Through analyzing and modifying the OpenAgents source code, we not only fixed a hidden fatal bug and perfected Gemini's authentication workflow, but also fundamentally improved the development environment's usability and system responsiveness. This proves just how critical the robustness and detail-handling (even down to a single newline character) of underlying communication pipes are when building exceptional Agentic collaboration platforms.
