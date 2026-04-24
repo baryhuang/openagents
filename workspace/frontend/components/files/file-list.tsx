@@ -1,57 +1,33 @@
 'use client';
 
-import { useRef, useState, useMemo, useCallback } from 'react';
-import {
-  Search, Upload, FolderOpen, Trash2, Folder, ChevronRight, FolderPlus,
-} from 'lucide-react';
+import { useRef, useState, useMemo } from 'react';
+import { Search, Upload, FolderOpen, Trash2 } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { FileEntry } from './file-utils';
-import { formatSize, getFileIcon, timeAgo, basename, getEntriesAtPath } from './file-utils';
+import { formatSize, getFileIcon, timeAgo, basename } from './file-utils';
 
 export function FileList() {
-  const { files, selectedFileId, setSelectedFileId, uploadFile, deleteFile, refreshFiles, currentFilePath, setCurrentFilePath } = useWorkspace();
+  const { files, selectedFileId, setSelectedFileId, uploadFile, deleteFile, currentFilePath } = useWorkspace();
   const { isMobile, openMobileDetail } = useLayout();
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
-  const currentPath = currentFilePath;
-  const setCurrentPath = setCurrentFilePath;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // When searching, show flat results across all folders; otherwise show current folder
-  const entries = useMemo(() => {
+  // Flat list of all files, sorted by most recently modified
+  const recentFiles = useMemo(() => {
+    let list = [...files];
     if (search) {
-      const filtered = files.filter((f) => f.filename.toLowerCase().includes(search.toLowerCase()));
-      return filtered.map((f): FileEntry => ({
-        type: 'file',
-        file: f,
-        displayName: f.filename,
-      }));
+      list = list.filter((f) => f.filename.toLowerCase().includes(search.toLowerCase()));
     }
-    return getEntriesAtPath(files, currentPath);
-  }, [files, currentPath, search]);
-
-  // Breadcrumb segments
-  const breadcrumbs = useMemo(() => {
-    if (!currentPath) return [];
-    return currentPath.split('/');
-  }, [currentPath]);
-
-  const navigateToFolder = useCallback((folderName: string) => {
-    setCurrentPath(currentPath ? `${currentPath}/${folderName}` : folderName);
-    setSearch('');
-  }, [currentPath, setCurrentPath]);
-
-  const navigateToBreadcrumb = useCallback((index: number) => {
-    if (index < 0) {
-      setCurrentPath('');
-    } else {
-      const segments = currentPath.split('/');
-      setCurrentPath(segments.slice(0, index + 1).join('/'));
-    }
-  }, [currentPath]);
+    list.sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+    return list;
+  }, [files, search]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -60,9 +36,8 @@ export function FileList() {
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
-        // Prepend current folder path to filename
-        if (currentPath) {
-          const renamedFile = new File([file], `${currentPath}/${file.name}`, { type: file.type });
+        if (currentFilePath) {
+          const renamedFile = new File([file], `${currentFilePath}/${file.name}`, { type: file.type });
           await uploadFile(renamedFile);
         } else {
           await uploadFile(file);
@@ -75,16 +50,6 @@ export function FileList() {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  };
-
-  const handleCreateFolder = () => {
-    const name = prompt('Folder name:');
-    if (!name?.trim()) return;
-    const sanitized = name.trim().replace(/[/\\]/g, '-');
-    // Navigate into the new folder — it will appear once a file is uploaded into it
-    const newPath = currentPath ? `${currentPath}/${sanitized}` : sanitized;
-    setCurrentPath(newPath);
-    toast.success(`Opened folder "${sanitized}" — upload files here`);
   };
 
   const handleDelete = async (e: React.MouseEvent, fileId: string, filename: string) => {
@@ -112,17 +77,10 @@ export function FileList() {
             />
           </div>
           <button
-            onClick={handleCreateFolder}
-            className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
-            title="New Folder"
-          >
-            <FolderPlus className="size-3.5" />
-          </button>
-          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 disabled:opacity-50"
-            title={currentPath ? `Upload to ${currentPath}` : 'Upload File'}
+            title="Upload File"
           >
             <Upload className="size-3.5" />
           </button>
@@ -136,104 +94,61 @@ export function FileList() {
         </div>
       </div>
 
-      {/* Breadcrumb navigation */}
-      {(currentPath || search) && !search && (
-        <div className="flex items-center gap-0.5 px-3 pb-2 text-[11px] text-muted-foreground overflow-x-auto shrink-0">
-          <button
-            onClick={() => navigateToBreadcrumb(-1)}
-            className="hover:text-foreground transition-colors shrink-0 font-medium"
-          >
-            Files
-          </button>
-          {breadcrumbs.map((segment, i) => (
-            <span key={i} className="flex items-center gap-0.5 shrink-0">
-              <ChevronRight className="size-3 opacity-40" />
-              <button
-                onClick={() => navigateToBreadcrumb(i)}
-                className={cn(
-                  'hover:text-foreground transition-colors',
-                  i === breadcrumbs.length - 1 && 'text-foreground font-medium'
-                )}
-              >
-                {segment}
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Section label */}
+      <div className="px-3 pb-1.5 shrink-0">
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          Recent Files
+        </span>
+      </div>
 
-      {/* File/folder list */}
-      {entries.length === 0 ? (
+      {/* File list — flat, sorted by most recent */}
+      {recentFiles.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="text-center space-y-2">
             <FolderOpen className="size-10 mx-auto opacity-30" />
             <p className="text-sm font-medium">
-              {files.length === 0 ? 'No files yet' : search ? 'No matches' : 'Empty folder'}
+              {files.length === 0 ? 'No files yet' : 'No matches'}
             </p>
             <p className="text-xs">
               {files.length === 0
                 ? 'Upload a file or ask an agent to create one'
-                : search
-                ? 'Try a different search term'
-                : 'Upload files here or go back'}
+                : 'Try a different search term'}
             </p>
           </div>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-1">
-          {entries.map((entry) => {
-            if (entry.type === 'folder') {
-              return (
-                <div
-                  key={`folder:${entry.name}`}
-                  onClick={() => navigateToFolder(entry.name)}
-                  className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors group cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                >
-                  <Folder className="size-4 text-amber-500" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium truncate">{entry.name}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {entry.fileCount} {entry.fileCount === 1 ? 'file' : 'files'}
-                    </p>
-                  </div>
-                  <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              );
-            }
-
-            const { file, displayName } = entry;
-            return (
-              <div
-                key={file.id}
-                onClick={() => {
-                  setSelectedFileId(file.id);
-                  if (isMobile) openMobileDetail();
-                }}
-                className={cn(
-                  'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors group cursor-pointer',
-                  selectedFileId === file.id
-                    ? 'bg-zinc-100 dark:bg-zinc-800'
-                    : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                )}
-              >
-                {getFileIcon(file.contentType, file.filename)}
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-medium truncate">{displayName}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {formatSize(file.size)} · {(file.uploadedBy || 'unknown').replace(/^(openagents:|human:)/, '')}
-                    {file.createdAt && ` · ${timeAgo(file.createdAt)}`}
-                  </p>
-                </div>
-                <button
-                  onClick={(e) => handleDelete(e, file.id, file.filename)}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-muted-foreground hover:text-red-500 transition-all"
-                  title="Delete"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+          {recentFiles.map((file) => (
+            <div
+              key={file.id}
+              onClick={() => {
+                setSelectedFileId(file.id);
+                if (isMobile) openMobileDetail();
+              }}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors group cursor-pointer',
+                selectedFileId === file.id
+                  ? 'bg-zinc-100 dark:bg-zinc-800'
+                  : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+              )}
+            >
+              {getFileIcon(file.contentType, file.filename)}
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium truncate">{basename(file.filename)}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {formatSize(file.size)} · {(file.uploadedBy || 'unknown').replace(/^(openagents:|human:)/, '')}
+                  {file.createdAt && ` · ${timeAgo(file.createdAt)}`}
+                </p>
               </div>
-            );
-          })}
+              <button
+                onClick={(e) => handleDelete(e, file.id, file.filename)}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-muted-foreground hover:text-red-500 transition-all"
+                title="Delete"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
