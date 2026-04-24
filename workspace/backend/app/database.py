@@ -37,14 +37,13 @@ _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite or _is_pgbouncer
     # Direct-PG mode (port 5432): keep a bounded per-worker pool.
-    # 2 replicas × 4 workers × (10 + 3) = 104 max DB conns, under
-    # Supabase's ~120 limit. Per-worker pool is smaller now because
-    # most poll traffic is served from Redis cache (see app/cache.py
-    # + the /v1/events read-through) — actual DB hits are ~1/s per
-    # distinct query, not 1/request.
-    # pool_pre_ping catches dead conns; pool_recycle cycles them
-    # before Supabase's idle-kill; pool_timeout absorbs short bursts.
-    else {"pool_pre_ping": True, "pool_size": 10, "max_overflow": 3, "pool_recycle": 60, "pool_timeout": 30, "poolclass": QueuePool}
+    # Sized for Railway Postgres max_connections=100 at 2 replicas × 2
+    # workers (WEB_CONCURRENCY=2): 2 × 2 × (20 + 4) = 96 max DB conns,
+    # leaves 4 for admin/migrations.
+    # pool_timeout is short (2s) because SQLAlchemy sync calls inside
+    # FastAPI async handlers block the event loop — a 30s queue wait
+    # would stall /health and every other request on that worker.
+    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 4, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
 )
 
 # Keep the TCP connection alive to survive NAT / firewall idle timeouts
