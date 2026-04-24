@@ -17,7 +17,8 @@ export function FileList() {
 
   // Flat list of all files, sorted by most recently modified
   const recentFiles = useMemo(() => {
-    let list = [...files];
+    // Hide .keep placeholder files
+    let list = files.filter((f) => !f.filename.endsWith('/.keep') && f.filename !== '.keep');
     if (search) {
       list = list.filter((f) => f.filename.toLowerCase().includes(search.toLowerCase()));
     }

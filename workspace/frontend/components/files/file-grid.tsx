@@ -99,13 +99,19 @@ export function FileGrid() {
     }
   };
 
-  const handleCreateFolder = () => {
+  const handleCreateFolder = async () => {
     const name = prompt('Folder name:');
     if (!name?.trim()) return;
     const sanitized = name.trim().replace(/[/\\]/g, '-');
-    const newPath = currentPath ? `${currentPath}/${sanitized}` : sanitized;
-    setCurrentPath(newPath);
-    toast.success(`Opened folder "${sanitized}" — upload files here`);
+    const folderPath = currentPath ? `${currentPath}/${sanitized}` : sanitized;
+    try {
+      // Upload a .keep placeholder so the folder persists even when empty
+      const keepFile = new File([''], `${folderPath}/.keep`, { type: 'text/plain' });
+      await uploadFile(keepFile);
+      toast.success(`Created folder "${sanitized}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create folder');
+    }
   };
 
   const handleDelete = async (e: React.MouseEvent, fileId: string, filename: string) => {

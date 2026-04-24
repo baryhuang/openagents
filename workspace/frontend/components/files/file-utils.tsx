@@ -73,7 +73,7 @@ export type ListEntry = FolderEntry | FileEntry;
  */
 export function getEntriesAtPath(files: WorkspaceFile[], currentPath: string): ListEntry[] {
   const prefix = currentPath ? currentPath + '/' : '';
-  const folders = new Map<string, number>(); // folderName -> fileCount
+  const folders = new Map<string, number>(); // folderName -> fileCount (excluding .keep)
   const fileEntries: FileEntry[] = [];
 
   for (const file of files) {
@@ -85,12 +85,17 @@ export function getEntriesAtPath(files: WorkspaceFile[], currentPath: string): L
     const slashIdx = remainder.indexOf('/');
 
     if (slashIdx === -1) {
+      // Hide .keep placeholder files
+      if (remainder === '.keep') continue;
       // This file is directly at the current level
       fileEntries.push({ type: 'file', file, displayName: remainder });
     } else {
       // This file is inside a subfolder
       const folderName = remainder.slice(0, slashIdx);
-      folders.set(folderName, (folders.get(folderName) || 0) + 1);
+      // Don't count .keep files toward the visible file count
+      const rest = remainder.slice(slashIdx + 1);
+      const isOnlyKeep = rest === '.keep' && !rest.includes('/');
+      folders.set(folderName, (folders.get(folderName) || 0) + (isOnlyKeep ? 0 : 1));
     }
   }
 
