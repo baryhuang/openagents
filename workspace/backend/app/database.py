@@ -37,13 +37,16 @@ _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite or _is_pgbouncer
     # Direct-PG mode (port 5432): keep a bounded per-worker pool.
-    # Sized for Railway Postgres max_connections=100 at 2 replicas × 2
-    # workers (WEB_CONCURRENCY=2): 2 × 2 × (20 + 4) = 96 max DB conns,
-    # leaves 4 for admin/migrations.
-    # pool_timeout is short (2s) because SQLAlchemy sync calls inside
-    # FastAPI async handlers block the event loop — a 30s queue wait
-    # would stall /health and every other request on that worker.
-    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 4, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
+    # Sized for Railway Postgres max_connections=100 at 2 replicas × 1
+    # worker (WEB_CONCURRENCY=1): 2 × (40 + 8) = 96 max DB conns, leaves
+    # 4 for admin/migrations. Running a single worker per replica is
+    # intentional — FastAPI async handlers calling sync SQLAlchemy hold
+    # a DB connection for the duration of each request, so bursts of
+    # concurrent polls saturated per-worker pools when multiple workers
+    # competed for the same 100-conn budget.
+    # pool_timeout is short (2s) because a longer queue wait would
+    # stall the async event loop on /health and everything else.
+    else {"pool_pre_ping": True, "pool_size": 40, "max_overflow": 8, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
 )
 
 # Keep the TCP connection alive to survive NAT / firewall idle timeouts
