@@ -164,15 +164,27 @@ async def poll_events(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    # Short-TTL read-through cache for poll traffic. 30+ agents polling
-    # identical (network, type, channel, after) queries every ~1-2s was
-    # saturating the FastAPI threadpool and DB pool; with a 1s TTL we
-    # collapse that to at most 1 DB hit/sec per distinct query.
-    # We intentionally skip caching when `search` is set (low-cardinality
-    # cache key, usually one-off), when `member` is set (result depends
-    # on channel membership state that changes), and when no cursor is
-    # given AND no sort is specified (reduces cache key fragmentation).
+    # Two-level read-through cache for poll traffic.
+    #
+    # Level 1: FULL key (includes `after`/`before` cursor). Dedupes identical
+    # polls from the same agent within the TTL window. Correct for any
+    # parameters.
+    #
+    # Level 2: HEAD-CURSOR tracking. When a non-empty poll returns events,
+    # we remember the newest event id for these filters. When a subsequent
+    # poll comes in with `after = cached_head_id` (i.e. the client is
+    # already caught up to the most recent event we've seen), its "give me
+    # anything newer" query is equivalent to a no-cursor "give me the empty
+    # set". Many agents sharing the head cursor all hash to the same
+    # Level-2 key and share a single DB hit.
+    #
+    # This is a strict correctness guarantee: we only route to Level 2 when
+    # the caller's cursor is EQUAL to the tracked head. Agents that are
+    # behind (historical backfill) fall through to Level 1 / DB.
     cache_key = None
+    at_head_key = None
+    head_tracker_key = None
+    incoming_after = after or ""
     if not search and not member:
         key_parts = [
             str(workspace.id), target or "", channel or "",
@@ -180,18 +192,46 @@ async def poll_events(
             after or "", before or "",
             sort or "asc", str(limit),
         ]
-        cache_key = "v1events:" + hashlib.sha1(
+        cache_key = "v1events:full:" + hashlib.sha1(
             "|".join(key_parts).encode("utf-8")
         ).hexdigest()
 
+        # Per-filter head cursor marker (what the newest event id was for
+        # this filter the last time we saw any events). Cursor-free.
+        filter_parts = [
+            str(workspace.id), target or "", channel or "",
+            type or "", conversation or "",
+            sort or "asc", str(limit),
+        ]
+        filter_hash = hashlib.sha1("|".join(filter_parts).encode("utf-8")).hexdigest()
+        head_tracker_key = "v1events:head:" + filter_hash
+
+        import json as _json
+
+        # Level 1: exact-match cache
         cached = cache.get_bytes(cache_key)
         if cached is not None:
             try:
-                import json as _json
                 return _json.loads(cached)
             except Exception:
-                # fall through and recompute on corrupt cache entry
                 pass
+
+        # Level 2: if client is at head (after == last-known head), route
+        # to a shared cached-empty response. Only fires when we already know
+        # the head AND client's cursor matches it — so agents behind head
+        # cannot receive this cached empty by mistake.
+        if before is None:
+            head_id = cache.get_bytes(head_tracker_key)
+            if head_id is not None:
+                head_id_str = head_id.decode("utf-8") if isinstance(head_id, bytes) else str(head_id)
+                if head_id_str and head_id_str == incoming_after:
+                    at_head_key = "v1events:athead:" + filter_hash
+                    cached_empty = cache.get_bytes(at_head_key)
+                    if cached_empty is not None:
+                        try:
+                            return _json.loads(cached_empty)
+                        except Exception:
+                            pass
 
     query = select(EventRecord).where(EventRecord.network_id == workspace.id)
 
@@ -294,16 +334,48 @@ async def poll_events(
         "newest_id": (events[0].id if sort == "desc" else events[-1].id) if events else None,
     })
 
-    # Populate cache for subsequent identical polls within the 1s window.
+    # Populate cache for subsequent polls within the TTL window.
     # success_response returns a dict; Redis stores the serialized JSON.
     if cache_key is not None and isinstance(response, dict):
         try:
             import json as _json
-            cache.set_bytes(
-                cache_key,
-                _json.dumps(response, default=str, separators=(",", ":")).encode("utf-8"),
-                ttl_seconds=1.0,
-            )
+            serialized = _json.dumps(
+                response, default=str, separators=(",", ":")
+            ).encode("utf-8")
+            # Level 1: exact-match cache (includes cursor). Slightly
+            # longer TTL helps dedup adjacent polls from the same agent.
+            cache.set_bytes(cache_key, serialized, ttl_seconds=1.5)
+
+            # Level 2 maintenance — track the head cursor for these
+            # filters, and cache the "empty" response when the client was
+            # already at head.
+            if head_tracker_key is not None:
+                newest_id = response.get("data", {}).get("newest_id")
+                if events and newest_id:
+                    # Update head tracker — newest_id is the tip we just saw.
+                    # Longer TTL because head updates are cheap and we want
+                    # subsequent at-head checks to find it.
+                    cache.set_bytes(
+                        head_tracker_key,
+                        str(newest_id).encode("utf-8"),
+                        ttl_seconds=30.0,
+                    )
+                elif not events and incoming_after:
+                    # DB returned empty AND the client had a cursor. This
+                    # confirms "after = head" for this filter. Populate
+                    # both the head tracker (so other clients can match)
+                    # and the shared at-head empty response.
+                    filter_hash = head_tracker_key.split(":")[-1]
+                    cache.set_bytes(
+                        head_tracker_key,
+                        incoming_after.encode("utf-8"),
+                        ttl_seconds=30.0,
+                    )
+                    cache.set_bytes(
+                        "v1events:athead:" + filter_hash,
+                        serialized,
+                        ttl_seconds=1.5,
+                    )
         except Exception:
             pass
 
