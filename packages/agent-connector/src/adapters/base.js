@@ -53,7 +53,7 @@ class BaseAdapter {
     this._channelQueues = {};
     this._log = (msg) => {
       const ts = new Date().toISOString();
-      console.log(`${ts} INFO adapter: ${msg}`);
+      console.log(`${ts} INFO adapter [${this.agentName}]: ${msg}`);
     };
   }
 
@@ -109,20 +109,15 @@ class BaseAdapter {
   // ------------------------------------------------------------------
 
   async _skipExistingEvents() {
-    try {
-      while (true) {
-        const { cursor } = await this.client.pollPending(
-          this.workspaceId, this.agentName, this.token,
-          { after: this._lastEventId, limit: 200 }
-        );
-        if (!cursor || cursor === this._lastEventId) break;
-        this._lastEventId = cursor;
-      }
-      if (this._lastEventId) {
-        this._log(`Skipped existing events, cursor at ${this._lastEventId}`);
-      }
-    } catch (e) {
-      this._log(`Failed to skip existing events: ${e.message}`);
+    // Jump straight to the head with one server call. Pagination from the
+    // start was slow and brittle: on a busy workspace it could take many
+    // minutes to chew through historical events 200 at a time, leaving the
+    // agent silently behind, and a transient mid-paginate empty response
+    // (e.g. shared-cache race) would strand the cursor at a non-head id.
+    const head = await this.client.getHeadEventId(this.workspaceId, this.token);
+    if (head) {
+      this._lastEventId = head;
+      this._log(`Skipped existing events, cursor at ${head}`);
     }
   }
 

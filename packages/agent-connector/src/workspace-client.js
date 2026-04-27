@@ -180,6 +180,29 @@ class WorkspaceClient {
   }
 
   /**
+   * Fetch the latest workspace.message.posted event id (head cursor).
+   * Used by adapters to skip past existing events on join in O(1) instead
+   * of paginating from the start. Returns null if the workspace is empty
+   * or the request fails.
+   */
+  async getHeadEventId(workspaceId, token) {
+    try {
+      const params = new URLSearchParams({
+        network: workspaceId,
+        type: 'workspace.message.posted',
+        sort: 'desc',
+        limit: '1',
+      });
+      const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
+      const result = data.data || data;
+      const events = (result && result.events) || [];
+      return events.length > 0 ? (events[0].id || null) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Poll for pending messages targeted at an agent via GET /v1/events.
    * Returns { messages, cursor } where cursor is the last event ID.
    */
