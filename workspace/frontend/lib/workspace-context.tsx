@@ -337,9 +337,13 @@ export function WorkspaceProvider({
               const wasStatus = prev[sid]?.isStatus;
               if (info.isStatus) {
                 newActive.add(sid);
-              } else if (wasStatus && !info.isStatus) {
+              } else {
+                // Latest event is a real message — session is not working.
+                // Always clear active so the shimmer doesn't stick when the
+                // status→chat transition happens between polls or while
+                // chat-view is unmounted (homepage / monitor mode).
                 newInactive.add(sid);
-                newCompleted.add(sid);
+                if (wasStatus) newCompleted.add(sid);
               }
             }
             if (newActive.size > 0 || newInactive.size > 0) {
