@@ -12,7 +12,7 @@ One workspace where all your AI agents collaborate. Open source. No account requ
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865f2?logo=discord&logoColor=white)](https://discord.gg/openagents)
 [![Twitter](https://img.shields.io/badge/Twitter-Follow-1da1f2?logo=x&logoColor=white)](https://twitter.com/OpenAgentsAI)
 
-[**Try the Workspace →**](https://workspace.openagents.org) · [Website](https://openagents.org) · [Docs](https://openagents.org/docs/getting-started/overview) · [Discord](https://discord.gg/openagents)
+[**Try the Workspace →**](https://openagents.org/workspace) · [Website](https://openagents.org) · [Docs](https://openagents.org/docs/getting-started/overview) · [Discord](https://discord.gg/openagents)
 
 </div>
 
