@@ -29,6 +29,9 @@ let core = loadCore();
 class AgentManager {
   constructor(store) {
     this._store = store;
+    this._healthByType = new Map();
+    this._healthRefreshInFlight = new Set();
+    this._lastHealthRefreshAt = 0;
     if (!core) core = loadCore();
     if (core) {
       this._connector = new core.AgentConnector({ configDir: CONFIG_DIR });
@@ -43,6 +46,15 @@ class AgentManager {
       ? Object.keys(core.adapters.ADAPTER_MAP)
       : [];
     return supported.sort();
+  }
+
+  getCoreInfo() {
+    return {
+      version: this.coreVersion,
+      supportedTypes: this.getSupportedAgentTypes(),
+      globalCorePath: GLOBAL_CORE,
+      globalCorePresent: fs.existsSync(path.join(GLOBAL_CORE, 'package.json')),
+    };
   }
 
   /** Reload core library after install/update */
@@ -83,26 +95,47 @@ class AgentManager {
     if (!this._connector) return [];
     const agents = this._connector.listAgents();
     const status = this.getAllStatus();
-    const healthByType = new Map();
+    this._scheduleHealthRefresh(agents);
 
-    for (const agent of agents) {
-      const type = agent.type || 'openclaw';
-      if (!healthByType.has(type)) {
+    const supportedTypes = new Set(this.getSupportedAgentTypes());
+    return agents.map((a) => {
+      const type = a.type || 'openclaw';
+      const runtimeMismatch = !supportedTypes.has(type);
+      const runtimeMessage = runtimeMismatch
+        ? `Agent runtime '${type}' is not available in the currently loaded core. This usually means the Launcher core is outdated or did not reload correctly. Update Launcher and restart it.`
+        : null;
+      const statusError = status[a.name]?.last_error || null;
+      return {
+        ...a,
+        state: status[a.name]?.state || 'stopped',
+        restarts: status[a.name]?.restarts || 0,
+        lastError: statusError || runtimeMessage,
+        health: this._healthByType.get(type) || null,
+        runtimeMismatch,
+      };
+    });
+  }
+
+  _scheduleHealthRefresh(agents) {
+    const now = Date.now();
+    if (now - this._lastHealthRefreshAt < 3000) return;
+    this._lastHealthRefreshAt = now;
+
+    const types = [...new Set((agents || []).map((agent) => agent.type || 'openclaw'))];
+    for (const type of types) {
+      if (this._healthRefreshInFlight.has(type)) continue;
+      this._healthRefreshInFlight.add(type);
+      setTimeout(() => {
         try {
-          healthByType.set(type, this._connector.healthCheck(type));
+          const health = this._connector ? this._connector.healthCheck(type) : null;
+          this._healthByType.set(type, health);
         } catch {
-          healthByType.set(type, null);
+          this._healthByType.set(type, null);
+        } finally {
+          this._healthRefreshInFlight.delete(type);
         }
-      }
+      }, 0);
     }
-
-    return agents.map((a) => ({
-      ...a,
-      state: status[a.name]?.state || 'stopped',
-      restarts: status[a.name]?.restarts || 0,
-      lastError: status[a.name]?.last_error || null,
-      health: healthByType.get(a.type || 'openclaw'),
-    }));
   }
 
   // ------------------------------------------------------------------
@@ -118,12 +151,7 @@ class AgentManager {
       throw new Error(`Agent type '${type}' is not supported in Launcher yet. Supported: ${supportedTypes.join(', ')}`);
     }
 
-    this._connector.addAgent({ name, type, role: 'worker' });
-
-    // Save env vars for the agent type
-    if (agentConfig.env && Object.keys(agentConfig.env).length > 0) {
-      this._connector.saveAgentEnv(type, agentConfig.env);
-    }
+    this._connector.addAgent({ name, type, role: 'worker', path: agentConfig.path, env: agentConfig.env });
 
     return { success: true, agent: agentConfig };
   }
@@ -136,10 +164,7 @@ class AgentManager {
 
   async updateAgent(name, updates) {
     if (updates.env) {
-      const agents = this._connector.listAgents();
-      const agent = agents.find((a) => a.name === name);
-      const type = agent ? agent.type : 'openclaw';
-      this._connector.saveAgentEnv(type, updates.env);
+      this._connector.saveAgentInstanceEnv(name, updates.env);
     }
     return { success: true };
   }
@@ -180,6 +205,10 @@ class AgentManager {
     return this._connector.getAgentEnv(agentType);
   }
 
+  getAgentInstanceEnv(agentName) {
+    return this._connector.getAgentInstanceEnv(agentName);
+  }
+
   saveAgentEnv(agentType, env) {
     this._connector.saveAgentEnv(agentType, env);
 
@@ -191,6 +220,12 @@ class AgentManager {
       }
     } catch {}
 
+    this.signalReload();
+    return { success: true };
+  }
+
+  saveAgentInstanceEnv(agentName, env) {
+    this._connector.saveAgentInstanceEnv(agentName, env);
     this.signalReload();
     return { success: true };
   }
@@ -353,6 +388,40 @@ class AgentManager {
     return { lines: logLines };
   }
 
+  tailLogs(name, lines = 200, offset = 0) {
+    return this._connector.config.tailLogs({ agent: name || undefined, lines, offset });
+  }
+
+  clearLogsInRange(start, end) {
+    const startTime = normalizeTimeValue(start);
+    const endTime = normalizeTimeValue(end);
+
+    if (!startTime || !endTime) {
+      throw new Error('Start time and end time are required');
+    }
+    if (startTime.getTime() > endTime.getTime()) {
+      throw new Error('Start time must be before end time');
+    }
+
+    const logFile = path.join(CONFIG_DIR, 'daemon.log');
+    if (!fs.existsSync(logFile)) {
+      return { removed: 0, remaining: 0 };
+    }
+
+    const content = fs.readFileSync(logFile, 'utf-8');
+    const hasTrailingNewline = content.endsWith('\n');
+    const allLines = content.split('\n');
+    if (hasTrailingNewline) allLines.pop();
+    const { keptLines, removed } = filterLogsByTimeRange(allLines, startTime, endTime);
+
+    const nextContent = keptLines.join('\n') + (hasTrailingNewline && keptLines.length > 0 ? '\n' : '');
+    const tempFile = `${logFile}.tmp`;
+    fs.writeFileSync(tempFile, nextContent, 'utf-8');
+    fs.renameSync(tempFile, logFile);
+
+    return { removed, remaining: keptLines.length };
+  }
+
   healthCheck(type) {
     return this._connector.healthCheck(type);
   }
@@ -444,6 +513,115 @@ class AgentManager {
       return { success: false, message: `Failed to start daemon: ${e.message}` };
     }
   }
+}
+
+function normalizeTimeValue(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function filterLogsByTimeRange(lines, start, end) {
+  const headerTimes = resolveLogHeaderTimestamps(lines, end);
+  let activeRemove = false;
+  let removed = 0;
+  const keptLines = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const headerTime = headerTimes[index];
+    if (headerTime) {
+      const time = headerTime.getTime();
+      activeRemove = time >= start.getTime() && time <= end.getTime();
+    }
+
+    if (activeRemove) {
+      removed += 1;
+    } else {
+      keptLines.push(lines[index]);
+    }
+  }
+
+  return { keptLines, removed };
+}
+
+function resolveLogHeaderTimestamps(lines, referenceTime) {
+  const resolved = new Array(lines.length).fill(null);
+  let currentDay = startOfLocalDay(referenceTime);
+  let lastClockSeconds = null;
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const token = parseLogTimestampToken(lines[index]);
+    if (!token) continue;
+
+    if (token.kind === 'iso') {
+      resolved[index] = token.date;
+      currentDay = startOfLocalDay(token.date);
+      lastClockSeconds = (
+        token.date.getHours() * 3600 +
+        token.date.getMinutes() * 60 +
+        token.date.getSeconds()
+      );
+      continue;
+    }
+
+    if (lastClockSeconds !== null && token.seconds > lastClockSeconds) {
+      currentDay = addLocalDays(currentDay, -1);
+    }
+
+    resolved[index] = withLocalClock(currentDay, token.seconds);
+    lastClockSeconds = token.seconds;
+  }
+
+  return resolved;
+}
+
+function parseLogTimestampToken(line) {
+  if (!line) return null;
+
+  const isoMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))/);
+  if (isoMatch) {
+    const date = new Date(isoMatch[1]);
+    if (!Number.isNaN(date.getTime())) {
+      return { kind: 'iso', date };
+    }
+  }
+
+  const clockMatch = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+  if (clockMatch) {
+    return {
+      kind: 'clock',
+      seconds:
+        Number(clockMatch[1]) * 3600 +
+        Number(clockMatch[2]) * 60 +
+        Number(clockMatch[3]),
+    };
+  }
+
+  return null;
+}
+
+function startOfLocalDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addLocalDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function withLocalClock(day, seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes, secs);
 }
 
 module.exports = { AgentManager };

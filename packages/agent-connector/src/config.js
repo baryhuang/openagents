@@ -50,13 +50,14 @@ class Config {
     fs.writeFileSync(this.configFile, serializeYaml(config), 'utf-8');
   }
 
-  addAgent({ name, type, role, path: agentPath }) {
+  addAgent({ name, type, role, path: agentPath, env }) {
     const config = this.load();
     if (config.agents.some((a) => a.name === name)) {
       throw new Error(`Agent '${name}' already exists`);
     }
     const entry = { name, type: type || 'openclaw', role: role || 'worker' };
     if (agentPath) entry.path = agentPath;
+    if (env && Object.keys(env).length > 0) entry.env = env;
     config.agents.push(entry);
     this.save(config);
     return entry;
@@ -78,6 +79,27 @@ class Config {
     Object.assign(agent, updates);
     this.save(config);
     return agent;
+  }
+
+  updateAgentEnv(name, env) {
+    const config = this.load();
+    const agent = config.agents.find((a) => a.name === name);
+    if (!agent) throw new Error(`Agent '${name}' not found`);
+
+    const merged = { ...(agent.env || {}), ...(env || {}) };
+    const cleaned = {};
+    for (const [key, value] of Object.entries(merged)) {
+      if (value !== null && value !== undefined && value !== '') cleaned[key] = value;
+    }
+
+    if (Object.keys(cleaned).length > 0) {
+      agent.env = cleaned;
+    } else {
+      delete agent.env;
+    }
+
+    this.save(config);
+    return agent.env || {};
   }
 
   setAgentNetwork(agentName, networkSlug) {
@@ -191,6 +213,43 @@ class Config {
       return { lines: [], size: 0 };
     }
   }
+
+  /**
+   * Remove log entries whose leading timestamp falls within [start, end].
+   * Lines without a parseable timestamp are preserved to avoid deleting
+   * stack traces or continuation lines incorrectly.
+   * @param {Object} opts - { start, end }
+   * @param {string|number|Date} opts.start
+   * @param {string|number|Date} opts.end
+   * @returns {{ removed: number, remaining: number }}
+   */
+  clearLogsInRange(opts = {}) {
+    const start = normalizeTimeValue(opts.start);
+    const end = normalizeTimeValue(opts.end);
+
+    if (!start || !end) {
+      throw new Error('Start time and end time are required');
+    }
+    if (start.getTime() > end.getTime()) {
+      throw new Error('Start time must be before end time');
+    }
+    if (!fs.existsSync(this.logFile)) {
+      return { removed: 0, remaining: 0 };
+    }
+
+    const content = fs.readFileSync(this.logFile, 'utf-8');
+    const hasTrailingNewline = content.endsWith('\n');
+    const allLines = content.split('\n');
+    if (hasTrailingNewline) allLines.pop();
+    const { keptLines, removed } = filterLogsByTimeRange(allLines, start, end);
+
+    const nextContent = keptLines.join('\n') + (hasTrailingNewline && keptLines.length > 0 ? '\n' : '');
+    const tempFile = `${this.logFile}.tmp`;
+    fs.writeFileSync(tempFile, nextContent, 'utf-8');
+    fs.renameSync(tempFile, this.logFile);
+
+    return { removed, remaining: keptLines.length };
+  }
 }
 
 // -- YAML parser (compatible with Python SDK's daemon.yaml format) --
@@ -251,6 +310,115 @@ function parseYaml(text) {
 
   if (currentItem && currentList) result[currentList].push(currentItem);
   return result;
+}
+
+function normalizeTimeValue(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function filterLogsByTimeRange(lines, start, end) {
+  const headerTimes = resolveLogHeaderTimestamps(lines, end);
+  let activeRemove = false;
+  let removed = 0;
+  const keptLines = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const headerTime = headerTimes[index];
+    if (headerTime) {
+      const time = headerTime.getTime();
+      activeRemove = time >= start.getTime() && time <= end.getTime();
+    }
+
+    if (activeRemove) {
+      removed += 1;
+    } else {
+      keptLines.push(lines[index]);
+    }
+  }
+
+  return { keptLines, removed };
+}
+
+function resolveLogHeaderTimestamps(lines, referenceTime) {
+  const resolved = new Array(lines.length).fill(null);
+  let currentDay = startOfLocalDay(referenceTime);
+  let lastClockSeconds = null;
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const token = parseLogTimestampToken(lines[index]);
+    if (!token) continue;
+
+    if (token.kind === 'iso') {
+      resolved[index] = token.date;
+      currentDay = startOfLocalDay(token.date);
+      lastClockSeconds = (
+        token.date.getHours() * 3600 +
+        token.date.getMinutes() * 60 +
+        token.date.getSeconds()
+      );
+      continue;
+    }
+
+    if (lastClockSeconds !== null && token.seconds > lastClockSeconds) {
+      currentDay = addLocalDays(currentDay, -1);
+    }
+
+    resolved[index] = withLocalClock(currentDay, token.seconds);
+    lastClockSeconds = token.seconds;
+  }
+
+  return resolved;
+}
+
+function parseLogTimestampToken(line) {
+  if (!line) return null;
+
+  const isoMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))/);
+  if (isoMatch) {
+    const date = new Date(isoMatch[1]);
+    if (!Number.isNaN(date.getTime())) {
+      return { kind: 'iso', date };
+    }
+  }
+
+  const clockMatch = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+  if (clockMatch) {
+    return {
+      kind: 'clock',
+      seconds:
+        Number(clockMatch[1]) * 3600 +
+        Number(clockMatch[2]) * 60 +
+        Number(clockMatch[3]),
+    };
+  }
+
+  return null;
+}
+
+function startOfLocalDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addLocalDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function withLocalClock(day, seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes, secs);
 }
 
 function parseYamlValue(val) {

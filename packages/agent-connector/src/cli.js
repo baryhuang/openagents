@@ -117,7 +117,7 @@ async function cmdStatus(connector) {
 
 async function cmdCreate(connector, flags, positional) {
   const name = positional[0];
-  if (!name) { print('Usage: agn create <name> [--type <type>]'); return; }
+  if (!name) { print('Usage: agn create <name> [--type <type>] [--install]'); return; }
   const type = flags.type || 'openclaw';
   const role = flags.role || 'worker';
 
@@ -128,8 +128,12 @@ async function cmdCreate(connector, flags, positional) {
     // Signal daemon to pick up the new agent
     try { connector.sendDaemonCommand('reload'); } catch {}
 
-    // Auto-install if not installed
     if (!connector.isInstalled(type)) {
+      if (!flags.install) {
+        print(`Runtime '${type}' is not installed. Run: agn install ${type}`);
+        return;
+      }
+
       print(`Installing ${type}...`);
       try {
         await connector.install(type);
@@ -513,6 +517,7 @@ Commands:
 
 Options:
   --config <dir>              Config directory (default: ~/.openagents)
+  --install                   Install runtime during create
 `);
 }
 

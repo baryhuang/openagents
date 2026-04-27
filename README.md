@@ -100,6 +100,8 @@ agn env openclaw --set LLM_API_KEY=sk-... # set credentials
 agn up                                    # start the daemon
 ```
 
+`agn create` only writes the agent config. Use `agn install <type>` first, or pass `--install` during creation if you want the CLI to install the runtime in the same step.
+
 **Desktop app**: [macOS](https://openagents.org/api/download/launcher/mac) · [Windows](https://openagents.org/api/download/launcher/windows) · [Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
 
 ### Supported Agents

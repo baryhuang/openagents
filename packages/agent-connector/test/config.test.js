@@ -51,19 +51,28 @@ networks:
     assert.equal(result.agents[0].builtin, true);
     assert.equal(result.agents[0].path, null);
   });
+
+  it('parses inline object values such as per-agent env', () => {
+    const result = parseYaml('version: 2\nagents:\n- name: a\n  type: opencode\n  env: {"LLM_MODEL":"model-a","LLM_BASE_URL":"https://openrouter.ai/api/v1"}\nnetworks: []');
+    assert.deepEqual(result.agents[0].env, {
+      LLM_MODEL: 'model-a',
+      LLM_BASE_URL: 'https://openrouter.ai/api/v1',
+    });
+  });
 });
 
 describe('serializeYaml', () => {
   it('round-trips through parse/serialize', () => {
     const config = {
       version: 2,
-      agents: [{ name: 'bot', type: 'claude', role: 'worker' }],
+      agents: [{ name: 'bot', type: 'claude', role: 'worker', env: { LLM_MODEL: 'claude-sonnet' } }],
       networks: [{ id: '1', slug: 'ws1', name: 'Workspace 1' }],
     };
     const yaml = serializeYaml(config);
     const parsed = parseYaml(yaml);
     assert.equal(parsed.agents[0].name, 'bot');
     assert.equal(parsed.agents[0].type, 'claude');
+    assert.deepEqual(parsed.agents[0].env, { LLM_MODEL: 'claude-sonnet' });
     assert.equal(parsed.networks[0].slug, 'ws1');
   });
 
@@ -102,6 +111,18 @@ describe('Config', () => {
     assert.equal(cfg.getAgent('b1').role, 'orchestrator');
   });
 
+  it('updateAgentEnv stores per-agent env independently', () => {
+    const cfg = new Config(tmpDir);
+    cfg.addAgent({ name: 'a1', type: 'opencode', role: 'worker' });
+    cfg.addAgent({ name: 'a2', type: 'opencode', role: 'worker' });
+
+    cfg.updateAgentEnv('a1', { LLM_MODEL: 'model-a' });
+    cfg.updateAgentEnv('a2', { LLM_MODEL: 'model-b' });
+
+    assert.equal(cfg.getAgent('a1').env.LLM_MODEL, 'model-a');
+    assert.equal(cfg.getAgent('a2').env.LLM_MODEL, 'model-b');
+  });
+
   it('addNetwork / removeNetwork disconnects agents', () => {
     const cfg = new Config(tmpDir);
     cfg.addAgent({ name: 'x', type: 'openclaw', role: 'worker' });
@@ -120,5 +141,62 @@ describe('Config', () => {
 
     const cfg2 = new Config(tmpDir);
     assert.equal(cfg2.getAgent('persist').type, 'aider');
+  });
+
+  it('clearLogsInRange removes only timestamped lines in the selected window', () => {
+    const cfg = new Config(tmpDir);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(cfg.logFile, [
+      '2026-04-22T10:00:00.000Z INFO daemon boot',
+      '2026-04-22T10:05:00.000Z INFO agent-a started',
+      'stack trace line without timestamp',
+      '2026-04-22T10:10:00.000Z INFO agent-b started',
+      '',
+    ].join('\n'), 'utf-8');
+
+    const result = cfg.clearLogsInRange({
+      start: '2026-04-22T10:04:00.000Z',
+      end: '2026-04-22T10:06:00.000Z',
+    });
+
+    assert.equal(result.removed, 2);
+    assert.equal(result.remaining, 2);
+    assert.equal(fs.readFileSync(cfg.logFile, 'utf-8'), [
+      '2026-04-22T10:00:00.000Z INFO daemon boot',
+      '2026-04-22T10:10:00.000Z INFO agent-b started',
+      '',
+    ].join('\n'));
+  });
+
+  it('clearLogsInRange rejects an invalid range', () => {
+    const cfg = new Config(tmpDir);
+    assert.throws(() => cfg.clearLogsInRange({
+      start: '2026-04-22T10:06:00.000Z',
+      end: '2026-04-22T10:04:00.000Z',
+    }), /Start time must be before end time/);
+  });
+
+  it('clearLogsInRange removes rich multi-line log blocks using local time headers', () => {
+    const cfg = new Config(tmpDir);
+    fs.writeFileSync(cfg.logFile, [
+      '[15:59:58] INFO     healthy line',
+      '[16:00:10] WARNING  Poll failed: Cannot connect to host',
+      '                    workspace-endpoint.openagents.org:443 ssl:True',
+      "                    [SSLCertVerificationError: boom]",
+      '[16:01:10] INFO     recovered',
+      '',
+    ].join('\n'), 'utf-8');
+
+    const result = cfg.clearLogsInRange({
+      start: new Date(2026, 3, 22, 16, 0, 0).toISOString(),
+      end: new Date(2026, 3, 22, 16, 0, 59).toISOString(),
+    });
+
+    assert.equal(result.removed, 3);
+    assert.equal(fs.readFileSync(cfg.logFile, 'utf-8'), [
+      '[15:59:58] INFO     healthy line',
+      '[16:01:10] INFO     recovered',
+      '',
+    ].join('\n'));
   });
 });

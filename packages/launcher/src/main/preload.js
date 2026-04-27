@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   // Agents
   listAgents: () => ipcRenderer.invoke('agents:list'),
   getSupportedAgentTypes: () => ipcRenderer.invoke('agents:supported-types'),
+  getAgentCoreInfo: () => ipcRenderer.invoke('agents:core-info'),
   addAgent: (config) => ipcRenderer.invoke('agents:add', config),
   removeAgent: (name) => ipcRenderer.invoke('agents:remove', name),
   updateAgent: (name, config) => ipcRenderer.invoke('agents:update', name, config),
@@ -19,6 +20,8 @@ contextBridge.exposeInMainWorld('api', {
   stopAll: () => ipcRenderer.invoke('agents:stop-all'),
   agentStatus: () => ipcRenderer.invoke('agents:status'),
   agentLogs: (name, lines) => ipcRenderer.invoke('agents:logs', name, lines),
+  tailAgentLogs: (name, lines, offset) => ipcRenderer.invoke('agents:tail-logs', name, lines, offset),
+  clearLogsInRange: (start, end) => ipcRenderer.invoke('agents:clear-logs-range', start, end),
 
   // Agent type install & catalog
   installAgentType: (type) => ipcRenderer.invoke('agents:install-type', type),
@@ -34,6 +37,8 @@ contextBridge.exposeInMainWorld('api', {
   getEnvFields: (type) => ipcRenderer.invoke('agents:env-fields', type),
   getAgentEnv: (type) => ipcRenderer.invoke('agents:get-env', type),
   saveAgentEnv: (type, env) => ipcRenderer.invoke('agents:save-env', type, env),
+  getAgentInstanceEnv: (name) => ipcRenderer.invoke('agents:get-instance-env', name),
+  saveAgentInstanceEnv: (name, env) => ipcRenderer.invoke('agents:save-instance-env', name, env),
   testLLM: (env) => ipcRenderer.invoke('agents:test-llm', env),
   signalReload: () => ipcRenderer.invoke('agents:signal-reload'),
 
