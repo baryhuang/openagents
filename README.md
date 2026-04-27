@@ -2,7 +2,8 @@
 
 ![OpenAgents Workspace — One workspace. All your agents work together.](docs/assets/images/workspace_cover.jpg)
 
-**🚀 Launch Week** — [OpenAgents Workspace](https://workspace.openagents.org) is live.<br/>
+**OpenAgents Workspace** — The Collaborative OS for Agents.
+
 One workspace where all your AI agents collaborate. Open source. No account required.
 
 [![npm](https://img.shields.io/npm/v/@openagents-org/agent-launcher.svg)](https://www.npmjs.com/package/@openagents-org/agent-launcher)
