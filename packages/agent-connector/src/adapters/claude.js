@@ -390,10 +390,19 @@ class ClaudeAdapter extends BaseAdapter {
     let mcpConfigFile = null;
     let cmd;
 
-    // Clean env
+    // Clean env: strip every CLAUDE_* / AI_AGENT variable inherited from a
+    // parent Claude Code (or Claude Agent SDK) process. If we don't, the
+    // spawned `claude` thinks it's running under an SDK harness and picks
+    // an org-scoped auth path that returns 403 "Account is no longer a
+    // member of the organization" even when the user is logged in fine via
+    // `claude login`. We let the child rediscover auth from
+    // ~/.claude/.credentials.json (or ANTHROPIC_API_KEY if set).
     const cleanEnv = { ...(this.agentEnv || process.env) };
-    delete cleanEnv.CLAUDECODE;
-    delete cleanEnv.CLAUDE_CODE_SESSION;
+    for (const k of Object.keys(cleanEnv)) {
+      if (k.startsWith('CLAUDE_') || k === 'CLAUDECODE' || k === 'AI_AGENT') {
+        delete cleanEnv[k];
+      }
+    }
 
     // Run up to 2 attempts: first with session resume, then fresh if stale session detected
     let _shouldRetry = false;
