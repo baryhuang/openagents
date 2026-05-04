@@ -64,8 +64,10 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
       .filter((name) => agentNames.includes(name));
   };
 
-  const filteredAgents = agents.filter((a) =>
-    a.agentName.toLowerCase().includes(mentionFilter.toLowerCase())
+  // Only suggest online agents — mentioning offline ones never resolves and
+  // just clutters the picker on long-lived workspaces.
+  const filteredAgents = agents.filter(
+    (a) => a.status === 'online' && a.agentName.toLowerCase().includes(mentionFilter.toLowerCase())
   );
 
   const addFiles = React.useCallback((files: FileList | File[]) => {
