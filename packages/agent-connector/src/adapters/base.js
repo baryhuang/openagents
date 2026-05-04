@@ -262,8 +262,11 @@ class BaseAdapter {
         idleCount++;
       }
 
-      // Aggressive polling for snappier experience: 1s active, up to 3s idle
-      const delay = incoming.length > 0 ? 1000 : Math.min(1000 + idleCount * 500, 3000);
+      // Adaptive polling: 2s active, up to 15s idle.
+      // Each connected agent runs this loop, so faster rates multiply across
+      // every workspace member — keep this conservative and tune separately
+      // with a load-impact analysis on workspace-endpoint.
+      const delay = incoming.length > 0 ? 2000 : Math.min(2000 + idleCount * 1000, 15000);
       await this._sleep(delay);
     }
   }
