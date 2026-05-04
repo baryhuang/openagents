@@ -101,6 +101,20 @@ calls live in `WorkspaceAPI`, an `actor` that serializes requests.
 - The deferred view modes (Files / Browser / Connect / Monitor / Agent profile
   / workspace settings dialog) are not implemented yet.
 
+## TODO
+
+- **iPhone notifications.** Fire a `UNUserNotificationCenter` local
+  notification when `WorkspaceStore.pollNewMessages` appends a new agent
+  message to a non-active session, OR when the app is backgrounded
+  (`scenePhase != .active`). Needs:
+  - Authorization request on first launch (`requestAuthorization(options:
+    [.alert, .sound, .badge])`)
+  - Per-session mute toggle (persisted in `WorkspaceHistory`)
+  - Badge count for unread agent messages
+  - Suppress when the user is already viewing that thread in the foreground
+  - On macOS, mirror with `NSUserNotificationCenter` / unified
+    `UNUserNotificationCenter` (works on macOS 11+ too)
+
 ## Configuration
 
 Default backend: `https://workspace-endpoint.openagents.org`. Change it from

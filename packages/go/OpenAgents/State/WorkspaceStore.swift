@@ -207,6 +207,12 @@ final class WorkspaceStore {
 
     /// Forward poll — fetch only messages newer than the cached `newestId`. Used by the
     /// background polling loop and after sending a message.
+    ///
+    /// TODO(notifications): when `newOnes` contains an agent message AND
+    /// (`channel != currentSessionId` OR `scenePhase != .active`), schedule a
+    /// `UNUserNotificationCenter` local notification (title = sender, body = trimmed
+    /// content). Suppress when the thread is muted in WorkspaceHistory. Update an
+    /// unread-count map and badge the dock / app icon accordingly. See README ▸ TODO.
     func pollNewMessages(channel: String) async {
         var page = pagesBySession[channel] ?? ChannelMessages()
         do {
