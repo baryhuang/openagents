@@ -121,7 +121,7 @@ struct ThreadListView: View {
         } else {
             List(selection: Binding<String?>(
                 get: { store.currentSessionId },
-                set: { id in if let id { store.selectSession(id) } },
+                set: { id in store.selectSession(id) },
             )) {
                 ForEach(filteredSessions) { session in
                     ThreadRow(

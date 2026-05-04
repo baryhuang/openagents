@@ -106,9 +106,12 @@ final class WorkspaceStore {
 
     // MARK: - Actions
 
-    func selectSession(_ sessionId: String) {
+    func selectSession(_ sessionId: String?) {
         guard sessionId != currentSessionId else { return }
         currentSessionId = sessionId
+        // nil arrives when iPhone's compact NavigationSplitView pops the detail —
+        // accept it so re-tapping the same row re-pushes.
+        guard let sessionId else { return }
         // If we don't have any messages cached yet, load history; otherwise rely on polling
         // to catch us up (cached page is shown immediately).
         let needsHistory = pagesBySession[sessionId]?.messages.isEmpty != false
