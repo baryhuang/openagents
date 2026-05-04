@@ -64,8 +64,23 @@ class ClaudeAdapter extends BaseAdapter {
 
   async _onControlAction(action, _payload) {
     if (action === 'stop') {
-      await this._stopAllProcesses();
+      await this._stopAllProcesses('Execution stopped by user.');
     }
+  }
+
+  /**
+   * Override BaseAdapter.stop so daemon shutdown also tears down in-flight
+   * claude subprocesses cleanly. Without this, killing the daemon leaves
+   * the channel's last event as a `status` (e.g. "Bash › ..." mid-tool-call)
+   * forever — the workspace UI then shows the thread as "running" until a
+   * new message arrives. Fire-and-forget; daemon._killAgent gives us up to
+   * 5s to actually finish the cleanup before the parent exits.
+   */
+  stop() {
+    this._stopAllProcesses(
+      'Task interrupted — daemon restarting. Send another message to continue.'
+    ).catch(() => {});
+    super.stop();
   }
 
   async _stopProcess(proc) {
@@ -90,7 +105,7 @@ class ClaudeAdapter extends BaseAdapter {
     } catch {}
   }
 
-  async _stopAllProcesses() {
+  async _stopAllProcesses(completionMessage = 'Execution stopped.') {
     const entries = Object.entries(this._channelProcesses);
     if (!entries.length) return;
     this._log(`Stopping ${entries.length} running process(es)...`);
@@ -98,8 +113,11 @@ class ClaudeAdapter extends BaseAdapter {
       await this._stopProcess(proc);
       delete this._channelProcesses[channel];
       delete this._channelQueues[channel];
+      // Post as a chat message (not status) so the channel's last event
+      // type is non-status — the workspace UI then transitions out of
+      // "agent is working" state instead of shimmering forever.
       try {
-        await this.sendStatus(channel, 'Execution stopped by user');
+        await this.sendResponse(channel, completionMessage);
       } catch {}
     }
   }
