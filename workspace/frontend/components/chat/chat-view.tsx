@@ -429,9 +429,7 @@ export function ChatView() {
           )}
           {(() => {
             const participants = currentSession?.participants || [];
-            const sessionAgents = participants.length > 0
-              ? agents.filter((a) => participants.includes(a.agentName))
-              : agents;
+            const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
             return (
               <>
                 {sessionAgents.length > 1 && (
@@ -448,9 +446,7 @@ export function ChatView() {
           {!isDM && <div className="hidden lg:flex items-center gap-1 overflow-x-auto">
             {(() => {
               const participants = currentSession?.participants || [];
-              const sessionAgents = participants.length > 0
-                ? agents.filter((a) => participants.includes(a.agentName))
-                : agents;
+              const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
               return sessionAgents.map((agent) => {
                 const color = getAgentColor(agent.agentName, agentNames);
                 const isMaster = currentSession?.master === agent.agentName || agent.role === 'master';
@@ -480,9 +476,7 @@ export function ChatView() {
           {/* Compact avatar stack on mobile */}
           {isMobile && (() => {
             const participants = currentSession?.participants || [];
-            const sessionAgents = participants.length > 0
-              ? agents.filter((a) => participants.includes(a.agentName))
-              : agents;
+            const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
             if (sessionAgents.length === 0) return null;
             return (
               <div className="flex -space-x-1.5">

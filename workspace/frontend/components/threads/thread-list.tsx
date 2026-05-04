@@ -336,9 +336,7 @@ export function ThreadList() {
                 {/* Avatar stack — show only channel participants */}
                 <div className="shrink-0">
                   <AvatarStack agents={
-                    session.participants.length > 0
-                      ? agents.filter((a) => session.participants.includes(a.agentName))
-                      : agents
+                    agents.filter((a) => session.participants.includes(a.agentName))
                   } />
                 </div>
 
@@ -492,9 +490,7 @@ export function ThreadList() {
                       >
                         <div className="shrink-0 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 rounded-full size-[30px] bg-white dark:bg-zinc-900">
                           <AvatarStack agents={
-                            session.participants.length > 0
-                              ? agents.filter((a) => session.participants.includes(a.agentName))
-                              : agents
+                            agents.filter((a) => session.participants.includes(a.agentName))
                           } />
                         </div>
                         <div className="flex-1 min-w-0 space-y-0.5">

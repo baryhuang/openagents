@@ -119,9 +119,7 @@ function stripMarkdown(text: string): string {
 
 export function MonitorTile({ session, tileData, isActive, isCompleted, agents, onClick, shortcutKey }: MonitorTileProps) {
   const participants = session.participants || [];
-  const sessionAgents = participants.length > 0
-    ? agents.filter((a) => participants.includes(a.agentName))
-    : agents;
+  const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
   const agentNames = agents.map((a) => a.agentName);
 
   const activityMs = session.lastEventAt;
