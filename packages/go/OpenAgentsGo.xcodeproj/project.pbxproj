@@ -74,10 +74,10 @@
 		5C3BCF5736D0ECDC075EF836 /* OpenAgents.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenAgents.entitlements; sourceTree = "<group>"; };
 		60D250D0F8C1A2E0F9CD2AB0 /* MarkdownSegments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownSegments.swift; sourceTree = "<group>"; };
 		62BEFDB8EAD399989E7939F2 /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
-		657BCC02FD23538732562FEA /* OpenAgentsGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = OpenAgentsGo.app; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		657BCC02FD23538732562FEA /* OpenAgentsGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenAgentsGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BFC6779CA9AEA7008F8E130 /* DebugLogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogSheet.swift; sourceTree = "<group>"; };
 		71C0F9FAA008A4C5DDB894DA /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
-		740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenAgentsGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		77786041AC1E5D020AFE9315 /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		818A4CEAED3B6B2F27409E36 /* ONMEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ONMEvent.swift; sourceTree = "<group>"; };
 		86415FE67D6C1C2F1DDBA257 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
@@ -185,7 +185,7 @@
 		D476D796F5F151440069AC0A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */,
+				740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */,
 				657BCC02FD23538732562FEA /* OpenAgentsGo.app */,
 			);
 			name = Products;
@@ -227,7 +227,7 @@
 			packageProductDependencies = (
 			);
 			productName = OpenAgentsGo_iOS;
-			productReference = 740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */;
+			productReference = 740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -413,7 +413,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OpenAgents/OpenAgents.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = AP69DBR725;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenAgents/Info.plist;
@@ -508,7 +507,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OpenAgents/OpenAgents.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = AP69DBR725;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenAgents/Info.plist;

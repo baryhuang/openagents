@@ -34,6 +34,11 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.productivity
         NSHumanReadableCopyright: "Copyright © 2026 OpenAgents"
+        # Skips the App Store Connect "App Encryption Documentation" prompt on
+        # every upload. The app only uses Apple-provided standard encryption
+        # (HTTPS via URLSession + Keychain), which is exempt from US export
+        # compliance review.
+        ITSAppUsesNonExemptEncryption: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openagents.go
