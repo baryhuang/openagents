@@ -180,7 +180,21 @@ struct ChatView: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
                 .focused($inputFocused)
                 .lineLimit(1...6)
+                #if os(macOS)
+                // Plain return submits; shift+return falls through to TextField for a newline.
+                // Without this, .onSubmit fires on every return — so multi-line input on
+                // macOS was impossible.
+                .onKeyPress(phases: .down) { keyPress -> KeyPress.Result in
+                    guard keyPress.key == .return else { return .ignored }
+                    if keyPress.modifiers.contains(.shift) { return .ignored }
+                    send()
+                    return .handled
+                }
+                #else
+                // iOS: with axis: .vertical the system already inserts a newline on Return;
+                // sending uses the button. .onSubmit fires for hardware-keyboard return.
                 .onSubmit(send)
+                #endif
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 28))
