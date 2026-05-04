@@ -39,6 +39,19 @@ targets:
         # (HTTPS via URLSession + Keychain), which is exempt from US export
         # compliance review.
         ITSAppUsesNonExemptEncryption: false
+        # Required for App Store upload of a universal (iPhone+iPad) app.
+        # iPad multitasking validation requires all four orientations on iPad
+        # and a launch screen via UILaunchScreen (replaces a storyboard).
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UILaunchScreen: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openagents.go
