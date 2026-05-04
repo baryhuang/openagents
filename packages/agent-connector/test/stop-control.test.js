@@ -63,13 +63,17 @@ describe('agent stop control', () => {
 
     adapter._channelProcesses.thread = proc;
     adapter._stopProcess = async () => {};
-    const statuses = [];
-    adapter.sendStatus = async (channel, content) => statuses.push({ channel, content });
+    const responses = [];
+    adapter.sendResponse = async (channel, content) => responses.push({ channel, content });
 
-    await adapter._stopAllProcesses();
+    await adapter._stopAllProcesses('Execution stopped by user');
 
     assert.equal(adapter._stoppingChannels.has('thread'), true);
-    assert.deepEqual(statuses, [{ channel: 'thread', content: 'Execution stopped by user' }]);
+    // _stopAllProcesses posts a chat-type message (sendResponse), not a
+    // status, so the workspace UI's last-event check transitions out of
+    // "agent is working" state instead of shimmering forever (see
+    // 6cfc5750).
+    assert.deepEqual(responses, [{ channel: 'thread', content: 'Execution stopped by user' }]);
   });
 
   it('Claude stop terminates the spawned process tree', async () => {
