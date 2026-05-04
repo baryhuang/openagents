@@ -52,17 +52,6 @@ jobs:
           cd packages/agent-connector
           npm link
 
-      - name: Pre-install Hermes (non-interactive)
-        if: env.AGENT_TYPE == 'hermes'
-        run: |
-          if command -v hermes &>/dev/null; then
-            echo "Hermes already installed: $(which hermes)"
-          else
-            echo "Installing Hermes via install script (skip-setup)..."
-            curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup
-            hermes --version || echo "WARNING: hermes not found after install"
-          fi
-
       - name: Run agent E2E smoke test
         run: node tests/e2e/agent-smoke.js
 

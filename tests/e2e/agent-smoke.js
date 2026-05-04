@@ -423,7 +423,7 @@ async function main() {
       source: "human:e2e",
       target,
       payload: {
-        content: "2+2等于几？只回复数字。",
+        content: "What is 2+2? Reply with just the number.",
         sender_type: "human",
         mentions: [agentName],
         message_type: "chat",
@@ -480,7 +480,7 @@ async function main() {
       source: "human:e2e",
       target,
       payload: {
-        content: "3+5等于几？只回复数字。",
+        content: "What is 3+5? Reply with just the number.",
         sender_type: "human",
         mentions: [agentName],
         message_type: "chat",
