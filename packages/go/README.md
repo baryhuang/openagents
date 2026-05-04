@@ -5,6 +5,8 @@ on disk. Replaces the previous Electron build (which was ~207MB) at version
 0.2.0 with the same `com.openagents.go` bundle ID — drops in over the older
 .app on your Applications folder.
 
+![OpenAgents Go — iMessage-style 2-pane layout on macOS](docs/screenshot.png)
+
 ## What's in v0.2.0
 
 - iMessage-style 2-pane layout on macOS / iPad, push/pop on iPhone
