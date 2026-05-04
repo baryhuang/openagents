@@ -122,7 +122,12 @@ struct WorkspaceSelectorView: View {
                 Image(systemName: "link")
                     .foregroundStyle(.secondary)
                     .padding(.leading, 12)
-                TextField("https://workspace.openagents.org/abc?token=…", text: $urlInput)
+                TextField(
+                    "",
+                    text: $urlInput,
+                    prompt: Text("https://workspace.openagents.org/abc?token=…")
+                        .foregroundStyle(.tertiary),
+                )
                     .textFieldStyle(.plain)
                     .padding(.leading, 8)
                     .padding(.vertical, 12)
@@ -210,7 +215,7 @@ struct WorkspaceSelectorView: View {
             Text(label)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.tertiary)
-            TextField(placeholder, text: text)
+            TextField("", text: text, prompt: Text(placeholder).foregroundStyle(.tertiary))
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
