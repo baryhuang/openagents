@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { PanelLeft, RefreshCw, Search, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2, CheckCircle2, MessageCircle } from 'lucide-react';
+import { PanelLeft, Pencil, RefreshCw, Search, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2, CheckCircle2, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
@@ -156,7 +156,7 @@ function DMSection({
 }
 
 export function ThreadList() {
-  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, dmConversations } = useWorkspace();
+  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations } = useWorkspace();
   const { sidebarToggle, isMobile, openMobileDetail } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
@@ -381,6 +381,19 @@ export function ThreadList() {
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
+                        const next = window.prompt('Rename thread', session.title || '');
+                        const trimmed = next?.trim();
+                        if (trimmed && trimmed !== session.title) {
+                          renameSession(session.sessionId, trimmed);
+                        }
+                      }}
+                    >
+                      <Pencil className="size-4" />
+                      <span>Rename</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
                         updateSession(session.sessionId, { starred: !session.starred });
                       }}
                     >
@@ -431,17 +444,32 @@ export function ThreadList() {
             </div>
           )}
 
-          {/* Agent DMs section */}
-          {!isSearching && dmConversations.length > 0 && (
-            <DMSection
-              conversations={dmConversations}
-              currentSessionId={currentSessionId}
-              onSelect={(id) => {
-                setCurrentSessionId(id);
-                if (isMobile) openMobileDetail();
-              }}
-            />
-          )}
+          {/* Agent DMs section — only show DMs whose agent participant(s) are currently online */}
+          {(() => {
+            if (isSearching) return null;
+            const onlineAgentNames = new Set(
+              agents.filter((a) => a.status === 'online').map((a) => a.agentName)
+            );
+            const visibleDMs = dmConversations.filter((c) => {
+              // For each side, if it's an agent it must be online; humans pass through.
+              return c.agents.every((addr) => {
+                if (addr.startsWith('human:')) return true;
+                const name = addr.replace(/^openagents:/, '');
+                return onlineAgentNames.has(name);
+              });
+            });
+            if (visibleDMs.length === 0) return null;
+            return (
+              <DMSection
+                conversations={visibleDMs}
+                currentSessionId={currentSessionId}
+                onSelect={(id) => {
+                  setCurrentSessionId(id);
+                  if (isMobile) openMobileDetail();
+                }}
+              />
+            );
+          })()}
 
           {/* Archived section */}
           {!isSearching && archivedSessions.length > 0 && (
