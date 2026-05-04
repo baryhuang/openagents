@@ -34,7 +34,9 @@ interface WorkspaceContextValue {
   updateAgentMode: (agentName: string, mode: string) => void;
   toggleAgentMode: (agentName: string) => void;
   stopAllAgents: () => Promise<void>;
-  setCurrentSessionId: (id: string | null) => void;
+  setCurrentSessionId: (id: string | null, options?: { skipFocus?: boolean }) => void;
+  /** Read-and-clear: was the most recent setCurrentSessionId asked to skip auto-focus? */
+  consumeSkipFocus: () => boolean;
   setSelectedFileId: (id: string | null) => void;
   setCurrentFilePath: (path: string) => void;
   createSession: (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => Promise<WorkspaceSession>;
@@ -90,7 +92,12 @@ export function WorkspaceProvider({
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
   const [currentSessionId, _setCurrentSessionId] = useState<string | null>(null);
-  const setCurrentSessionId = useCallback((id: string | null) => {
+  // Set by setCurrentSessionId({ skipFocus: true }) and consumed by ChatView's
+  // auto-focus effect, so keyboard-driven thread switches (1-9) don't steal
+  // focus from the user. Cleared on read.
+  const skipFocusRef = useRef(false);
+  const setCurrentSessionId = useCallback((id: string | null, options?: { skipFocus?: boolean }) => {
+    if (options?.skipFocus) skipFocusRef.current = true;
     _setCurrentSessionId(id);
     if (id) {
       setCompletedSessionIds((prev) => {
@@ -100,6 +107,11 @@ export function WorkspaceProvider({
         return next;
       });
     }
+  }, []);
+  const consumeSkipFocus = useCallback(() => {
+    const v = skipFocusRef.current;
+    skipFocusRef.current = false;
+    return v;
   }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -810,6 +822,7 @@ export function WorkspaceProvider({
         toggleAgentMode,
         stopAllAgents,
         setCurrentSessionId,
+        consumeSkipFocus,
         setSelectedFileId,
         currentFilePath,
         setCurrentFilePath,

@@ -235,13 +235,15 @@ export function ThreadList() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (target?.isContentEditable) return;
 
-      // 1-9 → open thread by index (uses the same list the user is looking at)
+      // 1-9 → open thread by index (uses the same list the user is looking at).
+      // Pass skipFocus so the chat input doesn't steal focus — the user is
+      // navigating with the keyboard and presses 'i' explicitly to type.
       const num = parseInt(e.key, 10);
       if (num >= 1 && num <= 9) {
         const session = activeSessions[num - 1];
         if (session) {
           e.preventDefault();
-          setCurrentSessionId(session.sessionId);
+          setCurrentSessionId(session.sessionId, { skipFocus: true });
           if (isMobile) openMobileDetail();
         }
         return;

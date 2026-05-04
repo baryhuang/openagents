@@ -82,7 +82,7 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant } = useWorkspace();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus } = useWorkspace();
   const { isMobile, openMobileList, splitBrowser, showBrowserPreview, setShowBrowserPreview } = useLayout();
 
   // Continuously refresh message caches for top recent sessions in the background.
@@ -172,8 +172,10 @@ export function ChatView() {
     prevSessionIdRef.current = currentSessionId;
     // Clear optimistic messages when switching sessions
     setOptimisticMessages([]);
-    // Focus the input when switching threads
-    if (currentSessionId) setFocusKey((k) => k + 1);
+    // Focus the input when switching threads — unless the switch was made
+    // via a keyboard shortcut (e.g. 1-9 from the sidebar), in which case
+    // the user wanted to navigate, not start typing.
+    if (currentSessionId && !consumeSkipFocus()) setFocusKey((k) => k + 1);
   }, [currentSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep cache updated with latest messages for the current session
