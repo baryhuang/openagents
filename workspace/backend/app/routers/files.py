@@ -13,6 +13,7 @@ import base64
 import logging
 import uuid
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile
 from fastapi.responses import Response
@@ -358,11 +359,26 @@ async def download_file(
     ct = record.content_type or ""
     disposition = "inline" if ct.startswith("image/") or ct == "text/html" else "attachment"
 
+    # RFC 6266 / RFC 5987: HTTP headers are Latin-1 only, so non-ASCII
+    # filenames (e.g. "多媒体文件.txt") have to go through the
+    # filename*=UTF-8''<percent-encoded> form with an ASCII fallback.
+    # Without this, Starlette raises during header encoding and the
+    # whole response becomes a 500.
+    filename = record.filename or "file"
+    ascii_fallback = filename.encode("ascii", "replace").decode("ascii").replace("?", "_")
+    # Quotes and backslashes break the quoted-string in filename="..."
+    ascii_fallback = ascii_fallback.replace("\\", "_").replace('"', "_")
+    encoded = quote(filename, safe="")
+    disposition_header = (
+        f'{disposition}; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{encoded}"
+    )
+
     return Response(
         content=data,
         media_type=record.content_type,
         headers={
-            "Content-Disposition": f'{disposition}; filename="{record.filename}"',
+            "Content-Disposition": disposition_header,
             "Content-Length": str(len(data)),
         },
     )
