@@ -165,6 +165,13 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+      return;
+    }
+
+    // Escape blurs the textarea so global shortcuts (1-9, i, etc.) work again.
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      textareaRef.current?.blur();
     }
   };
 
@@ -352,6 +359,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
           placeholder={agents.length > 1 ? 'Message... (use @ to mention an agent)' : 'Message...'}
           rows={1}
           disabled={disabled}
+          data-chat-input
           className="flex-1 border-0 bg-transparent shadow-none focus:outline-none placeholder:text-muted-foreground h-auto px-0 text-sm py-2 resize-none"
         />
 

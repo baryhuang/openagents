@@ -221,6 +221,46 @@ export function ThreadList() {
       )
     : activeSessions;
 
+  // Keyboard shortcuts:
+  //   1-9  → open the Nth visible thread (mirrors monitor mode's 1-6)
+  //   i    → focus the chat input of the current thread
+  //   Esc  → handled inside chat-input (blurs the textarea)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Don't hijack typing in any input/textarea, and skip when modifier
+      // keys are held (so Cmd+1 / Ctrl+R / etc. still reach the browser).
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.isContentEditable) return;
+
+      // 1-9 → open thread by index (uses the same list the user is looking at)
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= 9) {
+        const session = activeSessions[num - 1];
+        if (session) {
+          e.preventDefault();
+          setCurrentSessionId(session.sessionId);
+          if (isMobile) openMobileDetail();
+        }
+        return;
+      }
+
+      // i → focus the chat input (vi-style "insert"). Only fires when a
+      // thread is actually open, otherwise there's nothing to focus.
+      if (e.key === 'i' && currentSessionId) {
+        const el = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input]');
+        if (el) {
+          e.preventDefault();
+          el.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeSessions, currentSessionId, isMobile, setCurrentSessionId, openMobileDetail]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
