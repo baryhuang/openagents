@@ -299,12 +299,16 @@ export function ThreadList() {
       {/* Thread rows */}
       <div className="flex-1 overflow-y-auto px-4 py-1">
         <div className="space-y-1">
-          {filteredSessions.map((session) => {
+          {filteredSessions.map((session, idx) => {
             const isSelected = session.sessionId === currentSessionId;
             const lastMsg = lastMessageBySession[session.sessionId];
             const isActive = activeSessionIds.has(session.sessionId);
             const isCompleted = completedSessionIds.has(session.sessionId);
             const contentHit = hitsByChannel.get(session.sessionId);
+            // Numeric shortcut hint for the first 9 active threads. Hidden
+            // while searching because the rendered list reorders and the
+            // 1-9 handler operates on activeSessions, not search results.
+            const shortcutKey = !isSearching && idx < 9 ? idx + 1 : null;
 
             // Show last activity time from backend
             const activityMs = session.lastEventAt;
@@ -397,6 +401,11 @@ export function ThreadList() {
                       <span className="text-xs text-muted-foreground shrink-0">
                         {displayTime}
                       </span>
+                    )}
+                    {shortcutKey && (
+                      <kbd className="size-4 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input shrink-0">
+                        {shortcutKey}
+                      </kbd>
                     )}
                   </div>
                   <p className={cn(
