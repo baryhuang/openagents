@@ -1,0 +1,318 @@
+import Foundation
+
+/// HTTP client for the OpenAgents workspace backend. Mirrors the subset of `lib/api.ts`
+/// that the iMessage-style UI needs.
+actor WorkspaceAPI {
+    static var defaultBaseURL: URL { WorkspaceURLs.defaultAPIURL }
+
+    private var baseURL: URL
+    private var workspaceId: String = ""
+    private var token: String = ""
+    private let session: URLSession
+
+    init(baseURL: URL = WorkspaceURLs.defaultAPIURL, session: URLSession = .shared) {
+        self.baseURL = baseURL
+        self.session = session
+    }
+
+    func configure(workspaceId: String, token: String, baseURL: URL? = nil) {
+        self.workspaceId = workspaceId
+        self.token = token
+        if let baseURL { self.baseURL = baseURL }
+    }
+
+    var isConfigured: Bool { !workspaceId.isEmpty }
+
+    // MARK: - Generic request helpers
+
+    private func makeRequest(
+        path: String,
+        method: String = "GET",
+        query: [(String, String)] = [],
+        body: Data? = nil,
+    ) throws -> URLRequest {
+        guard !workspaceId.isEmpty else { throw APIError.notConfigured }
+
+        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        if !query.isEmpty {
+            components.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) }
+        }
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = method
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if !token.isEmpty {
+            request.setValue(token, forHTTPHeaderField: "X-Workspace-Token")
+        }
+        if let body {
+            request.httpBody = body
+        }
+        return request
+    }
+
+    private func send<T: Decodable & Sendable>(
+        _ request: URLRequest,
+        as type: T.Type,
+    ) async throws -> T {
+        let method = request.httpMethod ?? "GET"
+        let urlDescription = request.url?.absoluteString ?? "<no url>"
+        let started = Date()
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            logError("http", "\(method) \(urlDescription) — transport error: \(error.localizedDescription)")
+            throw APIError.transport(error.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            logError("http", "\(method) \(urlDescription) — non-HTTP response")
+            throw APIError.transport("Non-HTTP response")
+        }
+        let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? "<binary>"
+            let truncated = body.count > 300 ? String(body.prefix(300)) + "…" : body
+            logError("http", "\(method) \(urlDescription) → \(http.statusCode) (\(elapsedMs)ms) body=\(truncated)")
+            throw APIError.http(status: http.statusCode, body: body)
+        }
+
+        do {
+            let envelope = try JSONDecoder().decode(APIEnvelope<T>.self, from: data)
+            logInfo("http", "\(method) \(urlDescription) → \(http.statusCode) (\(elapsedMs)ms, \(data.count) bytes)")
+            return envelope.data
+        } catch {
+            logError("http", "\(method) \(urlDescription) → \(http.statusCode) decode failed: \(error.localizedDescription)")
+            throw APIError.decoding(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Workspace metadata
+
+    func getWorkspace() async throws -> Workspace {
+        let request = try makeRequest(path: "/v1/workspaces/\(workspaceId)")
+        return try await send(request, as: Workspace.self)
+    }
+
+    // MARK: - Discovery
+
+    struct Discovery: Decodable, Sendable {
+        let agents: [NetworkAgent]
+        let channels: [NetworkChannel]
+    }
+
+    func discover() async throws -> Discovery {
+        let request = try makeRequest(
+            path: "/v1/discover",
+            query: [("network", workspaceId)],
+        )
+        return try await send(request, as: Discovery.self)
+    }
+
+    // MARK: - Events / Messages
+
+    func sendEvent(
+        type: String,
+        source: String,
+        target: String,
+        payload: [String: any Encodable & Sendable]? = nil,
+        visibility: String? = nil,
+    ) async throws -> ONMEvent {
+        var body: [String: Any] = [
+            "type": type,
+            "source": source,
+            "target": target,
+            "network": workspaceId,
+        ]
+        if let payload { body["payload"] = payload.mapValues { try? JSONEncoder().encode($0) } }
+        if let visibility { body["visibility"] = visibility }
+
+        // Build JSON manually to avoid Any/Encodable headaches.
+        let bodyData = try buildJSONBody(
+            type: type,
+            source: source,
+            target: target,
+            payload: payload,
+            visibility: visibility,
+        )
+
+        let request = try makeRequest(
+            path: "/v1/events",
+            method: "POST",
+            body: bodyData,
+        )
+        return try await send(request, as: ONMEvent.self)
+    }
+
+    private func buildJSONBody(
+        type: String,
+        source: String,
+        target: String,
+        payload: [String: any Encodable & Sendable]?,
+        visibility: String?,
+    ) throws -> Data {
+        struct Body: Encodable {
+            let type: String
+            let source: String
+            let target: String
+            let network: String
+            let payload: [String: JSONEncodableValue]?
+            let visibility: String?
+        }
+        let payloadDict: [String: JSONEncodableValue]? = payload?.mapValues { JSONEncodableValue(wrapped: $0) }
+        let body = Body(
+            type: type,
+            source: source,
+            target: target,
+            network: workspaceId,
+            payload: payloadDict,
+            visibility: visibility,
+        )
+        return try JSONEncoder().encode(body)
+    }
+
+    /// A page of messages returned in chronological order, with cursor info from the backend.
+    struct MessageBatch: Sendable {
+        let messages: [Message]   // chronological order (oldest first)
+        let oldestId: String?
+        let newestId: String?
+        /// True when the backend says more events exist beyond this page.
+        let hasMore: Bool
+    }
+
+    /// Fetch a page of message events for a channel.
+    /// - Parameters:
+    ///   - sort: `"desc"` returns newest first (used for initial load + load-older). `"asc"` returns
+    ///     oldest first (used for forward polling with `after`).
+    ///   - before: cursor — return messages older than this id.
+    ///   - after: cursor — return messages newer than this id.
+    func loadMessages(
+        channel: String,
+        before: String? = nil,
+        after: String? = nil,
+        sort: String = "asc",
+        limit: Int = 50,
+    ) async throws -> MessageBatch {
+        var query: [(String, String)] = [
+            ("network", workspaceId),
+            ("channel", channel),
+            ("type", "workspace.message"),
+            ("sort", sort),
+            ("limit", "\(limit)"),
+        ]
+        if let before { query.append(("before", before)) }
+        if let after { query.append(("after", after)) }
+
+        let request = try makeRequest(path: "/v1/events", query: query)
+        let response = try await send(request, as: EventPollResponse.self)
+        let raw = response.events.map { $0.toMessage() }
+        // Backend returns newest-first when sort=desc; reverse to chronological order
+        let chronological = sort == "desc" ? Array(raw.reversed()) : raw
+        return MessageBatch(
+            messages: chronological,
+            oldestId: response.oldest_id ?? chronological.first?.messageId,
+            newestId: response.newest_id ?? chronological.last?.messageId,
+            hasMore: response.has_more,
+        )
+    }
+
+    /// Update channel metadata (title, status, starred). Mirrors `PATCH /v1/workspaces/.../channels/...`.
+    func updateChannel(
+        channelName: String,
+        title: String? = nil,
+        status: String? = nil,
+        starred: Bool? = nil,
+    ) async throws {
+        struct Body: Encodable {
+            let title: String?
+            let status: String?
+            let starred: Bool?
+
+            // Encode only the keys actually being patched
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                if let title { try container.encode(title, forKey: .title) }
+                if let status { try container.encode(status, forKey: .status) }
+                if let starred { try container.encode(starred, forKey: .starred) }
+            }
+
+            enum CodingKeys: String, CodingKey { case title, status, starred }
+        }
+        let bodyData = try JSONEncoder().encode(Body(title: title, status: status, starred: starred))
+        let request = try makeRequest(
+            path: "/v1/workspaces/\(workspaceId)/channels/\(channelName)",
+            method: "PATCH",
+            body: bodyData,
+        )
+        // We don't care about the returned channel object — just verify success.
+        struct Empty: Decodable, Sendable {}
+        _ = try await send(request, as: Empty.self)
+    }
+
+    /// Bulk-fetch the latest message event per channel — used to show preview lines in the thread list.
+    func latestPerChannel() async throws -> [String: ONMEvent] {
+        struct Response: Decodable, Sendable {
+            let channels: [String: ONMEvent]
+        }
+        let request = try makeRequest(
+            path: "/v1/events/latest-per-channel",
+            query: [("network", workspaceId)],
+        )
+        let response = try await send(request, as: Response.self)
+        return response.channels
+    }
+
+    func sendMessage(channel: String, content: String, senderName: String = "user") async throws -> ONMEvent {
+        try await sendEvent(
+            type: "workspace.message.posted",
+            source: "human:\(senderName)",
+            target: "channel/\(channel)",
+            payload: ["content": content, "sender_type": "human"],
+            visibility: "channel",
+        )
+    }
+
+    // MARK: - Channel CRUD (event-native)
+
+    func createChannel(
+        title: String? = nil,
+        master: String? = nil,
+        participants: [String] = [],
+    ) async throws -> Session {
+        var payload: [String: any Encodable & Sendable] = [:]
+        if let title { payload["title"] = title }
+        if let master { payload["master"] = master }
+        if !participants.isEmpty { payload["participants"] = participants }
+
+        let event = try await sendEvent(
+            type: "network.channel.create",
+            source: "human:user",
+            target: "core",
+            payload: payload,
+        )
+
+        let channelName = event.metadata?["channel_name"]?.stringValue ?? ""
+        return Session(
+            sessionId: channelName,
+            workspaceId: workspaceId,
+            createdBy: "human:user",
+            title: title ?? "New Thread",
+            status: "active",
+            starred: false,
+            participants: participants,
+            master: master,
+            createdAt: Date(timeIntervalSince1970: TimeInterval(event.timestamp) / 1000.0).iso8601String,
+            lastEventAt: nil,
+        )
+    }
+}
+
+/// Wraps an Encodable so heterogeneous payload dictionaries can be encoded together.
+struct JSONEncodableValue: Encodable, @unchecked Sendable {
+    let wrapped: any Encodable & Sendable
+
+    func encode(to encoder: Encoder) throws {
+        try wrapped.encode(to: encoder)
+    }
+}

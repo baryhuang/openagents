@@ -1,0 +1,43 @@
+import SwiftUI
+
+@main
+struct OpenAgentsApp: App {
+    @State private var router = AppRouter()
+    @State private var debugLogOpen: Bool = false
+    @State private var settingsOpen: Bool = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environment(router)
+                .sheet(isPresented: $debugLogOpen) {
+                    DebugLogSheet(isPresented: $debugLogOpen)
+                }
+                .sheet(isPresented: $settingsOpen) {
+                    SettingsSheet(isPresented: $settingsOpen)
+                        .environment(router)
+                }
+                .onAppCommand(.openDebugLog) {
+                    debugLogOpen = true
+                }
+                .onAppCommand(.openSettings) {
+                    settingsOpen = true
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        // Trigger a fresh load when the app becomes active so users
+                        // returning to the app don't see stale data.
+                        NotificationCenter.default.post(name: AppCommand.refresh.notification, object: nil)
+                    }
+                }
+        }
+        #if os(macOS)
+        .defaultSize(width: 1100, height: 760)
+        .windowResizability(.contentSize)
+        .commands {
+            OpenAgentsCommands()
+        }
+        #endif
+    }
+}

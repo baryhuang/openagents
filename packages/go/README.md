@@ -1,32 +1,113 @@
 # OpenAgents Go
 
-Electron desktop app for OpenAgents workspaces.
+Native macOS + iOS app for OpenAgents workspaces. SwiftUI universal app, ~1MB
+on disk. Replaces the previous Electron build (which was ~207MB) at version
+0.2.0 with the same `com.openagents.go` bundle ID — drops in over the older
+.app on your Applications folder.
 
-![Workspace](docs/screenshot-workspace.png)
+## What's in v0.2.0
 
-![Workspace Selector](docs/screenshot-selector.png)
+- iMessage-style 2-pane layout on macOS / iPad, push/pop on iPhone
+- Workspace selector + switch flow that fully matches the old Electron app:
+  - Recent workspaces shown as chips with full-URL tooltips
+  - URL field with chevron-down dropdown listing all history (top 10)
+  - "Back to current workspace" affordance when switching
+  - Workspace name auto-syncs from `/v1/workspaces/<id>` once it loads
+- Threads list with search, swipe / context-menu actions (rename / star /
+  archive / delete), agent-working spinner
+- Chat with markdown bubbles, fenced code blocks, sender grouping, status
+  messages, per-thread input drafts
+- Agent picker for new threads (online agents, master selection, scrollable)
+- Settings sheet for swapping the API base URL (self-hosted backends)
+- macOS app menu (⌘N new thread, ⌘R refresh, ⌘⇧K switch workspace), refresh
+  on focus, error banner
 
-## Development
+## Build
 
-```bash
+Uses [xcodegen](https://github.com/yonaskolb/XcodeGen) to manage the
+`.xcodeproj` from `project.yml`.
+
+```sh
 cd packages/go
-npm install
-npm run electron:dev
+xcodegen generate
+open OpenAgentsGo.xcodeproj                             # work in Xcode
+xcodebuild -scheme OpenAgentsGo_macOS -destination 'platform=macOS' build
 ```
 
-## Build & Install
+Build a local DMG (ad-hoc signed):
 
-```bash
-npm version patch
-npm run electron:build
+```sh
+xcodebuild -project OpenAgentsGo.xcodeproj -scheme OpenAgentsGo_macOS \
+  -configuration Release -derivedDataPath build/dd \
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build
+
+STAGING=$(mktemp -d)
+cp -R "build/dd/Build/Products/Release/OpenAgents Go.app" "$STAGING/"
+ln -s /Applications "$STAGING/Applications"
+mkdir -p dist
+hdiutil create -fs HFS+ -srcfolder "$STAGING" -volname "OpenAgents Go 0.2.0" \
+  -format UDZO -ov "dist/OpenAgents Go-0.2.0-arm64.dmg"
 ```
 
-Output in `dist/` — `.dmg` (macOS), `.exe` (Windows), `.AppImage` (Linux).
+## Architecture
 
-macOS: open the `.dmg`, drag "OpenAgents Go" to Applications.
+```
+OpenAgents/
+├── OpenAgentsApp.swift           # App entry — owns AppRouter, scenePhase refresh
+├── Models/                        # Plain Codable value types
+│   ├── Workspace                  # /v1/workspaces/<id>
+│   ├── Agent + NetworkAgent       # /v1/discover agents → Agent.toAgent()
+│   ├── Session + NetworkChannel   # /v1/discover channels → Session
+│   ├── Message
+│   └── ONMEvent + JSONValue       # Event-native API wire format + Sendable JSON
+├── Networking/
+│   ├── APIError + APIEnvelope     # Standard backend response shape
+│   └── WorkspaceAPI               # actor — discover, events, sendMessage,
+│                                  #   createChannel, updateChannel,
+│                                  #   latestPerChannel, loadMessages
+├── State/
+│   ├── AppRouter                  # selector vs workspace, switch / returnTo
+│   ├── WorkspaceHistory           # UserDefaults persistence (current + recents)
+│   │                              # + parseWorkspaceURL
+│   └── WorkspaceStore             # @Observable per-workspace state
+│                                  # owns discovery + message poll tasks,
+│                                  # adaptive interval based on hasActiveAgents
+├── Views/
+│   ├── RootView                   # routes selector vs WorkspaceContainerView
+│   ├── WorkspaceSelectorView      # logo + recent chips + URL dropdown + back
+│   ├── WorkspaceView              # NavigationSplitView (auto-adapts)
+│   ├── ThreadListView             # search, list, context menu, swipe actions
+│   ├── ChatView                   # bubbles + markdown + code blocks + drafts
+│   ├── NewThreadSheet             # agent picker (online only) + master selection
+│   ├── SettingsSheet              # API base URL + about
+│   └── Commands                   # macOS app menu (⌘N, ⌘R, ⌘⇧K) via NotificationCenter
+└── Helpers/
+    ├── AgentColor                 # deterministic palette
+    ├── DateFormatting             # iMessage-style relative times
+    └── MarkdownSegments           # parses ```fenced``` code blocks out of prose
+```
 
-## TODO
+State is centralized in `WorkspaceStore` (@Observable, MainActor). The store
+owns two background polling tasks — discovery (agents + sessions + previews,
+5–15s adaptive) and the active channel's messages (1.5–3s adaptive). All HTTP
+calls live in `WorkspaceAPI`, an `actor` that serializes requests.
 
-- [ ] Restore last active thread on relaunch
-- [ ] Persist light/dark mode preference across sessions
-- [ ] Default sidebar to collapsed state
+## Differences from the Electron app
+
+- No SSE/WebSocket — polling only (Electron does the same).
+- No Google sign-in / OAuth — workspace URLs with `?token=` only.
+- The deferred view modes (Files / Browser / Connect / Monitor / Agent profile
+  / workspace settings dialog) are not implemented yet.
+
+## Configuration
+
+Default backend: `https://workspace-endpoint.openagents.org`. Change it from
+the gear icon → API base URL field in the Settings sheet (persisted in
+UserDefaults under `apiBaseURL`).
+
+Persistence keys (UserDefaults, scoped to bundle id `com.openagents.go`):
+
+- `workspaceHistory` — JSON array of recents (`workspaceId`, `workspaceToken`,
+  `name`, `lastUsed`); same shape as the Electron app's `settings.json`
+- `currentWorkspace` — single JSON entry pointing at the active workspace
+- `apiBaseURL` — overrides the default backend
