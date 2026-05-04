@@ -19,8 +19,14 @@ struct ChatView: View {
                 ErrorBanner(message: error) { store.lastError = nil }
             }
             if let session = store.currentSession {
+                #if os(iOS)
+                // On iPhone the nav bar (provided by the collapsed NavigationSplitView)
+                // already shows the title — drop the in-content header to save vertical
+                // room for messages.
+                #else
                 header(for: session)
                 Divider()
+                #endif
                 messageList(for: session)
                 Divider()
                 inputBar
@@ -29,11 +35,13 @@ struct ChatView: View {
             }
         }
         .onChange(of: store.currentSessionId) { _, _ in
-            // Auto-focus the input when a thread is selected — matches iMessage
             inputFocused = true
         }
         #if os(macOS)
         .background(Color(.controlBackgroundColor))
+        #else
+        .navigationTitle(store.currentSession?.title ?? "")
+        .navigationBarTitleDisplayMode(.inline)
         #endif
     }
 
@@ -119,6 +127,10 @@ struct ChatView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
+            #if os(iOS)
+            // Drag the messages down to dismiss the keyboard — standard iOS chat-app gesture.
+            .scrollDismissesKeyboard(.interactively)
+            #endif
             // Bulk replace (initial load, session switch, message sent) → scroll to bottom.
             // Forward poll just appending new messages doesn't bump generation.
             .onChange(of: page?.generation ?? 0) { _, _ in

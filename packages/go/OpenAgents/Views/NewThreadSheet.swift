@@ -71,7 +71,12 @@ struct NewThreadSheet: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
+        #if os(macOS)
         .frame(minWidth: 420, idealWidth: 460, minHeight: 360, idealHeight: 480, maxHeight: 640)
+        #else
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        #endif
         .task { await store.refreshDiscovery() }
     }
 

@@ -131,6 +131,11 @@ struct WorkspaceSelectorView: View {
                         error = nil
                         dropdownOpen = false
                     }
+                    #if os(iOS)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
                 if !history.isEmpty {
                     Button {
                         dropdownOpen.toggle()

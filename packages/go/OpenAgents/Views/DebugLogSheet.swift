@@ -81,7 +81,12 @@ struct DebugLogSheet: View {
                 }
             }
         }
+        #if os(macOS)
         .frame(minWidth: 720, idealWidth: 820, minHeight: 480, idealHeight: 600)
+        #else
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        #endif
     }
 
     @ViewBuilder

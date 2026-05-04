@@ -45,7 +45,12 @@ struct SettingsSheet: View {
                 .padding(20)
             }
         }
+        #if os(macOS)
         .frame(minWidth: 480, idealWidth: 540, minHeight: 480, idealHeight: 600)
+        #else
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        #endif
         .onAppear {
             seedURLDrafts()
         }
