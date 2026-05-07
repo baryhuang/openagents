@@ -11,6 +11,13 @@ struct OpenAgentsApp: App {
         WindowGroup {
             RootView()
                 .environment(router)
+                .onOpenURL { url in
+                    // Triggered when another app hands us a file via iOS
+                    // "Open in…" / Share Sheet, macOS "Open With", or
+                    // drag-onto-dock-icon. The router buffers it until the
+                    // chat view drains it into the composer.
+                    router.ingestExternalURL(url)
+                }
                 .sheet(isPresented: $debugLogOpen) {
                     DebugLogSheet(isPresented: $debugLogOpen)
                 }

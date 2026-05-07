@@ -8,6 +8,7 @@ import PhotosUI
 
 struct ChatView: View {
     @Environment(WorkspaceStore.self) private var store
+    @Environment(AppRouter.self) private var router
 
     @State private var draftsBySession: [String: String] = [:]
     @State private var pendingAttachments: [PendingAttachment] = []
@@ -84,6 +85,15 @@ struct ChatView: View {
             inputFocused = true
             // Drafts are per-session, but pending uploads aren't — clear them on switch.
             pendingAttachments.removeAll()
+            drainExternalAttachments()
+        }
+        .onChange(of: router.pendingExternalAttachments.count) { _, _ in
+            drainExternalAttachments()
+        }
+        .onAppear {
+            // Catches the cold-launch case: app opened via "Open in…", router
+            // received URL, then chat view mounted with attachments waiting.
+            drainExternalAttachments()
         }
         #if os(macOS)
         .background(Color(.controlBackgroundColor))
@@ -420,6 +430,17 @@ struct ChatView: View {
         draft.wrappedValue = ""
         pendingAttachments = []
         Task { await store.sendMessage(trimmed, attachments: attachments) }
+    }
+
+    /// Move externally-delivered files (iOS "Open in…", macOS "Open With",
+    /// drag-onto-dock) from the router buffer into the local composer. Only
+    /// drains when there's a current session — otherwise the files sit on the
+    /// router until the user picks a thread.
+    private func drainExternalAttachments() {
+        guard !router.pendingExternalAttachments.isEmpty,
+              store.currentSessionId != nil else { return }
+        pendingAttachments.append(contentsOf: router.pendingExternalAttachments)
+        router.pendingExternalAttachments.removeAll()
     }
 
     #if os(macOS)

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UniformTypeIdentifiers
 
 /// Top-level navigation state — controls whether we show the workspace selector or a connected workspace.
 /// Mirrors the Electron app's behavior: same selector view handles both first-launch (no recent
@@ -16,12 +17,37 @@ final class AppRouter {
 
     var route: Route
 
+    /// Files that arrived from outside the app (iOS "Open in…", macOS "Open
+    /// With", drag-onto-dock-icon, etc.) — buffered here until the chat view
+    /// is present and can drain them into its composer.
+    var pendingExternalAttachments: [PendingAttachment] = []
+
     init() {
         if let current = WorkspaceHistory.shared.current() {
             self.route = .workspace(current)
         } else {
             self.route = .selector(returnTo: nil)
         }
+    }
+
+    /// Read a URL handed to us by the OS and stash it as a `PendingAttachment`
+    /// for the chat view to pick up. Handles the security-scoped resource
+    /// lifecycle so callers don't have to.
+    func ingestExternalURL(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            logError("ui", "external URL ingest failed — could not read \(url.lastPathComponent)")
+            return
+        }
+        let mime = (UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
+            ?? "application/octet-stream"
+        pendingExternalAttachments.append(PendingAttachment(
+            filename: url.lastPathComponent,
+            contentType: mime,
+            data: data,
+        ))
+        logInfo("ui", "ingested external URL \(url.lastPathComponent) (\(data.count) bytes)")
     }
 
     func connect(
