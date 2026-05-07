@@ -11,7 +11,12 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
+    # macOS stays at 0.2.1 (already shipped). iOS gets a minor bump to 0.3.0
+    # via platform-conditional build settings — keeps both platforms in one
+    # multi-platform target without splitting it.
     MARKETING_VERSION: "0.2.1"
+    "MARKETING_VERSION[sdk=iphoneos*]": "0.3.0"
+    "MARKETING_VERSION[sdk=iphonesimulator*]": "0.3.0"
     CURRENT_PROJECT_VERSION: "1"
     PRODUCT_NAME: "OpenAgents Go"
     ENABLE_HARDENED_RUNTIME: YES

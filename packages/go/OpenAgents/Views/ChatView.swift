@@ -2,6 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
+#else
+import PhotosUI
 #endif
 
 struct ChatView: View {
@@ -21,7 +23,8 @@ struct ChatView: View {
     @State private var chatHeight: CGFloat = 0
 
     #if os(iOS)
-    @State private var showingFileImporter = false
+    @State private var showingPhotoPicker = false
+    @State private var photoPickerItems: [PhotosPickerItem] = []
     #endif
 
     private static let defaultInputHeight: CGFloat = 44
@@ -259,14 +262,21 @@ struct ChatView: View {
             .padding(.vertical, 10)
         }
         #if os(iOS)
-        .fileImporter(
-            isPresented: $showingFileImporter,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: true,
-        ) { result in
-            if case .success(let urls) = result {
-                for url in urls { ingestFileURL(url) }
-            }
+        // iPhone/iPad: paperclip presents the system Photos picker (images only).
+        // Files-app picking is intentionally skipped — chat-style flows expect
+        // photos by default; documents/PDFs aren't a primary use case here.
+        .photosPicker(
+            isPresented: $showingPhotoPicker,
+            selection: $photoPickerItems,
+            maxSelectionCount: 10,
+            matching: .images,
+            photoLibrary: .shared(),
+        )
+        .onChange(of: photoPickerItems) { _, items in
+            guard !items.isEmpty else { return }
+            let picked = items
+            photoPickerItems = []
+            Task { await ingestPhotoPickerItems(picked) }
         }
         #endif
     }
@@ -316,8 +326,10 @@ struct ChatView: View {
                 .frame(height: inputHeight)
                 .focused($inputFocused)
                 #if os(macOS)
-                // .onPasteCommand is macOS-only. iOS users get image/file ingestion via
-                // the paperclip button (fileImporter), which can reach Photos via Files.
+                // .onPasteCommand is macOS-only. On iOS, the paperclip presents
+                // a PhotosPicker (images only) — that's the natural way to attach
+                // images on a phone, and ⌘V on a paired hardware keyboard would
+                // need a separate UIPasteControl integration we haven't added.
                 .onPasteCommand(of: pasteAcceptedTypes) { providers in
                     handlePaste(providers)
                 }
@@ -384,9 +396,34 @@ struct ChatView: View {
             for url in panel.urls { ingestFileURL(url) }
         }
         #else
-        showingFileImporter = true
+        showingPhotoPicker = true
         #endif
     }
+
+    #if os(iOS)
+    /// Convert PhotosPicker selections into PendingAttachment entries. We
+    /// load the raw image bytes via `loadTransferable(type: Data.self)` so the
+    /// chip + upload path is identical to the macOS pasted/file-picker flow.
+    @MainActor
+    private func ingestPhotoPickerItems(_ items: [PhotosPickerItem]) async {
+        for (index, item) in items.enumerated() {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+                let utType = item.supportedContentTypes.first
+                let ext = utType?.preferredFilenameExtension ?? "jpg"
+                let mime = utType?.preferredMIMEType ?? "image/jpeg"
+                let stamp = Int(Date().timeIntervalSince1970)
+                pendingAttachments.append(PendingAttachment(
+                    filename: "Photo-\(stamp)-\(index).\(ext)",
+                    contentType: mime,
+                    data: data,
+                ))
+            } catch {
+                logError("ui", "photo ingest failed: \(error.localizedDescription)")
+            }
+        }
+    }
+    #endif
 
     #if os(macOS)
     /// Pasteboard types we want to capture before TextEditor sees them. Text is left
