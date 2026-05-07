@@ -11,7 +11,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "0.2.1"
     CURRENT_PROJECT_VERSION: "1"
     PRODUCT_NAME: "OpenAgents Go"
     ENABLE_HARDENED_RUNTIME: YES
@@ -39,6 +39,39 @@ targets:
         # (HTTPS via URLSession + Keychain), which is exempt from US export
         # compliance review.
         ITSAppUsesNonExemptEncryption: false
+        # Advertise that we can receive arbitrary documents — wires the app
+        # into iOS "Open in…" pickers / share targets and macOS "Open With"
+        # menus. We're not the primary handler for any of these (LSHandlerRank:
+        # Alternate); on receipt the file becomes a chat-input attachment.
+        # `LSSupportsOpeningDocumentsInPlace` is intentionally omitted: on iOS
+        # the default (no in-place edit, file copied to the Inbox) is what we
+        # want, and the key is rejected by the macOS bundle validator.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "Attachment"
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.image
+              - public.movie
+              - public.audio
+              - public.pdf
+              - public.text
+              - public.composite-content
+              - public.archive
+              - public.data
+        # Required for App Store upload of a universal (iPhone+iPad) app.
+        # iPad multitasking validation requires all four orientations on iPad
+        # and a launch screen via UILaunchScreen (replaces a storyboard).
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UILaunchScreen: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openagents.go

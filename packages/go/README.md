@@ -52,8 +52,8 @@ STAGING=$(mktemp -d)
 cp -R "build/dd/Build/Products/Release/OpenAgents Go.app" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 mkdir -p dist
-hdiutil create -fs HFS+ -srcfolder "$STAGING" -volname "OpenAgents Go 0.2.0" \
-  -format UDZO -ov "dist/OpenAgents Go-0.2.0-arm64.dmg"
+hdiutil create -fs HFS+ -srcfolder "$STAGING" -volname "OpenAgents Go 0.2.1" \
+  -format UDZO -ov "dist/OpenAgents Go-0.2.1-arm64.dmg"
 ```
 
 ## Architecture
