@@ -25,6 +25,7 @@ struct ChatView: View {
     #if os(iOS)
     @State private var showingPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
+    @State private var showingFileImporter = false
     #endif
 
     private static let defaultInputHeight: CGFloat = 44
@@ -239,14 +240,7 @@ struct ChatView: View {
             }
 
             HStack(alignment: .bottom, spacing: 8) {
-                Button(action: pickFiles) {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
-                .help("Attach files")
+                paperclipControl
 
                 inputField
 
@@ -262,9 +256,9 @@ struct ChatView: View {
             .padding(.vertical, 10)
         }
         #if os(iOS)
-        // iPhone/iPad: paperclip presents the system Photos picker (images only).
-        // Files-app picking is intentionally skipped — chat-style flows expect
-        // photos by default; documents/PDFs aren't a primary use case here.
+        // iPhone/iPad: paperclip is a Menu offering Photos (PhotosPicker) and
+        // Files (.fileImporter). Each option drives the same PendingAttachment
+        // chip + multipart upload pipeline as macOS.
         .photosPicker(
             isPresented: $showingPhotoPicker,
             selection: $photoPickerItems,
@@ -278,6 +272,49 @@ struct ChatView: View {
             photoPickerItems = []
             Task { await ingestPhotoPickerItems(picked) }
         }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true,
+        ) { result in
+            if case .success(let urls) = result {
+                for url in urls { ingestFileURL(url) }
+            }
+        }
+        #endif
+    }
+
+    /// Paperclip trigger.
+    /// - macOS: single Button → `NSOpenPanel`.
+    /// - iOS: `Menu` with two options — Photo Library and Files.
+    @ViewBuilder
+    private var paperclipControl: some View {
+        let label = Image(systemName: "paperclip")
+            .font(.system(size: 18, weight: .regular))
+            .foregroundStyle(.secondary)
+            .frame(width: 32, height: 32)
+
+        #if os(macOS)
+        Button(action: pickFiles) { label }
+            .buttonStyle(.plain)
+            .help("Attach files")
+        #else
+        Menu {
+            Button {
+                showingPhotoPicker = true
+            } label: {
+                Label("Photo Library", systemImage: "photo.on.rectangle.angled")
+            }
+            Button {
+                showingFileImporter = true
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+        } label: {
+            label
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         #endif
     }
 
@@ -385,8 +422,8 @@ struct ChatView: View {
         Task { await store.sendMessage(trimmed, attachments: attachments) }
     }
 
+    #if os(macOS)
     private func pickFiles() {
-        #if os(macOS)
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -395,10 +432,8 @@ struct ChatView: View {
         if panel.runModal() == .OK {
             for url in panel.urls { ingestFileURL(url) }
         }
-        #else
-        showingPhotoPicker = true
-        #endif
     }
+    #endif
 
     #if os(iOS)
     /// Convert PhotosPicker selections into PendingAttachment entries. We
