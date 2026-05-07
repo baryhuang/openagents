@@ -279,6 +279,81 @@ md5sum /tmp/x.bin
 
 ---
 
+## Ongoing operations — the ECS task env contract
+
+After Phase 5, the routine of "build new image → push → register new task
+def → roll service" is mechanical AWS CLI work. Claude Code (or any agent
+with AWS credentials) can run that loop on its own.
+
+What an agent **cannot** know without being told:
+
+- which env vars exist on the task definition,
+- what their values must be,
+- which other systems own each value,
+- and which env vars must never be invented or replaced from memory.
+
+This section is that contract. It exists so the next deploy doesn't drop or
+mutate an env var because someone reconstructed the task definition from
+their head instead of from the live config.
+
+### Two non-negotiable rules
+
+1. **Never reconstruct the task definition from memory.** Always start from
+   `aws ecs describe-task-definition` of the current revision, modify with
+   `jq` (or equivalent — only mutate what you intend to change), and
+   re-register. Drift between what was last applied and what's running is
+   invisible until something breaks.
+2. **Always diff `containerDefinitions[].environment` before
+   `update-service`.** Compare the new revision's env array against the
+   previous revision's. If the diff is non-empty for any var you didn't mean
+   to change, your filter dropped or mutated something — fix it before
+   pointing the service at the new revision.
+3. **Pin the task definition's `image` to an immutable digest
+   (`@sha256:…`)**, not `:latest`. The task def then carries the historical
+   record of what shipped, rollback is one service update, and a re-pushed
+   `:latest` can't silently mutate what's running.
+
+### The eight env vars
+
+All eight are inline on `containerDefinitions[0].environment`
+(`secrets: null` — none are in Secrets Manager / SSM today).
+
+| Name | Source of truth | Format / valid values | What breaks if wrong |
+|---|---|---|---|
+| `DATABASE_URL` | InsForge dashboard → Settings → Database (password is **not** exposed via CLI/MCP — manual copy) | `postgresql://postgres:<PWD>@<appkey>.<region>.database.insforge.app:5432/insforge?sslmode=require` — `?sslmode=require` mandatory for managed Postgres | Container exits at boot on `psycopg2.OperationalError`; CloudWatch may stay silent (see AWS/ECS gotcha) |
+| `S3_BUCKET` | Output of Phase 1 (`openagents-files-<your-suffix>`) | Globally-unique S3 bucket name in the same AWS account as ECS | File uploads/downloads return 5xx; storage adapter raises `NoSuchBucket` |
+| `S3_REGION` | Region the Phase 1 bucket was created in | AWS region code, e.g. `us-east-1` | Cross-region calls add ~70ms per file op; usually still works |
+| `FILE_STORAGE_BACKEND` | Architecture decision | `s3` (production) or `local` (dev only — writes to container FS, lost on every redeploy) | If unset, defaults to `local` → uploaded files vanish on the next deploy with no error |
+| `WORKSPACE_ENDPOINT` | The public hostname clients hit (Route 53 → ALB) | `https://<your-api-host>` — no trailing slash | Absolute URLs the API embeds in events (file links, OAuth callbacks, …) point at the wrong host; the API itself still serves |
+| `CORS_ORIGINS` | The complete list of frontend hostnames that talk to this API | Comma-separated origins, no spaces, no trailing slash, each `https://...` | Browsers see CORS errors that look like the API is down. **Add the InsForge URL** when you deploy a new frontend. |
+| `AUTH_MODE` | Auth architecture | `workspace_token` for self-hosted single-tenant (this stack); other values change the auth flow entirely | Auth check fails for every request → 401 |
+| `IDENTITY_MODE` | Identity provider mode | `standalone` for self-hosted (no external IdP); other values trigger OIDC/SSO flows that need extra config | Container boots but every login returns 401 / 500 |
+
+### Things that must NOT be env vars
+
+- **AWS credentials** (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). Use
+  the Fargate task role from Phase 5b — boto3 picks them up from the IMDS
+  endpoint automatically. Inline AWS keys in task envs are a leak waiting
+  to happen.
+- **Long-lived API keys** for third-party services. Register them in AWS
+  Secrets Manager and reference via `containerDefinitions[0].secrets[]` —
+  not `environment[]`. Anyone with `ecs:DescribeTaskDefinition` (most
+  read-only IAM roles) can read inline env values.
+- The Postgres password is currently inline inside `DATABASE_URL` because
+  InsForge's docs ship it that way; ideally it moves to Secrets Manager
+  too.
+
+### Cross-system bindings — change one, change the other
+
+| You're changing | Other side that must move with it |
+|---|---|
+| Frontend hostname (deploying to InsForge / Vercel / a new domain) | Add it to `CORS_ORIGINS` on the task def — same release |
+| `S3_BUCKET` | The IAM task-role policy from Phase 5b (allowed-resource ARN) |
+| InsForge project | `DATABASE_URL` AND a fresh Phase 3 data pump run — different projects = different Postgres instances |
+| Public API hostname | `WORKSPACE_ENDPOINT` AND every agent connector's URL (see warning at the top of this file) |
+
+---
+
 ## Things to look out for (gotchas)
 
 These all bit us. Fix them up-front and the migration is uneventful.
@@ -350,6 +425,26 @@ These all bit us. Fix them up-front and the migration is uneventful.
 - **Cross-region surprise**: the prior ECS env had DB in `us-west` while ECS
   itself ran in `us-east-1`. Cross-region adds ~70ms per query. Match
   regions when you cut over.
+- **Cross-compile for `linux/amd64` on Apple Silicon dev machines**.
+  Default `docker buildx` on M-series Macs targets `linux/arm64`. Fargate
+  defaults to `LINUX/X86_64`; without `--platform linux/amd64` the
+  container exits immediately with `exec format error`. Combined with the
+  silent CloudWatch issue above, the failure looks like the task just
+  "didn't start".
+- **`:latest` in a task definition is a footgun**. The task-def loses any
+  record of which build is running, rollbacks become guesswork, and a
+  re-push of `:latest` can mutate prod without a service update. Pin the
+  task-def's `image` to the immutable digest (`@sha256:…`) and use the SHA
+  tag (`:9f5b3f7c`) only for human-readable lookups in the registry.
+- **`--force-new-deployment` is a restart, not a release**. It re-pulls
+  whatever the current task-def points at — useful when `:latest` was
+  silently re-pushed (don't), or to recover a wedged task. Make a new
+  task-def revision when you actually want to ship something new.
+- **`docker buildx` can mangle a second `-t` flag** under some BuildKit
+  versions (`repo:latest` becoming `repoatest:latest`, then failing with
+  "repository does not exist"). Pass one tag at build time and use
+  `docker buildx imagetools create` to add `:latest` afterwards — it's a
+  manifest copy, no layer re-upload.
 
 ### Rollout safety
 
