@@ -16,6 +16,7 @@
 		31FD32757E2BF6DD8B75E1A9 /* WorkspaceHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE6F8171E34A5BC1F0B27A78 /* WorkspaceHistory.swift */; };
 		326A4AF14666AAAAA1533C67 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C267C1A37576B7294C15292F /* WorkspaceStore.swift */; };
 		3438A1292EF5C935144C700F /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C0F9FAA008A4C5DDB894DA /* AppRouter.swift */; };
+		34461487C88796E6D66D783E /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA3085A25ECB8AF0A98D6F47 /* Attachment.swift */; };
 		35764C58AC68CE735195F1CE /* WorkspaceSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EFFC2C331F1ED7BA618194 /* WorkspaceSelectorView.swift */; };
 		383094D64CFB715CAC402865 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06F3953DCD2E5775B31C111D /* Session.swift */; };
 		3A14F9265E6983682208C4C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91B2C08AA423DF283FD25539 /* Assets.xcassets */; };
@@ -47,6 +48,7 @@
 		C61ED8789874F36B7F1E31B5 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48522F620CC5D424ED098EBE /* RootView.swift */; };
 		C7EC2CAA80846A19FF42263F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91B2C08AA423DF283FD25539 /* Assets.xcassets */; };
 		C84DB410462FB4F3300934C4 /* MarkdownSegments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60D250D0F8C1A2E0F9CD2AB0 /* MarkdownSegments.swift */; };
+		CBB17FF163D15033DDC470F4 /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA3085A25ECB8AF0A98D6F47 /* Attachment.swift */; };
 		CCC29C98C7E745BED1930D50 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48B135DC42112DC8B87C20D3 /* Commands.swift */; };
 		CD5B0603E5FDF8D40D0D5BBF /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C0F9FAA008A4C5DDB894DA /* AppRouter.swift */; };
 		CFC7CD12880ED3F6F57BDE44 /* OpenAgentsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3A7C86384A4BFBF462241C /* OpenAgentsApp.swift */; };
@@ -74,10 +76,10 @@
 		5C3BCF5736D0ECDC075EF836 /* OpenAgents.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenAgents.entitlements; sourceTree = "<group>"; };
 		60D250D0F8C1A2E0F9CD2AB0 /* MarkdownSegments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownSegments.swift; sourceTree = "<group>"; };
 		62BEFDB8EAD399989E7939F2 /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
-		657BCC02FD23538732562FEA /* OpenAgentsGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = OpenAgentsGo.app; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		657BCC02FD23538732562FEA /* OpenAgentsGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenAgentsGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BFC6779CA9AEA7008F8E130 /* DebugLogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogSheet.swift; sourceTree = "<group>"; };
 		71C0F9FAA008A4C5DDB894DA /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
-		740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenAgentsGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		77786041AC1E5D020AFE9315 /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		818A4CEAED3B6B2F27409E36 /* ONMEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ONMEvent.swift; sourceTree = "<group>"; };
 		86415FE67D6C1C2F1DDBA257 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
@@ -89,6 +91,7 @@
 		BA75C05C810E421587E53523 /* Agent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Agent.swift; sourceTree = "<group>"; };
 		BE6F8171E34A5BC1F0B27A78 /* WorkspaceHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceHistory.swift; sourceTree = "<group>"; };
 		C267C1A37576B7294C15292F /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
+		CA3085A25ECB8AF0A98D6F47 /* Attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attachment.swift; sourceTree = "<group>"; };
 		CDD76787C0D9749219DA3AAC /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
 		ED3A7C86384A4BFBF462241C /* OpenAgentsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAgentsApp.swift; sourceTree = "<group>"; };
 		EF4309C1958ECD63080F3246 /* DateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormatting.swift; sourceTree = "<group>"; };
@@ -147,6 +150,7 @@
 			isa = PBXGroup;
 			children = (
 				BA75C05C810E421587E53523 /* Agent.swift */,
+				CA3085A25ECB8AF0A98D6F47 /* Attachment.swift */,
 				86415FE67D6C1C2F1DDBA257 /* Message.swift */,
 				818A4CEAED3B6B2F27409E36 /* ONMEvent.swift */,
 				06F3953DCD2E5775B31C111D /* Session.swift */,
@@ -185,7 +189,7 @@
 		D476D796F5F151440069AC0A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */,
+				740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */,
 				657BCC02FD23538732562FEA /* OpenAgentsGo.app */,
 			);
 			name = Products;
@@ -227,7 +231,7 @@
 			packageProductDependencies = (
 			);
 			productName = OpenAgentsGo_iOS;
-			productReference = 740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */;
+			productReference = 740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -295,6 +299,7 @@
 				472A18F2B5849141C9E09E99 /* Agent.swift in Sources */,
 				F677A439515DA1875D05ECC0 /* AgentColor.swift in Sources */,
 				3438A1292EF5C935144C700F /* AppRouter.swift in Sources */,
+				CBB17FF163D15033DDC470F4 /* Attachment.swift in Sources */,
 				7E703418D00E5A308C587C46 /* ChatView.swift in Sources */,
 				740AD543DDC8D97BC3B6BCD2 /* Commands.swift in Sources */,
 				E1FC38978E599553F5B71510 /* DateFormatting.swift in Sources */,
@@ -328,6 +333,7 @@
 				796E034098D65B920232106D /* Agent.swift in Sources */,
 				DFFF5BEDDF0FE10395C7861B /* AgentColor.swift in Sources */,
 				CD5B0603E5FDF8D40D0D5BBF /* AppRouter.swift in Sources */,
+				34461487C88796E6D66D783E /* Attachment.swift in Sources */,
 				A51F0D9F2D06EE9B22459C81 /* ChatView.swift in Sources */,
 				CCC29C98C7E745BED1930D50 /* Commands.swift in Sources */,
 				A8866B86D85D3C7A631EB1EA /* DateFormatting.swift in Sources */,
@@ -413,7 +419,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OpenAgents/OpenAgents.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = AP69DBR725;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenAgents/Info.plist;
@@ -489,7 +494,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -508,7 +513,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OpenAgents/OpenAgents.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = AP69DBR725;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenAgents/Info.plist;
@@ -578,7 +582,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "OpenAgents Go";

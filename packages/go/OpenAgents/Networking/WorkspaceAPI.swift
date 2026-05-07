@@ -273,6 +273,70 @@ actor WorkspaceAPI {
         )
     }
 
+    // MARK: - File uploads
+
+    /// Backend response for `POST /v1/files`.
+    struct UploadedFile: Decodable, Sendable {
+        let id: String
+        let filename: String
+        let content_type: String
+        let size: Int
+    }
+
+    /// Public download URL for a file. Note: the backend serves these via
+    /// `/v1/files/{file_id}` and validates the workspace token from the same
+    /// header we use for everything else, so this URL is meant for in-app
+    /// consumption (markdown links rendered in chat) — not anonymous sharing.
+    func downloadURL(fileId: String) -> URL {
+        baseURL.appendingPathComponent("/v1/files/\(fileId)")
+    }
+
+    /// Upload a file to shared storage. Mirrors the multipart form expected by
+    /// `POST /v1/files`. Emits a `workspace.file.uploaded` event server-side;
+    /// callers that want the file to appear in chat should follow up with a
+    /// `sendMessage` containing a markdown link.
+    func uploadFile(
+        channel: String,
+        filename: String,
+        contentType: String,
+        data: Data,
+        senderName: String = "user",
+    ) async throws -> UploadedFile {
+        guard !workspaceId.isEmpty else { throw APIError.notConfigured }
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        let crlf = "\r\n"
+        var body = Data()
+
+        func appendField(name: String, value: String) {
+            body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\"\(crlf)\(crlf)".data(using: .utf8)!)
+            body.append("\(value)\(crlf)".data(using: .utf8)!)
+        }
+
+        appendField(name: "network", value: workspaceId)
+        appendField(name: "channel_name", value: channel)
+        appendField(name: "source", value: "human:\(senderName)")
+
+        // Quote-escape the filename per RFC 7578 — backend uses Starlette which
+        // tolerates plain quotes, but a stray `"` in the name would break the header.
+        let safeName = filename.replacingOccurrences(of: "\"", with: "_")
+        body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\(crlf)".data(using: .utf8)!)
+        body.append("Content-Type: \(contentType)\(crlf)\(crlf)".data(using: .utf8)!)
+        body.append(data)
+        body.append("\(crlf)--\(boundary)--\(crlf)".data(using: .utf8)!)
+
+        var request = URLRequest(url: baseURL.appendingPathComponent("/v1/files"))
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if !token.isEmpty { request.setValue(token, forHTTPHeaderField: "X-Workspace-Token") }
+        request.httpBody = body
+
+        return try await send(request, as: UploadedFile.self)
+    }
+
     // MARK: - Channel CRUD (event-native)
 
     func createChannel(

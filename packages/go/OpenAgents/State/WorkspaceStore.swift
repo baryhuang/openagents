@@ -305,10 +305,10 @@ final class WorkspaceStore {
         }
     }
 
-    func sendMessage(_ content: String) async {
+    func sendMessage(_ content: String, attachments: [PendingAttachment] = []) async {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            logWarn("send", "ignored empty content")
+        guard !trimmed.isEmpty || !attachments.isEmpty else {
+            logWarn("send", "ignored — empty content and no attachments")
             return
         }
         guard let channel = currentSessionId else {
@@ -317,16 +317,23 @@ final class WorkspaceStore {
         }
 
         let preview = trimmed.count > 60 ? String(trimmed.prefix(60)) + "…" : trimmed
-        logInfo("send", "→ channel=\(channel) chars=\(trimmed.count) text=\"\(preview)\"")
+        logInfo("send", "→ channel=\(channel) chars=\(trimmed.count) attachments=\(attachments.count) text=\"\(preview)\"")
 
         // Optimistic insert *before* the network request so the bubble appears instantly.
+        // Pending attachments are shown as 📎 lines so the user sees them immediately.
+        let optimisticContent: String = {
+            var parts: [String] = []
+            if !trimmed.isEmpty { parts.append(trimmed) }
+            for a in attachments { parts.append("📎 \(a.filename) — uploading…") }
+            return parts.joined(separator: "\n\n")
+        }()
         let optimisticId = "optimistic-\(Int(Date().timeIntervalSince1970 * 1000))"
         let optimistic = Message(
             messageId: optimisticId,
             sessionId: channel,
             senderType: "human",
             senderName: "You",
-            content: trimmed,
+            content: optimisticContent,
             mentions: [],
             messageType: "chat",
             timestamp: Int64(Date().timeIntervalSince1970 * 1000),
@@ -338,7 +345,28 @@ final class WorkspaceStore {
         logInfo("send", "inserted optimistic id=\(optimisticId)")
 
         do {
-            let event = try await api.sendMessage(channel: channel, content: trimmed)
+            // Upload attachments first; collect markdown links to splice into the message.
+            var attachmentLinks: [String] = []
+            for a in attachments {
+                let uploaded = try await api.uploadFile(
+                    channel: channel,
+                    filename: a.filename,
+                    contentType: a.contentType,
+                    data: a.data,
+                )
+                let url = await api.downloadURL(fileId: uploaded.id)
+                attachmentLinks.append("📎 [\(uploaded.filename)](\(url.absoluteString))")
+                logInfo("send", "uploaded id=\(uploaded.id) name=\(uploaded.filename) size=\(uploaded.size)")
+            }
+
+            let finalContent: String = {
+                var parts: [String] = []
+                if !trimmed.isEmpty { parts.append(trimmed) }
+                parts.append(contentsOf: attachmentLinks)
+                return parts.joined(separator: "\n\n")
+            }()
+
+            let event = try await api.sendMessage(channel: channel, content: finalContent)
             logInfo("send", "✓ backend ack id=\(event.id) ts=\(event.timestamp)")
             lastError = nil
             Task { [weak self] in
