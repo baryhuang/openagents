@@ -306,7 +306,7 @@ export function ThreadList() {
             const isSelected = session.sessionId === currentSessionId;
             const lastMsg = lastMessageBySession[session.sessionId];
             const isActive = activeSessionIds.has(session.sessionId);
-            const isCompleted = completedSessionIds.has(session.sessionId);
+            const isCompleted = completedSessionIds.has(session.sessionId) && !isActive;
             const contentHit = hitsByChannel.get(session.sessionId);
             // Numeric shortcut hint for the first 9 active threads. Hidden
             // while searching because the rendered list reorders and the
