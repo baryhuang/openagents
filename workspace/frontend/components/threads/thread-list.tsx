@@ -249,13 +249,14 @@ export function ThreadList() {
         return;
       }
 
-      // i → focus the chat input (vi-style "insert"). Only fires when a
-      // thread is actually open, otherwise there's nothing to focus.
-      if (e.key === 'i' && currentSessionId) {
+      // Any single printable character → focus the chat input and let the
+      // keystroke pass through so the character appears in the textarea.
+      // Only fires when a thread is open.
+      if (e.key.length === 1 && currentSessionId) {
         const el = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input]');
         if (el) {
-          e.preventDefault();
           el.focus();
+          // Don't preventDefault — let the character be typed into the textarea
         }
       }
     };
