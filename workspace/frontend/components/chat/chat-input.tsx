@@ -309,7 +309,8 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
 
       <div className={cn(
         'relative flex flex-col gap-2 bg-background transition-all rounded-2xl border shadow-lg p-4',
-        isDragging && 'border-primary border-dashed bg-primary/5'
+        isDragging && 'border-primary border-dashed bg-primary/5',
+        isFocused && !isDragging && 'ring-2 ring-primary/30 border-primary/40'
       )}>
         {/* Drag overlay */}
         {isDragging && (
@@ -366,20 +367,20 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
             data-chat-input
             className="w-full border-0 bg-transparent shadow-none focus:outline-none placeholder:text-muted-foreground h-auto px-0 text-sm py-2 resize-none"
           />
-          {/* Shortcut hint: 'i' when not focused, 'esc' when focused.
-              Hidden once the user starts typing so it doesn't compete
-              with the actual content. */}
-          {!message && (
+          {/* Shortcut hint: always show 'esc' when focused, show 'i' when not focused and empty */}
+          {isFocused ? (
             <kbd
-              className={cn(
-                'pointer-events-none absolute right-1 top-1/2 -translate-y-1/2',
-                'flex items-center justify-center rounded text-[9px] font-mono font-medium',
-                'bg-muted text-muted-foreground border border-input',
-                isFocused ? 'h-4 px-1' : 'size-4'
-              )}
-              title={isFocused ? 'Press Esc to leave the input' : 'Press i to focus the input'}
+              className="pointer-events-none absolute right-1 top-2.5 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input h-4 px-1"
+              title="Press Esc to exit typing mode"
             >
-              {isFocused ? 'esc' : 'i'}
+              esc
+            </kbd>
+          ) : !message && (
+            <kbd
+              className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input size-4"
+              title="Press any key to start typing"
+            >
+              i
             </kbd>
           )}
         </div>
