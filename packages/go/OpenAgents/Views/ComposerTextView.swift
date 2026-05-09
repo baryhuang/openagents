@@ -398,11 +398,17 @@ private struct ComposerRepresentable: UIViewRepresentable {
             textView.text = text
         }
 
+        // Auto-PROMOTE to first responder when the binding asks for focus,
+        // but DON'T auto-resign when it asks to drop focus — UIKit already
+        // dismisses the keyboard naturally on user taps outside / done key,
+        // and SwiftUI re-renders can briefly read a stale `false` from the
+        // FocusState binding right after the user taps to focus, which
+        // would yank the keyboard down before they can type a single
+        // character. Mirrors the macOS path above (no auto-resign there
+        // either).
         let wantsFocus = isFocused.wrappedValue
         if wantsFocus && !textView.isFirstResponder {
             DispatchQueue.main.async { textView.becomeFirstResponder() }
-        } else if !wantsFocus && textView.isFirstResponder {
-            DispatchQueue.main.async { textView.resignFirstResponder() }
         }
     }
 
