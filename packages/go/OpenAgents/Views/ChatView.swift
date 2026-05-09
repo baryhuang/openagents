@@ -421,7 +421,7 @@ struct ChatView: View {
         ComposerTextView(
             text: draft,
             height: inputHeight,
-            placeholder: "iMessage",
+            placeholder: "Message",
             isFocused: $inputFocused,
             onSend: { send() },
             onPasteImages: { attachments in
