@@ -122,6 +122,9 @@ class ClaudeAdapter(BaseAdapter):
                 self._save_sessions()
                 await self._stop_current_process()
                 logger.info("Restart: cleared all sessions (no channel param)")
+            return
+        # Fall through to base class for shared actions (status, etc.).
+        await super()._on_control_action(action, payload)
 
     async def _stop_process(self, proc: asyncio.subprocess.Process):
         """Kill a single Claude subprocess and its children."""

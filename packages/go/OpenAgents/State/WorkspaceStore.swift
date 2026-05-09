@@ -640,6 +640,55 @@ final class WorkspaceStore {
         }
     }
 
+    /// Send a `status` control event to every agent in this session. Each
+    /// agent posts back a chat message summarizing its uptime, version, and
+    /// network. Used by the `/status` slash command. Read-only — no agent
+    /// state is modified.
+    func requestSessionStatus(sessionId: String) async {
+        guard let session = sessions.first(where: { $0.sessionId == sessionId }) else {
+            logWarn("status", "no session for id=\(sessionId)")
+            return
+        }
+        let sessionAgents = agents.filter {
+            session.participants.isEmpty || session.participants.contains($0.agentName)
+        }
+        guard !sessionAgents.isEmpty else {
+            logWarn("status", "no agents in session=\(sessionId)")
+            return
+        }
+
+        // Optimistic local-only status row so the user sees immediate feedback
+        // while the agents build their replies.
+        let optimistic = Message.localStatus(
+            channel: sessionId,
+            content: "Checking status…",
+            idPrefix: "local-status-",
+        )
+        var page = pagesBySession[sessionId] ?? ChannelMessages()
+        page.messages.append(optimistic)
+        pagesBySession[sessionId] = page
+        lastMessageBySession[sessionId] = optimistic
+
+        let agentNames = sessionAgents.map(\.agentName)
+        logInfo("status", "requesting status from \(agentNames.count) agent(s) channel=\(sessionId)")
+
+        await withTaskGroup(of: Void.self) { group in
+            for name in agentNames {
+                group.addTask { [api = self.api, sessionId] in
+                    do {
+                        _ = try await api.sendAgentControl(
+                            agentName: name,
+                            action: "status",
+                            params: ["channel": sessionId],
+                        )
+                    } catch {
+                        logWarn("status", "agent=\(name) failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
     func createThread(master: String, participants: [String]) async {
         do {
             let session = try await api.createChannel(master: master, participants: participants)

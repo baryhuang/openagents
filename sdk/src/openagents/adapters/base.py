@@ -16,6 +16,7 @@ and optionally override ``_on_control_action()`` for custom control events.
 
 import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -55,6 +56,9 @@ class BaseAdapter(ABC):
         # Per-channel uploaded file tracking — files uploaded during message
         # handling are attached to the final response message.
         self._channel_uploaded_files: dict[str, list[dict]] = {}
+        # Wall-clock timestamp of adapter init, used by the `status` control
+        # action to report uptime back to the channel.
+        self._started_at: float = time.time()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -149,8 +153,68 @@ class BaseAdapter(ABC):
             logger.debug(f"Control poll failed: {e}")
 
     async def _on_control_action(self, action: Optional[str], payload: dict):
-        """Handle adapter-specific control actions. Override in subclasses."""
-        pass
+        """Handle adapter-specific control actions. Override in subclasses to
+        add per-adapter actions (`stop`, `restart`, …); always call
+        `await super()._on_control_action(action, payload)` from the override
+        for actions you don't recognize, so shared actions like `status`
+        keep working uniformly across adapter types."""
+        if action == "status":
+            await self._post_status_report(payload)
+
+    async def _post_status_report(self, payload: dict):
+        """Post a status message back to the requesting channel summarizing
+        agent name, type, openagents version, uptime, and network. Used by
+        the `/status` slash command."""
+        channel = payload.get("channel") if isinstance(payload, dict) else None
+        if not channel:
+            logger.debug("Status: no channel in payload, skipping")
+            return
+
+        try:
+            from importlib.metadata import version as _pkg_version, PackageNotFoundError
+            try:
+                oa_version = _pkg_version("openagents")
+            except PackageNotFoundError:
+                oa_version = "unknown"
+        except Exception:
+            oa_version = "unknown"
+
+        uptime_s = max(0, int(time.time() - self._started_at))
+        days, rem = divmod(uptime_s, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+        if days > 0:
+            uptime_str = f"{days}d {hours}h {minutes}m"
+        elif hours > 0:
+            uptime_str = f"{hours}h {minutes}m"
+        elif minutes > 0:
+            uptime_str = f"{minutes}m {seconds}s"
+        else:
+            uptime_str = f"{seconds}s"
+
+        adapter_type = type(self).__name__.replace("Adapter", "").lower()
+
+        content = (
+            f"**Agent status**\n"
+            f"- Name: `{self.agent_name}` ({adapter_type})\n"
+            f"- Version: openagents `{oa_version}`\n"
+            f"- Uptime: {uptime_str}\n"
+            f"- Network: `{self.workspace_id}`"
+        )
+
+        try:
+            await self.client.send_message(
+                workspace_id=self.workspace_id,
+                channel_name=channel,
+                token=self.token,
+                content=content,
+                sender_type="agent",
+                sender_name=self.agent_name,
+                message_type="chat",
+                metadata={"agent_mode": self._mode},
+            )
+        except Exception as e:
+            logger.warning(f"Status: failed to post: {e}")
 
     async def _control_poller_loop(self):
         """Persistent background loop for control events."""

@@ -49,6 +49,11 @@ struct ChatView: View {
             description: "Reset agent conversation. Next message starts fresh.",
             systemImage: "arrow.counterclockwise",
         ),
+        SlashCommand(
+            id: "status",
+            description: "Show agent uptime, version, and network.",
+            systemImage: "info.circle",
+        ),
     ]
 
     private var filteredSlashCommands: [SlashCommand] {
@@ -637,8 +642,17 @@ struct ChatView: View {
             draft.wrappedValue = ""
             slashSuggestionsOpen = false
             Task { await store.restartSession(sessionId: id) }
+        case "status":
+            guard let id = store.currentSessionId else {
+                store.lastError = "/status requires an active session."
+                return
+            }
+            logInfo("ui", "/status invoked session=\(id)")
+            draft.wrappedValue = ""
+            slashSuggestionsOpen = false
+            Task { await store.requestSessionStatus(sessionId: id) }
         default:
-            store.lastError = "Unknown command: /\(head). Available: /restart"
+            store.lastError = "Unknown command: /\(head). Available: /restart, /status"
         }
     }
 
