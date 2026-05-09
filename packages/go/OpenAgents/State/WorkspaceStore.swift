@@ -123,9 +123,15 @@ final class WorkspaceStore {
     }
 
     private static func isTerminalStatus(_ content: String) -> Bool {
-        // Mirrors the React `/stopped|stopping failed/i` regex.
+        // Status content that means "the agent is done with this control
+        // action — clear the working/typing indicator." Covers stop ("stopped"
+        // / "stopping failed" — mirrors the React app's `/stopped|stopping
+        // failed/i`) and restart ("Session restarted …" / "restart failed").
         let lower = content.lowercased()
-        return lower.contains("stopped") || lower.contains("stopping failed")
+        return lower.contains("stopped")
+            || lower.contains("stopping failed")
+            || lower.contains("session restarted")
+            || lower.contains("restart failed")
     }
 
     /// Pull the set of attached filenames out of a message body. Recognizes both
