@@ -104,11 +104,8 @@ class ClaudeAdapter(BaseAdapter):
                     logger.info(f"Restart: cleared session for channel={channel}")
                 else:
                     logger.info(f"Restart: no session to clear for channel={channel}")
-                # Reset uptime — semantic shift from "process uptime" to
-                # "uptime since last restart", which matches what users
-                # expect when the word "restart" appears in the chat. Read
-                # by the base-class status handler.
-                self._started_at = time.time()
+                # Post the status BEFORE the bounce so the message lands in
+                # the channel while we're still online.
                 try:
                     await self.client.send_message(
                         workspace_id=self.workspace_id,
@@ -128,6 +125,21 @@ class ClaudeAdapter(BaseAdapter):
                 self._save_sessions()
                 await self._stop_current_process()
                 logger.info("Restart: cleared all sessions (no channel param)")
+            # Ask the daemon to bounce just THIS agent — true process-level
+            # restart of the adapter. The daemon's command-file poller picks
+            # up `restart:<name>` within ~1s, calls restartAgent, our run()
+            # loop exits cleanly, and a fresh adapter is spawned with a new
+            # _started_at. Sibling agents on the same daemon are untouched.
+            try:
+                cmd_file = Path.home() / ".openagents" / "daemon.cmd"
+                cmd_file.write_text(f"restart:{self.agent_name}\n")
+                logger.info(f"Restart: requested daemon bounce for agent={self.agent_name}")
+            except Exception as e:
+                logger.warning(f"Restart: failed to write daemon.cmd: {e}")
+                # Fallback: at least reset uptime visually so the next /status
+                # shows the user something changed, even if the daemon bounce
+                # didn't happen for some reason.
+                self._started_at = time.time()
             return
         # Fall through to base class for shared actions (status, etc.).
         await super()._on_control_action(action, payload)
