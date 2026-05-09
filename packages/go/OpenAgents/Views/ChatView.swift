@@ -479,7 +479,9 @@ struct ChatView: View {
     /// Floating list of slash commands shown above the input bar while the
     /// user is typing a command. Mirrors the React `@mention` autocomplete
     /// feel: highlighted row tracks `slashSuggestionIndex`, click or Tab
-    /// selects, Enter on an exact match sends, Esc dismisses.
+    /// selects, Enter on an exact match sends, Esc dismisses. The matched
+    /// prefix in each name is bolded so the user can see what's narrowing
+    /// the list as they type.
     private var slashSuggestionsPopup: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(filteredSlashCommands.enumerated()), id: \.element.id) { idx, cmd in
@@ -488,9 +490,8 @@ struct ChatView: View {
                         .frame(width: 22)
                         .foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("/\(cmd.name)")
+                        slashName(for: cmd)
                             .font(.body)
-                            .fontWeight(.medium)
                         Text(cmd.description)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -537,6 +538,20 @@ struct ChatView: View {
     /// command selector while the composer holds focus. Returns true if the
     /// slash-command popup consumed the key — in that case the composer
     /// short-circuits and won't run its own Return-to-send logic.
+    /// Render `/<name>` with the part the user has typed so far rendered in
+    /// bold, so as the popup narrows down the highlight tracks the keystrokes.
+    /// Composes two Text values; SwiftUI's `+` concatenation keeps everything
+    /// in a single line.
+    private func slashName(for cmd: SlashCommand) -> Text {
+        let typed = String(draft.wrappedValue.dropFirst()).lowercased()
+        let matchLen = min(typed.count, cmd.name.count)
+        let head = String(cmd.name.prefix(matchLen))
+        let tail = String(cmd.name.dropFirst(matchLen))
+        return Text("/").foregroundStyle(.secondary)
+            + Text(head).fontWeight(.bold)
+            + Text(tail).fontWeight(.regular).foregroundStyle(.secondary)
+    }
+
     private func consumeSlashKey(_ selector: Selector) -> Bool {
         guard slashSuggestionsOpen else { return false }
         let count = filteredSlashCommands.count
