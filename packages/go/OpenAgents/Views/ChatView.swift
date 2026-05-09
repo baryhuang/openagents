@@ -656,7 +656,16 @@ struct ChatView: View {
             logInfo("ui", "/restart invoked session=\(id)")
             draft.wrappedValue = ""
             slashSuggestionsOpen = false
-            Task { await store.restartSession(sessionId: id) }
+            // Chain restart → status. Control events are FIFO per agent, so
+            // the agent processes restart first (clears session, posts the
+            // terminal "Session restarted" status), then immediately processes
+            // status (posts uptime / version / network). The user gets a
+            // visible confirmation that the restart took effect with a 0s
+            // uptime in the follow-up status block.
+            Task {
+                await store.restartSession(sessionId: id)
+                await store.requestSessionStatus(sessionId: id)
+            }
         case "status":
             guard let id = store.currentSessionId else {
                 store.lastError = "/status requires an active session."
