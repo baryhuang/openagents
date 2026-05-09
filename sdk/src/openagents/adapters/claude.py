@@ -18,6 +18,7 @@ import platform
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -103,6 +104,11 @@ class ClaudeAdapter(BaseAdapter):
                     logger.info(f"Restart: cleared session for channel={channel}")
                 else:
                     logger.info(f"Restart: no session to clear for channel={channel}")
+                # Reset uptime — semantic shift from "process uptime" to
+                # "uptime since last restart", which matches what users
+                # expect when the word "restart" appears in the chat. Read
+                # by the base-class status handler.
+                self._started_at = time.time()
                 try:
                     await self.client.send_message(
                         workspace_id=self.workspace_id,
