@@ -128,6 +128,48 @@ class ClaudeAdapter extends BaseAdapter {
     } catch {}
   }
 
+  /**
+   * Build a short transcript of the channel's last chat exchanges, used to
+   * re-seed context when --resume fails and we have to start a fresh
+   * Claude Code session. Returns null when there's nothing useful to add.
+   *
+   * Excludes the user's current message (the for-loop will append it
+   * normally) and any status/thinking events, which are mostly tool-call
+   * noise and inflate the prompt without adding signal.
+   */
+  async _buildChannelRecap(channelName, currentMessage) {
+    const messages = await this.client.getRecentMessages(
+      this.workspaceId, channelName, this.token, 30
+    );
+    if (!messages || messages.length === 0) return null;
+
+    const lines = [];
+    for (const m of messages) {
+      const mt = m.messageType || 'chat';
+      if (mt === 'status' || mt === 'thinking' || mt === 'loading') continue;
+      const text = (m.content || '').trim();
+      if (!text) continue;
+      // Don't echo the user's current message back at them.
+      if (text === currentMessage) continue;
+      const who = m.senderType === 'human'
+        ? (m.senderName || 'user')
+        : (m.senderName || 'agent');
+      // Cap each line so a single huge paste doesn't blow up the prompt.
+      const truncated = text.length > 800 ? text.slice(0, 800) + '…' : text;
+      lines.push(`[${who}] ${truncated}`);
+    }
+    if (lines.length === 0) return null;
+
+    // Keep only the tail; older context has diminishing value and we
+    // don't want to balloon the system prompt.
+    const tail = lines.slice(-15).join('\n');
+    return (
+      'You previously worked in this channel but your prior session is no ' +
+      'longer available, so here is the recent conversation for context:\n\n' +
+      tail
+    );
+  }
+
   async _stopAllProcesses(completionMessage = 'Execution stopped.') {
     const entries = Object.entries(this._channelProcesses);
     if (!entries.length) return;
@@ -449,10 +491,23 @@ class ClaudeAdapter extends BaseAdapter {
 
     // Run up to 2 attempts: first with session resume, then fresh if stale session detected
     let _shouldRetry = false;
+    let effectiveContent = content;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (mcpConfigFile) { try { fs.unlinkSync(mcpConfigFile); } catch {} mcpConfigFile = null; }
+
+      // On the retry pass after a stale --resume, the spawned `claude`
+      // starts a brand-new session with no memory of prior turns. Replay
+      // the channel's recent chat history so the agent at least has a
+      // recap instead of saying "I don't see any previous messages."
+      if (attempt > 0) {
+        try {
+          const recap = await this._buildChannelRecap(msgChannel, content);
+          if (recap) effectiveContent = `${recap}\n\n---\n\n${content}`;
+        } catch {}
+      }
+
       try {
-        const built = this._buildClaudeCmd(content, msgChannel, { skipResume: attempt > 0 });
+        const built = this._buildClaudeCmd(effectiveContent, msgChannel, { skipResume: attempt > 0 });
         cmd = built.cmd;
         mcpConfigFile = built.mcpConfigFile;
       } catch (e) {

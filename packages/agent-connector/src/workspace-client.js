@@ -192,6 +192,32 @@ class WorkspaceClient {
   }
 
   /**
+   * Fetch the most recent N messages in a channel, returned oldest-to-newest.
+   * Used by adapters to rebuild context for a fresh Claude Code session
+   * when --resume of the previous session fails (the channel's chat history
+   * is the only thing that survives a session-storage rotation).
+   */
+  async getRecentMessages(workspaceId, channelName, token, limit = 30) {
+    try {
+      const params = new URLSearchParams({
+        network: workspaceId,
+        channel: channelName,
+        type: 'workspace.message',
+        sort: 'desc',
+        limit: String(limit),
+      });
+      const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
+      const result = data.data || data;
+      const events = (result && result.events) || [];
+      // Server returned newest-first; reverse so the caller can present them
+      // in chronological order without further fiddling.
+      return events.slice().reverse().map((e) => this._eventToMessage(e));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Fetch the latest workspace.message.posted event id (head cursor).
    * Used by adapters to skip past existing events on join in O(1) instead
    * of paginating from the start. Returns null if the workspace is empty
