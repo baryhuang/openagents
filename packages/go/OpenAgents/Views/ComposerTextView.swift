@@ -36,6 +36,11 @@ struct ComposerTextView: View {
     /// converted into a `Pasted-text-…txt` file per ChatGPT's >5000-char rule).
     var onPasteImages: ([PendingAttachment]) -> Void
     var onPasteFileURLs: ([URL]) -> Void
+    /// When the slash-command suggestion popup is showing, ChatView passes a
+    /// closure that handles macOS arrow / Tab / Return / Esc selectors before
+    /// the composer's normal Return-to-send path. Returns `true` if the key
+    /// was consumed; otherwise we fall through to the standard handler.
+    var onSlashKey: ((Selector) -> Bool)? = nil
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -45,6 +50,7 @@ struct ComposerTextView: View {
                 onSend: onSend,
                 onPasteImages: onPasteImages,
                 onPasteFileURLs: onPasteFileURLs,
+                onSlashKey: onSlashKey,
             )
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -73,6 +79,7 @@ private struct ComposerRepresentable: NSViewRepresentable {
     var onSend: () -> Void
     var onPasteImages: ([PendingAttachment]) -> Void
     var onPasteFileURLs: ([URL]) -> Void
+    var onSlashKey: ((Selector) -> Bool)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -81,6 +88,7 @@ private struct ComposerRepresentable: NSViewRepresentable {
             onSend: onSend,
             onPasteImages: onPasteImages,
             onPasteFileURLs: onPasteFileURLs,
+            onSlashKey: onSlashKey,
         )
     }
 
@@ -120,6 +128,7 @@ private struct ComposerRepresentable: NSViewRepresentable {
             onSend: onSend,
             onPasteImages: onPasteImages,
             onPasteFileURLs: onPasteFileURLs,
+            onSlashKey: onSlashKey,
         )
         if textView.string != text {
             // Preserve the user's selection if we're just syncing identical text.
@@ -142,6 +151,7 @@ private struct ComposerRepresentable: NSViewRepresentable {
         var onSend: () -> Void
         var onPasteImages: ([PendingAttachment]) -> Void
         var onPasteFileURLs: ([URL]) -> Void
+        var onSlashKey: ((Selector) -> Bool)?
 
         init(
             text: Binding<String>,
@@ -149,22 +159,26 @@ private struct ComposerRepresentable: NSViewRepresentable {
             onSend: @escaping () -> Void,
             onPasteImages: @escaping ([PendingAttachment]) -> Void,
             onPasteFileURLs: @escaping ([URL]) -> Void,
+            onSlashKey: ((Selector) -> Bool)? = nil,
         ) {
             self.text = text
             self.isFocused = isFocused
             self.onSend = onSend
             self.onPasteImages = onPasteImages
             self.onPasteFileURLs = onPasteFileURLs
+            self.onSlashKey = onSlashKey
         }
 
         func update(
             onSend: @escaping () -> Void,
             onPasteImages: @escaping ([PendingAttachment]) -> Void,
             onPasteFileURLs: @escaping ([URL]) -> Void,
+            onSlashKey: ((Selector) -> Bool)? = nil,
         ) {
             self.onSend = onSend
             self.onPasteImages = onPasteImages
             self.onPasteFileURLs = onPasteFileURLs
+            self.onSlashKey = onSlashKey
         }
 
         func textDidChange(_ notification: Notification) {
@@ -187,6 +201,10 @@ private struct ComposerRepresentable: NSViewRepresentable {
         // so AppKit inserts a literal newline. While the IME is composing,
         // `hasMarkedText()` is true and we yield to the IME so it can commit.
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            // Slash-command popup gets first crack at arrow / Tab / Return / Esc
+            // when it's open. If it consumes the key, we stop here.
+            if let slash = onSlashKey, slash(commandSelector) { return true }
+
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 if textView.hasMarkedText() {
                     return false
@@ -337,6 +355,10 @@ private struct ComposerRepresentable: UIViewRepresentable {
     var onSend: () -> Void
     var onPasteImages: ([PendingAttachment]) -> Void
     var onPasteFileURLs: ([URL]) -> Void
+    /// Currently unused on iOS — slash-command popup keyboard nav uses macOS
+    /// NSResponder selectors. Accepted here so the cross-platform call site
+    /// in `ComposerTextView` stays uniform.
+    var onSlashKey: ((Selector) -> Bool)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(

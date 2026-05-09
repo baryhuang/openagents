@@ -29,6 +29,36 @@ struct ChatView: View {
     @State private var showingFileImporter = false
     #endif
 
+    /// Slash-command popup state. Mirrors the React `@mention` autocomplete
+    /// pattern but lives only in the native composer. When `slashSuggestionsOpen`
+    /// is true, the composer's NSTextView routes ↑/↓/Enter/Tab/Esc through
+    /// `consumeSlashKey(_:)` instead of letting them produce normal text.
+    @State private var slashSuggestionsOpen: Bool = false
+    @State private var slashSuggestionIndex: Int = 0
+
+    private struct SlashCommand: Identifiable {
+        let id: String           // also used as the `name` ("restart")
+        let description: String
+        let systemImage: String
+        var name: String { id }
+    }
+
+    private static let availableCommands: [SlashCommand] = [
+        SlashCommand(
+            id: "restart",
+            description: "Reset agent conversation. Next message starts fresh.",
+            systemImage: "arrow.counterclockwise",
+        ),
+    ]
+
+    private var filteredSlashCommands: [SlashCommand] {
+        let typed = draft.wrappedValue
+        guard typed.hasPrefix("/") else { return [] }
+        let q = String(typed.dropFirst()).lowercased()
+        if q.isEmpty { return Self.availableCommands }
+        return Self.availableCommands.filter { $0.name.hasPrefix(q) }
+    }
+
     private static let defaultInputHeight: CGFloat = 44
     private static let minInputHeight: CGFloat = 36
 
@@ -286,6 +316,30 @@ struct ChatView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
+        .overlay(alignment: .top) {
+            if slashSuggestionsOpen && !filteredSlashCommands.isEmpty {
+                slashSuggestionsPopup
+                    .alignmentGuide(.top) { d in d[.bottom] + 8 }   // float above the bar
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(1)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: slashSuggestionsOpen)
+        .onChange(of: draft.wrappedValue) { _, newValue in
+            // Show the popup while the user is mid-command — `/`, `/r`, `/restart`.
+            // Vanishes the instant they type a space, newline, or anything that
+            // doesn't start with `/`. Keeps the popup anchored to single-line
+            // command tokens; multi-arg commands (none today) would relax this.
+            let starts = newValue.hasPrefix("/")
+                && !newValue.contains(" ")
+                && !newValue.contains("\n")
+            slashSuggestionsOpen = starts && !filteredSlashCommands.isEmpty
+            if !slashSuggestionsOpen {
+                slashSuggestionIndex = 0
+            } else {
+                slashSuggestionIndex = min(slashSuggestionIndex, max(filteredSlashCommands.count - 1, 0))
+            }
+        }
         #if os(iOS)
         // iPhone/iPad: paperclip is a Menu offering Photos (PhotosPicker) and
         // Files (.fileImporter). Each option drives the same PendingAttachment
@@ -417,6 +471,46 @@ struct ChatView: View {
     /// Native composer wrapping NSTextView (macOS) / UITextView (iOS). It owns
     /// IME-gated Return-to-send (`hasMarkedText` / `markedTextRange`) and image
     /// + file paste — both of which the stock SwiftUI `TextEditor` cannot do.
+    /// Floating list of slash commands shown above the input bar while the
+    /// user is typing a command. Mirrors the React `@mention` autocomplete
+    /// feel: highlighted row tracks `slashSuggestionIndex`, click or Tab
+    /// selects, Enter on an exact match sends, Esc dismisses.
+    private var slashSuggestionsPopup: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(filteredSlashCommands.enumerated()), id: \.element.id) { idx, cmd in
+                HStack(spacing: 10) {
+                    Image(systemName: cmd.systemImage)
+                        .frame(width: 22)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("/\(cmd.name)")
+                            .font(.body)
+                            .fontWeight(.medium)
+                        Text(cmd.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(idx == slashSuggestionIndex ? Color.accentColor.opacity(0.15) : Color.clear)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    draft.wrappedValue = "/\(cmd.name)"
+                    slashSuggestionsOpen = false
+                }
+            }
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.black.opacity(0.08), lineWidth: 0.5),
+        )
+        .frame(maxWidth: 360, alignment: .leading)
+        .padding(.horizontal, 12)
+    }
+
     private var inputField: some View {
         ComposerTextView(
             text: draft,
@@ -430,7 +524,56 @@ struct ChatView: View {
             onPasteFileURLs: { urls in
                 for url in urls { ingestFileURL(url) }
             },
+            onSlashKey: consumeSlashKey,
         )
+    }
+
+    /// Called by `ComposerTextView` (macOS NSTextView delegate) for every
+    /// command selector while the composer holds focus. Returns true if the
+    /// slash-command popup consumed the key — in that case the composer
+    /// short-circuits and won't run its own Return-to-send logic.
+    private func consumeSlashKey(_ selector: Selector) -> Bool {
+        guard slashSuggestionsOpen else { return false }
+        let count = filteredSlashCommands.count
+        guard count > 0 else { return false }
+
+        // We can't use #selector against AppKit symbols inside a SwiftUI struct
+        // without importing AppKit, so match on the raw string. These are the
+        // standard NSResponder selectors AppKit emits for the relevant keys.
+        switch NSStringFromSelector(selector) {
+        case "moveDown:":
+            slashSuggestionIndex = min(slashSuggestionIndex + 1, count - 1)
+            return true
+        case "moveUp:":
+            slashSuggestionIndex = max(slashSuggestionIndex - 1, 0)
+            return true
+        case "insertTab:":
+            // Tab fills the input with the highlighted command but doesn't send.
+            // Lets the user read the description, then press Enter to fire.
+            let cmd = filteredSlashCommands[slashSuggestionIndex]
+            draft.wrappedValue = "/\(cmd.name)"
+            slashSuggestionsOpen = false
+            return true
+        case "insertNewline:":
+            // Enter on the popup: if the typed text already exactly matches a
+            // command (e.g. user typed "/restart" and hit Enter), let the
+            // composer's normal Return-to-send path run — that hits handleSlashCommand.
+            // Otherwise, treat Enter as "select highlighted suggestion".
+            let typed = String(draft.wrappedValue.dropFirst()).lowercased()
+            if typed == filteredSlashCommands[slashSuggestionIndex].name {
+                slashSuggestionsOpen = false
+                return false   // fall through → composer fires onSend → handleSlashCommand
+            }
+            let cmd = filteredSlashCommands[slashSuggestionIndex]
+            draft.wrappedValue = "/\(cmd.name)"
+            slashSuggestionsOpen = false
+            return true
+        case "cancelOperation:":
+            slashSuggestionsOpen = false
+            return true
+        default:
+            return false
+        }
     }
 
     private var placeholder: some View {
@@ -453,6 +596,14 @@ struct ChatView: View {
     private func send() {
         let text = draft.wrappedValue
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Slash-command interception. Typed commands never reach the backend
+        // as chat messages — they dispatch to a local handler.
+        if trimmed.hasPrefix("/"), pendingAttachments.isEmpty {
+            handleSlashCommand(trimmed)
+            return
+        }
+
         let attachments = pendingAttachments
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             logWarn("ui", "send() ignored — empty draft and no attachments")
@@ -462,6 +613,33 @@ struct ChatView: View {
         draft.wrappedValue = ""
         pendingAttachments = []
         Task { await store.sendMessage(trimmed, attachments: attachments) }
+    }
+
+    /// Parse a typed slash command (the leading "/" plus optional args) and
+    /// dispatch to the matching action. Unknown commands surface via the
+    /// existing error banner so users see immediate feedback without leaving
+    /// the composer.
+    private func handleSlashCommand(_ raw: String) {
+        let body = raw.dropFirst() // drop leading "/"
+        let head = body
+            .split(separator: " ", maxSplits: 1)
+            .first
+            .map(String.init)?
+            .lowercased() ?? ""
+
+        switch head {
+        case "restart":
+            guard let id = store.currentSessionId else {
+                store.lastError = "/restart requires an active session."
+                return
+            }
+            logInfo("ui", "/restart invoked session=\(id)")
+            draft.wrappedValue = ""
+            slashSuggestionsOpen = false
+            Task { await store.restartSession(sessionId: id) }
+        default:
+            store.lastError = "Unknown command: /\(head). Available: /restart"
+        }
     }
 
     /// Move externally-delivered files (iOS "Open in…", macOS "Open With",

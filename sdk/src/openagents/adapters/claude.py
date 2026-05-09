@@ -76,9 +76,52 @@ class ClaudeAdapter(BaseAdapter):
             logger.debug("Could not save sessions file")
 
     async def _on_control_action(self, action: Optional[str], payload: dict):
-        """Handle stop control action."""
+        """Handle control actions: `stop` (interrupt in-flight work) and
+        `restart` (clear the per-channel Claude session so the next message
+        starts a fresh CLI session — used to recover from conversation-history
+        rejections like the >2000px many-image limit)."""
         if action == "stop":
             await self._stop_current_process()
+            return
+        if action == "restart":
+            channel = payload.get("channel") if isinstance(payload, dict) else None
+            if channel:
+                # Kill the in-flight process for this specific channel only,
+                # without the "Execution stopped by user" status that
+                # _stop_current_process posts — we'll post a single clearer
+                # "Session restarted" message below.
+                proc = self._channel_processes.pop(channel, None)
+                if proc:
+                    self._stopping_channels.add(channel)
+                    await self._stop_process(proc)
+                    self._channel_queues.pop(channel, None)
+                # Drop the per-channel Claude session-id. Next message arrives
+                # with no --resume → fresh Claude CLI session, empty context.
+                if channel in self._channel_sessions:
+                    del self._channel_sessions[channel]
+                    self._save_sessions()
+                    logger.info(f"Restart: cleared session for channel={channel}")
+                else:
+                    logger.info(f"Restart: no session to clear for channel={channel}")
+                try:
+                    await self.client.send_message(
+                        workspace_id=self.workspace_id,
+                        channel_name=channel,
+                        token=self.token,
+                        content="Session restarted — next message starts fresh.",
+                        sender_type="agent",
+                        sender_name=self.agent_name,
+                        message_type="status",
+                        metadata={"agent_mode": self._mode},
+                    )
+                except Exception as e:
+                    logger.warning(f"Restart: failed to post status: {e}")
+            else:
+                # Defensive — no channel specified, clear everything.
+                self._channel_sessions.clear()
+                self._save_sessions()
+                await self._stop_current_process()
+                logger.info("Restart: cleared all sessions (no channel param)")
 
     async def _stop_process(self, proc: asyncio.subprocess.Process):
         """Kill a single Claude subprocess and its children."""

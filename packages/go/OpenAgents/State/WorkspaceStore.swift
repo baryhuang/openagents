@@ -311,10 +311,15 @@ final class WorkspaceStore {
                     }
                     droppedOptimistic += before - page.messages.count
                 }
-                // Drop the local "Stopping..." placeholder once any real status
-                // (or any agent reply) arrives — the backend's status overrides it.
+                // Drop local optimistic status placeholders ("Stopping…",
+                // "Restarting session…", etc.) once any real agent status
+                // arrives — the backend's status overrides them.
                 if newOnes.contains(where: { !$0.isFromUser }) {
-                    page.messages.removeAll { $0.messageId.hasPrefix("local-stopping-") }
+                    page.messages.removeAll {
+                        $0.messageId.hasPrefix("local-stopping-")
+                            || $0.messageId.hasPrefix("local-restart-")
+                            || $0.messageId.hasPrefix("local-status-")
+                    }
                 }
                 page.messages.append(contentsOf: newOnes)
                 if let last = newOnes.last { page.newestId = last.messageId }
@@ -579,6 +584,60 @@ final class WorkspaceStore {
         guard stoppingSessionIds.contains(sessionId) else { return }
         logInfo("stop", "retrying stop for session=\(sessionId)")
         await sendStopFanout(agentNames: agentNames)
+    }
+
+    /// Send a `restart` control event to every agent in this session. Agents
+    /// that recognize the action (currently only Claude) clear their per-channel
+    /// LLM session state so the next user message starts a fresh context.
+    /// Channel scrollback / participants / title are preserved — only the
+    /// agent's "remember the last N turns" is wiped. Used to recover from
+    /// Anthropic's >2000px many-image-conversation rejection.
+    func restartSession(sessionId: String) async {
+        guard let session = sessions.first(where: { $0.sessionId == sessionId }) else {
+            logWarn("restart", "no session for id=\(sessionId)")
+            return
+        }
+        let sessionAgents = agents.filter {
+            session.participants.isEmpty || session.participants.contains($0.agentName)
+        }
+        guard !sessionAgents.isEmpty else {
+            logWarn("restart", "no agents in session=\(sessionId)")
+            return
+        }
+
+        // Optimistic local-only status row so the user sees immediate feedback.
+        // The agent's real "Session restarted" status from the backend
+        // replaces this via the existing local-status placeholder cleanup
+        // in pollNewMessages (see the local-stopping-/local-restart- prefix
+        // sweep there).
+        let optimistic = Message.localStatus(
+            channel: sessionId,
+            content: "Restarting session…",
+            idPrefix: "local-restart-",
+        )
+        var page = pagesBySession[sessionId] ?? ChannelMessages()
+        page.messages.append(optimistic)
+        pagesBySession[sessionId] = page
+        lastMessageBySession[sessionId] = optimistic
+
+        let agentNames = sessionAgents.map(\.agentName)
+        logInfo("restart", "sending restart to \(agentNames.count) agent(s) channel=\(sessionId)")
+
+        await withTaskGroup(of: Void.self) { group in
+            for name in agentNames {
+                group.addTask { [api = self.api, sessionId] in
+                    do {
+                        _ = try await api.sendAgentControl(
+                            agentName: name,
+                            action: "restart",
+                            params: ["channel": sessionId],
+                        )
+                    } catch {
+                        logWarn("restart", "agent=\(name) failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
     }
 
     func createThread(master: String, participants: [String]) async {
