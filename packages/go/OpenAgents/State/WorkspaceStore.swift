@@ -31,6 +31,10 @@ final class WorkspaceStore {
     var pagesBySession: [String: ChannelMessages] = [:]
     /// Last-message preview per session — used by the thread list rows.
     var lastMessageBySession: [String: Message] = [:]
+    /// Sessions where the user has tapped Stop and we're waiting for the
+    /// agent's terminal "stopped" / "stopping failed" status to come back.
+    /// Mirrors the React app's `stoppingSessionIds`.
+    var stoppingSessionIds: Set<String> = []
     var isLoading: Bool = true
     var lastError: String?
 
@@ -102,6 +106,54 @@ final class WorkspaceStore {
             if message.isStatus && !message.isFromUser { return true }
         }
         return false
+    }
+
+    /// True when the given session has an agent actively working — last message is
+    /// an agent status that isn't a terminal "stopped" / "stopping failed". Used by
+    /// the chat view to flip the send button into a stop button.
+    func isAgentWorking(in sessionId: String) -> Bool {
+        guard let last = pagesBySession[sessionId]?.messages.last
+            ?? lastMessageBySession[sessionId] else { return false }
+        guard last.isStatus, !last.isFromUser else { return false }
+        return !Self.isTerminalStatus(last.content)
+    }
+
+    func isStopping(_ sessionId: String) -> Bool {
+        stoppingSessionIds.contains(sessionId)
+    }
+
+    private static func isTerminalStatus(_ content: String) -> Bool {
+        // Mirrors the React `/stopped|stopping failed/i` regex.
+        let lower = content.lowercased()
+        return lower.contains("stopped") || lower.contains("stopping failed")
+    }
+
+    /// Pull the set of attached filenames out of a message body. Recognizes both
+    /// the optimistic form (`📎 name.png — uploading…`) and the final markdown
+    /// form (`📎 [name.png](https://…)`). Used by the dedup fallback so an
+    /// optimistic message and the eventual real message can be matched even
+    /// when their bodies differ in everything but the filename list.
+    static func attachmentFilenames(in content: String) -> Set<String> {
+        var names: Set<String> = []
+        for raw in content.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard line.hasPrefix("📎") else { continue }
+            // After the paperclip there's either "[name](url)" or "name — uploading…".
+            let afterClip = line.dropFirst(1).trimmingCharacters(in: .whitespaces)
+            if afterClip.hasPrefix("[") {
+                if let close = afterClip.firstIndex(of: "]") {
+                    let name = String(afterClip[afterClip.index(after: afterClip.startIndex)..<close])
+                    names.insert(name)
+                }
+            } else {
+                // "name — uploading…" — split on em-dash.
+                let parts = afterClip.components(separatedBy: " — ")
+                if let first = parts.first, !first.isEmpty {
+                    names.insert(first)
+                }
+            }
+        }
+        return names
     }
 
     // MARK: - Actions
@@ -238,21 +290,40 @@ final class WorkspaceStore {
                     keepGoing = false
                     break
                 }
-                // Reconcile optimistic placeholders against the real human message
+                // Reconcile optimistic placeholders against the real human message.
+                // Strict equality is the fast path. For attachment messages we
+                // also fall back to comparing the set of attached filenames —
+                // an optimistic might be left as "📎 file.png — uploading…"
+                // if the poll arrives before sendMessage completed (the
+                // in-place content rewrite in sendMessage covers the common
+                // case, but a slow upload can race the poll).
                 var droppedOptimistic = 0
                 for new in newOnes where new.isFromUser {
                     let before = page.messages.count
                     page.messages.removeAll { msg in
-                        msg.messageId.hasPrefix("optimistic-")
-                            && msg.isFromUser
-                            && msg.content == new.content
-                            && abs(msg.timestamp - new.timestamp) < 30_000
+                        guard msg.messageId.hasPrefix("optimistic-"),
+                              msg.isFromUser,
+                              abs(msg.timestamp - new.timestamp) < 30_000 else { return false }
+                        if msg.content == new.content { return true }
+                        let lhsFiles = Self.attachmentFilenames(in: msg.content)
+                        let rhsFiles = Self.attachmentFilenames(in: new.content)
+                        return !lhsFiles.isEmpty && lhsFiles == rhsFiles
                     }
                     droppedOptimistic += before - page.messages.count
+                }
+                // Drop the local "Stopping..." placeholder once any real status
+                // (or any agent reply) arrives — the backend's status overrides it.
+                if newOnes.contains(where: { !$0.isFromUser }) {
+                    page.messages.removeAll { $0.messageId.hasPrefix("local-stopping-") }
                 }
                 page.messages.append(contentsOf: newOnes)
                 if let last = newOnes.last { page.newestId = last.messageId }
                 if let last = newOnes.last { lastMessageBySession[channel] = last }
+                // Clear the stopping flag if the latest agent status is terminal.
+                if let last = newOnes.last, last.isStatus, !last.isFromUser,
+                   Self.isTerminalStatus(last.content) {
+                    stoppingSessionIds.remove(channel)
+                }
                 totalNew += newOnes.count
                 if droppedOptimistic > 0 {
                     logInfo("poll", "dropped \(droppedOptimistic) optimistic placeholder(s)")
@@ -368,6 +439,28 @@ final class WorkspaceStore {
 
             let event = try await api.sendMessage(channel: channel, content: finalContent)
             logInfo("send", "✓ backend ack id=\(event.id) ts=\(event.timestamp)")
+
+            // Replace the optimistic placeholder's content in-place with the
+            // final markdown. The forward-poll dedup matches optimistic vs. real
+            // by `content == content` — without this, attachment messages
+            // diverge ("uploading…" vs. "[name](url)") and we end up with two
+            // visible bubbles per send.
+            if var p = pagesBySession[channel],
+               let i = p.messages.firstIndex(where: { $0.messageId == optimisticId }) {
+                let prev = p.messages[i]
+                p.messages[i] = Message(
+                    messageId: prev.messageId,
+                    sessionId: prev.sessionId,
+                    senderType: prev.senderType,
+                    senderName: prev.senderName,
+                    content: finalContent,
+                    mentions: prev.mentions,
+                    messageType: prev.messageType,
+                    timestamp: prev.timestamp,
+                )
+                pagesBySession[channel] = p
+            }
+
             lastError = nil
             Task { [weak self] in
                 for delayMs in [600, 1500, 3500] {
@@ -432,6 +525,60 @@ final class WorkspaceStore {
             sessions[index].status = prevStatus
             lastError = error.localizedDescription
         }
+    }
+
+    /// Send a `stop` control event to every agent in the workspace and mark the
+    /// given session as stopping until the agent posts a terminal status.
+    /// Mirrors the React app's `stopAllAgents` flow: optimistic "Stopping..."
+    /// status, fire control events in parallel, then a 3-second retry if no
+    /// agent has acknowledged yet.
+    func stopAllAgents(sessionId: String) async {
+        guard !agents.isEmpty else {
+            logWarn("stop", "no agents to stop in session=\(sessionId)")
+            return
+        }
+        guard !stoppingSessionIds.contains(sessionId) else { return }
+
+        stoppingSessionIds.insert(sessionId)
+        // Optimistic status so the chat view + thread row reflect the request
+        // immediately. The next agent status from the backend overwrites this.
+        let stopping = Message.localStoppingStatus(channel: sessionId)
+        var page = pagesBySession[sessionId] ?? ChannelMessages()
+        page.messages.append(stopping)
+        pagesBySession[sessionId] = page
+        lastMessageBySession[sessionId] = stopping
+
+        let agentNames = agents.map(\.agentName)
+        logInfo("stop", "sending stop to \(agentNames.count) agent(s) in session=\(sessionId)")
+        await sendStopFanout(agentNames: agentNames)
+
+        // Retry once after 3s if we haven't received a terminal status yet.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self else { return }
+            await self.retryStopIfNeeded(sessionId: sessionId, agentNames: agentNames)
+        }
+    }
+
+    private func sendStopFanout(agentNames: [String]) async {
+        await withTaskGroup(of: Void.self) { group in
+            for name in agentNames {
+                group.addTask { [api = self.api] in
+                    do {
+                        _ = try await api.sendAgentControl(agentName: name, action: "stop")
+                    } catch {
+                        // Per-agent failures are logged but don't block the rest.
+                        logWarn("stop", "stop control to agent=\(name) failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func retryStopIfNeeded(sessionId: String, agentNames: [String]) async {
+        guard stoppingSessionIds.contains(sessionId) else { return }
+        logInfo("stop", "retrying stop for session=\(sessionId)")
+        await sendStopFanout(agentNames: agentNames)
     }
 
     func createThread(master: String, participants: [String]) async {
