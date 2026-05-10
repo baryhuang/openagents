@@ -41,11 +41,7 @@ router = APIRouter(prefix="/v1", tags=["Files"])
 
 
 def _organize_filename(filename: str, content_type: str) -> str:
-    """Put images into uploaded_images/ with a timestamped name."""
-    ct = (content_type or "").lower()
-    if not ct.startswith("image/"):
-        return filename
-
+    """Put uploaded files into uploaded_files/ with a timestamped name."""
     # Already in a folder — don't reorganize
     if "/" in filename:
         return filename
@@ -65,7 +61,7 @@ def _organize_filename(filename: str, content_type: str) -> str:
     # Clean up the name part (keep it short, remove special chars)
     clean_name = re.sub(r"[^\w\-.]", "_", name_part)[:60]
 
-    return f"uploaded_images/{timestamp}_{clean_name}{ext}"
+    return f"uploaded_files/{timestamp}_{clean_name}{ext}"
 
 
 # ---------------------------------------------------------------------------
