@@ -11,7 +11,9 @@ DELETE /v1/files/{file_id} Soft-delete a file
 import asyncio
 import base64
 import logging
+import re
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote
 
@@ -36,6 +38,34 @@ from openagents.core.onm_events import Event
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["Files"])
+
+
+def _organize_filename(filename: str, content_type: str) -> str:
+    """Put images into uploaded_images/ with a timestamped name."""
+    ct = (content_type or "").lower()
+    if not ct.startswith("image/"):
+        return filename
+
+    # Already in a folder — don't reorganize
+    if "/" in filename:
+        return filename
+
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+
+    # Extract extension from original filename
+    dot_idx = filename.rfind(".")
+    if dot_idx > 0:
+        name_part = filename[:dot_idx]
+        ext = filename[dot_idx:]
+    else:
+        name_part = filename
+        ext = ""
+
+    # Clean up the name part (keep it short, remove special chars)
+    clean_name = re.sub(r"[^\w\-.]", "_", name_part)[:60]
+
+    return f"uploaded_images/{timestamp}_{clean_name}{ext}"
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +107,8 @@ async def upload_file(
     if file and file.filename and network:
         # Multipart upload
         data = await file.read()
-        filename = file.filename
         content_type = file.content_type or "application/octet-stream"
+        filename = _organize_filename(file.filename, content_type)
         uploaded_by = source or "human:user"
         network_id = network
     else:
@@ -99,13 +129,14 @@ async def upload_file(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    # Save to storage backend
+    # Save to storage backend (use basename for physical storage, full path for DB)
     file_id = str(uuid.uuid4())
     store = get_file_store()
+    storage_name = filename.rsplit("/", 1)[-1] if "/" in filename else filename
     loop = asyncio.get_event_loop()
     try:
         storage_key = await loop.run_in_executor(
-            None, store.save, str(workspace.id), file_id, filename, data,
+            None, store.save, str(workspace.id), file_id, storage_name, data,
         )
     except ValueError as exc:
         return json_response(ResponseCode.BAD_REQUEST, str(exc))
@@ -177,12 +208,15 @@ async def upload_file_base64(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    organized_filename = _organize_filename(body.filename, body.content_type)
+
     file_id = str(uuid.uuid4())
     store = get_file_store()
+    storage_name = organized_filename.rsplit("/", 1)[-1] if "/" in organized_filename else organized_filename
     loop = asyncio.get_event_loop()
     try:
         storage_key = await loop.run_in_executor(
-            None, store.save, str(workspace.id), file_id, body.filename, data,
+            None, store.save, str(workspace.id), file_id, storage_name, data,
         )
     except ValueError as exc:
         return json_response(ResponseCode.BAD_REQUEST, str(exc))
@@ -190,7 +224,7 @@ async def upload_file_base64(
     record = FileRecord(
         id=file_id,
         workspace_id=str(workspace.id),
-        filename=body.filename,
+        filename=organized_filename,
         content_type=body.content_type,
         size=len(data),
         storage_key=storage_key,
@@ -205,7 +239,7 @@ async def upload_file_base64(
         target=f"channel/{body.channel_name}" if body.channel_name else "core",
         payload={
             "file_id": file_id,
-            "filename": body.filename,
+            "filename": organized_filename,
             "content_type": body.content_type,
             "size": len(data),
         },
@@ -214,7 +248,7 @@ async def upload_file_base64(
 
     return success_response({
         "id": file_id,
-        "filename": body.filename,
+        "filename": organized_filename,
         "content_type": body.content_type,
         "size": len(data),
         "uploaded_by": body.source or "human:user",
