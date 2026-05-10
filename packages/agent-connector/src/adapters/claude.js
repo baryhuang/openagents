@@ -717,8 +717,8 @@ class ClaudeAdapter extends BaseAdapter {
             return;
           }
 
+          this._log(`CLI exited: code=${code}, lastResponseText=${lastResponseText.length} items, everPosted=${everPostedAnything}, hasSession=${!!this._channelSessions[msgChannel]}`);
           if (code !== 0) {
-            this._log(`CLI exited with code ${code}`);
             if (stderrBuf.trim()) {
               this._log(`stderr: ${stderrBuf.trim().slice(0, 500)}`);
             }
@@ -730,8 +730,10 @@ class ClaudeAdapter extends BaseAdapter {
               try { await this.sendResponse(msgChannel, fullResponse); } catch {}
             }
             resolve(false); // done, no retry
-          } else if (code !== 0 && this._channelSessions[msgChannel]) {
-            // No output + error exit + had a resume session → stale session, signal retry
+          } else if (this._channelSessions[msgChannel] && !everPostedAnything) {
+            // No output + had a resume session → likely stale session, retry fresh.
+            // Covers both error exits (code !== 0) and silent success (code === 0)
+            // where Claude produced no text output on a resumed conversation.
             this._log(`Stale session detected for ${msgChannel}, clearing and retrying without resume`);
             delete this._channelSessions[msgChannel];
             this._saveSessions();
