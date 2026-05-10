@@ -108,6 +108,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     setShowMentions(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
+      textareaRef.current.blur();
     }
   };
 
