@@ -590,6 +590,7 @@ class ClaudeAdapter extends BaseAdapter {
       const lastResponseText = [];
       let hasToolUseSinceLastText = false;
       let postedThinking = false;
+      let everPostedAnything = false;
       let stderrBuf = '';
       let lineBuffer = '';
       let _pendingLines = Promise.resolve(); // chain of in-flight processLine calls
@@ -649,6 +650,7 @@ class ClaudeAdapter extends BaseAdapter {
                 }
                 lastResponseText.push(block.text.trim());
                 postedThinking = true;
+                everPostedAnything = true;
                 // Stream text in real-time as "thinking" (same as Python adapter)
                 try { await this.sendThinking(msgChannel, block.text.trim()); } catch {}
               } else if (block.type === 'tool_use') {
@@ -672,6 +674,7 @@ class ClaudeAdapter extends BaseAdapter {
                   inputPreview = String(block.input || '').slice(0, 150);
                 }
                 await this.sendStatus(msgChannel, `${toolName} › ${inputPreview}`);
+                everPostedAnything = true;
               }
             }
           } else if (eventType === 'result') {
@@ -734,7 +737,7 @@ class ClaudeAdapter extends BaseAdapter {
             this._saveSessions();
             resolve(true); // retry=true
           } else {
-            if (!postedThinking) {
+            if (!everPostedAnything) {
               try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
             }
             resolve(false);
