@@ -59,6 +59,14 @@ class Installer {
     const entry = this.registry.getEntry(agentType);
     const npmPkg = entry && entry.install ? entry.install.npm_package : null;
     const binary = entry && entry.install ? entry.install.binary : agentType;
+    if (entry?.install?.api_only) {
+      const installed = this._hasMarker(agentType);
+      return {
+        installed,
+        managed: installed,
+        location: installed ? 'api_only' : null,
+      };
+    }
     const installCmd = entry && entry.install ? this._getInstallCommand(entry.install) : null;
     let npmPkgFromCmd = null;
     if (!npmPkg && installCmd && installCmd.includes('npm install')) {
@@ -135,6 +143,29 @@ class Installer {
    * @returns {{ installed: boolean, binary: string|null, version: string|null }}
    */
   healthCheck(agentType) {
+    const entry = this.registry.getEntry(agentType);
+    if (entry?.install?.api_only) {
+      const info = this.getInstallInfo(agentType);
+      if (!info.installed) {
+        return {
+          installed: false,
+          binary: null,
+          version: null,
+          ready: false,
+          auth_mode: null,
+          execution_mode: 'unavailable',
+          message: 'Not installed',
+        };
+      }
+
+      return {
+        installed: true,
+        binary: null,
+        version: null,
+        ...this._evaluateReadiness(agentType, entry, null),
+      };
+    }
+
     const binary = this._whichBinary(agentType);
     if (!binary) {
       return {
@@ -148,7 +179,6 @@ class Installer {
       };
     }
 
-    const entry = this.registry.getEntry(agentType);
     const checkCmd = entry && entry.install ? entry.install.check_command : null;
     const versionCmd = checkCmd || `${entry && entry.install && entry.install.binary || agentType} --version`;
 
@@ -323,6 +353,11 @@ class Installer {
       throw new Error(`No install definition for agent type: ${agentType}`);
     }
 
+    if (entry.install.api_only) {
+      this._markInstalled(agentType);
+      return { success: true, output: `${entry.label || agentType} uses direct API mode; no binary install needed.` };
+    }
+
     let cmd = this._getInstallCommand(entry.install);
     if (!cmd) {
       throw new Error(`No install command for ${agentType} on ${Installer.platform()}`);
@@ -352,6 +387,13 @@ class Installer {
     const entry = this.registry.getEntry(agentType);
     if (!entry || !entry.install) {
       throw new Error(`No install definition for agent type: ${agentType}`);
+    }
+
+    if (entry.install.api_only) {
+      if (onData) onData(`${entry.label || agentType} uses direct API mode; no binary install needed.\n`);
+      this._markInstalled(agentType);
+      if (onData) onData(`\nDone! ${agentType} is now installed.\n`);
+      return { success: true, command: 'api-only' };
     }
 
     let rawCmd = this._getInstallCommand(entry.install);
@@ -419,6 +461,11 @@ class Installer {
       throw new Error(`No install definition for agent type: ${agentType}`);
     }
 
+    if (entry.install.api_only) {
+      this._markUninstalled(agentType);
+      return { success: true, output: `${entry.label || agentType} API-only install marker removed.` };
+    }
+
     const installCmd = this._getInstallCommand(entry.install);
     const uninstallCmd = this._deriveUninstallCommand(installCmd, agentType);
     if (!uninstallCmd) {
@@ -460,6 +507,13 @@ class Installer {
     const entry = this.registry.getEntry(agentType);
     if (!entry || !entry.install) {
       throw new Error(`No install definition for agent type: ${agentType}`);
+    }
+
+    if (entry.install.api_only) {
+      if (onData) onData(`${entry.label || agentType} uses direct API mode; removing install marker.\n`);
+      this._markUninstalled(agentType);
+      if (onData) onData(`\nDone! ${agentType} has been uninstalled.\n`);
+      return { success: true, command: 'api-only' };
     }
 
     const installCmd = this._getInstallCommand(entry.install);

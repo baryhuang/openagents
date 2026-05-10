@@ -37,16 +37,36 @@ class LlmDirectAdapter extends BaseAdapter {
     this._model = env[this._modelEnvVar] || env.OPENCLAW_MODEL || '';
     this._directMode = !!(this._apiKey && this._baseUrl);
 
-    if (this._directMode) {
-      this._log(`Direct LLM mode: ${this._baseUrl} model=${this._model || 'gpt-4o'}`);
-    } else {
-      this._log(
-        `${this._adapterLabel} adapter started without direct API config. ` +
-        'Set OPENAI_API_KEY + OPENAI_BASE_URL for direct mode.'
-      );
+    if (!opts.suppressConfigLog) {
+      if (this._directMode) {
+        this._log(`Direct LLM mode: ${this._baseUrl} model=${this._model || 'gpt-4o'}`);
+      } else {
+        this._log(
+          `${this._adapterLabel} adapter started without direct API config. ` +
+          'Set OPENAI_API_KEY + OPENAI_BASE_URL for direct mode.'
+        );
+      }
     }
 
     this._conversationHistory = [];
+    this._activeRequests = new Set();
+  }
+
+  stop() {
+    super.stop();
+    for (const req of this._activeRequests) {
+      try { req.destroy(new Error('LLM API request stopped')); } catch {}
+    }
+    this._activeRequests.clear();
+  }
+
+  async _onControlAction(action, _payload) {
+    if (action === 'stop') {
+      for (const req of this._activeRequests) {
+        try { req.destroy(new Error('LLM API request stopped')); } catch {}
+      }
+      this._activeRequests.clear();
+    }
   }
 
   _buildSystemPrompt(channelName) {
@@ -133,10 +153,14 @@ class LlmDirectAdapter extends BaseAdapter {
         headers: { ...headers, 'Content-Length': Buffer.byteLength(payload) },
         timeout: 300000,
       }, (res) => {
+        const cleanup = () => this._activeRequests.delete(req);
         if (res.statusCode !== 200) {
           let body = '';
           res.on('data', (c) => { body += c; });
-          res.on('end', () => reject(new Error(`LLM API returned ${res.statusCode}: ${body.slice(0, 300)}`)));
+          res.on('end', () => {
+            cleanup();
+            reject(new Error(`LLM API returned ${res.statusCode}: ${body.slice(0, 300)}`));
+          });
           return;
         }
 
@@ -166,11 +190,20 @@ class LlmDirectAdapter extends BaseAdapter {
           }
         });
 
-        res.on('end', () => resolve(fullText.trim()));
+        res.on('end', () => {
+          cleanup();
+          resolve(fullText.trim());
+        });
       });
 
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('LLM API request timed out')); });
+      this._activeRequests.add(req);
+      req.on('error', (err) => {
+        this._activeRequests.delete(req);
+        reject(err);
+      });
+      req.on('timeout', () => {
+        req.destroy(new Error('LLM API request timed out'));
+      });
       req.write(payload);
       req.end();
     });
