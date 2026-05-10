@@ -321,6 +321,37 @@ function buildOpenCodeSkillMd({ endpoint, workspaceId, token, agentName, channel
   return frontmatter + identity + api;
 }
 
+/**
+ * Build a SKILL.md file for Claude Code's skill auto-discovery.
+ *
+ * When tool_mode is 'skills', the Claude adapter writes this file instead
+ * of spawning an MCP server. Claude Code discovers the skill via its
+ * .claude/skills/ directory and uses Bash + curl to call workspace APIs.
+ */
+function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules }) {
+  const api = buildApiSkillsPrompt({
+    endpoint, workspaceId, token, agentName,
+    channelName: channelName || 'general',
+    disabledModules,
+    mode: 'execute',
+  });
+
+  const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
+  const collab = buildCollaborationPrompt();
+
+  const frontmatter =
+    '---\n' +
+    'name: openagents-workspace\n' +
+    'description: |\n' +
+    '  OpenAgents Workspace collaboration tools — shared files, browser,\n' +
+    '  and multi-agent coordination. Use when: sharing files or reports,\n' +
+    '  browsing websites, reading shared files, checking workspace agents,\n' +
+    '  or collaborating with other agents via @mentions.\n' +
+    '---\n\n';
+
+  return frontmatter + identity + '\n' + collab + '\n' + api;
+}
+
 module.exports = {
   buildWorkspaceIdentity,
   buildCollaborationPrompt,
@@ -331,4 +362,5 @@ module.exports = {
   buildOpenclawSkillMd,
   buildOpenCodeSystemPrompt,
   buildOpenCodeSkillMd,
+  buildClaudeSkillMd,
 };

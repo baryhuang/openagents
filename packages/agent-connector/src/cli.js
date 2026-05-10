@@ -440,6 +440,49 @@ async function cmdEnv(connector, flags, positional) {
   }
 }
 
+async function cmdToolMode(connector, _flags, positional) {
+  const agentName = positional[0];
+  const mode = positional[1];
+
+  if (!agentName) {
+    // Show tool mode for all agents
+    const agents = connector.config.getAgents();
+    if (agents.length === 0) {
+      print('No agents configured');
+      return;
+    }
+    for (const a of agents) {
+      print(`  ${a.name}: ${a.tool_mode || 'mcp'}`);
+    }
+    print('\nUsage: agn tool-mode <agent> <mcp|skills>');
+    return;
+  }
+
+  if (!mode) {
+    // Show tool mode for specific agent
+    const agent = connector.config.getAgent(agentName);
+    if (!agent) { print(`Agent '${agentName}' not found`); process.exitCode = 1; return; }
+    print(`${agentName}: ${agent.tool_mode || 'mcp'}`);
+    print('\nUsage: agn tool-mode <agent> <mcp|skills>');
+    return;
+  }
+
+  if (mode !== 'mcp' && mode !== 'skills') {
+    print(`Invalid mode: ${mode}. Must be 'mcp' or 'skills'.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  connector.config.updateAgent(agentName, { tool_mode: mode });
+  try { connector.sendDaemonCommand('reload'); } catch {}
+  print(`Set tool mode for ${agentName} to '${mode}'`);
+  if (mode === 'skills') {
+    print('Agent will use SKILL.md (Bash + curl) instead of MCP server for workspace tools.');
+  } else {
+    print('Agent will use MCP server for workspace tools (default).');
+  }
+}
+
 async function cmdTestLLM(connector, _flags, positional) {
   const type = positional[0];
   if (!type) { print('Usage: agn test-llm <type>'); return; }
@@ -504,6 +547,7 @@ Commands:
   connect <agent> <token>     Connect agent to workspace
   disconnect <agent>          Disconnect agent from workspace
   env <type> [--set K=V]      View/set env vars for agent type
+  tool-mode [agent] [mode]    View/set tool mode (mcp or skills)
   autostart [--disable]       Enable/disable auto-start on login
   test-llm <type>             Test LLM connection
   logs [agent] [--lines N]    View daemon logs
@@ -589,6 +633,7 @@ async function main() {
     autostart: () => cmdAutostart(connector, flags),
     workspace: () => cmdWorkspace(connector, flags, positional),
     env: () => cmdEnv(connector, flags, positional),
+    'tool-mode': () => cmdToolMode(connector, flags, positional),
     'test-llm': () => cmdTestLLM(connector, flags, positional),
     update: () => cmdUpdate(),
     'mcp-server': () => {

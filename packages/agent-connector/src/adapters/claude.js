@@ -18,7 +18,7 @@ const { execSync, spawn } = require('child_process');
 
 const BaseAdapter = require('./base');
 const { formatAttachmentsForPrompt, SESSION_DEFAULT_RE, generateSessionTitle } = require('./utils');
-const { buildClaudeSystemPrompt } = require('./workspace-prompt');
+const { buildClaudeSystemPrompt, buildClaudeSkillMd } = require('./workspace-prompt');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -31,6 +31,8 @@ class ClaudeAdapter extends BaseAdapter {
   constructor(opts) {
     super(opts);
     this.disabledModules = opts.disabledModules || new Set();
+    /** @type {'mcp' | 'skills'} Tool integration mode */
+    this.toolMode = opts.toolMode || 'mcp';
     this._channelSessions = {}; // channel → Claude CLI session_id
     this._channelProcesses = {}; // channel → child process
     this._stoppingChannels = new Set();
@@ -294,6 +296,60 @@ class ClaudeAdapter extends BaseAdapter {
 
     const cmd = [claudeBin, '-p', prompt, '--output-format', 'stream-json', '--verbose'];
 
+    cmd.push('--append-system-prompt', systemPrompt);
+    cmd.push('--disallowedTools', 'AskUserQuestion');
+
+    // Resume existing conversation (skipped on retry after stale session)
+    const sessionId = this._channelSessions[channelName];
+    if (sessionId && !skipResume) {
+      cmd.push('--resume', sessionId);
+    }
+
+    // ── Skills mode: write SKILL.md, no MCP server ──
+    if (this.toolMode === 'skills') {
+      return this._buildSkillsCmd(cmd, channelName);
+    }
+
+    // ── MCP mode (default): spawn MCP server ──
+    return this._buildMcpCmd(cmd, channelName);
+  }
+
+  /**
+   * Skills mode: write a SKILL.md file and allow Bash + curl for workspace ops.
+   */
+  _buildSkillsCmd(cmd, channelName) {
+    if (this._mode === 'plan') {
+      cmd.push('--permission-mode', 'plan');
+      cmd.push('--allowedTools', 'Read', 'Glob', 'Grep', 'Bash');
+    } else {
+      cmd.push('--dangerously-skip-permissions');
+      cmd.push('--allowedTools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
+    }
+
+    // Write SKILL.md to .claude/skills/ in the working directory
+    const workDir = this.workingDir || process.cwd();
+    const skillDir = path.join(workDir, '.claude', 'skills');
+    fs.mkdirSync(skillDir, { recursive: true });
+    const skillFile = path.join(skillDir, 'openagents-workspace.md');
+
+    const skillContent = buildClaudeSkillMd({
+      endpoint: this.endpoint,
+      workspaceId: this.workspaceId,
+      token: this.token,
+      agentName: this.agentName,
+      channelName,
+      disabledModules: this.disabledModules,
+    });
+    fs.writeFileSync(skillFile, skillContent, 'utf-8');
+    this._log(`Wrote workspace skill to ${skillFile}`);
+
+    return { cmd, skillFile };
+  }
+
+  /**
+   * MCP mode (default): spawn MCP server subprocess for workspace tools.
+   */
+  _buildMcpCmd(cmd, channelName) {
     // Mode-dependent permission and tool flags
     const pfx = 'mcp__openagents-workspace__';
     const mcpTools = [
@@ -326,23 +382,12 @@ class ClaudeAdapter extends BaseAdapter {
       mcpWriteTools.push(`${pfx}tunnel_expose`, `${pfx}tunnel_close`);
     }
 
-    let allowed;
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');
-      allowed = [...mcpTools, 'Read', 'Glob', 'Grep'];
+      cmd.push('--allowedTools', ...mcpTools, 'Read', 'Glob', 'Grep');
     } else {
       cmd.push('--dangerously-skip-permissions');
-      allowed = [...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
-    }
-
-    cmd.push('--append-system-prompt', systemPrompt);
-    cmd.push('--allowedTools', ...allowed);
-    cmd.push('--disallowedTools', 'AskUserQuestion');
-
-    // Resume existing conversation (skipped on retry after stale session)
-    const sessionId = this._channelSessions[channelName];
-    if (sessionId && !skipResume) {
-      cmd.push('--resume', sessionId);
+      cmd.push('--allowedTools', ...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
     }
 
     // MCP config for workspace tools
@@ -356,18 +401,13 @@ class ClaudeAdapter extends BaseAdapter {
     if (this.disabledModules.has('files')) mcpArgs.push('--disable-files');
     if (this.disabledModules.has('browser')) mcpArgs.push('--disable-browser');
 
-    // Resolve the MCP server entry point. Prefer the sibling bin inside this
-    // very package — it's guaranteed to exist whenever claude.js is executing,
-    // so it never falls through to a broken PATH lookup. If Claude Code can't
-    // spawn the MCP server, it silently hides every workspace tool and the
-    // agent reports "workspace_read_file isn't in my tool set".
+    // Resolve the MCP server entry point
     let mcpCommand = this._findNodeBin();
     let mcpFinalArgs = mcpArgs;
     const siblingBin = path.resolve(__dirname, '..', '..', 'bin', 'agent-connector.js');
     if (fs.existsSync(siblingBin)) {
       mcpFinalArgs = [siblingBin, ...mcpArgs];
     } else {
-      // Fallback: search installed locations (older layouts, global installs)
       let oaBin = null;
       const home3 = os.homedir();
       const oaExt = IS_WINDOWS ? '.cmd' : '';
