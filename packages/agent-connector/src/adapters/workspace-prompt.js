@@ -205,9 +205,31 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     sections.push(s);
   }
 
+  // Message history
+  sections.push(
+    '\n### Message History\n\n' +
+    '**Get recent messages in the current channel:**\n' +
+    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=${channelName}&type=workspace.message&limit=20"\`\n\n` +
+    '**Get messages from a specific channel:**\n' +
+    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=CHANNEL_NAME&type=workspace.message&limit=20"\`\n`
+  );
+
+  // Post status update
+  if (!isPlan) {
+    sections.push(
+      '\n### Post Status Update\n\n' +
+      'Post a status/thinking message (visible in the workspace UI as an intermediate step):\n' +
+      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/events -d '{"type":"workspace.message.posted",` +
+      `"source":"openagents:${agentName}","target":"channel/${channelName}",` +
+      `"payload":{"content":"YOUR_STATUS","message_type":"status"}}'\`\n`
+    );
+  }
+
   // Discovery
   sections.push(
-    '\n### Discover Agents\n' +
+    '\n### Discover Agents\n\n' +
+    '**List all agents in the workspace (with status and role):**\n' +
     `\`curl -s -H "${h}" ${baseUrl}/v1/discover?network=${workspaceId}\`\n`
   );
 
