@@ -9,6 +9,7 @@ import type {
   NetworkDiscovery,
   NetworkProfile,
   ONMEvent,
+  TodoItem,
   Workspace,
   WorkspaceAgent,
   WorkspaceCollaborator,
@@ -604,6 +605,29 @@ class WorkspaceApi {
   async latestPerChannel(): Promise<{ channels: Record<string, ONMEvent> }> {
     const params = new URLSearchParams({ network: this.workspaceId });
     return this.request<{ channels: Record<string, ONMEvent> }>(`/v1/events/latest-per-channel?${params}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Todos / Tasks
+  // ---------------------------------------------------------------------------
+
+  async listTodos(): Promise<{ todos: TodoItem[] }> {
+    const params = new URLSearchParams({ network: this.workspaceId, all: 'true' });
+    const raw = await this.request<{ todos: Record<string, unknown>[] }>(`/v1/todos?${params}`);
+    return {
+      todos: (raw.todos || []).map((t): TodoItem => ({
+        id: t.id as string,
+        content: t.content as string,
+        status: t.status as TodoItem['status'],
+        assignee: t.assignee as string,
+        createdBy: (t.created_by || '') as string,
+        channelName: (t.channel_name || '') as string,
+        threadId: (t.thread_id || null) as string | null,
+        position: (t.position || 0) as number,
+        createdAt: (t.created_at || null) as string | null,
+        updatedAt: (t.updated_at || null) as string | null,
+      })),
+    };
   }
 }
 

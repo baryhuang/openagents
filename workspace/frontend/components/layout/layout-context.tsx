@@ -11,7 +11,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-export type ViewMode = 'threads' | 'files' | 'browser' | 'connect';
+export type ViewMode = 'threads' | 'files' | 'browser' | 'tasks' | 'connect';
 
 /** On mobile, which pane is showing: the list or the detail */
 export type MobilePane = 'list' | 'detail';

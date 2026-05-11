@@ -12,6 +12,7 @@ import { BrowserView } from '@/components/browser/browser-view';
 import { ConnectAgentView } from '@/components/connect/connect-agent-view';
 import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 import { MonitorGrid } from '@/components/monitor/monitor-grid';
+import { TasksView } from '@/components/tasks/tasks-view';
 import { useWorkspace } from '@/lib/workspace-context';
 
 export function Wrapper() {
@@ -24,10 +25,14 @@ export function Wrapper() {
       <div className="flex flex-col h-screen w-full [&_.container-fluid]:px-5">
         <MobileHeader />
         <div className="flex-1 min-h-0 pt-[var(--header-height-mobile)] pb-[calc(48px+env(safe-area-inset-bottom))]">
-          {/* Connect view is always full-screen (no list/detail split) */}
+          {/* Full-screen views (no list/detail split) */}
           {viewMode === 'connect' ? (
             <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
               <ConnectAgentView />
+            </div>
+          ) : viewMode === 'tasks' ? (
+            <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+              <TasksView />
             </div>
           ) : mobilePane === 'list' ? (
             /* List pane — full width */
@@ -83,7 +88,7 @@ export function Wrapper() {
             <>
               {/* Middle pane — thread list or file list
                   Hidden for: connect view, expanded detail, or when browser preview is active */}
-              {viewMode !== 'connect' && !isDetailExpanded && !(splitBrowser && showBrowserPreview && viewMode === 'threads') && (
+              {viewMode !== 'connect' && viewMode !== 'tasks' && !isDetailExpanded && !(splitBrowser && showBrowserPreview && viewMode === 'threads') && (
                 <div className="shrink-0 w-[300px] xl:w-[400px] bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
                   {viewMode === 'threads' && <ThreadList />}
                   {viewMode === 'files' && <FileList />}
@@ -115,6 +120,7 @@ export function Wrapper() {
                   {viewMode === 'files' && <FilePreview />}
                   {viewMode === 'browser' && <BrowserView />}
                   {viewMode === 'connect' && <ConnectAgentView />}
+                  {viewMode === 'tasks' && <TasksView />}
 
                   {/* Agent profile slide-over */}
                   {isAgentPanelOpen && <AgentProfilePanel />}
