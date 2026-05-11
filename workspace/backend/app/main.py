@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
-from app.routers import browser, events, files, network, workspaces
+from app.routers import browser, devices, events, files, network, workspaces
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -89,6 +89,7 @@ app.add_middleware(NoTransformCompressionHeadersMiddleware)
 
 # Routers
 app.include_router(browser.router)
+app.include_router(devices.router)
 app.include_router(events.router)
 app.include_router(files.router)
 app.include_router(network.router)

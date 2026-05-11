@@ -41,6 +41,20 @@ def _set_sqlite_pragma(dbapi_conn, connection_record):
     cursor.close()
 
 
+# Translate Postgres-specific server defaults (NOW(), gen_random_uuid()) to
+# SQLite-friendly equivalents at SQL-emit time. Production uses Postgres and
+# is unaffected — this only fires for the test engine. Without this, CREATE
+# TABLE fails because SQLite doesn't recognize NOW().
+@event.listens_for(engine, "before_cursor_execute", retval=True)
+def _rewrite_pg_to_sqlite(conn, cursor, statement, parameters, context, executemany):
+    if "DEFAULT NOW()" in statement:
+        statement = statement.replace("DEFAULT NOW()", "DEFAULT CURRENT_TIMESTAMP")
+    if "DEFAULT gen_random_uuid()" in statement:
+        # SQLite has no UUID generator; Python-side default=_uuid handles INSERTs.
+        statement = statement.replace("DEFAULT gen_random_uuid()", "")
+    return statement, parameters
+
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

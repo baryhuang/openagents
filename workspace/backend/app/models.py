@@ -293,6 +293,38 @@ class BrowserUsage(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Push-notification device registration
+# ---------------------------------------------------------------------------
+
+class DeviceToken(Base):
+    """An iOS / future-Android device's FCM token, scoped to a workspace.
+
+    Created by `POST /v1/devices/register` from the OpenAgents Go iOS app
+    (and any future mobile client). Used by `services/push.py` to fan out
+    APNs notifications when relevant workspace events fire.
+
+    Tied to a workspace via `workspace_id` — the same auth model as every
+    other table here. We do not link to a specific human user because the
+    workspace token is the only identity the iOS client carries today.
+    """
+
+    __tablename__ = "device_tokens"
+
+    id = Column(Text, primary_key=True, default=_uuid, server_default=text("gen_random_uuid()"))
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    fcm_token = Column(Text, nullable=False)
+    device_type = Column(Text, nullable=False)            # "ios" | future: "android" | "macos"
+    bundle_id = Column(Text, nullable=True)               # e.g. "com.openagents.go"
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    last_seen_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "fcm_token", name="uq_device_token_workspace_fcm"),
+        Index("idx_device_tokens_workspace", "workspace_id"),
+    )
+
+
 # Standalone agent table (used when IDENTITY_MODE=standalone)
 class Agent(Base):
     """Local agent identity (standalone mode only)."""
