@@ -441,10 +441,29 @@ async function cmdEnv(connector, flags, positional) {
 }
 
 async function cmdToolMode(connector, _flags, positional) {
-  const agentName = positional[0];
-  const mode = positional[1];
+  const first = positional[0];
+  const second = positional[1];
 
-  if (!agentName) {
+  // agn tool-mode --all <mode>
+  if (first === '--all') {
+    const targetMode = second;
+    if (!targetMode || (targetMode !== 'mcp' && targetMode !== 'skills')) {
+      print("Usage: agn tool-mode --all <mcp|skills>");
+      process.exitCode = 1;
+      return;
+    }
+    const agents = connector.config.getAgents();
+    if (agents.length === 0) { print('No agents configured'); return; }
+    for (const a of agents) {
+      connector.config.updateAgent(a.name, { tool_mode: targetMode });
+      print(`  ${a.name}: ${a.tool_mode || 'mcp'} → ${targetMode}`);
+    }
+    try { connector.sendDaemonCommand('reload'); } catch {}
+    print(`\nSet all ${agents.length} agent(s) to '${targetMode}' mode.`);
+    return;
+  }
+
+  if (!first) {
     // Show tool mode for all agents
     const agents = connector.config.getAgents();
     if (agents.length === 0) {
@@ -454,29 +473,29 @@ async function cmdToolMode(connector, _flags, positional) {
     for (const a of agents) {
       print(`  ${a.name}: ${a.tool_mode || 'mcp'}`);
     }
-    print('\nUsage: agn tool-mode <agent> <mcp|skills>');
+    print('\nUsage: agn tool-mode <agent|--all> <mcp|skills>');
     return;
   }
 
-  if (!mode) {
+  if (!second) {
     // Show tool mode for specific agent
-    const agent = connector.config.getAgent(agentName);
-    if (!agent) { print(`Agent '${agentName}' not found`); process.exitCode = 1; return; }
-    print(`${agentName}: ${agent.tool_mode || 'mcp'}`);
-    print('\nUsage: agn tool-mode <agent> <mcp|skills>');
+    const agent = connector.config.getAgent(first);
+    if (!agent) { print(`Agent '${first}' not found`); process.exitCode = 1; return; }
+    print(`${first}: ${agent.tool_mode || 'mcp'}`);
+    print('\nUsage: agn tool-mode <agent|--all> <mcp|skills>');
     return;
   }
 
-  if (mode !== 'mcp' && mode !== 'skills') {
-    print(`Invalid mode: ${mode}. Must be 'mcp' or 'skills'.`);
+  if (second !== 'mcp' && second !== 'skills') {
+    print(`Invalid mode: ${second}. Must be 'mcp' or 'skills'.`);
     process.exitCode = 1;
     return;
   }
 
-  connector.config.updateAgent(agentName, { tool_mode: mode });
+  connector.config.updateAgent(first, { tool_mode: second });
   try { connector.sendDaemonCommand('reload'); } catch {}
-  print(`Set tool mode for ${agentName} to '${mode}'`);
-  if (mode === 'skills') {
+  print(`Set tool mode for ${first} to '${second}'`);
+  if (second === 'skills') {
     print('Agent will use SKILL.md (Bash + curl) instead of MCP server for workspace tools.');
   } else {
     print('Agent will use MCP server for workspace tools (default).');
