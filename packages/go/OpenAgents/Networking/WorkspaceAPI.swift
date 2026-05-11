@@ -273,6 +273,36 @@ actor WorkspaceAPI {
         )
     }
 
+    // MARK: - Push notifications
+
+    /// Register this device's FCM token with the workspace backend so it can receive
+    /// pushes for events posted on this workspace. Idempotent on (workspace, token).
+    func registerDeviceToken(
+        fcmToken: String,
+        deviceType: String = "ios",
+        bundleId: String,
+    ) async throws {
+        struct Body: Encodable {
+            let network: String
+            let device_type: String
+            let fcm_token: String
+            let bundle_id: String
+        }
+        let body = try JSONEncoder().encode(Body(
+            network: workspaceId,
+            device_type: deviceType,
+            fcm_token: fcmToken,
+            bundle_id: bundleId,
+        ))
+        let request = try makeRequest(
+            path: "/v1/devices/register",
+            method: "POST",
+            body: body,
+        )
+        struct Empty: Decodable, Sendable {}
+        _ = try await send(request, as: Empty.self)
+    }
+
     // MARK: - File uploads
 
     /// Backend response for `POST /v1/files`.
