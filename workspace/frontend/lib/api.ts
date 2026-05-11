@@ -9,6 +9,7 @@ import type {
   NetworkDiscovery,
   NetworkProfile,
   ONMEvent,
+  TimerItem,
   TodoItem,
   Workspace,
   WorkspaceAgent,
@@ -626,6 +627,24 @@ class WorkspaceApi {
         position: (t.position || 0) as number,
         createdAt: (t.created_at || null) as string | null,
         updatedAt: (t.updated_at || null) as string | null,
+      })),
+    };
+  }
+
+  async listTimers(channel?: string): Promise<{ timers: TimerItem[] }> {
+    const params = new URLSearchParams({ network: this.workspaceId });
+    if (channel) params.set('channel', channel);
+    const raw = await this.request<{ timers: Record<string, unknown>[] }>(`/v1/timers?${params}`);
+    return {
+      timers: (raw.timers || []).map((t): TimerItem => ({
+        id: t.id as string,
+        message: t.message as string,
+        delaySeconds: (t.delay_seconds || 0) as number,
+        firesAt: (t.fires_at || '') as string,
+        status: (t.status || 'active') as string,
+        createdBy: (t.created_by || '') as string,
+        channelName: (t.channel_name || '') as string,
+        createdAt: (t.created_at || null) as string | null,
       })),
     };
   }

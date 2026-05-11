@@ -119,6 +119,17 @@ export interface TodoItem {
   updatedAt: string | null;
 }
 
+export interface TimerItem {
+  id: string;
+  message: string;
+  delaySeconds: number;
+  firesAt: string;
+  status: string;
+  createdBy: string;
+  channelName: string;
+  createdAt: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Agent catalog (supported client types)
 // ---------------------------------------------------------------------------

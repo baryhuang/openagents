@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { ChatMessages } from './chat-messages';
 import { ChatInput, type PendingFile } from './chat-input';
+import { ThreadStatusBar } from './thread-status-bar';
 import { EmptyState } from './empty-state';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
@@ -694,6 +695,7 @@ export function ChatView() {
         {!isDM && (
           <div className="px-3 lg:px-4 py-2 lg:py-3">
             <div className="max-w-3xl mx-auto w-full">
+              {currentSessionId && <ThreadStatusBar channelName={currentSessionId} />}
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
