@@ -301,7 +301,8 @@ class ClaudeAdapter extends BaseAdapter {
           'Use workspace_get_history to read previous messages.\n' +
           'Use workspace_get_agents to see other agents.\n',
           'Use the openagents-workspace skill (Bash + curl) for workspace operations:\n' +
-          'reading message history, discovering agents, sharing files, and browsing.\n' +
+          'reading message history, discovering agents, sharing files, browsing,\n' +
+          'managing to-do lists, and setting timers.\n' +
           'Refer to the skill instructions for the exact curl commands.\n'
         );
     }

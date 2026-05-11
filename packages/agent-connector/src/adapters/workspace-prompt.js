@@ -209,9 +209,9 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   sections.push(
     '\n### Message History\n\n' +
     '**Get recent messages in the current channel:**\n' +
-    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=${channelName}&type=workspace.message&limit=20"\`\n\n` +
+    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=${channelName}&type=workspace.message&sort=desc&limit=20"\`\n\n` +
     '**Get messages from a specific channel:**\n' +
-    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=CHANNEL_NAME&type=workspace.message&limit=20"\`\n`
+    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=CHANNEL_NAME&type=workspace.message&sort=desc&limit=20"\`\n`
   );
 
   // Post status update
@@ -287,7 +287,9 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
   parts.push(
     'Use workspace_get_history to read previous messages.\n' +
-    'Use workspace_get_agents to see other agents.\n'
+    'Use workspace_get_agents to see other agents.\n' +
+    'Use workspace_put_todos to track your progress with a to-do list.\n' +
+    'Use workspace_create_timer to set a reminder that wakes you up later.\n'
   );
   parts.push(buildCollaborationPrompt());
 

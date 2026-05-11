@@ -648,6 +648,32 @@ class WorkspaceApi {
       })),
     };
   }
+
+  async cancelTimer(timerId: string): Promise<void> {
+    await this.request<unknown>(`/v1/timers/${timerId}`, { method: 'DELETE' });
+  }
+
+  async cancelChannelTodos(channel: string, source: string): Promise<void> {
+    const params = new URLSearchParams({ network: this.workspaceId, channel, source });
+    const raw = await this.request<{ todos: Record<string, unknown>[] }>(`/v1/todos?${params}`);
+    const todos = raw.todos || [];
+    const hasActive = todos.some((t) => t.status === 'pending' || t.status === 'in_progress');
+    if (!hasActive) return;
+    const updated = todos.map((t) => ({
+      content: t.content as string,
+      status: (t.status === 'pending' || t.status === 'in_progress') ? 'cancelled' : t.status as string,
+      assignee: t.assignee as string,
+    }));
+    await this.request<unknown>('/v1/todos', {
+      method: 'PUT',
+      body: JSON.stringify({
+        todos: updated,
+        network: this.workspaceId,
+        channel,
+        source,
+      }),
+    });
+  }
 }
 
 export const workspaceApi = new WorkspaceApi();
