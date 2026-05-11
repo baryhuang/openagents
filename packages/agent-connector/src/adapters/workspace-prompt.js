@@ -226,6 +226,45 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     );
   }
 
+  // To-Dos (planning)
+  if (!isPlan) {
+    sections.push(
+      '\n### To-Do List (Planning)\n\n' +
+      'Create or update your to-do list to track progress. The entire list ' +
+      'is replaced each time (send the full list with current statuses).\n\n' +
+      '**Status values:** `pending`, `in_progress`, `completed`\n\n' +
+      '**Update your to-do list:**\n' +
+      `\`curl -s -X PUT -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/todos -d '{"todos":[` +
+      `{"content":"First task","status":"in_progress"},` +
+      `{"content":"Second task","status":"pending"}` +
+      `],"network":"${workspaceId}","channel":"${channelName}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**Get your to-do list:**\n' +
+      `\`curl -s -H "${h}" "${baseUrl}/v1/todos?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      'Use to-dos to plan multi-step work. Update the list as you complete each step.\n' +
+      'You can assign items to other agents: `"assignee": "other-agent-name"`\n'
+    );
+  }
+
+  // Timers
+  if (!isPlan) {
+    sections.push(
+      '\n### Timers\n\n' +
+      'Set a timer to post a message to the channel after a delay. ' +
+      'Useful for checking back on builds, retrying after rate limits, etc.\n\n' +
+      '**Create a timer:**\n' +
+      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/timers -d '{"delay":300,"message":"Check the build",` +
+      `"network":"${workspaceId}","channel":"${channelName}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**List active timers:**\n' +
+      `\`curl -s -H "${h}" "${baseUrl}/v1/timers?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      '**Cancel a timer:**\n' +
+      `\`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/timers/TIMER_ID\`\n`
+    );
+  }
+
   // Discovery
   sections.push(
     '\n### Discover Agents\n\n' +

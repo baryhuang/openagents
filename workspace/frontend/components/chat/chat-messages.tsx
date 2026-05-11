@@ -27,7 +27,7 @@ function groupMessages(messages: WorkspaceMessage[]): MessageGroup[] {
   };
 
   messages.forEach((msg) => {
-    if (msg.messageType === 'status' || msg.messageType === 'thinking') {
+    if (msg.messageType === 'status' || msg.messageType === 'thinking' || msg.messageType === 'todos') {
       currentSteps.push(msg);
     } else {
       flushSteps();
@@ -84,7 +84,7 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
 
   // Filter: skip empty status messages; when toggle is off, only show status messages after the last chat message
   const filteredMessages = useMemo(() => {
-    const isStep = (msg: WorkspaceMessage) => msg.messageType === 'status' || msg.messageType === 'thinking';
+    const isStep = (msg: WorkspaceMessage) => msg.messageType === 'status' || msg.messageType === 'thinking' || msg.messageType === 'todos';
 
     // Deduplicate: if a chat message follows thinking from the same agent
     // with matching content, hide the thinking (it was the final answer
@@ -124,8 +124,8 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
     // and trailing status only if agent is still actively working
     const trailing = nonEmpty.filter((msg, index) => {
       if (!isStep(msg)) return true;
-      // Always keep thinking messages — they provide reasoning context
-      if (msg.messageType === 'thinking') return true;
+      // Always keep thinking and todos — they provide reasoning context
+      if (msg.messageType === 'thinking' || msg.messageType === 'todos') return true;
       // Only keep trailing status if agent is still working
       // (last message is a step, meaning no chat response yet)
       return lastIsStep && index > lastChatIndex;

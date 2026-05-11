@@ -524,6 +524,53 @@ class WorkspaceClient {
     return data.data || data;
   }
 
+  // ── Todos & Timers ──
+
+  async putTodos(workspaceId, channelName, token, todos, { source } = {}) {
+    const body = {
+      todos,
+      network: workspaceId,
+      channel: channelName,
+      source: source || 'openagents:unknown',
+    };
+    const data = await this._put('/v1/todos', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async getTodos(workspaceId, channelName, token, { agent, all } = {}) {
+    const params = new URLSearchParams({ network: workspaceId });
+    if (channelName) params.set('channel', channelName);
+    if (agent) params.set('agent', agent);
+    if (all) params.set('all', 'true');
+    const data = await this._get(`/v1/todos?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async createTimer(workspaceId, channelName, token, delay, message, { source } = {}) {
+    const body = {
+      delay,
+      message,
+      network: workspaceId,
+      channel: channelName,
+      source: source || 'openagents:unknown',
+    };
+    const data = await this._post('/v1/timers', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async listTimers(workspaceId, channelName, token) {
+    const params = new URLSearchParams({ network: workspaceId });
+    if (channelName) params.set('channel', channelName);
+    const data = await this._get(`/v1/timers?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async cancelTimer(workspaceId, token, timerId, network) {
+    const params = network ? `?network=${network}` : '';
+    const data = await this._delete(`/v1/timers/${timerId}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
   // ── Internal helpers ──
 
   /**
@@ -638,6 +685,48 @@ class WorkspaceClient {
 
       const req = transport.request(fullUrl, {
         method: 'POST',
+        headers: { ...headers, 'Content-Length': Buffer.byteLength(jsonBody) },
+        timeout,
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (res.statusCode >= 400) {
+              const msg = parsed.message || `HTTP ${res.statusCode}`;
+              if (typeof msg === 'string' && msg.toLowerCase().includes('session_revoked')) {
+                reject(new SessionRevokedError(msg));
+              } else {
+                reject(new Error(msg));
+              }
+            } else {
+              resolve(parsed);
+            }
+          } catch {
+            reject(new Error(`Invalid response: ${data.slice(0, 200)}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+      req.write(jsonBody);
+      req.end();
+    });
+  }
+
+  _put(urlPath, body, headers = {}, timeout = 30000) {
+    if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    const jsonBody = JSON.stringify(body);
+    const fullUrl = this.endpoint + urlPath;
+
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(fullUrl);
+      const transport = parsedUrl.protocol === 'https:' ? https : http;
+
+      const req = transport.request(fullUrl, {
+        method: 'PUT',
         headers: { ...headers, 'Content-Length': Buffer.byteLength(jsonBody) },
         timeout,
       }, (res) => {

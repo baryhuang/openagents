@@ -332,10 +332,10 @@ class ClaudeAdapter extends BaseAdapter {
   _buildSkillsCmd(cmd, channelName) {
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');
-      cmd.push('--allowedTools', 'Read', 'Glob', 'Grep', 'Bash');
+      cmd.push('--allowedTools', 'Read', 'Glob', 'Grep', 'Bash', 'TodoWrite');
     } else {
       cmd.push('--dangerously-skip-permissions');
-      cmd.push('--allowedTools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
+      cmd.push('--allowedTools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'TodoWrite');
     }
 
     // Write SKILL.md to .claude/skills/ in the working directory
@@ -394,12 +394,16 @@ class ClaudeAdapter extends BaseAdapter {
       mcpWriteTools.push(`${pfx}tunnel_expose`, `${pfx}tunnel_close`);
     }
 
+    // Todos & Timers (always enabled)
+    mcpTools.push(`${pfx}workspace_get_todos`, `${pfx}workspace_list_timers`);
+    mcpWriteTools.push(`${pfx}workspace_put_todos`, `${pfx}workspace_create_timer`, `${pfx}workspace_cancel_timer`);
+
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');
-      cmd.push('--allowedTools', ...mcpTools, 'Read', 'Glob', 'Grep');
+      cmd.push('--allowedTools', ...mcpTools, 'Read', 'Glob', 'Grep', 'TodoWrite');
     } else {
       cmd.push('--dangerously-skip-permissions');
-      cmd.push('--allowedTools', ...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
+      cmd.push('--allowedTools', ...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'TodoWrite');
     }
 
     // MCP config for workspace tools
@@ -527,16 +531,20 @@ class ClaudeAdapter extends BaseAdapter {
     let mcpConfigFile = null;
     let cmd;
 
-    // Clean env: strip every CLAUDE_* / AI_AGENT variable inherited from a
-    // parent Claude Code (or Claude Agent SDK) process. If we don't, the
-    // spawned `claude` thinks it's running under an SDK harness and picks
-    // an org-scoped auth path that returns 403 "Account is no longer a
-    // member of the organization" even when the user is logged in fine via
-    // `claude login`. We let the child rediscover auth from
-    // ~/.claude/.credentials.json (or ANTHROPIC_API_KEY if set).
+    // Clean env: strip CLAUDE_* / AI_AGENT variables that make the spawned
+    // `claude` think it's running under an SDK harness (org-scoped auth
+    // path → 403). But preserve config vars the child needs for cloud
+    // provider auth (Vertex, Bedrock) and model selection.
+    const CLAUDE_ENV_KEEP = new Set([
+      'CLAUDE_CODE_USE_VERTEX',
+      'CLAUDE_CODE_USE_BEDROCK',
+      'CLAUDE_MODEL',
+      'CLAUDE_API_KEY',
+      'CLAUDE_CODE_MAX_TURNS',
+    ]);
     const cleanEnv = { ...(this.agentEnv || process.env) };
     for (const k of Object.keys(cleanEnv)) {
-      if (k.startsWith('CLAUDE_') || k === 'CLAUDECODE' || k === 'AI_AGENT') {
+      if ((k.startsWith('CLAUDE_') && !CLAUDE_ENV_KEEP.has(k)) || k === 'CLAUDECODE' || k === 'AI_AGENT') {
         delete cleanEnv[k];
       }
     }
@@ -658,6 +666,16 @@ class ClaudeAdapter extends BaseAdapter {
                 postedThinking = false;
                 lastResponseText.length = 0;
                 const toolName = block.name || '';
+
+                // Intercept TodoWrite: forward todo list as a workspace event
+                if (toolName === 'TodoWrite' && block.input?.todos) {
+                  try {
+                    await this.sendTodos(msgChannel, block.input.todos);
+                  } catch {}
+                  everPostedAnything = true;
+                  continue;
+                }
+
                 // Format tool input as readable text
                 let inputPreview = '';
                 if (block.input && typeof block.input === 'object') {

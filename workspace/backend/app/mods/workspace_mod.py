@@ -760,9 +760,9 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
             # the router checks session_error and returns an error response.
             return event
 
-    # "thinking" and "status" messages are intermediate agent output —
-    # they should NOT trigger other agents.
-    if message_type in ("thinking", "status"):
+    # "thinking", "status", and "todos" messages are intermediate agent output
+    # — they should NOT trigger other agents.
+    if message_type in ("thinking", "status", "todos"):
         return event
 
     # Parse @mentions from message content (used for human message routing)

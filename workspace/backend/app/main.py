@@ -5,9 +5,11 @@ OpenAgents Workspace Backend — FastAPI entry point.
 A workspace is an ONM network with workspace-specific mods loaded.
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,10 +17,67 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
-from app.routers import browser, events, files, network, workspaces
+from app.routers import browser, events, files, network, timers, todos, workspaces
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+async def _timer_loop():
+    """Background loop that fires due timers by posting messages."""
+    from sqlalchemy import select
+    from app.database import SessionLocal
+    from app.models import TimerRecord, Workspace
+    from app.pipeline_factory import pipeline
+    from openagents.core.onm_events import Event
+    from openagents.core.onm_mods import PipelineContext
+
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                now = datetime.now(timezone.utc)
+                due = db.execute(
+                    select(TimerRecord).where(
+                        TimerRecord.status == "active",
+                        TimerRecord.fires_at <= now,
+                    ).limit(50)
+                ).scalars().all()
+
+                for timer in due:
+                    timer.status = "fired"
+                    workspace = db.execute(
+                        select(Workspace).where(Workspace.id == timer.workspace_id)
+                    ).scalar_one_or_none()
+                    if not workspace:
+                        continue
+                    event = Event(
+                        type="workspace.message.posted",
+                        source=timer.created_by,
+                        target=f"channel/{timer.channel_name}",
+                        payload={
+                            "content": f"⏰ Timer: {timer.message}",
+                            "message_type": "chat",
+                        },
+                        metadata={},
+                    )
+                    ctx = PipelineContext(
+                        network_id=str(workspace.id),
+                        agent_address=timer.created_by,
+                        db=db,
+                        workspace=workspace,
+                        token=workspace.password_hash,
+                    )
+                    try:
+                        await pipeline.process(event, ctx)
+                    except Exception:
+                        logger.exception("Timer fire failed for %s", timer.id)
+                db.commit()
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Timer loop error")
+        await asyncio.sleep(10)
 
 
 @asynccontextmanager
@@ -29,7 +88,14 @@ async def lifespan(app: FastAPI):
         from app import models  # noqa: F401 — ensure all models are registered
         Base.metadata.create_all(bind=engine)
         logger.info("SQLite: auto-created tables")
+
+    timer_task = asyncio.create_task(_timer_loop())
     yield
+    timer_task.cancel()
+    try:
+        await timer_task
+    except asyncio.CancelledError:
+        pass
     # Shutdown: close Playwright browser
     from app.browser import BrowserManager
     await BrowserManager.get().shutdown()
@@ -92,6 +158,8 @@ app.include_router(browser.router)
 app.include_router(events.router)
 app.include_router(files.router)
 app.include_router(network.router)
+app.include_router(todos.router)
+app.include_router(timers.router)
 app.include_router(workspaces.router)
 
 

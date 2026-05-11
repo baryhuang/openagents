@@ -391,6 +391,32 @@ class BaseAdapter {
     }
   }
 
+  async sendTodos(channel, todos) {
+    try {
+      await this.client.putTodos(this.workspaceId, channel, this.token, todos, {
+        source: `openagents:${this.agentName}`,
+      });
+    } catch (e) {
+      if (e instanceof SessionRevokedError) { this._onSessionRevoked(); return; }
+      // Fallback to event-based approach for older backends
+      const lines = todos.map((t) => {
+        const icon = t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜';
+        return `${icon} ${t.content}`;
+      });
+      try {
+        await this.client.sendMessage(this.workspaceId, channel, this.token, lines.join('\n'), {
+          senderType: 'agent',
+          senderName: this.agentName,
+          messageType: 'todos',
+          metadata: { agent_mode: this._mode, todos },
+          sessionId: this._sessionId,
+        });
+      } catch (e2) {
+        if (e2 instanceof SessionRevokedError) this._onSessionRevoked();
+      }
+    }
+  }
+
   async sendError(channel, error) {
     try {
       await this.client.sendMessage(this.workspaceId, channel, this.token, error, {

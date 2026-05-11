@@ -14,6 +14,7 @@ import {
   Users,
   ChevronRight,
   RefreshCw,
+  ListTodo,
 } from 'lucide-react';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
@@ -144,6 +145,34 @@ function getStepIcon(parsed: ParsedStep) {
 
 const StepItem = memo(function StepItem({ message }: { message: WorkspaceMessage }) {
   const [expanded, setExpanded] = useState(false);
+
+  // Todos render as a compact checklist
+  if (message.messageType === 'todos') {
+    const todos = (message.metadata?.todos as Array<{ content: string; status: string; assignee?: string }>) || [];
+    if (!todos.length) return null;
+    return (
+      <div className="py-0.5">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+          <ListTodo className="size-3.5 shrink-0 text-indigo-500" />
+          <span className="font-medium">To-do list</span>
+        </div>
+        <div className="ml-[22px] space-y-0.5">
+          {todos.map((t, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs">
+              <span className="shrink-0">{t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜'}</span>
+              <span className={cn(
+                t.status === 'completed' && 'line-through text-muted-foreground'
+              )}>{t.content}</span>
+              {t.assignee && (
+                <span className="text-muted-foreground/50 text-[10px]">→ {t.assignee}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   // Messages with messageType 'thinking' are already typed — parse as thinking directly
   const parsed = message.messageType === 'thinking'
     ? { type: 'thinking' as const, text: message.content }
