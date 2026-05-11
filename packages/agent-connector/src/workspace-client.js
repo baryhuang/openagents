@@ -293,6 +293,11 @@ class WorkspaceClient {
           // Legacy server (no target_agents): broadcast for compat
           messages.push(this._eventToMessage(e));
         }
+      } else if (source.startsWith('system:')) {
+        // System messages (timers, notifications): pick up if targeted
+        if (hasTargetList && targetAgents.includes(agentName)) {
+          messages.push(this._eventToMessage(e));
+        }
       } else if (source.startsWith('openagents:')) {
         // Agent messages: only pick up if explicitly listed
         if (hasTargetList && targetAgents.includes(agentName)) {

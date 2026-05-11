@@ -251,8 +251,11 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   if (!isPlan) {
     sections.push(
       '\n### Timers\n\n' +
-      'Set a timer to post a message to the channel after a delay. ' +
-      'Useful for checking back on builds, retrying after rate limits, etc.\n\n' +
+      'Set a timer that will send you a message after a delay, waking you up ' +
+      'to continue work. Use this instead of `sleep` — timers let you release ' +
+      'the session and get called back later.\n\n' +
+      'Use cases: check back on a deploy, retry after a rate limit, remind ' +
+      'yourself to follow up.\n\n' +
       '**Create a timer:**\n' +
       `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/timers -d '{"delay":300,"message":"Check the build",` +

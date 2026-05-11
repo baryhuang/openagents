@@ -54,15 +54,16 @@ async def _timer_loop():
                     ).scalar_one_or_none()
                     if not workspace:
                         continue
+                    agent_name = timer.created_by.replace("openagents:", "")
                     event = Event(
                         type="workspace.message.posted",
-                        source=timer.created_by,
+                        source="system:timer",
                         target=f"channel/{timer.channel_name}",
                         payload={
-                            "content": f"⏰ Timer: {timer.message}",
+                            "content": f"⏰ Timer fired (set by @{agent_name}): {timer.message}",
                             "message_type": "chat",
                         },
-                        metadata={},
+                        metadata={"target_agents": [agent_name]},
                     )
                     ctx = PipelineContext(
                         network_id=str(workspace.id),
