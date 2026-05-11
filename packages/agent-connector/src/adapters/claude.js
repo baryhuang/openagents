@@ -332,10 +332,10 @@ class ClaudeAdapter extends BaseAdapter {
   _buildSkillsCmd(cmd, channelName) {
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');
-      cmd.push('--allowedTools', 'Read', 'Glob', 'Grep', 'Bash', 'TodoWrite');
+      cmd.push('--allowedTools', 'Read', 'Glob', 'Grep', 'Bash');
     } else {
       cmd.push('--dangerously-skip-permissions');
-      cmd.push('--allowedTools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'TodoWrite');
+      cmd.push('--allowedTools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
     }
 
     // Write SKILL.md to .claude/skills/ in the working directory
@@ -400,10 +400,10 @@ class ClaudeAdapter extends BaseAdapter {
 
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');
-      cmd.push('--allowedTools', ...mcpTools, 'Read', 'Glob', 'Grep', 'TodoWrite');
+      cmd.push('--allowedTools', ...mcpTools, 'Read', 'Glob', 'Grep');
     } else {
       cmd.push('--dangerously-skip-permissions');
-      cmd.push('--allowedTools', ...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'TodoWrite');
+      cmd.push('--allowedTools', ...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
     }
 
     // MCP config for workspace tools
@@ -666,15 +666,6 @@ class ClaudeAdapter extends BaseAdapter {
                 postedThinking = false;
                 lastResponseText.length = 0;
                 const toolName = block.name || '';
-
-                // Intercept TodoWrite: forward todo list as a workspace event
-                if (toolName === 'TodoWrite' && block.input?.todos) {
-                  try {
-                    await this.sendTodos(msgChannel, block.input.todos);
-                  } catch {}
-                  everPostedAnything = true;
-                  continue;
-                }
 
                 // Format tool input as readable text
                 let inputPreview = '';
