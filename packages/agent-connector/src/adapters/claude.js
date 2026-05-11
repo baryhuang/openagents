@@ -719,6 +719,10 @@ class ClaudeAdapter extends BaseAdapter {
           }
 
           delete this._channelProcesses[msgChannel];
+
+          // Clean up stale todos: mark pending/in_progress as cancelled
+          try { await this.cleanupTodos(msgChannel); } catch {}
+
           const stoppedByUser = this._stoppingChannels.has(msgChannel);
           if (stoppedByUser) {
             this._stoppingChannels.delete(msgChannel);

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { ListTodo, CheckCircle2, Circle, Loader2, RefreshCw } from 'lucide-react';
+import { ListTodo, CheckCircle2, Circle, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { getAgentColor, getAgentInitials } from '@/lib/helpers';
 import type { TodoItem } from '@/lib/types';
@@ -22,6 +22,7 @@ function timeAgo(dateStr: string | null): string {
 function StatusIcon({ status }: { status: TodoItem['status'] }) {
   if (status === 'completed') return <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />;
   if (status === 'in_progress') return <Loader2 className="size-4 text-blue-500 shrink-0 animate-spin" />;
+  if (status === 'cancelled') return <XCircle className="size-4 text-zinc-400 shrink-0" />;
   return <Circle className="size-4 text-zinc-400 shrink-0" />;
 }
 
@@ -29,9 +30,7 @@ interface GroupedTodos {
   channelName: string;
   channelTitle: string;
   agentName: string;
-  pending: TodoItem[];
-  inProgress: TodoItem[];
-  completed: TodoItem[];
+  items: TodoItem[];
 }
 
 export function TasksView() {
@@ -45,43 +44,45 @@ export function TasksView() {
   const now = Date.now();
   const oneDayMs = 24 * 60 * 60 * 1000;
 
-  const { activeGroups, recentCompleted } = useMemo(() => {
-    const activeItems = todos.filter((t) => t.status !== 'completed');
-    const completedItems = todos.filter(
-      (t) => t.status === 'completed' && t.updatedAt && now - new Date(t.updatedAt).getTime() < oneDayMs
+  const isActive = (t: TodoItem) => t.status === 'pending' || t.status === 'in_progress';
+  const isDone = (t: TodoItem) => t.status === 'completed' || t.status === 'cancelled';
+
+  const { activeGroups, doneGroups } = useMemo(() => {
+    const activeItems = todos.filter(isActive);
+    const doneItems = todos.filter(
+      (t) => isDone(t) && t.updatedAt && now - new Date(t.updatedAt).getTime() < oneDayMs
     );
 
-    const groupMap = new Map<string, GroupedTodos>();
-    for (const t of [...activeItems, ...completedItems]) {
-      const key = `${t.channelName}:${t.createdBy}`;
-      if (!groupMap.has(key)) {
-        const session = sessions.find((s) => s.sessionId === t.channelName);
-        const agentName = t.createdBy.replace('openagents:', '');
-        groupMap.set(key, {
-          channelName: t.channelName,
-          channelTitle: session?.title || t.channelName,
-          agentName,
-          pending: [],
-          inProgress: [],
-          completed: [],
-        });
+    function buildGroups(items: TodoItem[]): GroupedTodos[] {
+      const groupMap = new Map<string, GroupedTodos>();
+      for (const t of items) {
+        const key = `${t.channelName}:${t.createdBy}`;
+        if (!groupMap.has(key)) {
+          const session = sessions.find((s) => s.sessionId === t.channelName);
+          const agentName = t.createdBy.replace('openagents:', '');
+          groupMap.set(key, {
+            channelName: t.channelName,
+            channelTitle: session?.title || t.channelName,
+            agentName,
+            items: [],
+          });
+        }
+        groupMap.get(key)!.items.push(t);
       }
-      const group = groupMap.get(key)!;
-      if (t.status === 'completed') group.completed.push(t);
-      else if (t.status === 'in_progress') group.inProgress.push(t);
-      else group.pending.push(t);
+      return Array.from(groupMap.values());
     }
 
-    const groups = Array.from(groupMap.values());
-    const active = groups.filter((g) => g.pending.length > 0 || g.inProgress.length > 0);
-    const completed = groups.filter((g) => g.completed.length > 0);
+    const active = buildGroups(activeItems);
+    active.sort((a, b) => {
+      const aInProg = a.items.filter((t) => t.status === 'in_progress').length;
+      const bInProg = b.items.filter((t) => t.status === 'in_progress').length;
+      return bInProg - aInProg;
+    });
 
-    active.sort((a, b) => b.inProgress.length - a.inProgress.length);
-
-    return { activeGroups: active, recentCompleted: completed };
+    return { activeGroups: active, doneGroups: buildGroups(doneItems) };
   }, [todos, sessions, now, oneDayMs]);
 
-  const totalActive = todos.filter((t) => t.status !== 'completed').length;
+  const totalActive = todos.filter(isActive).length;
   const totalInProgress = todos.filter((t) => t.status === 'in_progress').length;
 
   return (
@@ -121,21 +122,21 @@ export function TasksView() {
                 <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Active</h3>
                 <div className="space-y-4">
                   {activeGroups.map((group) => (
-                    <TaskGroup key={`${group.channelName}:${group.agentName}`} group={group} showCompleted={false} agentNames={agentNames} />
+                    <TaskGroup key={`${group.channelName}:${group.agentName}`} group={group} agentNames={agentNames} />
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Recently completed */}
-            {recentCompleted.length > 0 && (
+            {/* Recently completed / cancelled */}
+            {doneGroups.length > 0 && (
               <div>
                 <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                   Completed (last 24h)
                 </h3>
                 <div className="space-y-4">
-                  {recentCompleted.map((group) => (
-                    <TaskGroup key={`done-${group.channelName}:${group.agentName}`} group={group} showCompleted={true} agentNames={agentNames} />
+                  {doneGroups.map((group) => (
+                    <TaskGroup key={`done-${group.channelName}:${group.agentName}`} group={group} agentNames={agentNames} />
                   ))}
                 </div>
               </div>
@@ -147,11 +148,7 @@ export function TasksView() {
   );
 }
 
-function TaskGroup({ group, showCompleted, agentNames }: { group: GroupedTodos; showCompleted: boolean; agentNames: string[] }) {
-  const items = showCompleted
-    ? group.completed
-    : [...group.inProgress, ...group.pending];
-
+function TaskGroup({ group, agentNames }: { group: GroupedTodos; agentNames: string[] }) {
   const agentColor = getAgentColor(group.agentName, agentNames);
 
   return (
@@ -171,16 +168,19 @@ function TaskGroup({ group, showCompleted, agentNames }: { group: GroupedTodos; 
 
       {/* Items */}
       <div className="divide-y divide-border">
-        {items.map((item) => (
+        {group.items.map((item) => (
           <div key={item.id} className="px-3 py-2 flex items-start gap-2.5">
             <StatusIcon status={item.status} />
             <div className="min-w-0 flex-1">
               <span className={cn(
                 'text-sm leading-snug',
-                item.status === 'completed' && 'line-through text-muted-foreground'
+                (item.status === 'completed' || item.status === 'cancelled') && 'line-through text-muted-foreground'
               )}>
                 {item.content}
               </span>
+              {item.status === 'cancelled' && (
+                <span className="text-[10px] text-muted-foreground/60 ml-1.5">(timed out)</span>
+              )}
               {item.assignee && item.assignee !== group.agentName && (
                 <span className="text-xs text-muted-foreground ml-1.5">→ {item.assignee}</span>
               )}

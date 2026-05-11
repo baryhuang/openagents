@@ -391,6 +391,27 @@ class BaseAdapter {
     }
   }
 
+  async cleanupTodos(channel) {
+    try {
+      const result = await this.client.getTodos(this.workspaceId, channel, this.token, {
+        all: false,
+      });
+      const todos = (result && result.todos) || [];
+      const hasActive = todos.some((t) => t.status === 'pending' || t.status === 'in_progress');
+      if (!hasActive) return;
+      const updated = todos.map((t) => ({
+        content: t.content,
+        status: (t.status === 'pending' || t.status === 'in_progress') ? 'cancelled' : t.status,
+        assignee: t.assignee,
+      }));
+      await this.client.putTodos(this.workspaceId, channel, this.token, updated, {
+        source: `openagents:${this.agentName}`,
+      });
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+
   async sendTodos(channel, todos) {
     try {
       await this.client.putTodos(this.workspaceId, channel, this.token, todos, {

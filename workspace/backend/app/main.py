@@ -24,10 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 async def _timer_loop():
-    """Background loop that fires due timers by posting messages."""
-    from sqlalchemy import select
+    """Background loop that fires due timers and expires stale todos."""
+    from datetime import timedelta
+    from sqlalchemy import select, update
     from app.database import SessionLocal
-    from app.models import TimerRecord, Workspace
+    from app.models import TimerRecord, TodoRecord, Workspace
     from app.pipeline_factory import pipeline
     from openagents.core.onm_events import Event
     from openagents.core.onm_mods import PipelineContext
@@ -37,6 +38,8 @@ async def _timer_loop():
             db = SessionLocal()
             try:
                 now = datetime.now(timezone.utc)
+
+                # ── Fire due timers ──
                 due = db.execute(
                     select(TimerRecord).where(
                         TimerRecord.status == "active",
@@ -72,6 +75,21 @@ async def _timer_loop():
                         await pipeline.process(event, ctx)
                     except Exception:
                         logger.exception("Timer fire failed for %s", timer.id)
+
+                # ── Expire stale todos (no update for 1 hour) ──
+                stale_cutoff = now - timedelta(hours=1)
+                expired = db.execute(
+                    update(TodoRecord)
+                    .where(
+                        TodoRecord.status.in_(["pending", "in_progress"]),
+                        TodoRecord.updated_at < stale_cutoff,
+                    )
+                    .values(status="cancelled", updated_at=now)
+                    .returning(TodoRecord.id)
+                ).fetchall()
+                if expired:
+                    logger.info("Expired %d stale todo(s)", len(expired))
+
                 db.commit()
             finally:
                 db.close()

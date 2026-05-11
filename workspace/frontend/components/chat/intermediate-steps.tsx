@@ -159,9 +159,9 @@ const StepItem = memo(function StepItem({ message }: { message: WorkspaceMessage
         <div className="ml-[22px] space-y-0.5">
           {todos.map((t, i) => (
             <div key={i} className="flex items-center gap-1.5 text-xs">
-              <span className="shrink-0">{t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜'}</span>
+              <span className="shrink-0">{t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : t.status === 'cancelled' ? '⊘' : '⬜'}</span>
               <span className={cn(
-                t.status === 'completed' && 'line-through text-muted-foreground'
+                (t.status === 'completed' || t.status === 'cancelled') && 'line-through text-muted-foreground'
               )}>{t.content}</span>
               {t.assignee && (
                 <span className="text-muted-foreground/50 text-[10px]">→ {t.assignee}</span>
