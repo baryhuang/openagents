@@ -311,7 +311,7 @@ class DeviceToken(Base):
 
     __tablename__ = "device_tokens"
 
-    id = Column(Text, primary_key=True, default=_uuid, server_default=text("gen_random_uuid()"))
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()"))
     workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     fcm_token = Column(Text, nullable=False)
     device_type = Column(Text, nullable=False)            # "ios" | future: "android" | "macos"
