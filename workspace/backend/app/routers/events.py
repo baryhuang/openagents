@@ -10,7 +10,7 @@ import hashlib
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, case, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
@@ -57,6 +57,7 @@ def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
 @router.post("/events")
 async def send_event(
     body: SendEventRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -115,6 +116,24 @@ async def send_event(
         )
 
     db.commit()
+
+    # Fan out push notifications for relevant events. Runs after the
+    # response is sent (FastAPI BackgroundTasks); never blocks event
+    # creation; failures are logged but never raised. The service opens
+    # its own short-lived DB session because `db` here is request-scoped.
+    from app.services.push import fanout_for_event
+    background_tasks.add_task(
+        fanout_for_event,
+        str(workspace.id),
+        {
+            "id": result.id,
+            "type": result.type,
+            "source": result.source,
+            "target": result.target,
+            "payload": result.payload,
+            "timestamp": result.timestamp,
+        },
+    )
 
     return success_response({
         "id": result.id,
