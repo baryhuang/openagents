@@ -6,6 +6,8 @@ import logging
 from typing import Dict, List, Any, Optional
 from abc import ABC, abstractmethod
 
+import litellm
+
 logger = logging.getLogger(__name__)
 
 
@@ -676,21 +678,12 @@ class LiteLLMProvider(BaseModelProvider):
     def __init__(self, model_name: str, **kwargs):
         self.model_name = model_name
 
-        try:
-            import litellm  # noqa: F401
-        except ImportError:
-            raise ImportError(
-                "litellm package is required for LiteLLM provider. "
-                "Install with: pip install litellm"
-            )
-
     async def chat_completion(
         self,
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Generate chat completion using LiteLLM SDK."""
-        import litellm
 
         kwargs: Dict[str, Any] = {"model": self.model_name, "messages": messages}
 
