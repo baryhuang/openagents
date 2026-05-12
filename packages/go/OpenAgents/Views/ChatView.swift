@@ -27,7 +27,13 @@ struct ChatView: View {
     @State private var showingPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showingFileImporter = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
+
+    /// Whether the right-hand "Content" sidebar (workspace files) is showing.
+    /// Toggled from the chat header (macOS) or toolbar (iOS). Default off
+    /// per the spec — users opt in when they need the artifact list.
+    @State private var showContentSidebar: Bool = false
 
     private static let defaultInputHeight: CGFloat = 44
     private static let minInputHeight: CGFloat = 36
@@ -48,7 +54,44 @@ struct ChatView: View {
             || !pendingAttachments.isEmpty
     }
 
+    /// On wide layouts (macOS, iPad regular hsize) the sidebar slots into the
+    /// chat column as a side-by-side panel. On iPhone (compact) it would
+    /// squeeze the messages too far, so it appears as a sheet instead.
+    private var sidebarIsInline: Bool {
+        #if os(macOS)
+        return true
+        #else
+        return horizontalSizeClass == .regular
+        #endif
+    }
+
     var body: some View {
+        HStack(spacing: 0) {
+            chatColumn
+            if showContentSidebar && sidebarIsInline {
+                Divider()
+                ContentSidebar(isPresented: $showContentSidebar)
+                    .frame(width: 280)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: showContentSidebar)
+        #if os(iOS)
+        .sheet(isPresented: Binding(
+            get: { showContentSidebar && !sidebarIsInline },
+            set: { showContentSidebar = $0 },
+        )) {
+            ContentSidebar(isPresented: $showContentSidebar)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                contentSidebarToggle
+            }
+        }
+        #endif
+    }
+
+    private var chatColumn: some View {
         VStack(spacing: 0) {
             if let error = store.lastError {
                 ErrorBanner(message: error) { store.lastError = nil }
@@ -103,6 +146,24 @@ struct ChatView: View {
         #endif
     }
 
+    /// Toolbar/header button that toggles the right-hand Content sidebar.
+    /// Same visual identity across platforms so users carrying habits from
+    /// the web app find it immediately.
+    private var contentSidebarToggle: some View {
+        Button {
+            showContentSidebar.toggle()
+        } label: {
+            Image(systemName: showContentSidebar ? "sidebar.right" : "sidebar.right")
+                .symbolVariant(showContentSidebar ? .fill : .none)
+                .font(.system(size: 14, weight: .medium))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showContentSidebar ? "Hide content sidebar" : "Show content sidebar")
+        #if os(macOS)
+        .help("Toggle content sidebar")
+        #endif
+    }
+
     // MARK: - Sections
 
     private func header(for session: Session) -> some View {
@@ -126,6 +187,8 @@ struct ChatView: View {
                 AvatarStack(agents: sessionAgents)
                     .frame(width: 36, height: 36)
             }
+            contentSidebarToggle
+                .padding(.leading, 6)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

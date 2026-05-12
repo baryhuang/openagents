@@ -273,6 +273,40 @@ actor WorkspaceAPI {
         )
     }
 
+    // MARK: - File listing
+
+    /// Fetch a page of workspace files for the content sidebar. Most recent
+    /// first — matches the React `file-list.tsx` ordering. `channel` narrows
+    /// to a single thread; pass nil to list all files in the workspace
+    /// (the v1 sidebar shows the whole workspace).
+    func listFiles(
+        channel: String? = nil,
+        status: String = "active",
+        limit: Int = 100,
+        offset: Int = 0,
+    ) async throws -> WorkspaceFileListResponse {
+        var query: [(String, String)] = [
+            ("network", workspaceId),
+            ("status", status),
+            ("limit", "\(limit)"),
+            ("offset", "\(offset)"),
+        ]
+        if let channel { query.append(("channel_name", channel)) }
+        let request = try makeRequest(path: "/v1/files", query: query)
+        return try await send(request, as: WorkspaceFileListResponse.self)
+    }
+
+    /// Pre-built `URLRequest` for downloading a file's bytes. Used by the
+    /// authenticated image loader since `AsyncImage` can't carry headers.
+    func authorizedDownloadRequest(fileId: String) -> URLRequest {
+        var request = URLRequest(url: baseURL.appendingPathComponent("/v1/files/\(fileId)"))
+        request.cachePolicy = .returnCacheDataElseLoad
+        if !token.isEmpty {
+            request.setValue(token, forHTTPHeaderField: "X-Workspace-Token")
+        }
+        return request
+    }
+
     // MARK: - File uploads
 
     /// Backend response for `POST /v1/files`.

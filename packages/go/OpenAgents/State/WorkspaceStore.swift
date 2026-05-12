@@ -445,6 +445,25 @@ final class WorkspaceStore {
         }
     }
 
+    // MARK: - Files (used by ContentSidebar)
+
+    /// Fetch a page of workspace files for the sidebar. Returns the raw
+    /// response so the caller can decide whether to merge / paginate.
+    /// Errors are surfaced as a thrown error rather than via `lastError` so
+    /// the sidebar can render its own inline failure state instead of a
+    /// banner over the whole chat.
+    func listFiles(channel: String? = nil, limit: Int = 100) async throws -> [WorkspaceFile] {
+        let resp = try await api.listFiles(channel: channel, limit: limit)
+        return resp.files
+    }
+
+    /// `URLRequest` for downloading a file's bytes, with the workspace token
+    /// pre-attached. Used by `AuthorizedAsyncImage` since `AsyncImage`
+    /// doesn't accept custom headers.
+    func authorizedFileDownloadRequest(fileId: String) async -> URLRequest {
+        await api.authorizedDownloadRequest(fileId: fileId)
+    }
+
     // MARK: - Polling
 
     private func startPolling() {
