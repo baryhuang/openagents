@@ -52,6 +52,11 @@ class BaseAdapter {
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
     this._channelQueues = {};
+    // Wall-clock timestamp of adapter init, used by the `status` control
+    // action to report uptime back to the channel. Reset on reinstantiation
+    // (e.g. after a `restart` IPC bounce) so uptime tracks "time since last
+    // restart" rather than the long-running daemon's process uptime.
+    this._startedAt = Date.now();
     this._log = (msg) => {
       const ts = new Date().toISOString();
       console.log(`${ts} INFO adapter [${this.agentName}]: ${msg}`);
@@ -79,8 +84,12 @@ class BaseAdapter {
       this._log(`Warning: join failed: ${e.message} \nStack: ${e.stack}`);
     }
 
-    await this._skipExistingEvents();
-
+    // Fast-path operations (control-event cursor + heartbeat + control poll)
+    // run BEFORE the message-cursor advance. Even though _skipExistingEvents
+    // is fast on a healthy backend, we don't want slash commands gated on
+    // its success — keeping these paths independent makes /restart and
+    // /status responsive immediately after join.
+    await this._skipExistingControlEvents();
     const heartbeatInterval = setInterval(() => this._heartbeat(), 30000);
     const controlPoller = this._controlPollerLoop();
 
@@ -89,6 +98,8 @@ class BaseAdapter {
       try { await this._heartbeat(); } catch (e) {
         this._log(`Heartbeat failed (non-fatal): ${e.message}`);
       }
+      // Slow path: only the message-poll loop waits for this.
+      await this._skipExistingEvents();
       this._log('Starting poll loop...');
       await this._pollLoop();
     } finally {
@@ -144,6 +155,26 @@ class BaseAdapter {
   // Control polling
   // ------------------------------------------------------------------
 
+  /**
+   * Advance `_lastControlId` past any pending control events for this agent
+   * so we don't re-process them after a respawn. Without this, /restart
+   * triggers a daemon bounce, the new adapter starts with _lastControlId=null,
+   * polls and re-finds the same /restart event, bounces again — restart loop.
+   */
+  async _skipExistingControlEvents() {
+    try {
+      const events = await this.client.pollControl(
+        this.workspaceId, this.agentName, this.token,
+        { after: null }
+      );
+      if (events.length > 0) {
+        // pollControl returns ascending-by-timestamp; take the latest.
+        this._lastControlId = events[events.length - 1].id;
+        this._log(`Skipped ${events.length} existing control event(s), cursor at ${this._lastControlId}`);
+      }
+    } catch {}
+  }
+
   async _pollControl() {
     try {
       const events = await this.client.pollControl(
@@ -169,9 +200,66 @@ class BaseAdapter {
   }
 
   /**
-   * Handle adapter-specific control actions. Override in subclasses.
+   * Handle adapter-specific control actions. Override in subclasses to add
+   * per-adapter actions (`stop`, `restart`, …); always call
+   * `await super._onControlAction(action, payload)` from the override for
+   * actions you don't recognize, so shared actions like `status` keep
+   * working uniformly across adapter types.
    */
-  async _onControlAction(_action, _payload) {}
+  async _onControlAction(action, payload) {
+    if (action === 'status') {
+      await this._postStatusReport(payload);
+    }
+  }
+
+  /**
+   * Post a chat message back to the requesting channel summarizing agent
+   * name, type, agent-launcher version, uptime, and network. Used by the
+   * `/status` slash command.
+   */
+  async _postStatusReport(payload) {
+    const channel = (payload && typeof payload === 'object') ? payload.channel : null;
+    if (!channel) return;
+
+    let pkgVersion = 'unknown';
+    try {
+      const path = require('path');
+      const pkg = require(path.join(__dirname, '..', '..', 'package.json'));
+      pkgVersion = pkg.version || 'unknown';
+    } catch {}
+
+    const uptimeMs = Math.max(0, Date.now() - this._startedAt);
+    const totalSec = Math.floor(uptimeMs / 1000);
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    let uptime;
+    if (days > 0) uptime = `${days}d ${hours}h ${minutes}m`;
+    else if (hours > 0) uptime = `${hours}h ${minutes}m`;
+    else if (minutes > 0) uptime = `${minutes}m ${seconds}s`;
+    else uptime = `${seconds}s`;
+
+    const adapterType = this.agentType || 'unknown';
+    const content =
+      `**Agent status**\n` +
+      `- Name: \`${this.agentName}\` (${adapterType})\n` +
+      `- Version: agent-launcher \`${pkgVersion}\`\n` +
+      `- Uptime: ${uptime}\n` +
+      `- Network: \`${this.workspaceId}\``;
+
+    try {
+      await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
+        senderType: 'agent',
+        senderName: this.agentName,
+        messageType: 'chat',
+        metadata: { agent_mode: this._mode },
+        sessionId: this._sessionId,
+      });
+    } catch (e) {
+      this._log(`Status: failed to post: ${e && e.message ? e.message : e}`);
+    }
+  }
 
   _hasActiveWork() {
     return this._channelBusy.size > 0;
@@ -388,6 +476,53 @@ class BaseAdapter {
         return;
       }
       throw e;
+    }
+  }
+
+  async cleanupTodos(channel) {
+    try {
+      const result = await this.client.getTodos(this.workspaceId, channel, this.token, {
+        all: false,
+      });
+      const todos = (result && result.todos) || [];
+      const hasActive = todos.some((t) => t.status === 'pending' || t.status === 'in_progress');
+      if (!hasActive) return;
+      const updated = todos.map((t) => ({
+        content: t.content,
+        status: (t.status === 'pending' || t.status === 'in_progress') ? 'cancelled' : t.status,
+        assignee: t.assignee,
+      }));
+      await this.client.putTodos(this.workspaceId, channel, this.token, updated, {
+        source: `openagents:${this.agentName}`,
+      });
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+
+  async sendTodos(channel, todos) {
+    try {
+      await this.client.putTodos(this.workspaceId, channel, this.token, todos, {
+        source: `openagents:${this.agentName}`,
+      });
+    } catch (e) {
+      if (e instanceof SessionRevokedError) { this._onSessionRevoked(); return; }
+      // Fallback to event-based approach for older backends
+      const lines = todos.map((t) => {
+        const icon = t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜';
+        return `${icon} ${t.content}`;
+      });
+      try {
+        await this.client.sendMessage(this.workspaceId, channel, this.token, lines.join('\n'), {
+          senderType: 'agent',
+          senderName: this.agentName,
+          messageType: 'todos',
+          metadata: { agent_mode: this._mode, todos },
+          sessionId: this._sessionId,
+        });
+      } catch (e2) {
+        if (e2 instanceof SessionRevokedError) this._onSessionRevoked();
+      }
     }
   }
 

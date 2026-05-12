@@ -9,6 +9,8 @@ import type {
   NetworkDiscovery,
   NetworkProfile,
   ONMEvent,
+  TimerItem,
+  TodoItem,
   Workspace,
   WorkspaceAgent,
   WorkspaceCollaborator,
@@ -604,6 +606,73 @@ class WorkspaceApi {
   async latestPerChannel(): Promise<{ channels: Record<string, ONMEvent> }> {
     const params = new URLSearchParams({ network: this.workspaceId });
     return this.request<{ channels: Record<string, ONMEvent> }>(`/v1/events/latest-per-channel?${params}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Todos / Tasks
+  // ---------------------------------------------------------------------------
+
+  async listTodos(): Promise<{ todos: TodoItem[] }> {
+    const params = new URLSearchParams({ network: this.workspaceId, all: 'true' });
+    const raw = await this.request<{ todos: Record<string, unknown>[] }>(`/v1/todos?${params}`);
+    return {
+      todos: (raw.todos || []).map((t): TodoItem => ({
+        id: t.id as string,
+        content: t.content as string,
+        status: t.status as TodoItem['status'],
+        assignee: t.assignee as string,
+        createdBy: (t.created_by || '') as string,
+        channelName: (t.channel_name || '') as string,
+        threadId: (t.thread_id || null) as string | null,
+        position: (t.position || 0) as number,
+        createdAt: (t.created_at || null) as string | null,
+        updatedAt: (t.updated_at || null) as string | null,
+      })),
+    };
+  }
+
+  async listTimers(channel?: string): Promise<{ timers: TimerItem[] }> {
+    const params = new URLSearchParams({ network: this.workspaceId });
+    if (channel) params.set('channel', channel);
+    const raw = await this.request<{ timers: Record<string, unknown>[] }>(`/v1/timers?${params}`);
+    return {
+      timers: (raw.timers || []).map((t): TimerItem => ({
+        id: t.id as string,
+        message: t.message as string,
+        delaySeconds: (t.delay_seconds || 0) as number,
+        firesAt: (t.fires_at || '') as string,
+        status: (t.status || 'active') as string,
+        createdBy: (t.created_by || '') as string,
+        channelName: (t.channel_name || '') as string,
+        createdAt: (t.created_at || null) as string | null,
+      })),
+    };
+  }
+
+  async cancelTimer(timerId: string): Promise<void> {
+    await this.request<unknown>(`/v1/timers/${timerId}`, { method: 'DELETE' });
+  }
+
+  async cancelChannelTodos(channel: string, source: string): Promise<void> {
+    const params = new URLSearchParams({ network: this.workspaceId, channel, source });
+    const raw = await this.request<{ todos: Record<string, unknown>[] }>(`/v1/todos?${params}`);
+    const todos = raw.todos || [];
+    const hasActive = todos.some((t) => t.status === 'pending' || t.status === 'in_progress');
+    if (!hasActive) return;
+    const updated = todos.map((t) => ({
+      content: t.content as string,
+      status: (t.status === 'pending' || t.status === 'in_progress') ? 'cancelled' : t.status as string,
+      assignee: t.assignee as string,
+    }));
+    await this.request<unknown>('/v1/todos', {
+      method: 'PUT',
+      body: JSON.stringify({
+        todos: updated,
+        network: this.workspaceId,
+        channel,
+        source,
+      }),
+    });
   }
 }
 

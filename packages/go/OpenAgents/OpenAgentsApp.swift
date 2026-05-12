@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct OpenAgentsApp: App {
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var pushSink = PushSink()
+    #endif
     @State private var router = AppRouter()
     @State private var debugLogOpen: Bool = false
     @State private var settingsOpen: Bool = false
@@ -11,6 +15,13 @@ struct OpenAgentsApp: App {
         WindowGroup {
             RootView()
                 .environment(router)
+                #if os(iOS)
+                .environment(pushSink)
+                .task {
+                    appDelegate.pushSink = pushSink
+                    pushSink.router = router
+                }
+                #endif
                 .onOpenURL { url in
                     // Triggered when another app hands us a file via iOS
                     // "Open in…" / Share Sheet, macOS "Open With", or

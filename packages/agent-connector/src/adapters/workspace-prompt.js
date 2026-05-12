@@ -205,9 +205,73 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     sections.push(s);
   }
 
+  // Message history
+  sections.push(
+    '\n### Message History\n\n' +
+    '**Get recent messages in the current channel:**\n' +
+    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=${channelName}&type=workspace.message&sort=desc&limit=20"\`\n\n` +
+    '**Get messages from a specific channel:**\n' +
+    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=CHANNEL_NAME&type=workspace.message&sort=desc&limit=20"\`\n`
+  );
+
+  // Post status update
+  if (!isPlan) {
+    sections.push(
+      '\n### Post Status Update\n\n' +
+      'Post a status/thinking message (visible in the workspace UI as an intermediate step):\n' +
+      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/events -d '{"type":"workspace.message.posted",` +
+      `"source":"openagents:${agentName}","target":"channel/${channelName}",` +
+      `"payload":{"content":"YOUR_STATUS","message_type":"status"}}'\`\n`
+    );
+  }
+
+  // To-Dos (planning)
+  if (!isPlan) {
+    sections.push(
+      '\n### To-Do List (Planning)\n\n' +
+      'Create or update your to-do list to track progress. The entire list ' +
+      'is replaced each time (send the full list with current statuses).\n\n' +
+      '**Status values:** `pending`, `in_progress`, `completed`\n\n' +
+      '**Update your to-do list:**\n' +
+      `\`curl -s -X PUT -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/todos -d '{"todos":[` +
+      `{"content":"First task","status":"in_progress"},` +
+      `{"content":"Second task","status":"pending"}` +
+      `],"network":"${workspaceId}","channel":"${channelName}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**Get your to-do list:**\n' +
+      `\`curl -s -H "${h}" "${baseUrl}/v1/todos?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      'Use to-dos to plan multi-step work. Update the list as you complete each step.\n' +
+      'You can assign items to other agents: `"assignee": "other-agent-name"`\n'
+    );
+  }
+
+  // Timers
+  if (!isPlan) {
+    sections.push(
+      '\n### Timers\n\n' +
+      'Set a timer that will send you a message after a delay, waking you up ' +
+      'to continue work. Use this instead of `sleep` — timers let you release ' +
+      'the session and get called back later.\n\n' +
+      'Use cases: check back on a deploy, retry after a rate limit, remind ' +
+      'yourself to follow up.\n\n' +
+      '**Create a timer:**\n' +
+      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/timers -d '{"delay":300,"message":"Check the build",` +
+      `"network":"${workspaceId}","channel":"${channelName}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**List active timers:**\n' +
+      `\`curl -s -H "${h}" "${baseUrl}/v1/timers?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      '**Cancel a timer:**\n' +
+      `\`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/timers/TIMER_ID\`\n`
+    );
+  }
+
   // Discovery
   sections.push(
-    '\n### Discover Agents\n' +
+    '\n### Discover Agents\n\n' +
+    '**List all agents in the workspace (with status and role):**\n' +
     `\`curl -s -H "${h}" ${baseUrl}/v1/discover?network=${workspaceId}\`\n`
   );
 
@@ -223,7 +287,9 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
   parts.push(
     'Use workspace_get_history to read previous messages.\n' +
-    'Use workspace_get_agents to see other agents.\n'
+    'Use workspace_get_agents to see other agents.\n' +
+    'Use workspace_put_todos to track your progress with a to-do list.\n' +
+    'Use workspace_create_timer to set a reminder that wakes you up later.\n'
   );
   parts.push(buildCollaborationPrompt());
 
@@ -321,6 +387,37 @@ function buildOpenCodeSkillMd({ endpoint, workspaceId, token, agentName, channel
   return frontmatter + identity + api;
 }
 
+/**
+ * Build a SKILL.md file for Claude Code's skill auto-discovery.
+ *
+ * When tool_mode is 'skills', the Claude adapter writes this file instead
+ * of spawning an MCP server. Claude Code discovers the skill via its
+ * .claude/skills/ directory and uses Bash + curl to call workspace APIs.
+ */
+function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules }) {
+  const api = buildApiSkillsPrompt({
+    endpoint, workspaceId, token, agentName,
+    channelName: channelName || 'general',
+    disabledModules,
+    mode: 'execute',
+  });
+
+  const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
+  const collab = buildCollaborationPrompt();
+
+  const frontmatter =
+    '---\n' +
+    'name: openagents-workspace\n' +
+    'description: |\n' +
+    '  OpenAgents Workspace collaboration tools — shared files, browser,\n' +
+    '  and multi-agent coordination. Use when: sharing files or reports,\n' +
+    '  browsing websites, reading shared files, checking workspace agents,\n' +
+    '  or collaborating with other agents via @mentions.\n' +
+    '---\n\n';
+
+  return frontmatter + identity + '\n' + collab + '\n' + api;
+}
+
 module.exports = {
   buildWorkspaceIdentity,
   buildCollaborationPrompt,
@@ -331,4 +428,5 @@ module.exports = {
   buildOpenclawSkillMd,
   buildOpenCodeSystemPrompt,
   buildOpenCodeSkillMd,
+  buildClaudeSkillMd,
 };

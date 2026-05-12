@@ -18,7 +18,7 @@ const { execSync, spawn } = require('child_process');
 
 const BaseAdapter = require('./base');
 const { formatAttachmentsForPrompt, SESSION_DEFAULT_RE, generateSessionTitle } = require('./utils');
-const { buildClaudeSystemPrompt } = require('./workspace-prompt');
+const { buildClaudeSystemPrompt, buildClaudeSkillMd } = require('./workspace-prompt');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -31,6 +31,8 @@ class ClaudeAdapter extends BaseAdapter {
   constructor(opts) {
     super(opts);
     this.disabledModules = opts.disabledModules || new Set();
+    /** @type {'mcp' | 'skills'} Tool integration mode */
+    this.toolMode = opts.toolMode || 'mcp';
     this._channelSessions = {}; // channel → Claude CLI session_id
     this._channelProcesses = {}; // channel → child process
     this._stoppingChannels = new Set();
@@ -63,10 +65,74 @@ class ClaudeAdapter extends BaseAdapter {
     } catch {}
   }
 
-  async _onControlAction(action, _payload) {
+  async _onControlAction(action, payload) {
     if (action === 'stop') {
       await this._stopAllProcesses('Execution stopped by user.');
+      return;
     }
+    if (action === 'restart') {
+      const channel = (payload && typeof payload === 'object') ? payload.channel : null;
+      if (channel) {
+        // Kill in-flight subprocess + clear the per-channel session BEFORE
+        // asking the daemon to bounce us. The new adapter spawned after
+        // the bounce loads sessions from disk, so the cleared state must
+        // be persisted first.
+        const proc = this._channelProcesses[channel];
+        if (proc) {
+          try { await this._stopProcess(proc); } catch {}
+          delete this._channelProcesses[channel];
+        }
+        if (this._channelSessions[channel]) {
+          delete this._channelSessions[channel];
+          try { this._saveSessions(); } catch {}
+          this._log(`Restart: cleared session for channel=${channel}`);
+        } else {
+          this._log(`Restart: no session to clear for channel=${channel}`);
+        }
+        // Post the status BEFORE the bounce so the message lands while
+        // we're still online.
+        try {
+          await this.client.sendMessage(this.workspaceId, channel, this.token,
+            'Session restarted — next message starts fresh.',
+            {
+              senderType: 'agent',
+              senderName: this.agentName,
+              messageType: 'status',
+              metadata: { agent_mode: this._mode },
+              sessionId: this._sessionId,
+            });
+        } catch (e) {
+          this._log(`Restart: failed to post status: ${e && e.message ? e.message : e}`);
+        }
+      } else {
+        // Defensive — no channel, clear everything before the bounce.
+        this._channelSessions = {};
+        try { this._saveSessions(); } catch {}
+        await this._stopAllProcesses('Execution stopped by user.');
+        this._log('Restart: cleared all sessions (no channel param)');
+      }
+      // Ask the daemon to bounce just THIS agent — true process-level
+      // restart. Daemon's command-file poller picks up `restart:<name>`
+      // within ~1s, calls restartAgent, our run() loop exits cleanly,
+      // and a fresh adapter is spawned with a new `_startedAt`. Sibling
+      // agents on the same daemon are untouched.
+      try {
+        const path = require('path');
+        const os = require('os');
+        const fs = require('fs');
+        const cmdFile = path.join(os.homedir(), '.openagents', 'daemon.cmd');
+        fs.writeFileSync(cmdFile, `restart:${this.agentName}\n`);
+        this._log(`Restart: requested daemon bounce for agent=${this.agentName}`);
+      } catch (e) {
+        this._log(`Restart: failed to write daemon.cmd: ${e && e.message ? e.message : e}`);
+        // Fallback: reset uptime in-place so the next /status reflects
+        // SOMETHING changed even if the daemon bounce didn't happen.
+        this._startedAt = Date.now();
+      }
+      return;
+    }
+    // Fall through to base for shared actions (status, etc.).
+    await super._onControlAction(action, payload);
   }
 
   /**
@@ -126,6 +192,48 @@ class ClaudeAdapter extends BaseAdapter {
         });
       }
     } catch {}
+  }
+
+  /**
+   * Build a short transcript of the channel's last chat exchanges, used to
+   * re-seed context when --resume fails and we have to start a fresh
+   * Claude Code session. Returns null when there's nothing useful to add.
+   *
+   * Excludes the user's current message (the for-loop will append it
+   * normally) and any status/thinking events, which are mostly tool-call
+   * noise and inflate the prompt without adding signal.
+   */
+  async _buildChannelRecap(channelName, currentMessage) {
+    const messages = await this.client.getRecentMessages(
+      this.workspaceId, channelName, this.token, 30
+    );
+    if (!messages || messages.length === 0) return null;
+
+    const lines = [];
+    for (const m of messages) {
+      const mt = m.messageType || 'chat';
+      if (mt === 'status' || mt === 'thinking' || mt === 'loading') continue;
+      const text = (m.content || '').trim();
+      if (!text) continue;
+      // Don't echo the user's current message back at them.
+      if (text === currentMessage) continue;
+      const who = m.senderType === 'human'
+        ? (m.senderName || 'user')
+        : (m.senderName || 'agent');
+      // Cap each line so a single huge paste doesn't blow up the prompt.
+      const truncated = text.length > 800 ? text.slice(0, 800) + '…' : text;
+      lines.push(`[${who}] ${truncated}`);
+    }
+    if (lines.length === 0) return null;
+
+    // Keep only the tail; older context has diminishing value and we
+    // don't want to balloon the system prompt.
+    const tail = lines.slice(-15).join('\n');
+    return (
+      'You previously worked in this channel but your prior session is no ' +
+      'longer available, so here is the recent conversation for context:\n\n' +
+      tail
+    );
   }
 
   async _stopAllProcesses(completionMessage = 'Execution stopped.') {
@@ -243,15 +351,82 @@ class ClaudeAdapter extends BaseAdapter {
       throw new Error('claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash');
     }
 
-    const systemPrompt = '\n' + buildClaudeSystemPrompt({
+    let systemPrompt = '\n' + buildClaudeSystemPrompt({
       agentName: this.agentName,
       workspaceId: this.workspaceId,
       channelName,
       mode: this._mode,
     });
 
+    // In skills mode, replace MCP tool references with curl-based instructions
+    if (this.toolMode === 'skills') {
+      systemPrompt = systemPrompt
+        .replace(
+          'Use workspace_get_history to read previous messages.\n' +
+          'Use workspace_get_agents to see other agents.\n',
+          'Use the openagents-workspace skill (Bash + curl) for workspace operations:\n' +
+          'reading message history, discovering agents, sharing files, browsing,\n' +
+          'managing to-do lists, and setting timers.\n' +
+          'Refer to the skill instructions for the exact curl commands.\n'
+        );
+    }
+
     const cmd = [claudeBin, '-p', prompt, '--output-format', 'stream-json', '--verbose'];
 
+    cmd.push('--append-system-prompt', systemPrompt);
+    cmd.push('--disallowedTools', 'AskUserQuestion');
+
+    // Resume existing conversation (skipped on retry after stale session)
+    const sessionId = this._channelSessions[channelName];
+    if (sessionId && !skipResume) {
+      cmd.push('--resume', sessionId);
+    }
+
+    // ── Skills mode: write SKILL.md, no MCP server ──
+    if (this.toolMode === 'skills') {
+      return this._buildSkillsCmd(cmd, channelName);
+    }
+
+    // ── MCP mode (default): spawn MCP server ──
+    return this._buildMcpCmd(cmd, channelName);
+  }
+
+  /**
+   * Skills mode: write a SKILL.md file and allow Bash + curl for workspace ops.
+   */
+  _buildSkillsCmd(cmd, channelName) {
+    if (this._mode === 'plan') {
+      cmd.push('--permission-mode', 'plan');
+      cmd.push('--allowedTools', 'Read', 'Glob', 'Grep', 'Bash');
+    } else {
+      cmd.push('--dangerously-skip-permissions');
+      cmd.push('--allowedTools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
+    }
+
+    // Write SKILL.md to .claude/skills/ in the working directory
+    const workDir = this.workingDir || process.cwd();
+    const skillDir = path.join(workDir, '.claude', 'skills');
+    fs.mkdirSync(skillDir, { recursive: true });
+    const skillFile = path.join(skillDir, 'openagents-workspace.md');
+
+    const skillContent = buildClaudeSkillMd({
+      endpoint: this.endpoint,
+      workspaceId: this.workspaceId,
+      token: this.token,
+      agentName: this.agentName,
+      channelName,
+      disabledModules: this.disabledModules,
+    });
+    fs.writeFileSync(skillFile, skillContent, 'utf-8');
+    this._log(`Wrote workspace skill to ${skillFile}`);
+
+    return { cmd, skillFile };
+  }
+
+  /**
+   * MCP mode (default): spawn MCP server subprocess for workspace tools.
+   */
+  _buildMcpCmd(cmd, channelName) {
     // Mode-dependent permission and tool flags
     const pfx = 'mcp__openagents-workspace__';
     const mcpTools = [
@@ -284,23 +459,16 @@ class ClaudeAdapter extends BaseAdapter {
       mcpWriteTools.push(`${pfx}tunnel_expose`, `${pfx}tunnel_close`);
     }
 
-    let allowed;
+    // Todos & Timers (always enabled)
+    mcpTools.push(`${pfx}workspace_get_todos`, `${pfx}workspace_list_timers`);
+    mcpWriteTools.push(`${pfx}workspace_put_todos`, `${pfx}workspace_create_timer`, `${pfx}workspace_cancel_timer`);
+
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');
-      allowed = [...mcpTools, 'Read', 'Glob', 'Grep'];
+      cmd.push('--allowedTools', ...mcpTools, 'Read', 'Glob', 'Grep');
     } else {
       cmd.push('--dangerously-skip-permissions');
-      allowed = [...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
-    }
-
-    cmd.push('--append-system-prompt', systemPrompt);
-    cmd.push('--allowedTools', ...allowed);
-    cmd.push('--disallowedTools', 'AskUserQuestion');
-
-    // Resume existing conversation (skipped on retry after stale session)
-    const sessionId = this._channelSessions[channelName];
-    if (sessionId && !skipResume) {
-      cmd.push('--resume', sessionId);
+      cmd.push('--allowedTools', ...mcpTools, ...mcpWriteTools, 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
     }
 
     // MCP config for workspace tools
@@ -314,18 +482,13 @@ class ClaudeAdapter extends BaseAdapter {
     if (this.disabledModules.has('files')) mcpArgs.push('--disable-files');
     if (this.disabledModules.has('browser')) mcpArgs.push('--disable-browser');
 
-    // Resolve the MCP server entry point. Prefer the sibling bin inside this
-    // very package — it's guaranteed to exist whenever claude.js is executing,
-    // so it never falls through to a broken PATH lookup. If Claude Code can't
-    // spawn the MCP server, it silently hides every workspace tool and the
-    // agent reports "workspace_read_file isn't in my tool set".
+    // Resolve the MCP server entry point
     let mcpCommand = this._findNodeBin();
     let mcpFinalArgs = mcpArgs;
     const siblingBin = path.resolve(__dirname, '..', '..', 'bin', 'agent-connector.js');
     if (fs.existsSync(siblingBin)) {
       mcpFinalArgs = [siblingBin, ...mcpArgs];
     } else {
-      // Fallback: search installed locations (older layouts, global installs)
       let oaBin = null;
       const home3 = os.homedir();
       const oaExt = IS_WINDOWS ? '.cmd' : '';
@@ -433,26 +596,43 @@ class ClaudeAdapter extends BaseAdapter {
     let mcpConfigFile = null;
     let cmd;
 
-    // Clean env: strip every CLAUDE_* / AI_AGENT variable inherited from a
-    // parent Claude Code (or Claude Agent SDK) process. If we don't, the
-    // spawned `claude` thinks it's running under an SDK harness and picks
-    // an org-scoped auth path that returns 403 "Account is no longer a
-    // member of the organization" even when the user is logged in fine via
-    // `claude login`. We let the child rediscover auth from
-    // ~/.claude/.credentials.json (or ANTHROPIC_API_KEY if set).
+    // Clean env: strip CLAUDE_* / AI_AGENT variables that make the spawned
+    // `claude` think it's running under an SDK harness (org-scoped auth
+    // path → 403). But preserve config vars the child needs for cloud
+    // provider auth (Vertex, Bedrock) and model selection.
+    const CLAUDE_ENV_KEEP = new Set([
+      'CLAUDE_CODE_USE_VERTEX',
+      'CLAUDE_CODE_USE_BEDROCK',
+      'CLAUDE_MODEL',
+      'CLAUDE_API_KEY',
+      'CLAUDE_CODE_MAX_TURNS',
+    ]);
     const cleanEnv = { ...(this.agentEnv || process.env) };
     for (const k of Object.keys(cleanEnv)) {
-      if (k.startsWith('CLAUDE_') || k === 'CLAUDECODE' || k === 'AI_AGENT') {
+      if ((k.startsWith('CLAUDE_') && !CLAUDE_ENV_KEEP.has(k)) || k === 'CLAUDECODE' || k === 'AI_AGENT') {
         delete cleanEnv[k];
       }
     }
 
     // Run up to 2 attempts: first with session resume, then fresh if stale session detected
     let _shouldRetry = false;
+    let effectiveContent = content;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (mcpConfigFile) { try { fs.unlinkSync(mcpConfigFile); } catch {} mcpConfigFile = null; }
+
+      // On the retry pass after a stale --resume, the spawned `claude`
+      // starts a brand-new session with no memory of prior turns. Replay
+      // the channel's recent chat history so the agent at least has a
+      // recap instead of saying "I don't see any previous messages."
+      if (attempt > 0) {
+        try {
+          const recap = await this._buildChannelRecap(msgChannel, content);
+          if (recap) effectiveContent = `${recap}\n\n---\n\n${content}`;
+        } catch {}
+      }
+
       try {
-        const built = this._buildClaudeCmd(content, msgChannel, { skipResume: attempt > 0 });
+        const built = this._buildClaudeCmd(effectiveContent, msgChannel, { skipResume: attempt > 0 });
         cmd = built.cmd;
         mcpConfigFile = built.mcpConfigFile;
       } catch (e) {
@@ -483,6 +663,7 @@ class ClaudeAdapter extends BaseAdapter {
       const lastResponseText = [];
       let hasToolUseSinceLastText = false;
       let postedThinking = false;
+      let everPostedAnything = false;
       let stderrBuf = '';
       let lineBuffer = '';
       let _pendingLines = Promise.resolve(); // chain of in-flight processLine calls
@@ -542,6 +723,7 @@ class ClaudeAdapter extends BaseAdapter {
                 }
                 lastResponseText.push(block.text.trim());
                 postedThinking = true;
+                everPostedAnything = true;
                 // Stream text in real-time as "thinking" (same as Python adapter)
                 try { await this.sendThinking(msgChannel, block.text.trim()); } catch {}
               } else if (block.type === 'tool_use') {
@@ -549,6 +731,7 @@ class ClaudeAdapter extends BaseAdapter {
                 postedThinking = false;
                 lastResponseText.length = 0;
                 const toolName = block.name || '';
+
                 // Format tool input as readable text
                 let inputPreview = '';
                 if (block.input && typeof block.input === 'object') {
@@ -565,6 +748,7 @@ class ClaudeAdapter extends BaseAdapter {
                   inputPreview = String(block.input || '').slice(0, 150);
                 }
                 await this.sendStatus(msgChannel, `${toolName} › ${inputPreview}`);
+                everPostedAnything = true;
               }
             }
           } else if (eventType === 'result') {
@@ -600,6 +784,10 @@ class ClaudeAdapter extends BaseAdapter {
           }
 
           delete this._channelProcesses[msgChannel];
+
+          // Clean up stale todos: mark pending/in_progress as cancelled
+          try { await this.cleanupTodos(msgChannel); } catch {}
+
           const stoppedByUser = this._stoppingChannels.has(msgChannel);
           if (stoppedByUser) {
             this._stoppingChannels.delete(msgChannel);
@@ -607,8 +795,8 @@ class ClaudeAdapter extends BaseAdapter {
             return;
           }
 
+          this._log(`CLI exited: code=${code}, lastResponseText=${lastResponseText.length} items, everPosted=${everPostedAnything}, hasSession=${!!this._channelSessions[msgChannel]}`);
           if (code !== 0) {
-            this._log(`CLI exited with code ${code}`);
             if (stderrBuf.trim()) {
               this._log(`stderr: ${stderrBuf.trim().slice(0, 500)}`);
             }
@@ -620,14 +808,16 @@ class ClaudeAdapter extends BaseAdapter {
               try { await this.sendResponse(msgChannel, fullResponse); } catch {}
             }
             resolve(false); // done, no retry
-          } else if (code !== 0 && this._channelSessions[msgChannel]) {
-            // No output + error exit + had a resume session → stale session, signal retry
+          } else if (this._channelSessions[msgChannel] && !everPostedAnything) {
+            // No output + had a resume session → likely stale session, retry fresh.
+            // Covers both error exits (code !== 0) and silent success (code === 0)
+            // where Claude produced no text output on a resumed conversation.
             this._log(`Stale session detected for ${msgChannel}, clearing and retrying without resume`);
             delete this._channelSessions[msgChannel];
             this._saveSessions();
             resolve(true); // retry=true
           } else {
-            if (!postedThinking) {
+            if (!everPostedAnything) {
               try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
             }
             resolve(false);

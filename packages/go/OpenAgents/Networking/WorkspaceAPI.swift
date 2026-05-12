@@ -172,6 +172,25 @@ actor WorkspaceAPI {
         return try JSONEncoder().encode(body)
     }
 
+    /// Send a control event to an agent (e.g. "stop"). Mirrors the React app's
+    /// `sendAgentControl` — posts a `workspace.agent.control` event addressed to
+    /// `openagents:<agentName>` with `action` (and optional extra params) in the payload.
+    func sendAgentControl(
+        agentName: String,
+        action: String,
+        params: [String: any Encodable & Sendable] = [:],
+    ) async throws -> ONMEvent {
+        var payload: [String: any Encodable & Sendable] = ["action": action]
+        for (k, v) in params { payload[k] = v }
+        return try await sendEvent(
+            type: "workspace.agent.control",
+            source: "human:user",
+            target: "openagents:\(agentName)",
+            payload: payload,
+            visibility: "direct",
+        )
+    }
+
     /// A page of messages returned in chronological order, with cursor info from the backend.
     struct MessageBatch: Sendable {
         let messages: [Message]   // chronological order (oldest first)
@@ -271,6 +290,36 @@ actor WorkspaceAPI {
             payload: ["content": content, "sender_type": "human"],
             visibility: "channel",
         )
+    }
+
+    // MARK: - Push notifications
+
+    /// Register this device's FCM token with the workspace backend so it can receive
+    /// pushes for events posted on this workspace. Idempotent on (workspace, token).
+    func registerDeviceToken(
+        fcmToken: String,
+        deviceType: String = "ios",
+        bundleId: String,
+    ) async throws {
+        struct Body: Encodable {
+            let network: String
+            let device_type: String
+            let fcm_token: String
+            let bundle_id: String
+        }
+        let body = try JSONEncoder().encode(Body(
+            network: workspaceId,
+            device_type: deviceType,
+            fcm_token: fcmToken,
+            bundle_id: bundleId,
+        ))
+        let request = try makeRequest(
+            path: "/v1/devices/register",
+            method: "POST",
+            body: body,
+        )
+        struct Empty: Decodable, Sendable {}
+        _ = try await send(request, as: Empty.self)
     }
 
     // MARK: - File uploads

@@ -192,6 +192,32 @@ class WorkspaceClient {
   }
 
   /**
+   * Fetch the most recent N messages in a channel, returned oldest-to-newest.
+   * Used by adapters to rebuild context for a fresh Claude Code session
+   * when --resume of the previous session fails (the channel's chat history
+   * is the only thing that survives a session-storage rotation).
+   */
+  async getRecentMessages(workspaceId, channelName, token, limit = 30) {
+    try {
+      const params = new URLSearchParams({
+        network: workspaceId,
+        channel: channelName,
+        type: 'workspace.message',
+        sort: 'desc',
+        limit: String(limit),
+      });
+      const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
+      const result = data.data || data;
+      const events = (result && result.events) || [];
+      // Server returned newest-first; reverse so the caller can present them
+      // in chronological order without further fiddling.
+      return events.slice().reverse().map((e) => this._eventToMessage(e));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Fetch the latest workspace.message.posted event id (head cursor).
    * Used by adapters to skip past existing events on join in O(1) instead
    * of paginating from the start. Returns null if the workspace is empty
@@ -267,6 +293,11 @@ class WorkspaceClient {
           // Legacy server (no target_agents): broadcast for compat
           messages.push(this._eventToMessage(e));
         }
+      } else if (source.startsWith('system:')) {
+        // System messages (timers, notifications): pick up if targeted
+        if (hasTargetList && targetAgents.includes(agentName)) {
+          messages.push(this._eventToMessage(e));
+        }
       } else if (source.startsWith('openagents:')) {
         // Agent messages: only pick up if explicitly listed
         if (hasTargetList && targetAgents.includes(agentName)) {
@@ -326,15 +357,22 @@ class WorkspaceClient {
         network: workspaceId,
         type: 'workspace.agent.control',
         limit: '10',
+        // Newest-first so the limit window doesn't get filled with ancient
+        // events for OTHER agents — a busy workspace with hundreds of old
+        // stop events would otherwise leave nothing matching this agent.
+        sort: 'desc',
       });
       if (after) params.set('after', after);
       const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
       const result = data.data || data;
       const events = (result && result.events) || [];
-      return events.filter((e) => {
+      const filtered = events.filter((e) => {
         const target = e.target || '';
         return target === `openagents:${agentName}`;
       });
+      // Re-sort ascending by timestamp so callers process oldest-first.
+      filtered.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      return filtered;
     } catch {
       return [];
     }
@@ -498,6 +536,53 @@ class WorkspaceClient {
     return data.data || data;
   }
 
+  // ── Todos & Timers ──
+
+  async putTodos(workspaceId, channelName, token, todos, { source } = {}) {
+    const body = {
+      todos,
+      network: workspaceId,
+      channel: channelName,
+      source: source || 'openagents:unknown',
+    };
+    const data = await this._put('/v1/todos', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async getTodos(workspaceId, channelName, token, { agent, all } = {}) {
+    const params = new URLSearchParams({ network: workspaceId });
+    if (channelName) params.set('channel', channelName);
+    if (agent) params.set('agent', agent);
+    if (all) params.set('all', 'true');
+    const data = await this._get(`/v1/todos?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async createTimer(workspaceId, channelName, token, delay, message, { source } = {}) {
+    const body = {
+      delay,
+      message,
+      network: workspaceId,
+      channel: channelName,
+      source: source || 'openagents:unknown',
+    };
+    const data = await this._post('/v1/timers', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async listTimers(workspaceId, channelName, token) {
+    const params = new URLSearchParams({ network: workspaceId });
+    if (channelName) params.set('channel', channelName);
+    const data = await this._get(`/v1/timers?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async cancelTimer(workspaceId, token, timerId, network) {
+    const params = network ? `?network=${network}` : '';
+    const data = await this._delete(`/v1/timers/${timerId}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
   // ── Internal helpers ──
 
   /**
@@ -612,6 +697,48 @@ class WorkspaceClient {
 
       const req = transport.request(fullUrl, {
         method: 'POST',
+        headers: { ...headers, 'Content-Length': Buffer.byteLength(jsonBody) },
+        timeout,
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (res.statusCode >= 400) {
+              const msg = parsed.message || `HTTP ${res.statusCode}`;
+              if (typeof msg === 'string' && msg.toLowerCase().includes('session_revoked')) {
+                reject(new SessionRevokedError(msg));
+              } else {
+                reject(new Error(msg));
+              }
+            } else {
+              resolve(parsed);
+            }
+          } catch {
+            reject(new Error(`Invalid response: ${data.slice(0, 200)}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+      req.write(jsonBody);
+      req.end();
+    });
+  }
+
+  _put(urlPath, body, headers = {}, timeout = 30000) {
+    if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    const jsonBody = JSON.stringify(body);
+    const fullUrl = this.endpoint + urlPath;
+
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(fullUrl);
+      const transport = parsedUrl.protocol === 'https:' ? https : http;
+
+      const req = transport.request(fullUrl, {
+        method: 'PUT',
         headers: { ...headers, 'Content-Length': Buffer.byteLength(jsonBody) },
         timeout,
       }, (res) => {

@@ -325,6 +325,53 @@ class DeviceToken(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Planning: To-dos & Timers
+# ---------------------------------------------------------------------------
+
+class TodoRecord(Base):
+    """A single to-do item belonging to an agent in a channel."""
+    __tablename__ = "todos"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    channel_name = Column(Text, nullable=False)
+    thread_id = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=False)              # "openagents:agent-name"
+    assignee = Column(Text, nullable=False)                # defaults to created_by agent
+    content = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, default="pending")  # pending | in_progress | completed
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    updated_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        Index("idx_todos_workspace_channel", "workspace_id", "channel_name"),
+        Index("idx_todos_workspace_created_by", "workspace_id", "created_by"),
+    )
+
+
+class TimerRecord(Base):
+    """A scheduled timer that posts a message when it fires."""
+    __tablename__ = "timers"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    channel_name = Column(Text, nullable=False)
+    thread_id = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=False)              # "openagents:agent-name"
+    message = Column(Text, nullable=False)
+    delay_seconds = Column(Integer, nullable=False)
+    fires_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(Text, nullable=False, default="active")  # active | fired | cancelled
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        Index("idx_timers_fires_at_status", "fires_at", "status"),
+        Index("idx_timers_workspace_channel", "workspace_id", "channel_name"),
+    )
+
+
 # Standalone agent table (used when IDENTITY_MODE=standalone)
 class Agent(Base):
     """Local agent identity (standalone mode only)."""
