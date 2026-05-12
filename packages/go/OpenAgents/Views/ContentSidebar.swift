@@ -1,12 +1,11 @@
 import SwiftUI
 
-/// Right-side panel listing workspace files. Mirrors the "Content" sidebar
-/// in the React workspace UI (see screenshot in PR description). v1 lists
-/// every file in the workspace sorted by most recent upload; per-thread /
-/// per-artifact scoping is a follow-up.
+/// Right-side panel that holds either a workspace-file list or a single-file
+/// detail view, swapping based on `ContentSidebarController.selectedFileId`.
+/// Mirrors the "Content" sidebar in the React workspace UI.
 struct ContentSidebar: View {
     @Environment(WorkspaceStore.self) private var store
-    @Binding var isPresented: Bool
+    @Environment(ContentSidebarController.self) private var controller
 
     @State private var files: [WorkspaceFile] = []
     @State private var loading: Bool = false
@@ -14,16 +13,17 @@ struct ContentSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
-            if loading && files.isEmpty {
-                loadingState
-            } else if let loadError, files.isEmpty {
-                errorState(message: loadError)
-            } else if files.isEmpty {
-                emptyState
+            if let fileId = controller.selectedFileId {
+                detailHeader
+                Divider()
+                FileDetailView(
+                    fileId: fileId,
+                    labelHint: controller.selectedFileLabelHint,
+                )
             } else {
-                fileList
+                listHeader
+                Divider()
+                listBody
             }
         }
         .background(sidebarBackground)
@@ -32,9 +32,9 @@ struct ContentSidebar: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - List header (with refresh + close)
 
-    private var header: some View {
+    private var listHeader: some View {
         HStack(spacing: 8) {
             Text("Content")
                 .font(.headline)
@@ -53,7 +53,7 @@ struct ContentSidebar: View {
             #endif
 
             Button {
-                isPresented = false
+                controller.close()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .medium))
@@ -67,6 +67,56 @@ struct ContentSidebar: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Detail header (back + close)
+
+    private var detailHeader: some View {
+        HStack(spacing: 8) {
+            Button {
+                controller.backToList()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Files")
+                        .font(.system(size: 13))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back to file list")
+
+            Spacer()
+
+            Button {
+                controller.close()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close content sidebar")
+            #if os(macOS)
+            .help("Close")
+            #endif
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private var listBody: some View {
+        if loading && files.isEmpty {
+            loadingState
+        } else if let loadError, files.isEmpty {
+            errorState(message: loadError)
+        } else if files.isEmpty {
+            emptyState
+        } else {
+            fileList
+        }
     }
 
     private var loadingState: some View {
@@ -112,7 +162,12 @@ struct ContentSidebar: View {
         ScrollView {
             LazyVStack(spacing: 8) {
                 ForEach(sortedFiles) { file in
-                    FileCard(file: file)
+                    Button {
+                        controller.openFile(id: file.id, label: file.basename)
+                    } label: {
+                        FileCard(file: file)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 12)
@@ -233,130 +288,3 @@ private struct FileCard: View {
     }
 }
 
-// MARK: - File kind styling
-
-private extension WorkspaceFile.Kind {
-    var label: String {
-        switch self {
-        case .image:   return "IMG"
-        case .text:    return "TXT"
-        case .pdf:     return "PDF"
-        case .audio:   return "AUD"
-        case .video:   return "VID"
-        case .archive: return "ZIP"
-        case .code:    return "CODE"
-        case .other:   return "FILE"
-        }
-    }
-    var systemImage: String {
-        switch self {
-        case .image:   return "photo"
-        case .text:    return "doc.text"
-        case .pdf:     return "doc.richtext"
-        case .audio:   return "waveform"
-        case .video:   return "play.rectangle"
-        case .archive: return "archivebox"
-        case .code:    return "chevron.left.forwardslash.chevron.right"
-        case .other:   return "doc"
-        }
-    }
-    var tint: Color {
-        switch self {
-        case .image:   return .purple
-        case .text:    return .blue
-        case .pdf:     return .red
-        case .audio:   return .pink
-        case .video:   return .orange
-        case .archive: return .brown
-        case .code:    return .green
-        case .other:   return .gray
-        }
-    }
-}
-
-// MARK: - Authenticated AsyncImage
-
-/// `AsyncImage` doesn't accept custom headers, but the workspace file
-/// endpoint requires `X-Workspace-Token`. This small loader bridges that
-/// gap: pre-built `URLRequest` from `WorkspaceStore.authorizedFileDownloadRequest`,
-/// fetched via the shared session, cached in `URLCache.shared` so flipping
-/// the sidebar open repeatedly doesn't re-download the same thumbnails.
-private struct AuthorizedAsyncImage: View {
-    let fileId: String
-
-    @Environment(WorkspaceStore.self) private var store
-    @State private var phase: LoadPhase = .loading
-
-    private enum LoadPhase {
-        case loading
-        case loaded(PlatformImage)
-        case failed
-    }
-
-    var body: some View {
-        ZStack {
-            switch phase {
-            case .loading:
-                Rectangle()
-                    .fill(.gray.opacity(0.12))
-                ProgressView()
-                    .controlSize(.small)
-            case .failed:
-                Rectangle()
-                    .fill(.gray.opacity(0.12))
-                Image(systemName: "photo")
-                    .foregroundStyle(.tertiary)
-            case .loaded(let image):
-                imageView(image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            }
-        }
-        .task(id: fileId) {
-            await load()
-        }
-    }
-
-    private func load() async {
-        do {
-            let request = await store.authorizedFileDownloadRequest(fileId: fileId)
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                phase = .failed
-                return
-            }
-            #if os(macOS)
-            if let img = NSImage(data: data) {
-                phase = .loaded(img)
-            } else {
-                phase = .failed
-            }
-            #else
-            if let img = UIImage(data: data) {
-                phase = .loaded(img)
-            } else {
-                phase = .failed
-            }
-            #endif
-        } catch {
-            phase = .failed
-        }
-    }
-
-    @ViewBuilder
-    private func imageView(_ image: PlatformImage) -> Image {
-        #if os(macOS)
-        Image(nsImage: image)
-        #else
-        Image(uiImage: image)
-        #endif
-    }
-}
-
-#if os(macOS)
-import AppKit
-private typealias PlatformImage = NSImage
-#else
-import UIKit
-private typealias PlatformImage = UIImage
-#endif

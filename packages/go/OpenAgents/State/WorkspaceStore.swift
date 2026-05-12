@@ -464,6 +464,13 @@ final class WorkspaceStore {
         await api.authorizedDownloadRequest(fileId: fileId)
     }
 
+    /// Look up a single file's metadata. Used by the sidebar detail view when
+    /// the user lands on a file via a chat chip — we don't always have the
+    /// full file row cached client-side.
+    func fetchFileInfo(fileId: String) async throws -> WorkspaceFile {
+        try await api.getFileInfo(fileId: fileId)
+    }
+
     // MARK: - Polling
 
     private func startPolling() {

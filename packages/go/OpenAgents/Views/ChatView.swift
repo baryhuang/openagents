@@ -30,10 +30,11 @@ struct ChatView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
-    /// Whether the right-hand "Content" sidebar (workspace files) is showing.
-    /// Toggled from the chat header (macOS) or toolbar (iOS). Default off
-    /// per the spec — users opt in when they need the artifact list.
-    @State private var showContentSidebar: Bool = false
+    /// Right-hand "Content" sidebar state. Hosted here so chips inside chat
+    /// messages can navigate it via @Environment; toggled from the header
+    /// (macOS) or toolbar (iOS). Default off — users opt in when they need
+    /// the artifact list.
+    @State private var sidebar = ContentSidebarController()
 
     private static let defaultInputHeight: CGFloat = 44
     private static let minInputHeight: CGFloat = 36
@@ -68,20 +69,24 @@ struct ChatView: View {
     var body: some View {
         HStack(spacing: 0) {
             chatColumn
-            if showContentSidebar && sidebarIsInline {
+            if sidebar.isPresented && sidebarIsInline {
                 Divider()
-                ContentSidebar(isPresented: $showContentSidebar)
+                ContentSidebar()
                     .frame(width: 280)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: showContentSidebar)
+        .environment(sidebar)
+        .animation(.easeInOut(duration: 0.18), value: sidebar.isPresented)
         #if os(iOS)
         .sheet(isPresented: Binding(
-            get: { showContentSidebar && !sidebarIsInline },
-            set: { showContentSidebar = $0 },
+            get: { sidebar.isPresented && !sidebarIsInline },
+            set: { newValue in
+                if !newValue { sidebar.close() }
+            },
         )) {
-            ContentSidebar(isPresented: $showContentSidebar)
+            ContentSidebar()
+                .environment(sidebar)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -151,14 +156,14 @@ struct ChatView: View {
     /// the web app find it immediately.
     private var contentSidebarToggle: some View {
         Button {
-            showContentSidebar.toggle()
+            sidebar.toggle()
         } label: {
-            Image(systemName: showContentSidebar ? "sidebar.right" : "sidebar.right")
-                .symbolVariant(showContentSidebar ? .fill : .none)
+            Image(systemName: "sidebar.right")
+                .symbolVariant(sidebar.isPresented ? .fill : .none)
                 .font(.system(size: 14, weight: .medium))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(showContentSidebar ? "Hide content sidebar" : "Show content sidebar")
+        .accessibilityLabel(sidebar.isPresented ? "Hide content sidebar" : "Show content sidebar")
         #if os(macOS)
         .help("Toggle content sidebar")
         #endif
@@ -881,7 +886,7 @@ private struct MessageBubble: View {
         let segments = MarkdownSegmenter.segments(in: message.content)
         let hasWideContent = segments.contains { segment in
             switch segment {
-            case .prose: return false
+            case .prose, .fileChip: return false
             case .code, .table, .htmlBlock: return true
             }
         }
@@ -949,6 +954,9 @@ private struct MessageBubble: View {
                     case .htmlBlock(let html):
                         HTMLBlockView(html: html, onLightBubble: !message.isFromUser)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                    case .fileChip(let fileId, let label):
+                        FileChipView(fileId: fileId, label: label, onLightBubble: !message.isFromUser)
+                            .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
                     case .table(let headers, let rows, let alignments):
                         TableView(
                             headers: headers,

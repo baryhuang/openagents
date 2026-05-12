@@ -307,6 +307,15 @@ actor WorkspaceAPI {
         return request
     }
 
+    /// Fetch metadata for a single file by id. Mirrors the React app's
+    /// `GET /v1/files/<id>/info` call — used when we have only an id from a
+    /// chat chip and need the filename / content-type before deciding how to
+    /// render the detail view.
+    func getFileInfo(fileId: String) async throws -> WorkspaceFile {
+        let request = try makeRequest(path: "/v1/files/\(fileId)/info")
+        return try await send(request, as: WorkspaceFile.self)
+    }
+
     // MARK: - File uploads
 
     /// Backend response for `POST /v1/files`.
