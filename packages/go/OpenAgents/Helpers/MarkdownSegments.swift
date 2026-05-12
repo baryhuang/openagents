@@ -1,11 +1,15 @@
 import Foundation
 
-/// Lightweight parser that splits a message into prose, fenced code blocks, and
-/// GFM-style tables. Inline markdown (bold/italic/links/inline-code) is left to
+/// Lightweight parser that splits a message into prose, fenced code blocks,
+/// fenced HTML blocks (rendered as interactive web views), and GFM-style
+/// tables. Inline markdown (bold/italic/links/inline-code) is left to
 /// SwiftUI's built-in LocalizedStringKey rendering on each prose chunk.
 enum MarkdownSegment: Equatable, Sendable {
     case prose(String)
     case code(language: String?, content: String)
+    /// A fenced \`\`\`html block — rendered as a sandboxed WKWebView rather
+    /// than monospace source. The string is the raw HTML inside the fence.
+    case htmlBlock(String)
     case table(headers: [String], rows: [[String]], alignments: [MarkdownTableAlignment])
 }
 
@@ -50,7 +54,17 @@ enum MarkdownSegmenter {
                     codeLines.append(lines[i])
                     i += 1
                 }
-                result.append(.code(language: lang.isEmpty ? nil : lang, content: codeLines.joined(separator: "\n")))
+                let content = codeLines.joined(separator: "\n")
+                // Route `html` fences to the WebView segment. Everything else
+                // (including `htm`, `xml`, etc.) stays as a code block — we
+                // want the rendered preview only for explicit `html` so authors
+                // who really want to *show* the source can still use ```xml or
+                // a plain ```code fence.
+                if lang.lowercased() == "html" {
+                    result.append(.htmlBlock(content))
+                } else {
+                    result.append(.code(language: lang.isEmpty ? nil : lang, content: content))
+                }
                 continue
             }
 

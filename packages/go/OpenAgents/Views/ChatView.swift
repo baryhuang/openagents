@@ -819,7 +819,7 @@ private struct MessageBubble: View {
         let hasWideContent = segments.contains { segment in
             switch segment {
             case .prose: return false
-            case .code, .table: return true
+            case .code, .table, .htmlBlock: return true
             }
         }
         let bubbleWidth: CGFloat? = (hasWideContent && rowWidth > Self.sideGap)
@@ -882,6 +882,9 @@ private struct MessageBubble: View {
                         }
                     case .code(let lang, let code):
                         CodeBlockView(language: lang, content: code, onLightBubble: !message.isFromUser)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case .htmlBlock(let html):
+                        HTMLBlockView(html: html, onLightBubble: !message.isFromUser)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     case .table(let headers, let rows, let alignments):
                         TableView(
