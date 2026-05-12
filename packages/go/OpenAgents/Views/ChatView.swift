@@ -811,6 +811,9 @@ private struct MessageBubble: View {
     /// would split width between them and the bubble never claimed enough.
     @State private var rowWidth: CGFloat = 0
 
+    /// Tracks the brief "Copied" feedback state after the copy button is tapped.
+    @State private var didCopy: Bool = false
+
     var body: some View {
         let segments = MarkdownSegmenter.segments(in: message.content)
         let hasWideContent = segments.contains { segment in
@@ -901,7 +904,50 @@ private struct MessageBubble: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(.black.opacity(message.isFromUser ? 0 : 0.06), lineWidth: 0.5),
             )
+
+            if !message.isFromUser {
+                copyButton
+                    .padding(.leading, 8)
+            }
         }
+    }
+
+    /// Mirrors the React UI: a small "Copy" / "Copied" button under each agent
+    /// message that puts the raw markdown content on the system pasteboard.
+    /// We deliberately copy `message.content` rather than the rendered text so
+    /// the result is portable to other markdown-aware tools.
+    @ViewBuilder
+    private var copyButton: some View {
+        Button {
+            copyToPasteboard(message.content)
+            didCopy = true
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await MainActor.run { didCopy = false }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 10, weight: .medium))
+                Text(didCopy ? "Copied" : "Copy")
+                    .font(.system(size: 11))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(didCopy ? "Copied" : "Copy message")
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
     }
 
     private var bubbleBackground: Color {
