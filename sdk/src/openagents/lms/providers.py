@@ -658,6 +658,77 @@ class MiniMaxProvider(BaseModelProvider):
         return [tool.to_openai_function() for tool in tools]
 
 
+class LiteLLMProvider(BaseModelProvider):
+    """LiteLLM provider supporting 100+ LLM providers through a unified interface.
+
+    LiteLLM routes requests to the correct provider based on the model string.
+    For example, ``anthropic/claude-sonnet-4-5`` routes to Anthropic,
+    ``bedrock/anthropic.claude-v2`` routes to AWS Bedrock, and
+    ``vertex_ai/gemini-pro`` routes to Google Vertex AI.
+
+    Authentication is handled via provider-specific environment variables
+    (e.g. ``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, ``AWS_ACCESS_KEY_ID``).
+    LiteLLM reads these automatically based on the model prefix.
+
+    For a full list of supported providers, see: https://docs.litellm.ai/docs/providers
+    """
+
+    def __init__(self, model_name: str, **kwargs):
+        self.model_name = model_name
+
+        try:
+            import litellm  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "litellm package is required for LiteLLM provider. "
+                "Install with: pip install litellm"
+            )
+
+    async def chat_completion(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Generate chat completion using LiteLLM SDK."""
+        import litellm
+
+        kwargs: Dict[str, Any] = {"model": self.model_name, "messages": messages}
+
+        if tools:
+            kwargs["tools"] = [{"type": "function", "function": tool} for tool in tools]
+            kwargs["tool_choice"] = "auto"
+
+        response = await litellm.acompletion(**kwargs)
+
+        # Standardize response format
+        message = response.choices[0].message
+        result: Dict[str, Any] = {"content": message.content, "tool_calls": []}
+
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            for tool_call in message.tool_calls:
+                result["tool_calls"].append(
+                    {
+                        "id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    }
+                )
+
+        # Extract token usage
+        if hasattr(response, "usage") and response.usage:
+            result["usage"] = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+
+        return result
+
+    def format_tools(self, tools: List[Any]) -> List[Dict[str, Any]]:
+        """Format tools for LiteLLM (OpenAI-compatible format)."""
+        return [tool.to_openai_function() for tool in tools]
+
+
 class SimpleGenericProvider(BaseModelProvider):
     """Generic provider for OpenAI-compatible APIs (DeepSeek, Qwen, Grok, etc.)."""
 

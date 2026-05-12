@@ -28,6 +28,7 @@ class LLMProviderType(str, Enum):
     GROQ = "groq"
     OPENROUTER = "openrouter"
     MINIMAX = "minimax"
+    LITELLM = "litellm"
     CUSTOM = "custom"  # Custom OpenAI-compatible endpoint
     OPENAI_COMPATIBLE = "openai-compatible"  # Alias for custom
 
@@ -194,6 +195,12 @@ MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "MiniMax-M2.7-highspeed",
         ],
         "API_KEY_ENV_VAR": "MINIMAX_API_KEY",
+    },
+    # LiteLLM (unified SDK for 100+ providers)
+    "litellm": {
+        "provider": "litellm",
+        "models": [],  # User specifies model with provider prefix (e.g., "anthropic/claude-sonnet-4-5")
+        "API_KEY_ENV_VAR": None,  # LiteLLM reads provider-specific env vars automatically
     },
     # Custom OpenAI-compatible endpoint (e.g., Ollama, vLLM, local models)
     "custom": {
@@ -439,6 +446,7 @@ def create_model_provider(
         AnthropicProvider,
         BedrockProvider,
         GeminiProvider,
+        LiteLLMProvider,
         MiniMaxProvider,
         SimpleGenericProvider,
     )
@@ -464,6 +472,8 @@ def create_model_provider(
         return MiniMaxProvider(
             model_name=model_name, api_base=effective_api_base, api_key=api_key, **kwargs
         )
+    elif provider == "litellm":
+        return LiteLLMProvider(model_name=model_name, **kwargs)
     elif provider == "custom" or provider == "openai-compatible":
         # Custom OpenAI-compatible endpoint requires api_base
         if not api_base:
