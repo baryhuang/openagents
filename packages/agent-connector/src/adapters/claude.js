@@ -65,10 +65,74 @@ class ClaudeAdapter extends BaseAdapter {
     } catch {}
   }
 
-  async _onControlAction(action, _payload) {
+  async _onControlAction(action, payload) {
     if (action === 'stop') {
       await this._stopAllProcesses('Execution stopped by user.');
+      return;
     }
+    if (action === 'restart') {
+      const channel = (payload && typeof payload === 'object') ? payload.channel : null;
+      if (channel) {
+        // Kill in-flight subprocess + clear the per-channel session BEFORE
+        // asking the daemon to bounce us. The new adapter spawned after
+        // the bounce loads sessions from disk, so the cleared state must
+        // be persisted first.
+        const proc = this._channelProcesses[channel];
+        if (proc) {
+          try { await this._stopProcess(proc); } catch {}
+          delete this._channelProcesses[channel];
+        }
+        if (this._channelSessions[channel]) {
+          delete this._channelSessions[channel];
+          try { this._saveSessions(); } catch {}
+          this._log(`Restart: cleared session for channel=${channel}`);
+        } else {
+          this._log(`Restart: no session to clear for channel=${channel}`);
+        }
+        // Post the status BEFORE the bounce so the message lands while
+        // we're still online.
+        try {
+          await this.client.sendMessage(this.workspaceId, channel, this.token,
+            'Session restarted — next message starts fresh.',
+            {
+              senderType: 'agent',
+              senderName: this.agentName,
+              messageType: 'status',
+              metadata: { agent_mode: this._mode },
+              sessionId: this._sessionId,
+            });
+        } catch (e) {
+          this._log(`Restart: failed to post status: ${e && e.message ? e.message : e}`);
+        }
+      } else {
+        // Defensive — no channel, clear everything before the bounce.
+        this._channelSessions = {};
+        try { this._saveSessions(); } catch {}
+        await this._stopAllProcesses('Execution stopped by user.');
+        this._log('Restart: cleared all sessions (no channel param)');
+      }
+      // Ask the daemon to bounce just THIS agent — true process-level
+      // restart. Daemon's command-file poller picks up `restart:<name>`
+      // within ~1s, calls restartAgent, our run() loop exits cleanly,
+      // and a fresh adapter is spawned with a new `_startedAt`. Sibling
+      // agents on the same daemon are untouched.
+      try {
+        const path = require('path');
+        const os = require('os');
+        const fs = require('fs');
+        const cmdFile = path.join(os.homedir(), '.openagents', 'daemon.cmd');
+        fs.writeFileSync(cmdFile, `restart:${this.agentName}\n`);
+        this._log(`Restart: requested daemon bounce for agent=${this.agentName}`);
+      } catch (e) {
+        this._log(`Restart: failed to write daemon.cmd: ${e && e.message ? e.message : e}`);
+        // Fallback: reset uptime in-place so the next /status reflects
+        // SOMETHING changed even if the daemon bounce didn't happen.
+        this._startedAt = Date.now();
+      }
+      return;
+    }
+    // Fall through to base for shared actions (status, etc.).
+    await super._onControlAction(action, payload);
   }
 
   /**
