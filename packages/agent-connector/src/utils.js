@@ -12,11 +12,12 @@ function testLLMConnection(env) {
   const https = require('https');
   const http = require('http');
 
-  const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY || env.ANTHROPIC_API_KEY || '';
+  const hasKimiConfig = !!(env.KIMI_API_KEY || env.MOONSHOT_API_KEY || env.KIMI_BASE_URL || env.KIMI_MODEL);
+  const apiKey = env.KIMI_API_KEY || env.MOONSHOT_API_KEY || env.LLM_API_KEY || env.OPENAI_API_KEY || env.ANTHROPIC_API_KEY || '';
   if (!apiKey) return Promise.resolve({ success: false, error: 'No API key provided' });
 
-  let baseUrl = (env.LLM_BASE_URL || env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const model = env.LLM_MODEL || env.OPENCLAW_MODEL || '';
+  let baseUrl = (env.KIMI_BASE_URL || env.LLM_BASE_URL || env.OPENAI_BASE_URL || (hasKimiConfig ? 'https://api.moonshot.ai/v1' : 'https://api.openai.com/v1')).replace(/\/$/, '');
+  const model = env.KIMI_MODEL || env.LLM_MODEL || env.OPENCLAW_MODEL || '';
   const isAnthropic = baseUrl.includes('anthropic');
 
   if (!isAnthropic && !baseUrl.endsWith('/v1')) {
@@ -44,11 +45,13 @@ function testLLMConnection(env) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       };
-      body = JSON.stringify({
-        model: model || 'gpt-4o-mini',
-        max_completion_tokens: 32,
+      const requestBody = {
+        model: model || (hasKimiConfig ? 'kimi-k2.6' : 'gpt-4o-mini'),
         messages: [{ role: 'user', content: 'Say hi in 5 words.' }],
-      });
+      };
+      if (hasKimiConfig) requestBody.max_tokens = 32;
+      else requestBody.max_completion_tokens = 32;
+      body = JSON.stringify(requestBody);
     }
 
     const parsedUrl = new URL(url);

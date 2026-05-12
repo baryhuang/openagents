@@ -50,6 +50,24 @@ const mockRegistry = {
         },
       };
     }
+    if (name === 'kimi') {
+      return {
+        name: 'kimi',
+        label: 'Kimi',
+        install: {
+          binary: 'kimi',
+          api_only: true,
+          macos: "echo 'Kimi uses direct API mode'",
+          linux: "echo 'Kimi uses direct API mode'",
+          windows: "echo 'Kimi uses direct API mode'",
+        },
+        check_ready: {
+          env_vars: ['KIMI_API_KEY', 'MOONSHOT_API_KEY'],
+          saved_env_key: 'KIMI_API_KEY',
+          not_ready_message: 'No API key — press e to configure',
+        },
+      };
+    }
     return null;
   },
   getResolveRules: () => [],
@@ -62,6 +80,8 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_BASE_URL;
+  delete process.env.KIMI_API_KEY;
+  delete process.env.MOONSHOT_API_KEY;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -135,6 +155,49 @@ describe('Installer', () => {
   it('install throws for unknown agent type', async () => {
     const inst = new Installer(mockRegistry, tmpDir);
     await assert.rejects(() => inst.install('nonexistent'), /No install definition/);
+  });
+
+  it('api-only install uses managed markers instead of requiring a binary', async () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+
+    assert.deepEqual(inst.getInstallInfo('kimi'), {
+      installed: false,
+      managed: false,
+      location: null,
+    });
+
+    await inst.install('kimi');
+
+    assert.deepEqual(inst.getInstallInfo('kimi'), {
+      installed: true,
+      managed: true,
+      location: 'api_only',
+    });
+    assert.equal(inst.which('kimi'), null);
+  });
+
+  it('api-only uninstall removes managed markers without a derived command', async () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    await inst.install('kimi');
+
+    const result = await inst.uninstall('kimi');
+
+    assert.equal(result.success, true);
+    assert.equal(inst.isInstalled('kimi'), false);
+  });
+
+  it('healthCheck supports API-only readiness from Kimi env vars', async () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    await inst.install('kimi');
+    process.env.MOONSHOT_API_KEY = 'sk-test';
+
+    const health = inst.healthCheck('kimi');
+
+    assert.equal(health.installed, true);
+    assert.equal(health.binary, null);
+    assert.equal(health.ready, true);
+    assert.equal(health.auth_mode, 'api_key');
+    assert.equal(health.execution_mode, 'direct');
   });
 
   it('_getInstallCommand resolves platform-specific command', () => {

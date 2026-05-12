@@ -100,14 +100,30 @@ document.addEventListener('keydown', (e) => {
 
 // ---- Agent Icon Helper ----
 
+const BUNDLED_AGENT_ICON_SLUGS = new Set([
+  'aider',
+  'amp',
+  'claude',
+  'cline',
+  'codex',
+  'copilot',
+  'cursor',
+  'default',
+  'gemini',
+  'goose',
+  'kimi',
+  'nanoclaw',
+  'openai',
+  'openclaw',
+  'opencode',
+  'swebench',
+  'yaml-agent',
+]);
+
 function agentIcon(type, size = 24) {
   const slug = (type || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-  // Try core library icons first (auto-updated), fall back to bundled
-  const coreSrc = _coreIconsDir ? `file://${_coreIconsDir}/${slug}.svg` : null;
-  const bundledSrc = `icons/${slug}.svg`;
-  const defaultSrc = _coreIconsDir ? `file://${_coreIconsDir}/default.svg` : 'icons/default.svg';
-  const src = coreSrc || bundledSrc;
-  return `<img class="agent-icon" src="${src}" width="${size}" height="${size}" alt="${esc(type)}" onerror="this.onerror=null; this.src='${bundledSrc}'; this.onerror=function(){this.src='${defaultSrc}'};">`;
+  const iconSlug = BUNDLED_AGENT_ICON_SLUGS.has(slug) ? slug : 'default';
+  return `<img class="agent-icon" src="icons/${iconSlug}.svg" width="${size}" height="${size}" alt="${esc(type)}">`;
 }
 
 function formatHealthLabel(health) {
