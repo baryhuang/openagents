@@ -36,6 +36,12 @@ struct ChatView: View {
     /// the artifact list.
     @State private var sidebar = ContentSidebarController()
 
+    /// User-resizable sidebar width. Starts at single-column; user can drag
+    /// the left edge out to ~2-column width. Persists for the lifetime of
+    /// this ChatView; we don't store across launches yet.
+    @State private var sidebarWidth: CGFloat = ContentSidebar.singleColumnWidth
+    @State private var sidebarDragStart: CGFloat?
+
     private static let defaultInputHeight: CGFloat = 44
     private static let minInputHeight: CGFloat = 36
 
@@ -70,9 +76,9 @@ struct ChatView: View {
         HStack(spacing: 0) {
             chatColumn
             if sidebar.isPresented && sidebarIsInline {
-                Divider()
+                sidebarResizeHandle
                 ContentSidebar()
-                    .frame(width: 280)
+                    .frame(width: sidebarWidth)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
@@ -151,6 +157,49 @@ struct ChatView: View {
         #endif
     }
 
+    /// Thin vertical handle between the chat column and the Content sidebar.
+    /// Drag horizontally to resize the sidebar; width is clamped between a
+    /// single-column minimum and a two-column maximum so a stray drag can't
+    /// crush the chat.
+    private var sidebarResizeHandle: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.001))   // hit-testable but invisible
+            .frame(width: 6)
+            .overlay(
+                Rectangle()
+                    .fill(Color.black.opacity(0.08))
+                    .frame(width: 1),
+            )
+            .contentShape(Rectangle())
+            #if os(macOS)
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            #endif
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if sidebarDragStart == nil {
+                            sidebarDragStart = sidebarWidth
+                        }
+                        // Dragging left = expanding the sidebar.
+                        let proposed = (sidebarDragStart ?? sidebarWidth) - value.translation.width
+                        sidebarWidth = min(
+                            max(proposed, ContentSidebar.singleColumnWidth),
+                            ContentSidebar.twoColumnWidth,
+                        )
+                    }
+                    .onEnded { _ in
+                        sidebarDragStart = nil
+                    },
+            )
+            .accessibilityLabel("Resize content sidebar")
+    }
+
     /// Toolbar/header button that toggles the right-hand Content sidebar.
     /// Same visual identity across platforms so users carrying habits from
     /// the web app find it immediately.
@@ -204,6 +253,11 @@ struct ChatView: View {
         let page = store.currentPage
         let groups = MessageGrouper.group(messages)
         let lastChatMessageId = messages.last { !$0.isStatus }?.messageId
+        // Nil page = haven't begun loading yet (selectSession just fired);
+        // page.loadingHistory = true → initial fetch in flight.
+        // Either way, prefer the spinner over the "say hi" empty state so the
+        // user doesn't see a blank pane that looks identical to an empty thread.
+        let isInitialLoading = messages.isEmpty && (page == nil || page?.loadingHistory == true)
 
         return ScrollViewReader { proxy in
             ScrollView {
@@ -220,7 +274,17 @@ struct ChatView: View {
                             .padding(.vertical, 8)
                     }
 
-                    if messages.isEmpty && page?.loadingOlder != true {
+                    if isInitialLoading {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading messages…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                    } else if messages.isEmpty {
                         Text("No messages yet — say hi.")
                             .foregroundStyle(.secondary)
                             .padding(.top, 60)
@@ -253,26 +317,42 @@ struct ChatView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
+            // Tells SwiftUI to treat the bottom of the content as the
+            // invariant point under content-size changes. Two consequences:
+            //   1. Initial layout positions the bottom of content at the
+            //      bottom of the viewport — no more scrollTo("bottom-anchor")
+            //      racing the LazyVStack's first layout pass.
+            //   2. When the agent posts new messages, the bottom stays in
+            //      view (auto-scroll). When older pages prepend, visible
+            //      content stays in place instead of jumping.
+            // iOS 17 / macOS 14 — both deployment targets satisfy this.
+            .defaultScrollAnchor(.bottom)
+            // Force a fresh ScrollView whenever the thread switches so the
+            // default-anchor logic re-applies cleanly. Without this, the
+            // existing ScrollView's scroll state would persist across thread
+            // switches and only sometimes re-anchor to the new content.
+            .id(session.sessionId)
             #if os(iOS)
             // Drag the messages down to dismiss the keyboard — standard iOS chat-app gesture.
             .scrollDismissesKeyboard(.interactively)
             #endif
-            // Bulk replace (initial load, session switch, message sent) → scroll to bottom.
-            // Forward poll just appending new messages doesn't bump generation.
+            // Belt-and-suspenders for the bulk-replace case (e.g. session
+            // switch after the page was already cached). `defaultScrollAnchor`
+            // covers initial layout; this catches edge cases where the
+            // generation bumps but content size didn't actually change in a
+            // way the anchor heuristic responds to.
             .onChange(of: page?.generation ?? 0) { _, _ in
                 DispatchQueue.main.async {
                     proxy.scrollTo("bottom-anchor", anchor: .bottom)
                 }
             }
             // New trailing message arriving from poll → scroll to bottom (gentle).
+            // Mostly redundant with defaultScrollAnchor's auto-scroll, but the
+            // animation timing matches the existing "you sent a message" UX.
             .onChange(of: messages.last?.id) { _, _ in
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo("bottom-anchor", anchor: .bottom)
                 }
-            }
-            // First appearance — start at the bottom.
-            .onAppear {
-                proxy.scrollTo("bottom-anchor", anchor: .bottom)
             }
         }
     }

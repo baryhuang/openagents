@@ -10,7 +10,10 @@ struct WorkspaceFile: Identifiable, Decodable, Sendable, Equatable {
     let size: Int
     let uploadedBy: String?
     let channelName: String?
-    let status: String
+    /// Status is returned by `GET /v1/files` but omitted from
+    /// `GET /v1/files/{id}/info` — keep it optional so a single model decodes
+    /// both endpoint shapes without a separate DTO.
+    let status: String?
     /// ISO-8601 string from the backend, or nil for legacy rows. Sort the
     /// list using `createdAtDate` rather than the raw string.
     let createdAt: String?

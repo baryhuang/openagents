@@ -4,6 +4,12 @@ import SwiftUI
 /// detail view, swapping based on `ContentSidebarController.selectedFileId`.
 /// Mirrors the "Content" sidebar in the React workspace UI.
 struct ContentSidebar: View {
+    /// Default / minimum width — fits a single column of file cards. The
+    /// resize handle in ChatView lets the user grow this up to
+    /// `twoColumnWidth` where the list switches to a 2-column grid.
+    static let singleColumnWidth: CGFloat = 280
+    static let twoColumnWidth: CGFloat = 560
+
     @Environment(WorkspaceStore.self) private var store
     @Environment(ContentSidebarController.self) private var controller
 
@@ -160,7 +166,13 @@ struct ContentSidebar: View {
 
     private var fileList: some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
+            // Adaptive grid: 1 column at minimum sidebar width, 2 columns when
+            // the user drags the sidebar wider. SwiftUI computes the column
+            // count from `minimum:` and the available width.
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 240), spacing: 8)],
+                spacing: 8,
+            ) {
                 ForEach(sortedFiles) { file in
                     Button {
                         controller.openFile(id: file.id, label: file.basename)
