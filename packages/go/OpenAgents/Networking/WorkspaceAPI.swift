@@ -292,6 +292,49 @@ actor WorkspaceAPI {
         )
     }
 
+    // MARK: - File listing
+
+    /// Fetch a page of workspace files for the content sidebar. Most recent
+    /// first — matches the React `file-list.tsx` ordering. `channel` narrows
+    /// to a single thread; pass nil to list all files in the workspace
+    /// (the v1 sidebar shows the whole workspace).
+    func listFiles(
+        channel: String? = nil,
+        status: String = "active",
+        limit: Int = 100,
+        offset: Int = 0,
+    ) async throws -> WorkspaceFileListResponse {
+        var query: [(String, String)] = [
+            ("network", workspaceId),
+            ("status", status),
+            ("limit", "\(limit)"),
+            ("offset", "\(offset)"),
+        ]
+        if let channel { query.append(("channel_name", channel)) }
+        let request = try makeRequest(path: "/v1/files", query: query)
+        return try await send(request, as: WorkspaceFileListResponse.self)
+    }
+
+    /// Pre-built `URLRequest` for downloading a file's bytes. Used by the
+    /// authenticated image loader since `AsyncImage` can't carry headers.
+    func authorizedDownloadRequest(fileId: String) -> URLRequest {
+        var request = URLRequest(url: baseURL.appendingPathComponent("/v1/files/\(fileId)"))
+        request.cachePolicy = .returnCacheDataElseLoad
+        if !token.isEmpty {
+            request.setValue(token, forHTTPHeaderField: "X-Workspace-Token")
+        }
+        return request
+    }
+
+    /// Fetch metadata for a single file by id. Mirrors the React app's
+    /// `GET /v1/files/<id>/info` call — used when we have only an id from a
+    /// chat chip and need the filename / content-type before deciding how to
+    /// render the detail view.
+    func getFileInfo(fileId: String) async throws -> WorkspaceFile {
+        let request = try makeRequest(path: "/v1/files/\(fileId)/info")
+        return try await send(request, as: WorkspaceFile.self)
+    }
+
     // MARK: - Push notifications
 
     /// Register this device's FCM token with the workspace backend so it can receive

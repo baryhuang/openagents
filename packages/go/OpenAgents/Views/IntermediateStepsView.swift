@@ -8,10 +8,35 @@ struct IntermediateStepsView: View {
     /// True when the agent is still actively producing steps (drives the breathing dots).
     var isActive: Bool = false
 
-    /// Group consecutive steps by sender so we only show the agent label once per run.
+    /// Default: collapsed (show only the most recent two steps). User can tap
+    /// the "N earlier steps" header to unroll the full history. Resets to
+    /// collapsed when the steps array changes underneath us so the rolling
+    /// window stays predictable while the agent is working.
+    @State private var showAllSteps: Bool = false
+
+    /// How many of the most recent steps stay visible when collapsed.
+    private static let collapsedTail: Int = 2
+
+    /// The slice of `steps` that should render right now — either the trailing
+    /// `collapsedTail` items (collapsed default) or everything (expanded).
+    private var displayedSteps: [Message] {
+        if showAllSteps || steps.count <= Self.collapsedTail {
+            return steps
+        }
+        return Array(steps.suffix(Self.collapsedTail))
+    }
+
+    /// Number of steps the collapsed view is hiding above the visible tail.
+    /// Drives the "▶ N earlier steps" button.
+    private var hiddenStepCount: Int {
+        max(0, steps.count - displayedSteps.count)
+    }
+
+    /// Group consecutive **displayed** steps by sender so we only show the
+    /// agent label once per run within the visible window.
     private var senderGroups: [(sender: String, steps: [Message])] {
         var groups: [(String, [Message])] = []
-        for step in steps {
+        for step in displayedSteps {
             if let last = groups.last, last.0 == step.senderName {
                 groups[groups.count - 1].1.append(step)
             } else {
@@ -27,6 +52,9 @@ struct IntermediateStepsView: View {
             Color.clear.frame(width: 32)
 
             VStack(alignment: .leading, spacing: 6) {
+                if hiddenStepCount > 0 {
+                    earlierStepsToggle
+                }
                 ForEach(Array(senderGroups.enumerated()), id: \.offset) { _, group in
                     if senderGroups.count > 1 || group.steps.first?.isFromUser == false {
                         // Sender chip — only useful when there are multiple agents in this block
@@ -50,6 +78,39 @@ struct IntermediateStepsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
+    }
+
+    /// Header chip shown above the visible tail when there are earlier steps
+    /// hidden behind the collapse. Tapping it expands; tapping again collapses.
+    @ViewBuilder
+    private var earlierStepsToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                showAllSteps.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary.opacity(0.6))
+                    .rotationEffect(.degrees(showAllSteps ? 90 : 0))
+                Text(
+                    showAllSteps
+                        ? "Hide earlier steps"
+                        : "\(hiddenStepCount) earlier step\(hiddenStepCount == 1 ? "" : "s")",
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary.opacity(0.7))
+            }
+            .padding(.vertical, 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            showAllSteps
+                ? "Hide earlier thinking steps"
+                : "Show \(hiddenStepCount) earlier thinking steps",
+        )
     }
 
     @ViewBuilder

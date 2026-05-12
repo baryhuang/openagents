@@ -1,11 +1,21 @@
 import Foundation
 
-/// Lightweight parser that splits a message into prose, fenced code blocks, and
-/// GFM-style tables. Inline markdown (bold/italic/links/inline-code) is left to
-/// SwiftUI's built-in LocalizedStringKey rendering on each prose chunk.
+/// Lightweight parser that splits a message into prose, fenced code blocks,
+/// fenced HTML blocks (rendered as interactive web views), workspace-file
+/// chips, and GFM-style tables. Inline markdown (bold/italic/links/inline-code)
+/// is left to SwiftUI's built-in LocalizedStringKey rendering on each prose
+/// chunk.
 enum MarkdownSegment: Equatable, Sendable {
     case prose(String)
     case code(language: String?, content: String)
+    /// A fenced \`\`\`html block — rendered as a sandboxed WKWebView rather
+    /// than monospace source. The string is the raw HTML inside the fence.
+    case htmlBlock(String)
+    /// A workspace file link that the agent posted on its own line — rendered
+    /// as a tappable chip that opens the content sidebar to that file. The
+    /// `fileId` is the UUID from the `/v1/files/<id>` URL; `label` is the
+    /// markdown link text (the filename, typically) or nil for bare URLs.
+    case fileChip(fileId: String, label: String?)
     case table(headers: [String], rows: [[String]], alignments: [MarkdownTableAlignment])
 }
 
@@ -50,7 +60,17 @@ enum MarkdownSegmenter {
                     codeLines.append(lines[i])
                     i += 1
                 }
-                result.append(.code(language: lang.isEmpty ? nil : lang, content: codeLines.joined(separator: "\n")))
+                let content = codeLines.joined(separator: "\n")
+                // Route `html` fences to the WebView segment. Everything else
+                // (including `htm`, `xml`, etc.) stays as a code block — we
+                // want the rendered preview only for explicit `html` so authors
+                // who really want to *show* the source can still use ```xml or
+                // a plain ```code fence.
+                if lang.lowercased() == "html" {
+                    result.append(.htmlBlock(content))
+                } else {
+                    result.append(.code(language: lang.isEmpty ? nil : lang, content: content))
+                }
                 continue
             }
 
@@ -79,7 +99,69 @@ enum MarkdownSegmenter {
         }
         flushProse()
 
-        return result.isEmpty ? [.prose(content)] : result
+        // Post-pass: explode prose segments that contain a "line consisting of
+        // just a workspace-file link" into separate prose + fileChip segments,
+        // so those links render as tappable chips instead of inline anchors.
+        let exploded = result.flatMap(explodeFileChips(in:))
+        return exploded.isEmpty ? [.prose(content)] : exploded
+    }
+
+    // MARK: - File chip post-pass
+
+    /// Matches `[label](url-with-/v1/files/<id>)` markdown links and bare
+    /// `https?://.../v1/files/<id>` URLs. We restrict the chip to lines that
+    /// contain *only* one such link (plus optional whitespace) so the agent
+    /// has to opt in by putting the file on its own line — that keeps the
+    /// prose flow predictable instead of stamping chips into the middle of a
+    /// sentence.
+    private static let fileLinkRegex: NSRegularExpression = {
+        // group 1 (optional): markdown label; group 2: full URL; group 3: file UUID-ish
+        let pattern = #"^\s*(?:\[([^\]]+)\]\((https?://\S*?/v1/files/([A-Za-z0-9][A-Za-z0-9\-_]*))\)|(https?://\S*?/v1/files/([A-Za-z0-9][A-Za-z0-9\-_]*)))\s*$"#
+        return try! NSRegularExpression(pattern: pattern)
+    }()
+
+    /// Split a single segment into the same segment plus any file-chip lines
+    /// detected inside its prose. Non-prose segments pass through untouched.
+    private static func explodeFileChips(in segment: MarkdownSegment) -> [MarkdownSegment] {
+        guard case .prose(let text) = segment else { return [segment] }
+        let lines = text.components(separatedBy: "\n")
+        var out: [MarkdownSegment] = []
+        var buffer: [String] = []
+
+        func flushBuffer() {
+            guard !buffer.isEmpty else { return }
+            let joined = buffer.joined(separator: "\n")
+            let trimmed = joined.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { out.append(.prose(joined)) }
+            buffer.removeAll()
+        }
+
+        for line in lines {
+            if let chip = matchFileChip(line) {
+                flushBuffer()
+                out.append(chip)
+            } else {
+                buffer.append(line)
+            }
+        }
+        flushBuffer()
+        return out.isEmpty ? [segment] : out
+    }
+
+    private static func matchFileChip(_ line: String) -> MarkdownSegment? {
+        let range = NSRange(line.startIndex..<line.endIndex, in: line)
+        guard let match = fileLinkRegex.firstMatch(in: line, range: range) else {
+            return nil
+        }
+        // Markdown form: groups 1+3 populated. Bare URL: group 5 populated.
+        if let labelRange = Range(match.range(at: 1), in: line),
+           let idRange = Range(match.range(at: 3), in: line) {
+            return .fileChip(fileId: String(line[idRange]), label: String(line[labelRange]))
+        }
+        if let idRange = Range(match.range(at: 5), in: line) {
+            return .fileChip(fileId: String(line[idRange]), label: nil)
+        }
+        return nil
     }
 
     // MARK: - Table helpers

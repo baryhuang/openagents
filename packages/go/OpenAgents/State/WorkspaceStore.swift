@@ -10,6 +10,10 @@ struct ChannelMessages: Sendable {
     /// True when the backend says there are still older messages we haven't fetched.
     var hasOlder: Bool = false
     var loadingOlder: Bool = false
+    /// True while the initial history fetch is in flight. Distinct from
+    /// `loadingOlder` — drives the chat view's "loading…" placeholder vs.
+    /// the empty-thread "say hi" copy.
+    var loadingHistory: Bool = false
     /// Increments whenever the messages array is bulk-replaced (initial load, session switch).
     /// Drives scroll-to-bottom in the chat view.
     var generation: Int = 0
@@ -242,17 +246,25 @@ final class WorkspaceStore {
     /// Initial / on-session-change load. Fetches the most recent page of messages and replaces
     /// any existing cache for this channel. Bumps generation so the chat view scrolls to bottom.
     func loadHistory(channel: String) async {
+        // Publish "loading" before the await so the chat view can show a
+        // spinner instead of the empty-thread "say hi" placeholder during the
+        // network round-trip — without this the user sees a blank thread that
+        // looks identical to an empty one.
+        var page = pagesBySession[channel] ?? ChannelMessages()
+        page.loadingHistory = true
+        pagesBySession[channel] = page
+
         do {
             let batch = try await api.loadMessages(
                 channel: channel,
                 sort: "desc",
                 limit: initialPageSize,
             )
-            var page = pagesBySession[channel] ?? ChannelMessages()
             page.messages = batch.messages
             page.oldestId = batch.oldestId
             page.newestId = batch.newestId
             page.hasOlder = batch.hasMore
+            page.loadingHistory = false
             page.generation += 1
             pagesBySession[channel] = page
             if let last = batch.messages.last {
@@ -261,6 +273,8 @@ final class WorkspaceStore {
             logInfo("history", "loaded \(batch.messages.count) for \(channel) hasOlder=\(batch.hasMore) newestId=\(batch.newestId ?? "nil")")
             lastError = nil
         } catch {
+            page.loadingHistory = false
+            pagesBySession[channel] = page
             logError("history", "channel=\(channel) failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
@@ -704,6 +718,32 @@ final class WorkspaceStore {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    // MARK: - Files (used by ContentSidebar)
+
+    /// Fetch a page of workspace files for the sidebar. Returns the raw
+    /// response so the caller can decide whether to merge / paginate.
+    /// Errors are surfaced as a thrown error rather than via `lastError` so
+    /// the sidebar can render its own inline failure state instead of a
+    /// banner over the whole chat.
+    func listFiles(channel: String? = nil, limit: Int = 100) async throws -> [WorkspaceFile] {
+        let resp = try await api.listFiles(channel: channel, limit: limit)
+        return resp.files
+    }
+
+    /// `URLRequest` for downloading a file's bytes, with the workspace token
+    /// pre-attached. Used by `AuthorizedAsyncImage` since `AsyncImage`
+    /// doesn't accept custom headers.
+    func authorizedFileDownloadRequest(fileId: String) async -> URLRequest {
+        await api.authorizedDownloadRequest(fileId: fileId)
+    }
+
+    /// Look up a single file's metadata. Used by the sidebar detail view when
+    /// the user lands on a file via a chat chip — we don't always have the
+    /// full file row cached client-side.
+    func fetchFileInfo(fileId: String) async throws -> WorkspaceFile {
+        try await api.getFileInfo(fileId: fileId)
     }
 
     // MARK: - Polling
