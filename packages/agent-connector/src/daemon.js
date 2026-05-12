@@ -138,6 +138,18 @@ class Daemon {
     }
 
     await this.stopAgent(agentName);
+
+    // stopAgent only waits 5s for `_adapters[name]` to disappear, but
+    // graceful adapter shutdown can take longer (control-poller cleanup,
+    // disconnect, in-flight CLI subprocess kill). If the adapter is still
+    // there when we reach _launchAgent, the duplicate-launch guard bails
+    // and the agent stays stuck in 'stopped'. Wait up to 20s so the
+    // launch sees a clean slate.
+    for (let i = 0; i < 40; i++) {
+      if (!this._adapters || !this._adapters[agentName]) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+
     this._stoppedAgents.delete(agentName);
 
     // Reload config in case it changed
@@ -433,6 +445,7 @@ class Daemon {
         disabledModules: new Set(),
         agentEnv: this._buildAgentEnv(agentCfg),
         workingDir: agentCfg.path || undefined,
+        toolMode: agentCfg.tool_mode || 'mcp',
       });
     } catch (e) {
       this._log(`${name} failed to create ${agentType} adapter: ${e.message}`);

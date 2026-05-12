@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi } from './api';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, DMConversation, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -65,6 +65,8 @@ interface WorkspaceContextValue {
   openBrowserTabWithContext: (contextId: string, url?: string) => Promise<BrowserTab>;
   dmConversations: DMConversation[];
   refreshDMConversations: () => Promise<void>;
+  todos: TodoItem[];
+  refreshTodos: () => Promise<void>;
   notificationSound: boolean;
   setNotificationSound: (enabled: boolean) => void;
 }
@@ -129,6 +131,7 @@ export function WorkspaceProvider({
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
   const [dmConversations, setDMConversations] = useState<DMConversation[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
   // Auto-select browser tabs for split browser view:
@@ -444,6 +447,7 @@ export function WorkspaceProvider({
       workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {});
       workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {});
       workspaceApi.listConversations().then((c) => setDMConversations(c)).catch(() => {});
+      workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {});
     } catch {
       // Non-critical — keep existing state
     }
@@ -456,6 +460,15 @@ export function WorkspaceProvider({
     try {
       const result = await workspaceApi.listFiles();
       setFiles(result.files);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const refreshTodos = useCallback(async () => {
+    try {
+      const result = await workspaceApi.listTodos();
+      setTodos(result.todos);
     } catch {
       // Non-critical
     }
@@ -560,6 +573,7 @@ export function WorkspaceProvider({
           workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {}),
           workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {}),
           workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {}),
+          workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {}),
         ]);
         if (cancelled) return;
 
@@ -852,6 +866,8 @@ export function WorkspaceProvider({
         openBrowserTabWithContext,
         dmConversations,
         refreshDMConversations,
+        todos,
+        refreshTodos,
         notificationSound,
         setNotificationSound,
       }}

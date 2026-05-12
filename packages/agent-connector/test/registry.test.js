@@ -37,6 +37,23 @@ describe('Registry', () => {
     assert.ok(entry.env_config);
   });
 
+  it('kimi entry has Moonshot defaults and OpenAI-compatible env_config', () => {
+    const reg = new Registry(tmpDir);
+    const entry = reg.getEntry('kimi');
+    assert.ok(entry, 'bundled registry should have kimi');
+    assert.equal(entry.label, 'Kimi');
+    assert.ok(entry.adapter);
+    assert.equal(entry.adapter.class, 'KimiAdapter');
+
+    const fields = entry.env_config || [];
+    const baseUrl = fields.find((f) => f.name === 'KIMI_BASE_URL');
+    const model = fields.find((f) => f.name === 'KIMI_MODEL');
+    const apiKey = fields.find((f) => f.name === 'KIMI_API_KEY');
+    assert.ok(apiKey && apiKey.password, 'KIMI_API_KEY must be a password field');
+    assert.equal(baseUrl.default, 'https://api.moonshot.ai/v1');
+    assert.equal(model.default, 'kimi-k2.6');
+  });
+
   it('codex entry exposes direct and CLI readiness fields', () => {
     const reg = new Registry(tmpDir);
     const entry = reg.getEntry('codex');

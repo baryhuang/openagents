@@ -235,6 +235,72 @@ function buildToolDefs(disabledModules) {
     );
   }
 
+  // -- Todos & Timers (always enabled) --
+  tools.push(
+    {
+      name: 'workspace_put_todos',
+      description: 'Update your to-do list. Replaces the entire list each time (send full list with current statuses). Channel is auto-resolved.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          todos: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                content: { type: 'string', description: 'Task description' },
+                status: { type: 'string', enum: ['pending', 'in_progress', 'completed'], description: 'Task status' },
+                assignee: { type: 'string', description: 'Agent name to assign to (defaults to self)' },
+              },
+              required: ['content', 'status'],
+            },
+            description: 'Full to-do list with current statuses',
+          },
+        },
+        required: ['todos'],
+      },
+    },
+    {
+      name: 'workspace_get_todos',
+      description: 'Get to-do items for the current channel. Use all=true to see all agents\' todos.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          agent: { type: 'string', description: 'Filter by agent name' },
+          all: { type: 'boolean', description: 'Get all agents\' todos (default: own only)' },
+        },
+      },
+    },
+    {
+      name: 'workspace_create_timer',
+      description: 'Set a timer that posts a message to the channel after the specified delay.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          delay: { type: 'integer', description: 'Seconds until the timer fires (1-86400)' },
+          message: { type: 'string', description: 'Message to post when the timer fires' },
+        },
+        required: ['delay', 'message'],
+      },
+    },
+    {
+      name: 'workspace_list_timers',
+      description: 'List active timers in the current channel.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'workspace_cancel_timer',
+      description: 'Cancel an active timer by its ID.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          timer_id: { type: 'string', description: 'Timer ID to cancel' },
+        },
+        required: ['timer_id'],
+      },
+    },
+  );
+
   return tools;
 }
 
@@ -594,6 +660,56 @@ class McpServer {
           return `- localhost:${p} → ${t.url} (${running ? 'running' : 'stopped'})`;
         });
         return text(lines.join('\n'));
+      }
+
+      // ── Todos & Timers ──
+
+      case 'workspace_put_todos': {
+        await this.ws.putTodos(this.workspaceId, this.channelName, this.token, args.todos, {
+          source: `openagents:${this.agentName}`,
+        });
+        const summary = (args.todos || []).map((t) => {
+          const icon = t.status === 'completed' ? '[x]' : t.status === 'in_progress' ? '[~]' : '[ ]';
+          return `${icon} ${t.content}${t.assignee ? ` → ${t.assignee}` : ''}`;
+        }).join('\n');
+        return text(`Todos updated:\n${summary}`);
+      }
+
+      case 'workspace_get_todos': {
+        const data = await this.ws.getTodos(this.workspaceId, this.channelName, this.token, {
+          agent: args.agent, all: args.all,
+        });
+        const todos = (data && data.todos) || [];
+        if (!todos.length) return text('No todos.');
+        const lines = todos.map((t) => {
+          const icon = t.status === 'completed' ? '[x]' : t.status === 'in_progress' ? '[~]' : '[ ]';
+          return `${icon} ${t.content} (${t.assignee || 'unassigned'})`;
+        });
+        return text(lines.join('\n'));
+      }
+
+      case 'workspace_create_timer': {
+        const result = await this.ws.createTimer(
+          this.workspaceId, this.channelName, this.token,
+          args.delay, args.message,
+          { source: `openagents:${this.agentName}` },
+        );
+        return text(`Timer set: "${args.message}" fires in ${args.delay}s (id: ${result.id})`);
+      }
+
+      case 'workspace_list_timers': {
+        const data = await this.ws.listTimers(this.workspaceId, this.channelName, this.token);
+        const timers = (data && data.timers) || [];
+        if (!timers.length) return text('No active timers.');
+        const lines = timers.map((t) =>
+          `- ${t.id}: "${t.message}" fires at ${t.fires_at} (by ${t.created_by})`
+        );
+        return text(lines.join('\n'));
+      }
+
+      case 'workspace_cancel_timer': {
+        await this.ws.cancelTimer(this.workspaceId, this.token, args.timer_id);
+        return text(`Timer cancelled: ${args.timer_id}`);
       }
 
       default:

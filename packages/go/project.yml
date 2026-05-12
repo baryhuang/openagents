@@ -7,6 +7,10 @@ options:
   developmentLanguage: en
   createIntermediateGroups: true
   generateEmptyDirectories: true
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 11.0.0
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -26,10 +30,19 @@ targets:
       iOS: "18.0"
     sources:
       - path: OpenAgents
+    dependencies:
+      - package: Firebase
+        product: FirebaseCore
+        platforms: [iOS]
+      - package: Firebase
+        product: FirebaseMessaging
+        platforms: [iOS]
     info:
       path: OpenAgents/Info.plist
       properties:
         CFBundleDisplayName: OpenAgents Go
+        UIBackgroundModes:
+          - remote-notification
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.productivity
@@ -94,3 +107,4 @@ targets:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         com.apple.security.files.user-selected.read-only: true
+        aps-environment: development

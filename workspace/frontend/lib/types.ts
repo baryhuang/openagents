@@ -103,6 +103,34 @@ export interface BrowserPersistentContext {
 }
 
 // ---------------------------------------------------------------------------
+// Todos / Tasks (agent planning)
+// ---------------------------------------------------------------------------
+
+export interface TodoItem {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  assignee: string;
+  createdBy: string;
+  channelName: string;
+  threadId: string | null;
+  position: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TimerItem {
+  id: string;
+  message: string;
+  delaySeconds: number;
+  firesAt: string;
+  status: string;
+  createdBy: string;
+  channelName: string;
+  createdAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Agent catalog (supported client types)
 // ---------------------------------------------------------------------------
 

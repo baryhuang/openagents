@@ -23,6 +23,13 @@ struct ThreadListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            #if os(macOS)
+            // macOS NavigationSplitView doesn't surface the sidebar column's
+            // navigationTitle anywhere visible by default — render it in-content
+            // so the workspace name is always present at the top of the list.
+            workspaceHeader
+            Divider()
+            #endif
             list
         }
         .navigationTitle(store.workspace?.name ?? "Workspace")
@@ -93,6 +100,30 @@ struct ThreadListView: View {
             }
         }
     }
+
+    #if os(macOS)
+    private var workspaceHeader: some View {
+        let name = store.workspace?.name ?? "Workspace"
+        let slug = store.workspace?.slug ?? store.workspaceId
+        return HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(slug)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    #endif
 
     @ViewBuilder
     private var list: some View {

@@ -42,6 +42,41 @@ struct ChatView: View {
     @State private var sidebarWidth: CGFloat = ContentSidebar.singleColumnWidth
     @State private var sidebarDragStart: CGFloat?
 
+    /// Slash-command popup state. Mirrors the React `@mention` autocomplete
+    /// pattern but lives only in the native composer. When `slashSuggestionsOpen`
+    /// is true, the composer's NSTextView routes ↑/↓/Enter/Tab/Esc through
+    /// `consumeSlashKey(_:)` instead of letting them produce normal text.
+    @State private var slashSuggestionsOpen: Bool = false
+    @State private var slashSuggestionIndex: Int = 0
+
+    private struct SlashCommand: Identifiable {
+        let id: String           // also used as the `name` ("restart")
+        let description: String
+        let systemImage: String
+        var name: String { id }
+    }
+
+    private static let availableCommands: [SlashCommand] = [
+        SlashCommand(
+            id: "restart",
+            description: "Reset agent conversation. Next message starts fresh.",
+            systemImage: "arrow.counterclockwise",
+        ),
+        SlashCommand(
+            id: "status",
+            description: "Show agent uptime, version, and network.",
+            systemImage: "info.circle",
+        ),
+    ]
+
+    private var filteredSlashCommands: [SlashCommand] {
+        let typed = draft.wrappedValue
+        guard typed.hasPrefix("/") else { return [] }
+        let q = String(typed.dropFirst()).lowercased()
+        if q.isEmpty { return Self.availableCommands }
+        return Self.availableCommands.filter { $0.name.hasPrefix(q) }
+    }
+
     private static let defaultInputHeight: CGFloat = 44
     private static let minInputHeight: CGFloat = 36
 
@@ -70,6 +105,18 @@ struct ChatView: View {
         #else
         return horizontalSizeClass == .regular
         #endif
+    }
+
+    /// True when the current session has an agent actively working (and we
+    /// haven't yet flipped to a stopping state). Drives the send-vs-stop swap.
+    private var agentIsWorking: Bool {
+        guard let id = store.currentSessionId else { return false }
+        return store.isAgentWorking(in: id)
+    }
+
+    private var isStoppingCurrentSession: Bool {
+        guard let id = store.currentSessionId else { return false }
+        return store.isStopping(id)
     }
 
     var body: some View {
@@ -151,6 +198,11 @@ struct ChatView: View {
         }
         #if os(macOS)
         .background(Color(.controlBackgroundColor))
+        // Window-toolbar title. NavigationSplitView routes the detail column's
+        // navigationTitle to the window title bar; without this the bar falls
+        // back to the app's display name ("OpenAgents Go").
+        .navigationTitle(store.currentSession?.title ?? "")
+        .navigationSubtitle(macSubtitle)
         #else
         .navigationTitle(store.currentSession?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
@@ -217,6 +269,16 @@ struct ChatView: View {
         .help("Toggle content sidebar")
         #endif
     }
+
+    #if os(macOS)
+    private var macSubtitle: String {
+        guard let session = store.currentSession else { return "" }
+        let names = store.agents
+            .filter { session.participants.isEmpty || session.participants.contains($0.agentName) }
+            .map(\.agentName)
+        return names.joined(separator: ", ")
+    }
+    #endif
 
     // MARK: - Sections
 
@@ -402,16 +464,34 @@ struct ChatView: View {
 
                 inputField
 
-                Button(action: send) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(canSend ? Color.accentColor : Color.gray.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
+                sendOrStopButton
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+        }
+        .overlay(alignment: .top) {
+            if slashSuggestionsOpen && !filteredSlashCommands.isEmpty {
+                slashSuggestionsPopup
+                    .alignmentGuide(.top) { d in d[.bottom] + 8 }   // float above the bar
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(1)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: slashSuggestionsOpen)
+        .onChange(of: draft.wrappedValue) { _, newValue in
+            // Show the popup while the user is mid-command — `/`, `/r`, `/restart`.
+            // Vanishes the instant they type a space, newline, or anything that
+            // doesn't start with `/`. Keeps the popup anchored to single-line
+            // command tokens; multi-arg commands (none today) would relax this.
+            let starts = newValue.hasPrefix("/")
+                && !newValue.contains(" ")
+                && !newValue.contains("\n")
+            slashSuggestionsOpen = starts && !filteredSlashCommands.isEmpty
+            if !slashSuggestionsOpen {
+                slashSuggestionIndex = 0
+            } else {
+                slashSuggestionIndex = min(slashSuggestionIndex, max(filteredSlashCommands.count - 1, 0))
+            }
         }
         #if os(iOS)
         // iPhone/iPad: paperclip is a Menu offering Photos (PhotosPicker) and
@@ -440,6 +520,40 @@ struct ChatView: View {
             }
         }
         #endif
+    }
+
+    /// ChatGPT-style send/stop swap. The send arrow is replaced by a stop square
+    /// while an agent is working in the current session — same position, so users
+    /// don't have to look elsewhere to interrupt. Disabled while a stop is in
+    /// flight (we already sent the control event and are waiting for terminal
+    /// status to come back).
+    @ViewBuilder
+    private var sendOrStopButton: some View {
+        if agentIsWorking || isStoppingCurrentSession {
+            Button(action: stopAgents) {
+                Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(isStoppingCurrentSession ? Color.gray.opacity(0.5) : Color.red)
+            }
+            .buttonStyle(.plain)
+            .disabled(isStoppingCurrentSession)
+            .help(isStoppingCurrentSession ? "Stopping…" : "Stop agent")
+        } else {
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(canSend ? Color.accentColor : Color.gray.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .help("Send message")
+        }
+    }
+
+    private func stopAgents() {
+        guard let id = store.currentSessionId else { return }
+        logInfo("ui", "stop tapped session=\(id)")
+        Task { await store.stopAllAgents(sessionId: id) }
     }
 
     /// Paperclip trigger.
@@ -507,45 +621,126 @@ struct ChatView: View {
             )
     }
 
-    /// TextEditor with a manual placeholder. We use TextEditor (not TextField) so the
-    /// height can be controlled directly by `inputHeight`; the editor scrolls internally
-    /// when content exceeds the chosen height.
-    private var inputField: some View {
-        ZStack(alignment: .topLeading) {
-            TextEditor(text: draft)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
-                .frame(height: inputHeight)
-                .focused($inputFocused)
-                #if os(macOS)
-                // .onPasteCommand is macOS-only. On iOS, the paperclip presents
-                // a PhotosPicker (images only) — that's the natural way to attach
-                // images on a phone, and ⌘V on a paired hardware keyboard would
-                // need a separate UIPasteControl integration we haven't added.
-                .onPasteCommand(of: pasteAcceptedTypes) { providers in
-                    handlePaste(providers)
+    /// Native composer wrapping NSTextView (macOS) / UITextView (iOS). It owns
+    /// IME-gated Return-to-send (`hasMarkedText` / `markedTextRange`) and image
+    /// + file paste — both of which the stock SwiftUI `TextEditor` cannot do.
+    /// Floating list of slash commands shown above the input bar while the
+    /// user is typing a command. Mirrors the React `@mention` autocomplete
+    /// feel: highlighted row tracks `slashSuggestionIndex`, click or Tab
+    /// selects, Enter on an exact match sends, Esc dismisses. The matched
+    /// prefix in each name is bolded so the user can see what's narrowing
+    /// the list as they type.
+    private var slashSuggestionsPopup: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(filteredSlashCommands.enumerated()), id: \.element.id) { idx, cmd in
+                HStack(spacing: 10) {
+                    Image(systemName: cmd.systemImage)
+                        .frame(width: 22)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        slashName(for: cmd)
+                            .font(.body)
+                        Text(cmd.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
                 }
-                #endif
-                .onKeyPress(phases: .down) { keyPress in
-                    // Plain Return → send. Shift+Return → fall through, TextEditor inserts a newline.
-                    // Applies to macOS and to iOS hardware keyboards (iOS 17+).
-                    guard keyPress.key == .return else { return .ignored }
-                    if keyPress.modifiers.contains(.shift) { return .ignored }
-                    send()
-                    return .handled
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(idx == slashSuggestionIndex ? Color.accentColor.opacity(0.15) : Color.clear)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    draft.wrappedValue = "/\(cmd.name)"
+                    slashSuggestionsOpen = false
                 }
-
-            if draft.wrappedValue.isEmpty {
-                Text("iMessage")
-                    .font(.body)
-                    .foregroundStyle(Color.secondary.opacity(0.7))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .allowsHitTesting(false)
             }
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.black.opacity(0.08), lineWidth: 0.5),
+        )
+        .frame(maxWidth: 360, alignment: .leading)
+        .padding(.horizontal, 12)
+    }
+
+    private var inputField: some View {
+        ComposerTextView(
+            text: draft,
+            height: inputHeight,
+            placeholder: "Message",
+            isFocused: $inputFocused,
+            onSend: { send() },
+            onPasteImages: { attachments in
+                pendingAttachments.append(contentsOf: attachments)
+            },
+            onPasteFileURLs: { urls in
+                for url in urls { ingestFileURL(url) }
+            },
+            onSlashKey: consumeSlashKey,
+        )
+    }
+
+    /// Called by `ComposerTextView` (macOS NSTextView delegate) for every
+    /// command selector while the composer holds focus. Returns true if the
+    /// slash-command popup consumed the key — in that case the composer
+    /// short-circuits and won't run its own Return-to-send logic.
+    /// Render `/<name>` with the part the user has typed so far rendered in
+    /// bold, so as the popup narrows down the highlight tracks the keystrokes.
+    /// Composes two Text values; SwiftUI's `+` concatenation keeps everything
+    /// in a single line.
+    private func slashName(for cmd: SlashCommand) -> Text {
+        let typed = String(draft.wrappedValue.dropFirst()).lowercased()
+        let matchLen = min(typed.count, cmd.name.count)
+        let head = String(cmd.name.prefix(matchLen))
+        let tail = String(cmd.name.dropFirst(matchLen))
+        return Text("/").foregroundStyle(.secondary)
+            + Text(head).fontWeight(.bold)
+            + Text(tail).fontWeight(.regular).foregroundStyle(.secondary)
+    }
+
+    private func consumeSlashKey(_ selector: Selector) -> Bool {
+        guard slashSuggestionsOpen else { return false }
+        let count = filteredSlashCommands.count
+        guard count > 0 else { return false }
+
+        // We can't use #selector against AppKit symbols inside a SwiftUI struct
+        // without importing AppKit, so match on the raw string. These are the
+        // standard NSResponder selectors AppKit emits for the relevant keys.
+        switch NSStringFromSelector(selector) {
+        case "moveDown:":
+            slashSuggestionIndex = min(slashSuggestionIndex + 1, count - 1)
+            return true
+        case "moveUp:":
+            slashSuggestionIndex = max(slashSuggestionIndex - 1, 0)
+            return true
+        case "insertTab:":
+            // Tab fills the input with the highlighted command but doesn't send.
+            // Lets the user read the description, then press Enter to fire.
+            let cmd = filteredSlashCommands[slashSuggestionIndex]
+            draft.wrappedValue = "/\(cmd.name)"
+            slashSuggestionsOpen = false
+            return true
+        case "insertNewline:":
+            // Enter on the popup: if the typed text already exactly matches a
+            // command (e.g. user typed "/restart" and hit Enter), let the
+            // composer's normal Return-to-send path run — that hits handleSlashCommand.
+            // Otherwise, treat Enter as "select highlighted suggestion".
+            let typed = String(draft.wrappedValue.dropFirst()).lowercased()
+            if typed == filteredSlashCommands[slashSuggestionIndex].name {
+                slashSuggestionsOpen = false
+                return false   // fall through → composer fires onSend → handleSlashCommand
+            }
+            let cmd = filteredSlashCommands[slashSuggestionIndex]
+            draft.wrappedValue = "/\(cmd.name)"
+            slashSuggestionsOpen = false
+            return true
+        case "cancelOperation:":
+            slashSuggestionsOpen = false
+            return true
+        default:
+            return false
         }
     }
 
@@ -569,6 +764,14 @@ struct ChatView: View {
     private func send() {
         let text = draft.wrappedValue
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Slash-command interception. Typed commands never reach the backend
+        // as chat messages — they dispatch to a local handler.
+        if trimmed.hasPrefix("/"), pendingAttachments.isEmpty {
+            handleSlashCommand(trimmed)
+            return
+        }
+
         let attachments = pendingAttachments
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             logWarn("ui", "send() ignored — empty draft and no attachments")
@@ -578,6 +781,51 @@ struct ChatView: View {
         draft.wrappedValue = ""
         pendingAttachments = []
         Task { await store.sendMessage(trimmed, attachments: attachments) }
+    }
+
+    /// Parse a typed slash command (the leading "/" plus optional args) and
+    /// dispatch to the matching action. Unknown commands surface via the
+    /// existing error banner so users see immediate feedback without leaving
+    /// the composer.
+    private func handleSlashCommand(_ raw: String) {
+        let body = raw.dropFirst() // drop leading "/"
+        let head = body
+            .split(separator: " ", maxSplits: 1)
+            .first
+            .map(String.init)?
+            .lowercased() ?? ""
+
+        switch head {
+        case "restart":
+            guard let id = store.currentSessionId else {
+                store.lastError = "/restart requires an active session."
+                return
+            }
+            logInfo("ui", "/restart invoked session=\(id)")
+            draft.wrappedValue = ""
+            slashSuggestionsOpen = false
+            // Chain restart → status. Control events are FIFO per agent, so
+            // the agent processes restart first (clears session, posts the
+            // terminal "Session restarted" status), then immediately processes
+            // status (posts uptime / version / network). The user gets a
+            // visible confirmation that the restart took effect with a 0s
+            // uptime in the follow-up status block.
+            Task {
+                await store.restartSession(sessionId: id)
+                await store.requestSessionStatus(sessionId: id)
+            }
+        case "status":
+            guard let id = store.currentSessionId else {
+                store.lastError = "/status requires an active session."
+                return
+            }
+            logInfo("ui", "/status invoked session=\(id)")
+            draft.wrappedValue = ""
+            slashSuggestionsOpen = false
+            Task { await store.requestSessionStatus(sessionId: id) }
+        default:
+            store.lastError = "Unknown command: /\(head). Available: /restart, /status"
+        }
     }
 
     /// Move externally-delivered files (iOS "Open in…", macOS "Open With",
@@ -617,10 +865,15 @@ struct ChatView: View {
                 let ext = utType?.preferredFilenameExtension ?? "jpg"
                 let mime = utType?.preferredMIMEType ?? "image/jpeg"
                 let stamp = Int(Date().timeIntervalSince1970)
-                pendingAttachments.append(PendingAttachment(
-                    filename: "Photo-\(stamp)-\(index).\(ext)",
-                    contentType: mime,
+                let (finalData, finalType, finalName) = ImageDownsampler.ensureFits(
                     data: data,
+                    contentType: mime,
+                    filename: "Photo-\(stamp)-\(index).\(ext)",
+                )
+                pendingAttachments.append(PendingAttachment(
+                    filename: finalName,
+                    contentType: finalType,
+                    data: finalData,
                 ))
             } catch {
                 logError("ui", "photo ingest failed: \(error.localizedDescription)")
@@ -629,59 +882,6 @@ struct ChatView: View {
     }
     #endif
 
-    #if os(macOS)
-    /// Pasteboard types we want to capture before TextEditor sees them. Text is left
-    /// to the standard editor handling — it falls through automatically.
-    private var pasteAcceptedTypes: [String] {
-        [
-            UTType.png.identifier,
-            UTType.jpeg.identifier,
-            UTType.tiff.identifier,
-            UTType.image.identifier,
-            UTType.fileURL.identifier,
-        ]
-    }
-
-    private func handlePaste(_ providers: [NSItemProvider]) {
-        let imageTypes = [
-            UTType.png.identifier,
-            UTType.jpeg.identifier,
-            UTType.tiff.identifier,
-            UTType.image.identifier,
-        ]
-        for provider in providers {
-            // Image paste — load raw bytes for whichever image type the pasteboard offers first.
-            if let type = imageTypes.first(where: { provider.hasItemConformingToTypeIdentifier($0) }) {
-                provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
-                    guard let data = data else { return }
-                    let utType = UTType(type)
-                    let ext = utType?.preferredFilenameExtension ?? "png"
-                    let mime = utType?.preferredMIMEType ?? "image/png"
-                    let stamp = Int(Date().timeIntervalSince1970)
-                    let attachment = PendingAttachment(
-                        filename: "Pasted-\(stamp).\(ext)",
-                        contentType: mime,
-                        data: data,
-                    )
-                    Task { @MainActor in
-                        pendingAttachments.append(attachment)
-                    }
-                }
-                continue
-            }
-
-            // File URL paste (e.g. drag from Finder into a Slack-style composer).
-            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
-                    guard let data, let url = URL(dataRepresentation: data, relativeTo: nil, isAbsolute: true) else { return }
-                    Task { @MainActor in
-                        ingestFileURL(url)
-                    }
-                }
-            }
-        }
-    }
-    #endif
 
     @MainActor
     private func ingestFileURL(_ url: URL) {
@@ -693,10 +893,15 @@ struct ChatView: View {
         }
         let mime = (UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
             ?? "application/octet-stream"
-        pendingAttachments.append(PendingAttachment(
-            filename: url.lastPathComponent,
-            contentType: mime,
+        let (finalData, finalType, finalName) = ImageDownsampler.ensureFits(
             data: data,
+            contentType: mime,
+            filename: url.lastPathComponent,
+        )
+        pendingAttachments.append(PendingAttachment(
+            filename: finalName,
+            contentType: finalType,
+            data: finalData,
         ))
     }
 
@@ -880,13 +1085,82 @@ private struct TableView: View {
     }
 }
 
+#if os(macOS)
+private typealias PlatformImage = NSImage
+#else
+private typealias PlatformImage = UIImage
+#endif
+
 private struct AttachmentChip: View {
     let attachment: PendingAttachment
     let onRemove: () -> Void
 
+    /// Cached thumbnail decoded once on first appear so we don't re-decode
+    /// every time SwiftUI re-runs `body`.
+    @State private var thumbnail: PlatformImage?
+
     var body: some View {
+        Group {
+            if attachment.isImage {
+                imageVariant
+            } else {
+                fileVariant
+            }
+        }
+        .onAppear { loadThumbnailIfNeeded() }
+        .help("\(attachment.filename) — \(formattedSize)")
+    }
+
+    /// 48×48 thumbnail with a small remove button overlay in the top-right
+    /// corner. Slack / iMessage / ChatGPT all use this pattern; the visual
+    /// is the identification, so we don't show the synthetic filename.
+    private var imageVariant: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image = thumbnail {
+                    #if os(macOS)
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                    #else
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                    #endif
+                } else {
+                    // Placeholder while ImageIO decodes — only visible for
+                    // a frame or two on first paste of a large image.
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.18))
+                        .overlay {
+                            Image(systemName: "photo")
+                                .foregroundStyle(.secondary)
+                        }
+                }
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(.black.opacity(0.08), lineWidth: 0.5),
+            )
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .black.opacity(0.55))
+                    .font(.system(size: 16))
+            }
+            .buttonStyle(.plain)
+            .offset(x: 6, y: -6)
+        }
+    }
+
+    /// Slack-style file row: paperclip + filename + size + remove. Used for
+    /// non-image attachments (pasted text-as-file, picked documents, etc.).
+    private var fileVariant: some View {
         HStack(spacing: 6) {
-            Image(systemName: attachment.isImage ? "photo" : "doc")
+            Image(systemName: "doc")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(attachment.filename)
@@ -907,6 +1181,11 @@ private struct AttachmentChip: View {
         .padding(.vertical, 4)
         .background(.regularMaterial, in: Capsule())
         .frame(maxWidth: 240)
+    }
+
+    private func loadThumbnailIfNeeded() {
+        guard attachment.isImage, thumbnail == nil else { return }
+        thumbnail = attachment.makeThumbnail(maxSide: 48)
     }
 
     private var formattedSize: String {
@@ -977,10 +1256,10 @@ private struct MessageBubble: View {
         return HStack(spacing: 0) {
             if message.isFromUser {
                 Spacer(minLength: Self.sideGap)
-                bubble(alignment: .trailing, segments: segments)
+                bubble(alignment: .trailing, segments: segments, fillsRow: hasWideContent)
                     .frame(width: bubbleWidth, alignment: .trailing)
             } else {
-                bubble(alignment: .leading, segments: segments)
+                bubble(alignment: .leading, segments: segments, fillsRow: hasWideContent)
                     .frame(width: bubbleWidth, alignment: .leading)
                 Spacer(minLength: Self.sideGap)
             }
@@ -1007,7 +1286,11 @@ private struct MessageBubble: View {
     private func bubble(
         alignment: HorizontalAlignment,
         segments: [MarkdownSegment],
+        fillsRow: Bool,
     ) -> some View {
+        let textAlignment: TextAlignment = (alignment == .trailing) ? .trailing : .leading
+        let frameAlignment: Alignment = (alignment == .trailing) ? .trailing : .leading
+
         VStack(alignment: alignment, spacing: 2) {
             if !message.isFromUser && showSenderLabel {
                 Text(message.senderName)
@@ -1022,11 +1305,22 @@ private struct MessageBubble: View {
                     case .prose(let text):
                         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !trimmed.isEmpty {
-                            Text(.init(trimmed))
-                                .textSelection(.enabled)
-                                .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
+                            // For prose-only bubbles we let the Text size to its content so short
+                            // messages ("hi") hug the text. When the row contains wide content
+                            // (code/table), we still expand prose to row width so it aligns with
+                            // those blocks.
+                            if fillsRow {
+                                Text(.init(trimmed))
+                                    .textSelection(.enabled)
+                                    .multilineTextAlignment(textAlignment)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: frameAlignment)
+                            } else {
+                                Text(.init(trimmed))
+                                    .textSelection(.enabled)
+                                    .multilineTextAlignment(textAlignment)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     case .code(let lang, let code):
                         CodeBlockView(language: lang, content: code, onLightBubble: !message.isFromUser)
@@ -1048,7 +1342,9 @@ private struct MessageBubble: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
+            // Only force full-row width when the bubble actually contains code/table; otherwise
+            // let it shrink to its prose content.
+            .modifier(BubbleFillModifier(fillsRow: fillsRow, alignment: frameAlignment))
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(bubbleBackground)
@@ -1106,5 +1402,18 @@ private struct MessageBubble: View {
 
     private var bubbleBackground: Color {
         message.isFromUser ? Color.blue : Color.gray.opacity(0.18)
+    }
+}
+
+private struct BubbleFillModifier: ViewModifier {
+    let fillsRow: Bool
+    let alignment: Alignment
+
+    func body(content: Content) -> some View {
+        if fillsRow {
+            content.frame(maxWidth: .infinity, alignment: alignment)
+        } else {
+            content
+        }
     }
 }
