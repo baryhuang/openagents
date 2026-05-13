@@ -32,7 +32,7 @@ class ClaudeAdapter extends BaseAdapter {
     super(opts);
     this.disabledModules = opts.disabledModules || new Set();
     /** @type {'mcp' | 'skills'} Tool integration mode */
-    this.toolMode = opts.toolMode || 'mcp';
+    this.toolMode = opts.toolMode || 'skills';
     this._channelSessions = {}; // channel → Claude CLI session_id
     this._channelProcesses = {}; // channel → child process
     this._stoppingChannels = new Set();

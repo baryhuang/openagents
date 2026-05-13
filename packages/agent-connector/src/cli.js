@@ -456,7 +456,7 @@ async function cmdToolMode(connector, _flags, positional) {
     if (agents.length === 0) { print('No agents configured'); return; }
     for (const a of agents) {
       connector.config.updateAgent(a.name, { tool_mode: targetMode });
-      print(`  ${a.name}: ${a.tool_mode || 'mcp'} → ${targetMode}`);
+      print(`  ${a.name}: ${a.tool_mode || 'skills'} → ${targetMode}`);
     }
     try { connector.sendDaemonCommand('reload'); } catch {}
     print(`\nSet all ${agents.length} agent(s) to '${targetMode}' mode.`);
@@ -471,7 +471,7 @@ async function cmdToolMode(connector, _flags, positional) {
       return;
     }
     for (const a of agents) {
-      print(`  ${a.name}: ${a.tool_mode || 'mcp'}`);
+      print(`  ${a.name}: ${a.tool_mode || 'skills'}`);
     }
     print('\nUsage: agn tool-mode <agent|--all> <mcp|skills>');
     return;
@@ -481,7 +481,7 @@ async function cmdToolMode(connector, _flags, positional) {
     // Show tool mode for specific agent
     const agent = connector.config.getAgent(first);
     if (!agent) { print(`Agent '${first}' not found`); process.exitCode = 1; return; }
-    print(`${first}: ${agent.tool_mode || 'mcp'}`);
+    print(`${first}: ${agent.tool_mode || 'skills'}`);
     print('\nUsage: agn tool-mode <agent|--all> <mcp|skills>');
     return;
   }

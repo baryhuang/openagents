@@ -445,7 +445,7 @@ class Daemon {
         disabledModules: new Set(),
         agentEnv: this._buildAgentEnv(agentCfg),
         workingDir: agentCfg.path || undefined,
-        toolMode: agentCfg.tool_mode || 'mcp',
+        toolMode: agentCfg.tool_mode || 'skills',
       });
     } catch (e) {
       this._log(`${name} failed to create ${agentType} adapter: ${e.message}`);
