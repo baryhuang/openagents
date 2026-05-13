@@ -67,7 +67,20 @@ class ClaudeAdapter extends BaseAdapter {
 
   async _onControlAction(action, payload) {
     if (action === 'stop') {
-      await this._stopAllProcesses('Execution stopped by user.');
+      const channel = (payload && typeof payload === 'object') ? payload.channel : null;
+      if (channel && this._channelProcesses[channel]) {
+        this._log(`Stopping process for channel=${channel}`);
+        this._stoppingChannels.add(channel);
+        const proc = this._channelProcesses[channel];
+        await this._stopProcess(proc);
+        delete this._channelProcesses[channel];
+        delete this._channelQueues[channel];
+        try {
+          await this.sendResponse(channel, 'Execution stopped by user.');
+        } catch {}
+      } else {
+        await this._stopAllProcesses('Execution stopped by user.');
+      }
       return;
     }
     if (action === 'restart') {

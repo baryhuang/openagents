@@ -69,11 +69,36 @@ describe('agent stop control', () => {
     await adapter._stopAllProcesses('Execution stopped by user');
 
     assert.equal(adapter._stoppingChannels.has('thread'), true);
-    // _stopAllProcesses posts a chat-type message (sendResponse), not a
-    // status, so the workspace UI's last-event check transitions out of
-    // "agent is working" state instead of shimmering forever (see
-    // 6cfc5750).
     assert.deepEqual(responses, [{ channel: 'thread', content: 'Execution stopped by user' }]);
+  });
+
+  it('channel-scoped stop only kills the targeted channel process', async () => {
+    const adapter = new ClaudeAdapter({
+      workspaceId: 'ws',
+      channelName: 'thread',
+      token: 'token',
+      agentName: 'claude',
+    });
+    const proc1 = new EventEmitter();
+    proc1.pid = 99999991;
+    proc1.exitCode = null;
+    const proc2 = new EventEmitter();
+    proc2.pid = 99999992;
+    proc2.exitCode = null;
+
+    adapter._channelProcesses.channelA = proc1;
+    adapter._channelProcesses.channelB = proc2;
+    adapter._stopProcess = async () => {};
+    const responses = [];
+    adapter.sendResponse = async (channel, content) => responses.push({ channel, content });
+
+    await adapter._onControlAction('stop', { channel: 'channelA' });
+
+    assert.equal(adapter._stoppingChannels.has('channelA'), true);
+    assert.equal(adapter._stoppingChannels.has('channelB'), false);
+    assert.equal(adapter._channelProcesses.channelA, undefined);
+    assert.ok(adapter._channelProcesses.channelB);
+    assert.deepEqual(responses, [{ channel: 'channelA', content: 'Execution stopped by user.' }]);
   });
 
   it('Claude stop terminates the spawned process tree', async () => {

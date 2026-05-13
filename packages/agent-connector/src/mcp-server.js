@@ -409,16 +409,16 @@ class McpServer {
       case 'workspace_get_history': {
         const limit = args.limit || 20;
         const channel = args.channel || this.channelName;
-        const data = await this.ws.pollMessages(this.workspaceId, channel, this.token, { limit });
-        const events = data.events || data || [];
-        if (!events.length) return text('No messages yet.');
-        const lines = events.map((e) => {
-          const sender = (e.source || '').replace(/^(human|openagents):/, '');
-          const content = e.payload?.content || '';
-          const type = e.payload?.message_type || 'chat';
-          if (type === 'status') return null; // skip status updates
+        const messages = await this.ws.getRecentMessages(this.workspaceId, channel, this.token, limit);
+        if (!messages.length) return text('No messages yet.');
+        const lines = messages.map((m) => {
+          const mt = m.messageType || 'chat';
+          if (mt === 'status') return null;
+          const sender = m.senderName || m.senderType || '';
+          const content = m.content || '';
           return `[${sender}] ${content}`;
         }).filter(Boolean);
+        if (!lines.length) return text('No messages yet.');
         return text(lines.join('\n'));
       }
 

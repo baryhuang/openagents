@@ -356,23 +356,17 @@ class WorkspaceClient {
       const params = new URLSearchParams({
         network: workspaceId,
         type: 'workspace.agent.control',
+        target: `openagents:${agentName}`,
         limit: '10',
-        // Newest-first so the limit window doesn't get filled with ancient
-        // events for OTHER agents — a busy workspace with hundreds of old
-        // stop events would otherwise leave nothing matching this agent.
         sort: 'desc',
       });
       if (after) params.set('after', after);
       const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
       const result = data.data || data;
       const events = (result && result.events) || [];
-      const filtered = events.filter((e) => {
-        const target = e.target || '';
-        return target === `openagents:${agentName}`;
-      });
       // Re-sort ascending by timestamp so callers process oldest-first.
-      filtered.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-      return filtered;
+      events.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      return events;
     } catch {
       return [];
     }

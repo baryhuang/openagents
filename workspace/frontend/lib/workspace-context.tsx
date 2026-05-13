@@ -33,7 +33,7 @@ interface WorkspaceContextValue {
   setSessionActive: (sessionId: string, active: boolean) => void;
   updateAgentMode: (agentName: string, mode: string) => void;
   toggleAgentMode: (agentName: string) => void;
-  stopAllAgents: () => Promise<void>;
+  stopAllAgents: (sessionId?: string) => Promise<void>;
   setCurrentSessionId: (id: string | null, options?: { skipFocus?: boolean }) => void;
   /** Read-and-clear: was the most recent setCurrentSessionId asked to skip auto-focus? */
   consumeSkipFocus: () => boolean;
@@ -228,8 +228,10 @@ export function WorkspaceProvider({
     }
   }, [agentModes]);
 
-  const stopAllAgents = useCallback(async () => {
-    const sessionIds = Array.from(activeSessionIds);
+  const stopAllAgents = useCallback(async (targetSessionId?: string) => {
+    const sessionIds = targetSessionId
+      ? (activeSessionIds.has(targetSessionId) ? [targetSessionId] : [])
+      : Array.from(activeSessionIds);
     if (sessionIds.length === 0) return;
 
     setStoppingSessionIds((prev) => {
@@ -250,8 +252,18 @@ export function WorkspaceProvider({
       return next;
     });
 
+    const targetAgents = targetSessionId
+      ? agents.filter((a) => {
+          const session = sessions.find((s) => s.sessionId === targetSessionId);
+          return session && (session.participants || []).includes(a.agentName);
+        })
+      : agents;
+
     const sendStop = () => Promise.allSettled(
-      agents.map((a) => workspaceApi.sendAgentControl(a.agentName, 'stop'))
+      targetAgents.map((a) => {
+        const channel = targetSessionId || undefined;
+        return workspaceApi.sendAgentControl(a.agentName, 'stop', { channel });
+      })
     );
     await sendStop();
 
@@ -262,7 +274,7 @@ export function WorkspaceProvider({
         return prevStopping;
       });
     }, 3000);
-  }, [activeSessionIds, agents]);
+  }, [activeSessionIds, agents, sessions]);
 
   // Configure API client on mount
   useEffect(() => {

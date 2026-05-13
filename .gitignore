@@ -234,3 +234,4 @@ archived_tests/
 internal_frontend/
 Formula/
 deploy/
+.vercel
