@@ -299,6 +299,41 @@ function buildToolDefs(disabledModules) {
         required: ['timer_id'],
       },
     },
+    {
+      name: 'workspace_create_routine',
+      description: 'Create a recurring scheduled routine that posts a message on a repeating schedule.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Human-readable label for the routine (e.g. "Daily PR Review")' },
+          message: { type: 'string', description: 'Message to post each time the routine fires' },
+          hour: { type: 'integer', description: 'Hour in UTC (0-23)' },
+          minute: { type: 'integer', description: 'Minute (0-59)' },
+          days: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'Days of week to fire (0=Mon, 6=Sun). Omit for every day.',
+          },
+        },
+        required: ['name', 'message', 'hour', 'minute'],
+      },
+    },
+    {
+      name: 'workspace_list_routines',
+      description: 'List active routines in the current channel.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'workspace_cancel_routine',
+      description: 'Cancel a recurring routine by its ID.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          routine_id: { type: 'string', description: 'Routine ID to cancel' },
+        },
+        required: ['routine_id'],
+      },
+    },
   );
 
   return tools;
@@ -710,6 +745,39 @@ class McpServer {
       case 'workspace_cancel_timer': {
         await this.ws.cancelTimer(this.workspaceId, this.token, args.timer_id);
         return text(`Timer cancelled: ${args.timer_id}`);
+      }
+
+      case 'workspace_create_routine': {
+        const result = await this.ws.createRoutine(
+          this.workspaceId, this.channelName, this.token,
+          {
+            name: args.name,
+            message: args.message,
+            hour: args.hour,
+            minute: args.minute,
+            days: args.days,
+            source: `openagents:${this.agentName}`,
+          },
+        );
+        const daysStr = args.days ? `days [${args.days.join(',')}]` : 'every day';
+        return text(`Routine created: "${args.name}" at ${String(args.hour).padStart(2,'0')}:${String(args.minute).padStart(2,'0')} UTC, ${daysStr} (id: ${result.id})`);
+      }
+
+      case 'workspace_list_routines': {
+        const data = await this.ws.listRoutines(this.workspaceId, this.channelName, this.token);
+        const routines = (data && data.routines) || [];
+        if (!routines.length) return text('No active routines.');
+        const lines = routines.map((r) =>
+          `- ${r.id}: "${r.name}" at ${String(r.schedule_hour).padStart(2,'0')}:${String(r.schedule_minute).padStart(2,'0')} UTC` +
+          (r.schedule_days ? ` [days: ${r.schedule_days.join(',')}]` : ' (daily)') +
+          ` — next: ${r.next_fires_at} (by ${r.created_by})`
+        );
+        return text(lines.join('\n'));
+      }
+
+      case 'workspace_cancel_routine': {
+        await this.ws.cancelRoutine(this.workspaceId, this.token, args.routine_id);
+        return text(`Routine cancelled: ${args.routine_id}`);
       }
 
       default:

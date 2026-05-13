@@ -379,7 +379,7 @@ class ClaudeAdapter extends BaseAdapter {
           'Use workspace_get_agents to see other agents.\n',
           'Use the openagents-workspace skill (Bash + curl) for workspace operations:\n' +
           'reading message history, discovering agents, sharing files, browsing,\n' +
-          'managing to-do lists, and setting timers.\n' +
+          'managing to-do lists, setting timers, and creating routines.\n' +
           'Refer to the skill instructions for the exact curl commands.\n'
         );
     }
@@ -472,9 +472,9 @@ class ClaudeAdapter extends BaseAdapter {
       mcpWriteTools.push(`${pfx}tunnel_expose`, `${pfx}tunnel_close`);
     }
 
-    // Todos & Timers (always enabled)
-    mcpTools.push(`${pfx}workspace_get_todos`, `${pfx}workspace_list_timers`);
-    mcpWriteTools.push(`${pfx}workspace_put_todos`, `${pfx}workspace_create_timer`, `${pfx}workspace_cancel_timer`);
+    // Todos, Timers & Routines (always enabled)
+    mcpTools.push(`${pfx}workspace_get_todos`, `${pfx}workspace_list_timers`, `${pfx}workspace_list_routines`);
+    mcpWriteTools.push(`${pfx}workspace_put_todos`, `${pfx}workspace_create_timer`, `${pfx}workspace_cancel_timer`, `${pfx}workspace_create_routine`, `${pfx}workspace_cancel_routine`);
 
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');

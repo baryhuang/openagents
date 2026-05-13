@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, MessageSquare, FileText, Globe, PlusSquare,
-  Settings, Copy, Check, ListTodo,
+  Settings, Copy, Check, ListTodo, CalendarClock,
   LogIn, LogOut, Shield, Moon, Sun, KeyRound, Share2, X, Crown,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -269,6 +269,7 @@ export function SidebarContent() {
               <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.length} onClick={() => setViewMode('threads')} />
               <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
               <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" onClick={() => setViewMode('tasks')} />
+              <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" onClick={() => setViewMode('routines')} />
               <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
             </div>
 

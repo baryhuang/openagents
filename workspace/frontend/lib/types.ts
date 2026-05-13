@@ -130,6 +130,22 @@ export interface TimerItem {
   createdAt: string | null;
 }
 
+export interface RoutineItem {
+  id: string;
+  name: string;
+  message: string;
+  scheduleHour: number;
+  scheduleMinute: number;
+  scheduleDays: number[] | null;
+  timezone: string;
+  nextFiresAt: string;
+  lastFiredAt: string | null;
+  status: string;
+  createdBy: string;
+  channelName: string;
+  createdAt: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Agent catalog (supported client types)
 // ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi } from './api';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, DMConversation, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -67,6 +67,8 @@ interface WorkspaceContextValue {
   refreshDMConversations: () => Promise<void>;
   todos: TodoItem[];
   refreshTodos: () => Promise<void>;
+  routines: RoutineItem[];
+  refreshRoutines: () => Promise<void>;
   notificationSound: boolean;
   setNotificationSound: (enabled: boolean) => void;
 }
@@ -132,6 +134,7 @@ export function WorkspaceProvider({
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
   const [dmConversations, setDMConversations] = useState<DMConversation[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [routines, setRoutines] = useState<RoutineItem[]>([]);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
   // Auto-select browser tabs for split browser view:
@@ -460,6 +463,7 @@ export function WorkspaceProvider({
       workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {});
       workspaceApi.listConversations().then((c) => setDMConversations(c)).catch(() => {});
       workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {});
+      workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {});
     } catch {
       // Non-critical — keep existing state
     }
@@ -481,6 +485,15 @@ export function WorkspaceProvider({
     try {
       const result = await workspaceApi.listTodos();
       setTodos(result.todos);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const refreshRoutines = useCallback(async () => {
+    try {
+      const result = await workspaceApi.listRoutines();
+      setRoutines(result.routines);
     } catch {
       // Non-critical
     }
@@ -586,6 +599,7 @@ export function WorkspaceProvider({
           workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {}),
           workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {}),
           workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {}),
+          workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {}),
         ]);
         if (cancelled) return;
 
@@ -880,6 +894,8 @@ export function WorkspaceProvider({
         refreshDMConversations,
         todos,
         refreshTodos,
+        routines,
+        refreshRoutines,
         notificationSound,
         setNotificationSound,
       }}

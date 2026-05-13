@@ -653,6 +653,32 @@ class WorkspaceApi {
     await this.request<unknown>(`/v1/timers/${timerId}`, { method: 'DELETE' });
   }
 
+  async listRoutines(): Promise<{ routines: import('./types').RoutineItem[] }> {
+    const params = new URLSearchParams({ network: this.workspaceId });
+    const raw = await this.request<{ routines: Record<string, unknown>[] }>(`/v1/routines?${params}`);
+    return {
+      routines: (raw.routines || []).map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        message: r.message as string,
+        scheduleHour: (r.schedule_hour || 0) as number,
+        scheduleMinute: (r.schedule_minute || 0) as number,
+        scheduleDays: (r.schedule_days || null) as number[] | null,
+        timezone: (r.timezone || 'UTC') as string,
+        nextFiresAt: (r.next_fires_at || '') as string,
+        lastFiredAt: (r.last_fired_at || null) as string | null,
+        status: (r.status || 'active') as string,
+        createdBy: (r.created_by || '') as string,
+        channelName: (r.channel_name || '') as string,
+        createdAt: (r.created_at || null) as string | null,
+      })),
+    };
+  }
+
+  async cancelRoutine(routineId: string): Promise<void> {
+    await this.request<unknown>(`/v1/routines/${routineId}`, { method: 'DELETE' });
+  }
+
   async cancelChannelTodos(channel: string, source: string): Promise<void> {
     const params = new URLSearchParams({ network: this.workspaceId, channel, source });
     const raw = await this.request<{ todos: Record<string, unknown>[] }>(`/v1/todos?${params}`);

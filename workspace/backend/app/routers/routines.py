@@ -1,0 +1,208 @@
+# -*- coding: utf-8 -*-
+"""
+Routine endpoints — recurring scheduled tasks.
+
+POST   /v1/routines          Create a routine
+GET    /v1/routines          List routines in scope
+DELETE /v1/routines/{id}     Cancel a routine
+"""
+
+import logging
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Header, Path, Query
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import RoutineRecord, Workspace
+from app.response import ResponseCode, json_response, success_response
+from app.routers.network import _resolve_workspace, _verify_workspace_access
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/v1", tags=["Routines"])
+
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+class CreateRoutineRequest(BaseModel):
+    name: str
+    message: str
+    hour: int
+    minute: int
+    days: Optional[List[int]] = None
+    network: str
+    source: str
+    channel: Optional[str] = None
+    thread_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _compute_next_fires_at(hour: int, minute: int, days: Optional[List[int]]) -> datetime:
+    """Compute the next UTC datetime that matches the given schedule."""
+    now = datetime.now(timezone.utc)
+    today = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    if days is None:
+        if today > now:
+            return today
+        from datetime import timedelta
+        return today + timedelta(days=1)
+
+    from datetime import timedelta
+    current_weekday = now.weekday()  # 0=Mon
+    for offset in range(8):
+        candidate = today + timedelta(days=offset)
+        wd = (current_weekday + offset) % 7
+        if wd in days:
+            if offset == 0 and candidate <= now:
+                continue
+            return candidate
+
+    return today + timedelta(days=1)
+
+
+def _serialize_routine(r: RoutineRecord) -> dict:
+    return {
+        "id": r.id,
+        "name": r.name,
+        "message": r.message,
+        "schedule_hour": r.schedule_hour,
+        "schedule_minute": r.schedule_minute,
+        "schedule_days": r.schedule_days,
+        "timezone": r.timezone,
+        "next_fires_at": r.next_fires_at.isoformat() if r.next_fires_at else None,
+        "last_fired_at": r.last_fired_at.isoformat() if r.last_fired_at else None,
+        "status": r.status,
+        "created_by": r.created_by,
+        "channel_name": r.channel_name,
+        "thread_id": r.thread_id,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/routines
+# ---------------------------------------------------------------------------
+
+@router.post("/routines")
+async def create_routine(
+    body: CreateRoutineRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Create a recurring scheduled routine."""
+    workspace = _resolve_workspace(db, body.network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    if not (0 <= body.hour <= 23):
+        return json_response(ResponseCode.BAD_REQUEST, "hour must be 0-23")
+    if not (0 <= body.minute <= 59):
+        return json_response(ResponseCode.BAD_REQUEST, "minute must be 0-59")
+    if body.days is not None:
+        if not body.days or not all(0 <= d <= 6 for d in body.days):
+            return json_response(ResponseCode.BAD_REQUEST, "days must be array of 0-6 (Mon=0, Sun=6)")
+
+    channel_name = body.channel or "default"
+    next_fire = _compute_next_fires_at(body.hour, body.minute, body.days)
+
+    routine = RoutineRecord(
+        workspace_id=str(workspace.id),
+        channel_name=channel_name,
+        thread_id=body.thread_id,
+        created_by=body.source,
+        name=body.name,
+        message=body.message,
+        schedule_hour=body.hour,
+        schedule_minute=body.minute,
+        schedule_days=body.days,
+        next_fires_at=next_fire,
+    )
+    db.add(routine)
+    db.commit()
+
+    return success_response(_serialize_routine(routine))
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/routines
+# ---------------------------------------------------------------------------
+
+@router.get("/routines")
+async def list_routines(
+    network: str = Query(...),
+    channel: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """List routines in scope."""
+    workspace = _resolve_workspace(db, network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    query = select(RoutineRecord).where(
+        RoutineRecord.workspace_id == str(workspace.id),
+    )
+    if status:
+        query = query.where(RoutineRecord.status == status)
+    else:
+        query = query.where(RoutineRecord.status == "active")
+    if channel:
+        query = query.where(RoutineRecord.channel_name == channel)
+
+    query = query.order_by(RoutineRecord.next_fires_at.asc())
+    rows = db.execute(query).scalars().all()
+
+    return success_response({"routines": [_serialize_routine(r) for r in rows]})
+
+
+# ---------------------------------------------------------------------------
+# DELETE /v1/routines/{routine_id}
+# ---------------------------------------------------------------------------
+
+@router.delete("/routines/{routine_id}")
+async def cancel_routine(
+    routine_id: str = Path(...),
+    network: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Cancel an active routine."""
+    routine = db.execute(
+        select(RoutineRecord).where(RoutineRecord.id == routine_id)
+    ).scalar_one_or_none()
+    if not routine:
+        return json_response(ResponseCode.NOT_FOUND, "Routine not found")
+
+    workspace = db.execute(
+        select(Workspace).where(Workspace.id == routine.workspace_id)
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    if routine.status != "active":
+        return json_response(ResponseCode.BAD_REQUEST, f"Routine is already {routine.status}")
+
+    routine.status = "cancelled"
+    db.commit()
+
+    return success_response({"id": routine.id, "status": "cancelled"})

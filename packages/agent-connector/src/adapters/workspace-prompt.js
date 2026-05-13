@@ -268,6 +268,34 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     );
   }
 
+  // Routines (recurring scheduled tasks)
+  if (!isPlan) {
+    sections.push(
+      '\n### Routines (Recurring Tasks)\n\n' +
+      'Create a recurring routine that fires on a schedule and posts a message ' +
+      'to the channel, waking you to do the work. Great for daily standups, ' +
+      'periodic reviews, scheduled checks.\n\n' +
+      '**Schedule:** Specify `hour` (0-23 UTC), `minute` (0-59), and optional ' +
+      '`days` array (0=Mon, 6=Sun). Omit `days` for every day.\n\n' +
+      '**Create a routine:**\n' +
+      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/routines -d '{"name":"Daily PR Review","message":"Review open PRs",` +
+      `"hour":8,"minute":0,` +
+      `"network":"${workspaceId}","channel":"${channelName}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**Create a weekday-only routine (Mon-Fri):**\n' +
+      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/routines -d '{"name":"Morning Standup","message":"Post standup summary",` +
+      `"hour":9,"minute":0,"days":[0,1,2,3,4],` +
+      `"network":"${workspaceId}","channel":"${channelName}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**List active routines:**\n' +
+      `\`curl -s -H "${h}" "${baseUrl}/v1/routines?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      '**Cancel a routine:**\n' +
+      `\`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/routines/ROUTINE_ID\`\n`
+    );
+  }
+
   // Discovery
   sections.push(
     '\n### Discover Agents\n\n' +
@@ -289,7 +317,8 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_get_history to read previous messages.\n' +
     'Use workspace_get_agents to see other agents.\n' +
     'Use workspace_put_todos to track your progress with a to-do list.\n' +
-    'Use workspace_create_timer to set a reminder that wakes you up later.\n'
+    'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
+    'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n'
   );
   parts.push(buildCollaborationPrompt());
 

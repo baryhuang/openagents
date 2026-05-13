@@ -577,6 +577,35 @@ class WorkspaceClient {
     return data.data || data;
   }
 
+  // ── Routines ──
+
+  async createRoutine(workspaceId, channelName, token, { name, message, hour, minute, days, source } = {}) {
+    const body = {
+      name,
+      message,
+      hour,
+      minute,
+      network: workspaceId,
+      channel: channelName,
+      source: source || 'openagents:unknown',
+    };
+    if (days) body.days = days;
+    const data = await this._post('/v1/routines', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async listRoutines(workspaceId, channelName, token) {
+    const params = new URLSearchParams({ network: workspaceId });
+    if (channelName) params.set('channel', channelName);
+    const data = await this._get(`/v1/routines?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async cancelRoutine(workspaceId, token, routineId) {
+    const data = await this._delete(`/v1/routines/${routineId}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
   // ── Internal helpers ──
 
   /**

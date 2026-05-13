@@ -17,7 +17,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
-from app.routers import browser, devices, events, files, network, timers, todos, workspaces
+from app.routers import browser, devices, events, files, network, routines, timers, todos, workspaces
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ async def _timer_loop():
     from datetime import timedelta
     from sqlalchemy import select, update
     from app.database import SessionLocal
-    from app.models import TimerRecord, TodoRecord, Workspace
+    from app.models import RoutineRecord, TimerRecord, TodoRecord, Workspace
     from app.pipeline_factory import pipeline
     from openagents.core.onm_events import Event
     from openagents.core.onm_mods import PipelineContext
@@ -90,6 +90,49 @@ async def _timer_loop():
                 ).fetchall()
                 if expired:
                     logger.info("Expired %d stale todo(s)", len(expired))
+
+                # ── Fire due routines ──
+                due_routines = db.execute(
+                    select(RoutineRecord).where(
+                        RoutineRecord.status == "active",
+                        RoutineRecord.next_fires_at <= now,
+                    ).limit(50)
+                ).scalars().all()
+
+                for routine in due_routines:
+                    workspace = db.execute(
+                        select(Workspace).where(Workspace.id == routine.workspace_id)
+                    ).scalar_one_or_none()
+                    if not workspace:
+                        continue
+                    agent_name = routine.created_by.replace("openagents:", "")
+                    event = Event(
+                        type="workspace.message.posted",
+                        source="system:routine",
+                        target=f"channel/{routine.channel_name}",
+                        payload={
+                            "content": f"🔁 Routine \"{routine.name}\" fired (set by @{agent_name}): {routine.message}",
+                            "message_type": "chat",
+                        },
+                        metadata={"target_agents": [agent_name]},
+                    )
+                    ctx = PipelineContext(
+                        network_id=str(workspace.id),
+                        agent_address=routine.created_by,
+                        db=db,
+                        workspace=workspace,
+                        token=workspace.password_hash,
+                    )
+                    try:
+                        await pipeline.process(event, ctx)
+                    except Exception:
+                        logger.exception("Routine fire failed for %s", routine.id)
+
+                    routine.last_fired_at = now
+                    from app.routers.routines import _compute_next_fires_at
+                    routine.next_fires_at = _compute_next_fires_at(
+                        routine.schedule_hour, routine.schedule_minute, routine.schedule_days
+                    )
 
                 db.commit()
             finally:
@@ -178,6 +221,7 @@ app.include_router(devices.router)
 app.include_router(events.router)
 app.include_router(files.router)
 app.include_router(network.router)
+app.include_router(routines.router)
 app.include_router(todos.router)
 app.include_router(timers.router)
 app.include_router(workspaces.router)

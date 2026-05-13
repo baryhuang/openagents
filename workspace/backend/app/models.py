@@ -372,6 +372,36 @@ class TimerRecord(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Routines (recurring scheduled tasks)
+# ---------------------------------------------------------------------------
+
+class RoutineRecord(Base):
+    """A recurring scheduled task that fires on a repeating schedule."""
+    __tablename__ = "routines"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    channel_name = Column(Text, nullable=False)
+    thread_id = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=False)              # "openagents:agent-name"
+    name = Column(Text, nullable=False)                     # human-readable label
+    message = Column(Text, nullable=False)                  # message posted when routine fires
+    schedule_hour = Column(Integer, nullable=False)         # 0-23 UTC
+    schedule_minute = Column(Integer, nullable=False)       # 0-59
+    schedule_days = Column(JSONB, nullable=True)            # null=every day, or [0..6] (0=Mon)
+    timezone = Column(Text, default="UTC")
+    next_fires_at = Column(DateTime(timezone=True), nullable=False)
+    last_fired_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(Text, nullable=False, default="active")  # active | paused | cancelled
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        Index("idx_routines_workspace_channel", "workspace_id", "channel_name"),
+        Index("idx_routines_next_fires_status", "next_fires_at", "status"),
+    )
+
+
 # Standalone agent table (used when IDENTITY_MODE=standalone)
 class Agent(Base):
     """Local agent identity (standalone mode only)."""

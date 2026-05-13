@@ -13,6 +13,7 @@ import { ConnectAgentView } from '@/components/connect/connect-agent-view';
 import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 import { MonitorGrid } from '@/components/monitor/monitor-grid';
 import { TasksView } from '@/components/tasks/tasks-view';
+import { RoutinesView } from '@/components/routines/routines-view';
 import { useWorkspace } from '@/lib/workspace-context';
 
 export function Wrapper() {
@@ -33,6 +34,10 @@ export function Wrapper() {
           ) : viewMode === 'tasks' ? (
             <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
               <TasksView />
+            </div>
+          ) : viewMode === 'routines' ? (
+            <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+              <RoutinesView />
             </div>
           ) : mobilePane === 'list' ? (
             /* List pane — full width */
@@ -88,7 +93,7 @@ export function Wrapper() {
             <>
               {/* Middle pane — thread list or file list
                   Hidden for: connect view, expanded detail, or when browser preview is active */}
-              {viewMode !== 'connect' && viewMode !== 'tasks' && !isDetailExpanded && !(splitBrowser && showBrowserPreview && viewMode === 'threads') && (
+              {viewMode !== 'connect' && viewMode !== 'tasks' && viewMode !== 'routines' && !isDetailExpanded && !(splitBrowser && showBrowserPreview && viewMode === 'threads') && (
                 <div className="shrink-0 w-[300px] xl:w-[400px] bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
                   {viewMode === 'threads' && <ThreadList />}
                   {viewMode === 'files' && <FileList />}
@@ -121,6 +126,7 @@ export function Wrapper() {
                   {viewMode === 'browser' && <BrowserView />}
                   {viewMode === 'connect' && <ConnectAgentView />}
                   {viewMode === 'tasks' && <TasksView />}
+                  {viewMode === 'routines' && <RoutinesView />}
 
                   {/* Agent profile slide-over */}
                   {isAgentPanelOpen && <AgentProfilePanel />}
