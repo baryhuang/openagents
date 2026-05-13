@@ -804,10 +804,20 @@ class ClaudeAdapter extends BaseAdapter {
 
           if (lastResponseText.length > 0) {
             const fullResponse = lastResponseText.join('\n').trim();
-            if (fullResponse) {
+            // "Prompt is too long" means the resumed session's context
+            // exceeded the model's limit. Clear the session and retry
+            // fresh with a bounded recap instead of the full history.
+            if (/prompt is too long/i.test(fullResponse) && this._channelSessions[msgChannel]) {
+              this._log(`Prompt too long with resumed session for ${msgChannel}, clearing and retrying`);
+              delete this._channelSessions[msgChannel];
+              this._saveSessions();
+              resolve(true);
+            } else if (fullResponse) {
               try { await this.sendResponse(msgChannel, fullResponse); } catch {}
+              resolve(false);
+            } else {
+              resolve(false);
             }
-            resolve(false); // done, no retry
           } else if (this._channelSessions[msgChannel] && !everPostedAnything) {
             // No output + had a resume session → likely stale session, retry fresh.
             // Covers both error exits (code !== 0) and silent success (code === 0)
