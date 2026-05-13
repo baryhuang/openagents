@@ -390,7 +390,7 @@ class ClaudeAdapter extends BaseAdapter {
     const cmd = [claudeBin, '-p', prompt, '--output-format', 'stream-json', '--verbose'];
 
     cmd.push('--append-system-prompt', systemPrompt);
-    cmd.push('--disallowedTools', 'AskUserQuestion', 'TodoWrite');
+    cmd.push('--disallowedTools', 'AskUserQuestion');
 
     // Resume existing conversation (skipped on retry after stale session)
     const sessionId = this._channelSessions[channelName];
@@ -747,6 +747,18 @@ class ClaudeAdapter extends BaseAdapter {
                 postedThinking = false;
                 lastResponseText.length = 0;
                 const toolName = block.name || '';
+
+                // Intercept TodoWrite: forward to workspace API so it emits a chat event
+                if (toolName === 'TodoWrite' && block.input && block.input.todos) {
+                  try {
+                    const wsTodos = block.input.todos.map((t) => ({
+                      content: t.content,
+                      status: t.status || 'pending',
+                      assignee: t.assignee,
+                    }));
+                    await this.sendTodos(msgChannel, wsTodos);
+                  } catch {}
+                }
 
                 // Format tool input as readable text
                 let inputPreview = '';
