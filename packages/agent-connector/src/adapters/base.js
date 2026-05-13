@@ -500,6 +500,18 @@ class BaseAdapter {
     }
   }
 
+  async getRemainingTodos(channel) {
+    try {
+      const result = await this.client.getTodos(this.workspaceId, channel, this.token, {
+        all: false,
+      });
+      const todos = (result && result.todos) || [];
+      return todos.filter((t) => t.status === 'pending' || t.status === 'in_progress');
+    } catch {
+      return [];
+    }
+  }
+
   async sendTodos(channel, todos) {
     try {
       await this.client.putTodos(this.workspaceId, channel, this.token, todos, {

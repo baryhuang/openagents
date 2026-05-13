@@ -798,10 +798,33 @@ class ClaudeAdapter extends BaseAdapter {
 
           delete this._channelProcesses[msgChannel];
 
-          // Clean up stale todos: mark pending/in_progress as cancelled
-          try { await this.cleanupTodos(msgChannel); } catch {}
-
           const stoppedByUser = this._stoppingChannels.has(msgChannel);
+
+          if (stoppedByUser) {
+            // User explicitly stopped — cancel all remaining todos
+            try { await this.cleanupTodos(msgChannel); } catch {}
+          } else if (!msg._todoNudge) {
+            // Normal exit (not already a nudge) — check for remaining pending todos
+            try {
+              const remaining = await this.getRemainingTodos(msgChannel);
+              if (remaining.length > 0) {
+                const items = remaining.map((t) => `- ${t.content}`).join('\n');
+                const nudge = `You have ${remaining.length} remaining task(s) from your plan:\n${items}\n\nPlease continue working on them.`;
+                if (!this._channelQueues[msgChannel]) this._channelQueues[msgChannel] = [];
+                this._channelQueues[msgChannel].push({
+                  content: nudge,
+                  senderType: 'system',
+                  senderName: 'system:todos',
+                  sessionId: msgChannel,
+                  messageType: 'chat',
+                  _todoNudge: true,
+                });
+              }
+            } catch {}
+          } else {
+            // Nudge response finished but todos still pending — cancel to avoid infinite loop
+            try { await this.cleanupTodos(msgChannel); } catch {}
+          }
           if (stoppedByUser) {
             this._stoppingChannels.delete(msgChannel);
             resolve(false);

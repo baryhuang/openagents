@@ -279,6 +279,7 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
     metadata: {
       ...(event.metadata || {}),
       ...(payload.attachments ? { attachments: payload.attachments } : {}),
+      ...(payload.todos ? { todos: payload.todos } : {}),
     },
     createdAt: new Date(event.timestamp).toISOString(),
   };
