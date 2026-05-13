@@ -55,4 +55,19 @@ class PersistenceMod(ObserveMod):
         db.add(record)
         db.flush()  # flush, don't commit — the router commits
 
+        if event.type.startswith("workspace.message") and event.target.startswith("channel/"):
+            from sqlalchemy import update
+            from app.models import Channel
+
+            channel_name = event.target[len("channel/"):]
+            db.execute(
+                update(Channel)
+                .where(
+                    Channel.workspace_id == workspace.id,
+                    Channel.name == channel_name,
+                )
+                .values(last_event_at=event.timestamp)
+            )
+            db.flush()
+
         return None  # observe mods return value is ignored

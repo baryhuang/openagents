@@ -65,6 +65,7 @@ class EventRecord(Base):
         Index("idx_events_network_type", "network_id", "type"),
         Index("idx_events_network_target", "network_id", "target"),
         Index("idx_events_network_timestamp", "network_id", "timestamp"),
+        Index("idx_events_network_type_target_ts", "network_id", "type", "target", "timestamp"),
     )
 
 
@@ -134,6 +135,7 @@ class Channel(Base):
     resume_from = Column(Text, nullable=True)         # channel name to resume context from
     status = Column(Text, default="active")           # active | archived | deleted
     starred = Column(Boolean, default=False, server_default=text("FALSE"))
+    last_event_at = Column(BigInteger, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
 
     workspace = relationship("Workspace", back_populates="channels")

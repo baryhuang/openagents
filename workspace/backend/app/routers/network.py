@@ -22,11 +22,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sqlalchemy import func
-
 from app.config import config
 from app.database import get_db
-from app.models import Channel, EventRecord, Workspace, WorkspaceMember
+from app.models import Channel, Workspace, WorkspaceMember
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from openagents.core.onm_events import Event
@@ -377,22 +375,9 @@ async def discover(
         )
     ).scalars().all()
 
-    # Get last event timestamp per channel
-    last_event_subq = db.execute(
-        select(
-            EventRecord.target,
-            func.max(EventRecord.timestamp).label("last_ts"),
-        ).where(
-            EventRecord.network_id == workspace.id,
-            EventRecord.type.startswith("workspace.message"),
-        ).group_by(EventRecord.target)
-    ).all()
-    last_event_map = {row.target: row.last_ts for row in last_event_subq}
-
     channels = []
     for c in channels_rows:
         target_key = f"channel/{c.name}"
-        last_ts = last_event_map.get(target_key)
         created_at_ts = int(c.created_at.timestamp() * 1000) if c.created_at else None
         channels.append({
             "address": target_key,
@@ -400,7 +385,7 @@ async def discover(
             "master": c.master_agent,
             "participants": [p.agent_name for p in (c.participants or [])],
             "created_at": created_at_ts,
-            "last_event_at": last_ts,
+            "last_event_at": c.last_event_at,
             "status": c.status or "active",
             "starred": bool(c.starred) if c.starred is not None else False,
         })
