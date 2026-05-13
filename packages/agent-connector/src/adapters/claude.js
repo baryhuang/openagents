@@ -390,7 +390,7 @@ class ClaudeAdapter extends BaseAdapter {
     const cmd = [claudeBin, '-p', prompt, '--output-format', 'stream-json', '--verbose'];
 
     cmd.push('--append-system-prompt', systemPrompt);
-    cmd.push('--disallowedTools', 'AskUserQuestion');
+    cmd.push('--disallowedTools', 'AskUserQuestion', 'TodoWrite');
 
     // Resume existing conversation (skipped on retry after stale session)
     const sessionId = this._channelSessions[channelName];
