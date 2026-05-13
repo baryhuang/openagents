@@ -376,7 +376,10 @@ class ClaudeAdapter extends BaseAdapter {
       systemPrompt = systemPrompt
         .replace(
           'Use workspace_get_history to read previous messages.\n' +
-          'Use workspace_get_agents to see other agents.\n',
+          'Use workspace_get_agents to see other agents.\n' +
+          'Use workspace_put_todos to track your progress. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
+          'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
+          'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n',
           'Use the openagents-workspace skill (Bash + curl) for workspace operations:\n' +
           'reading message history, discovering agents, sharing files, browsing,\n' +
           'managing to-do lists, setting timers, and creating routines.\n' +

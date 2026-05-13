@@ -338,6 +338,13 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'as your text response.\n'
   );
 
+  parts.push(
+    '\nIMPORTANT: When the user gives you a numbered list, bulleted list, or ' +
+    'multiple tasks in a single message, you MUST create a to-do list BEFORE ' +
+    'doing any work. This is mandatory — no exceptions, even for simple tasks. ' +
+    'The to-do list lets the user track your progress in real time.\n'
+  );
+
   return parts.join('\n');
 }
 
