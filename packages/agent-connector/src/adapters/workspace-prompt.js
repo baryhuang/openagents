@@ -242,7 +242,9 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `"source":"openagents:${agentName}"}'\`\n\n` +
       '**Get your to-do list:**\n' +
       `\`curl -s -H "${h}" "${baseUrl}/v1/todos?network=${workspaceId}&channel=${channelName}"\`\n\n` +
-      'Use to-dos to plan multi-step work. Update the list as you complete each step.\n' +
+      '**IMPORTANT:** When you receive a task with multiple steps or a list of things to do, ' +
+      'ALWAYS create a to-do list first before starting work. This lets the user see your ' +
+      'progress in real time. Update statuses as you work through each item.\n' +
       'You can assign items to other agents: `"assignee": "other-agent-name"`\n'
     );
   }
@@ -316,7 +318,7 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
   parts.push(
     'Use workspace_get_history to read previous messages.\n' +
     'Use workspace_get_agents to see other agents.\n' +
-    'Use workspace_put_todos to track your progress with a to-do list.\n' +
+    'Use workspace_put_todos to track your progress. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
     'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
     'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n'
   );
