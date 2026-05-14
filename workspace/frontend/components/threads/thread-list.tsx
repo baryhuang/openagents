@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-function AvatarStack({ agents, max = 3 }: { agents: WorkspaceAgent[]; max?: number }) {
+function AvatarStack({ agents, max = 2 }: { agents: WorkspaceAgent[]; max?: number }) {
   const shown = agents.slice(0, max);
   const extra = agents.length - max;
   const agentNames = agents.map((a) => a.agentName);
