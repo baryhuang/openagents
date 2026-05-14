@@ -653,6 +653,18 @@ class WorkspaceApi {
     await this.request<unknown>(`/v1/timers/${timerId}`, { method: 'DELETE' });
   }
 
+  async cancelQueuedMessage(channelName: string, queueId: string): Promise<void> {
+    await this.sendEvent({
+      type: 'workspace.message.posted',
+      source: 'human:user',
+      target: `channel/${channelName}`,
+      payload: {
+        content: `__queue_cancel:${queueId}`,
+        message_type: 'queue_cancel',
+      },
+    });
+  }
+
   async listRoutines(): Promise<{ routines: import('./types').RoutineItem[] }> {
     const params = new URLSearchParams({ network: this.workspaceId });
     const raw = await this.request<{ routines: Record<string, unknown>[] }>(`/v1/routines?${params}`);

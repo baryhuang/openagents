@@ -345,6 +345,13 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'The to-do list lets the user track your progress in real time.\n'
   );
 
+  parts.push(
+    '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +
+    'CronList, ScheduleWakeup). For timers, routines, and recurring tasks, ' +
+    'ALWAYS use the workspace REST API (curl commands in your skill instructions). ' +
+    'Built-in scheduling is local-only and won\'t appear in the workspace.\n'
+  );
+
   return parts.join('\n');
 }
 

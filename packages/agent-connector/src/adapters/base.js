@@ -330,6 +330,14 @@ class BaseAdapter {
         const msgId = msg.id || msg.messageId;
         if (msgId && this._processedIds.has(msgId)) continue;
         if (msg.messageType === 'status') continue;
+        // Handle queue cancellation signals from frontend
+        if (msg.messageType === 'queue_cancel') {
+          if (msgId) this._processedIds.add(msgId);
+          const channel = msg.sessionId || this.channelName || 'general';
+          const queueId = msg.metadata?.queue_id || (msg.content || '').replace('__queue_cancel:', '');
+          if (queueId) this._cancelQueuedMessage(channel, queueId);
+          continue;
+        }
         incoming.push(msg);
       }
 
@@ -372,9 +380,14 @@ class BaseAdapter {
 
     if (this._channelBusy.has(channel)) {
       if (!this._channelQueues[channel]) this._channelQueues[channel] = [];
+      const queueId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      msg._queueId = queueId;
       this._channelQueues[channel].push(msg);
       try {
-        await this.sendStatus(channel, 'message queued — will process after current task');
+        await this.sendStatus(channel, 'message queued — will process after current task', {
+          queued_message: (msg.content || '').slice(0, 200),
+          queue_id: queueId,
+        });
       } catch {}
       return;
     }
@@ -382,6 +395,16 @@ class BaseAdapter {
     // Run channel worker (don't await — parallel execution)
     this._channelWorker(channel, msg);
     this._wakeControlPoller();
+  }
+
+  _cancelQueuedMessage(channel, queueId) {
+    const queue = this._channelQueues[channel];
+    if (!queue) return false;
+    const idx = queue.findIndex((m) => m._queueId === queueId);
+    if (idx === -1) return false;
+    queue.splice(idx, 1);
+    this._log(`Cancelled queued message ${queueId} in ${channel}`);
+    return true;
   }
 
   async _channelWorker(channel, msg) {
@@ -435,13 +458,13 @@ class BaseAdapter {
   // Message helpers
   // ------------------------------------------------------------------
 
-  async sendStatus(channel, content) {
+  async sendStatus(channel, content, extraMeta) {
     try {
       await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
         senderType: 'agent',
         senderName: this.agentName,
         messageType: 'status',
-        metadata: { agent_mode: this._mode },
+        metadata: { agent_mode: this._mode, ...extraMeta },
         sessionId: this._sessionId,
       });
     } catch (e) {

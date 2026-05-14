@@ -695,7 +695,7 @@ export function ChatView() {
         {!isDM && (
           <div className="px-3 lg:px-4 py-2 lg:py-3">
             <div className="max-w-3xl mx-auto w-full">
-              {currentSessionId && <ThreadStatusBar channelName={currentSessionId} />}
+              {currentSessionId && <ThreadStatusBar channelName={currentSessionId} messages={displayMessages} />}
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
