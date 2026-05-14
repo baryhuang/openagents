@@ -1,0 +1,56 @@
+/* Design tokens — colors, shadows, radii, motion. */
+
+:root {
+  /* Backgrounds */
+  --bg-primary: #f2f2f7;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #fafafa;
+  --bg-input: #eeeef0;
+  --bg-sidebar: #ffffff;
+
+  /* Text */
+  --text-primary: #1c1c1e;
+  --text-secondary: #636366;
+  --text-tertiary: #aeaeb2;
+  --text-link: #5856d6;
+
+  /* Brand */
+  --accent: #5856d6;
+  --accent-hover: #4a48c4;
+  --accent-bg: rgba(88, 86, 214, 0.06);
+  --accent-border: rgba(88, 86, 214, 0.15);
+  --accent-text: #ffffff;
+
+  /* Semantic */
+  --success: #30d158;
+  --success-bg: rgba(48, 209, 88, 0.08);
+  --success-text: #248a3d;
+  --warning: #ff9f0a;
+  --warning-bg: rgba(255, 159, 10, 0.08);
+  --warning-text: #c77c0a;
+  --danger: #ff3b30;
+  --danger-bg: rgba(255, 59, 48, 0.06);
+  --danger-text: #d70015;
+
+  /* Borders */
+  --border: rgba(0, 0, 0, 0.06);
+  --border-hover: rgba(0, 0, 0, 0.12);
+
+  /* Elevation */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  /* Radii */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}

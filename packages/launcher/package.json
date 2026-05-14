@@ -1,21 +1,25 @@
 {
   "name": "openagents-launcher",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "OpenAgents Launcher — install, configure, and manage your AI agents",
-  "main": "src/main/main.js",
+  "main": "dist-electron/main/main.js",
   "scripts": {
-    "start": "electron .",
-    "start:headless": "electron . --headless",
-    "dev": "electron . --remote-debugging-port=9223 --remote-allow-origins=*",
-    "dev:nogpu": "electron . --remote-debugging-port=9223 --remote-allow-origins=* --disable-gpu",
-    "dev:headless": "electron . --remote-debugging-port=9223 --remote-allow-origins=* --headless",
-    "build:win": "electron-builder --win --publish never",
-    "build:mac": "electron-builder --mac --x64 --arm64 --publish never",
-    "build:mac:x64": "electron-builder --mac --x64 --publish never",
-    "build:mac:arm64": "electron-builder --mac --arm64 --publish never",
-    "build:linux": "electron-builder --linux --publish never",
-    "build:all": "electron-builder --win --mac --linux --publish never",
-    "dist": "electron-builder --publish always"
+    "dev": "node scripts/dev.js",
+    "dev:renderer": "vite",
+    "build:renderer": "vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:preload": "tsc -p tsconfig.preload.json",
+    "build": "npm run build:main && npm run build:preload && npm run build:renderer",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "start": "npm run build && electron .",
+    "start:headless": "npm run build && electron . --headless",
+    "build:win": "npm run build && electron-builder --win --publish never",
+    "build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
+    "build:mac:x64": "npm run build && electron-builder --mac --x64 --publish never",
+    "build:mac:arm64": "npm run build && electron-builder --mac --arm64 --publish never",
+    "build:linux": "npm run build && electron-builder --linux --publish never",
+    "build:all": "npm run build && electron-builder --win --mac --linux --publish never",
+    "dist": "npm run build && electron-builder --publish always"
   },
   "author": {
     "name": "OpenAgents",
@@ -27,43 +31,39 @@
     "url": "https://github.com/openagents-org/openagents.git",
     "directory": "packages/launcher"
   },
-  "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.4"
   },
-  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8"
+  },
   "build": {
     "appId": "com.openagents.launcher",
     "productName": "OpenAgents Launcher",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
-      "output": "dist"
+      "output": "release"
     },
     "files": [
-      "src/**/*",
-      "node_modules/**/*",
+      "dist-electron/**/*",
+      "dist-renderer/**/*",
+      "assets/**/*",
       "package.json"
     ],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "msi",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "msi", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
       ],
       "icon": "assets/icon.ico"
     },
@@ -75,13 +75,7 @@
     },
     "mac": {
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        { "target": "dmg", "arch": ["x64", "arm64"] }
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools",
@@ -97,18 +91,8 @@
     },
     "linux": {
       "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        }
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
       ],
       "icon": "assets/icon.png",
       "category": "Development",

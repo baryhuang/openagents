@@ -1,0 +1,18 @@
+.spinner-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spinner {
+  display: inline-block;
+  border: 1.5px solid var(--text-tertiary);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.spinner__label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}

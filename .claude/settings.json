@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tee /tmp/launcher-dev.log)",
+      "Bash(pkill -f \"tsc -p tsconfig\")",
+      "Bash(pkill -f \"node scripts/dev\")",
+      "Bash(pkill -f vite)",
+      "Bash(node -e \"console.log\\(require\\('electron'\\)\\)\")",
+      "Bash(/home/xiang/openagents/packages/launcher/node_modules/electron/dist/electron --version)",
+      "Bash(unset ELECTRON_RUN_AS_NODE)",
+      "Bash(/home/xiang/openagents/packages/launcher/node_modules/electron/dist/electron --version --no-sandbox)",
+      "Bash(HEADLESS=1 npm run dev)"
+    ]
+  }
+}

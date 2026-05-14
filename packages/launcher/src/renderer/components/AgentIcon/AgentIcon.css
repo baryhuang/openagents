@@ -1,0 +1,7 @@
+.agent-icon {
+  display: inline-block;
+  border-radius: 6px;
+  background: var(--bg-input);
+  object-fit: contain;
+  padding: 2px;
+}
