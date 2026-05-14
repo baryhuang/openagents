@@ -1,711 +1,619 @@
-// Thin adapter over @openagents-org/agent-launcher.
-//
-// The connector module is loaded from disk at runtime (it can live in the
-// portable Node install or be developed locally) so we declare its shape
-// rather than importing it statically.
+import path from 'path'
+import fs from 'fs'
+import os from 'os'
 
-import { spawn, execSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+const CONFIG_DIR = path.join(os.homedir(), '.openagents')
+const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher')
+const LOCAL_CORE = path.resolve(__dirname, '../../../agent-connector')
 
-import type {
-  AddAgentConfig,
-  Agent,
-  AgentEnv,
-  AgentRecord,
-  AgentState,
-  AgentStatusEntry,
-  CatalogEntry,
-  CheckTypeResult,
-  ClearLogsResult,
-  CoreInfo,
-  FieldSchema,
-  HealthStatus,
-  LogsResult,
-  OperationResult,
-  TailLogsResult,
-  UpdateAgentConfig,
-  Workspace,
-  WorkspaceCreateResult,
-} from '../shared/models';
-import type { Store } from './store';
-
-const CONFIG_DIR = path.join(os.homedir(), '.openagents');
-const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher');
-const LOCAL_CORE = path.resolve(__dirname, '..', '..', '..', '..', 'agent-connector');
-
-// ── Runtime shape of the agent-launcher connector ──────────────────────────
-interface InstallStreamCallback {
-  (data: { text: string; stream?: 'stdout' | 'stderr' } | string): void;
-}
-
-interface Installer {
-  installStreaming(type: string, cb?: InstallStreamCallback): Promise<OperationResult>;
-  uninstallStreaming(type: string, cb?: InstallStreamCallback): Promise<OperationResult>;
-  getInstallInfo(name: string): { installed: boolean; managed?: boolean | null; location?: string };
-  which(type: string): string | null;
-}
-
-interface Registry {
-  getCatalogSync(): CatalogEntry[];
-  _loadBundled(): CatalogEntry[];
-  _catalog: CatalogEntry[] | null;
-}
-
-interface ConnectorWorkspaceConfig {
-  endpoint?: string;
-}
-
-interface ConnectorConfig {
-  addNetwork(network: {
-    id: string;
-    slug: string;
-    name: string;
-    endpoint?: string;
-    token: string;
-  }): void;
-  tailLogs(opts: { agent?: string; lines?: number; offset?: number }): TailLogsResult;
-}
-
-interface AgentConnector {
-  listAgents(): AgentRecord[];
-  addAgent(opts: { name: string; type: string; role: string; path?: string; env?: AgentEnv }): void;
-  removeAgent(name: string): void;
-  saveAgentInstanceEnv(name: string, env: AgentEnv): void;
-  saveAgentEnv(type: string, env: AgentEnv): void;
-  getEnvFields(type: string): FieldSchema[];
-  getAgentEnv(type: string): AgentEnv;
-  getAgentInstanceEnv(name: string): AgentEnv;
-  testLLM(env: AgentEnv): Promise<{ success: boolean; model?: string; response?: string; error?: string }>;
-  getDaemonPid(): number | null;
-  sendDaemonCommand(cmd: string): void;
-  stopDaemon(): boolean;
-  getDaemonStatus(): Record<string, AgentStatusEntry>;
-  getLogs(name: string | null | undefined, lines: number): string[];
-  healthCheck(type: string): HealthStatus | null;
-  isInstalled(type: string): boolean;
-  install(type: string): Promise<OperationResult>;
-  uninstall(type: string): Promise<OperationResult>;
-  getCatalog(): Promise<CatalogEntry[]>;
-  clearCatalogCache(): void;
-  listWorkspaces(): Workspace[];
-  createWorkspace(opts: { name: string }): Promise<WorkspaceCreateResult>;
-  resolveToken(token: string): Promise<{
-    slug?: string;
-    workspace_id: string;
-    name?: string;
-    endpoint?: string;
-  }>;
-  connectWorkspace(agentName: string, slug: string): void;
-  disconnectWorkspace(agentName: string): void;
-  removeWorkspace(slug: string): Promise<OperationResult>;
-
-  installer: Installer;
-  registry: Registry;
-  config: ConnectorConfig;
-  workspace?: ConnectorWorkspaceConfig;
-}
-
-interface CoreModule {
-  AgentConnector: new (opts: { configDir: string }) => AgentConnector;
-  adapters?: { ADAPTER_MAP?: Record<string, unknown> };
-}
-
-function loadCore(): CoreModule | null {
+function loadCore(): Record<string, unknown> | null {
   if (fs.existsSync(path.join(LOCAL_CORE, 'package.json'))) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require(LOCAL_CORE) as CoreModule;
-    } catch (err) {
-      console.error('Failed to load local core:', err);
+    try { return require(LOCAL_CORE) } catch (e) {
+      console.error('Failed to load local core:', e)
     }
   }
   if (fs.existsSync(path.join(GLOBAL_CORE, 'package.json'))) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require(GLOBAL_CORE) as CoreModule;
-    } catch {
-      /* ignore */
-    }
+    try { return require(GLOBAL_CORE) } catch {}
   }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('@openagents-org/agent-launcher') as CoreModule;
-  } catch {
-    return null;
-  }
+  try { return require('@openagents-org/agent-launcher') } catch {}
+  return null
 }
 
-let core: CoreModule | null = loadCore();
+let core: Record<string, unknown> | null = loadCore()
 
 export class AgentManager {
-  private readonly _store: Store;
-  private _connector: AgentConnector | null = null;
-  private readonly _healthByType = new Map<string, HealthStatus | null>();
-  private readonly _healthRefreshInFlight = new Set<string>();
-  private _lastHealthRefreshAt = 0;
+  private _store: unknown
+  private _healthByType = new Map<string, unknown>()
+  private _healthRefreshInFlight = new Set<string>()
+  private _lastHealthRefreshAt = 0
+  _connector: Record<string, unknown> | null = null
 
-  constructor(store: Store) {
-    this._store = store;
-    if (!core) core = loadCore();
+  constructor(store: unknown) {
+    this._store = store
+    if (!core) core = loadCore()
     if (core) {
-      this._connector = new core.AgentConnector({ configDir: CONFIG_DIR });
+      const AgentConnector = (core as Record<string, unknown>).AgentConnector as new (opts: unknown) => Record<string, unknown>
+      this._connector = new AgentConnector({ configDir: CONFIG_DIR })
     }
   }
 
   getSupportedAgentTypes(): string[] {
-    const map = core?.adapters?.ADAPTER_MAP;
-    return map ? Object.keys(map).sort() : [];
+    const supported = (core as Record<string, unknown> | null)?.adapters
+      ? Object.keys(((core as Record<string, unknown>).adapters as Record<string, unknown>).ADAPTER_MAP as Record<string, unknown>)
+      : []
+    return (supported as string[]).sort()
   }
 
-  getCoreInfo(): CoreInfo {
+  getCoreInfo(): unknown {
     return {
       version: this.coreVersion,
       supportedTypes: this.getSupportedAgentTypes(),
       globalCorePath: GLOBAL_CORE,
       globalCorePresent: fs.existsSync(path.join(GLOBAL_CORE, 'package.json')),
-    };
+    }
   }
 
   reloadCore(): boolean {
-    const keys = Object.keys(require.cache).filter(
-      (k) => k.includes('agent-launcher') || k.includes('agent-connector'),
-    );
-    for (const k of keys) delete require.cache[k];
-    core = loadCore();
+    const cacheKeys = Object.keys(require.cache).filter(k => k.includes('agent-launcher') || k.includes('agent-connector'))
+    for (const k of cacheKeys) delete require.cache[k]
+    core = loadCore()
     if (core) {
-      this._connector = new core.AgentConnector({ configDir: CONFIG_DIR });
+      const AgentConnector = (core as Record<string, unknown>).AgentConnector as new (opts: unknown) => Record<string, unknown>
+      this._connector = new AgentConnector({ configDir: CONFIG_DIR })
     }
-    return !!core;
+    return !!core
   }
 
   get coreVersion(): string | null {
-    for (const pkg of [path.join(LOCAL_CORE, 'package.json'), path.join(GLOBAL_CORE, 'package.json')]) {
-      try {
-        if (fs.existsSync(pkg)) {
-          return JSON.parse(fs.readFileSync(pkg, 'utf-8')).version as string;
-        }
-      } catch {
-        /* ignore */
-      }
-    }
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return (require('@openagents-org/agent-launcher/package.json') as { version: string }).version;
-    } catch {
-      return null;
-    }
+      const pkg = path.join(LOCAL_CORE, 'package.json')
+      if (fs.existsSync(pkg)) return JSON.parse(fs.readFileSync(pkg, 'utf-8')).version
+    } catch {}
+    try {
+      const pkg = path.join(GLOBAL_CORE, 'package.json')
+      if (fs.existsSync(pkg)) return JSON.parse(fs.readFileSync(pkg, 'utf-8')).version
+    } catch {}
+    try { return require('@openagents-org/agent-launcher/package.json').version } catch {}
+    return null
   }
 
-  private _ensureConnector(): AgentConnector {
+  private _ensureConnector(): void {
     if (!this._connector) {
-      if (!this.reloadCore() || !this._connector) {
-        throw new Error('Core library not installed. Install an agent first via the Install tab.');
+      if (!this.reloadCore()) {
+        throw new Error('Core library not installed. Install an agent first via the Install tab.')
       }
     }
-    return this._connector;
   }
 
-  // ── Agent listing ────────────────────────────────────────────────────────
-  getAgents(): Agent[] {
-    if (!this._connector) return [];
-    const records = this._connector.listAgents();
-    const status = this.getAllStatus();
-    this._scheduleHealthRefresh(records);
+  getAgents(): unknown[] {
+    if (!this._connector) return []
+    const listAgents = this._connector.listAgents as () => unknown[]
+    const agents = listAgents.call(this._connector)
+    const status = this.getAllStatus() as Record<string, { state?: string; restarts?: number; last_error?: string }>
+    this._scheduleHealthRefresh(agents as Array<{ type?: string; name: string }>)
 
-    const supported = new Set(this.getSupportedAgentTypes());
-    return records.map((a): Agent => {
-      const type = a.type || 'openclaw';
-      const runtimeMismatch = !supported.has(type);
+    const supportedTypes = new Set(this.getSupportedAgentTypes())
+    return (agents as Array<Record<string, unknown>>).map((a) => {
+      const type = (a.type as string) || 'openclaw'
+      const runtimeMismatch = !supportedTypes.has(type)
       const runtimeMessage = runtimeMismatch
-        ? `Agent runtime '${type}' is not available in the currently loaded core. ` +
-          `This usually means the Launcher core is outdated or did not reload correctly. ` +
-          `Update Launcher and restart it.`
-        : null;
-      const statusError = status[a.name]?.last_error ?? null;
+        ? `Agent runtime '${type}' is not available in the currently loaded core. Update Launcher and restart it.`
+        : null
+      const statusEntry = status[a.name as string]
+      const statusError = statusEntry?.last_error || null
       return {
         ...a,
-        type,
-        state: (status[a.name]?.state as AgentState | undefined) ?? 'stopped',
-        restarts: status[a.name]?.restarts ?? 0,
+        state: statusEntry?.state || 'stopped',
+        restarts: statusEntry?.restarts || 0,
         lastError: statusError || runtimeMessage,
-        health: this._healthByType.get(type) ?? null,
+        health: this._healthByType.get(type) || null,
         runtimeMismatch,
-      };
-    });
+      }
+    })
   }
 
-  private _scheduleHealthRefresh(records: AgentRecord[]): void {
-    const now = Date.now();
-    if (now - this._lastHealthRefreshAt < 3000) return;
-    this._lastHealthRefreshAt = now;
+  private _scheduleHealthRefresh(agents: Array<{ type?: string; name: string }>): void {
+    const now = Date.now()
+    if (now - this._lastHealthRefreshAt < 3000) return
+    this._lastHealthRefreshAt = now
 
-    const types = Array.from(new Set(records.map((a) => a.type || 'openclaw')));
+    const types = [...new Set((agents || []).map(a => a.type || 'openclaw'))]
     for (const type of types) {
-      if (this._healthRefreshInFlight.has(type)) continue;
-      this._healthRefreshInFlight.add(type);
+      if (this._healthRefreshInFlight.has(type)) continue
+      this._healthRefreshInFlight.add(type)
       setTimeout(() => {
         try {
-          const health = this._connector ? this._connector.healthCheck(type) : null;
-          this._healthByType.set(type, health);
+          const healthCheck = this._connector?.healthCheck as ((type: string) => unknown) | undefined
+          const health = healthCheck ? healthCheck.call(this._connector, type) : null
+          this._healthByType.set(type, health)
         } catch {
-          this._healthByType.set(type, null);
+          this._healthByType.set(type, null)
         } finally {
-          this._healthRefreshInFlight.delete(type);
+          this._healthRefreshInFlight.delete(type)
         }
-      }, 0);
+      }, 0)
     }
   }
 
-  // ── Agent CRUD ───────────────────────────────────────────────────────────
-  async addAgent(config: AddAgentConfig): Promise<OperationResult<AddAgentConfig>> {
-    const connector = this._ensureConnector();
-    const type = config.type || 'openclaw';
-    const supported = this.getSupportedAgentTypes();
-    if (supported.length > 0 && !supported.includes(type)) {
-      throw new Error(`Agent type '${type}' is not supported in Launcher yet. Supported: ${supported.join(', ')}`);
+  async addAgent(agentConfig: { name: string; type?: string; path?: string; env?: Record<string, string> }): Promise<unknown> {
+    const name = agentConfig.name
+    const type = agentConfig.type || 'openclaw'
+    const supportedTypes = this.getSupportedAgentTypes()
+
+    if (supportedTypes.length > 0 && !supportedTypes.includes(type)) {
+      throw new Error(`Agent type '${type}' is not supported. Supported: ${supportedTypes.join(', ')}`)
     }
-    connector.addAgent({
-      name: config.name,
-      type,
-      role: 'worker',
-      path: config.path,
-      env: config.env,
-    });
-    return { success: true, agent: config };
+
+    const addAgent = this._connector!.addAgent as (opts: unknown) => void
+    addAgent.call(this._connector, { name, type, role: 'worker', path: agentConfig.path, env: agentConfig.env })
+    return { success: true, agent: agentConfig }
   }
 
-  async removeAgent(name: string): Promise<OperationResult> {
-    try { await this.stopAgent(name); } catch { /* ignore */ }
-    const connector = this._ensureConnector();
-    connector.removeAgent(name);
-    return { success: true };
+  async removeAgent(name: string): Promise<unknown> {
+    try { await this.stopAgent(name) } catch {}
+    const removeAgent = this._connector!.removeAgent as (name: string) => void
+    removeAgent.call(this._connector, name)
+    return { success: true }
   }
 
-  async updateAgent(name: string, updates: UpdateAgentConfig): Promise<OperationResult> {
+  async updateAgent(name: string, updates: { env?: Record<string, string> }): Promise<unknown> {
     if (updates.env) {
-      this._ensureConnector().saveAgentInstanceEnv(name, updates.env);
+      const saveEnv = this._connector!.saveAgentInstanceEnv as (name: string, env: unknown) => void
+      saveEnv.call(this._connector, name, updates.env)
     }
-    return { success: true };
+    return { success: true }
   }
 
-  // ── Catalog & env config ─────────────────────────────────────────────────
-  async getCatalog(): Promise<CatalogEntry[]> {
-    const connector = this._ensureConnector();
-    let catalog: CatalogEntry[];
+  async getCatalog(): Promise<unknown[]> {
+    let catalog: unknown[]
     try {
-      catalog = await connector.getCatalog();
+      const getCatalog = this._connector!.getCatalog as () => Promise<unknown[]>
+      catalog = await getCatalog.call(this._connector)
     } catch {
-      catalog = connector.registry.getCatalogSync().map((entry) => {
-        const info = connector.installer.getInstallInfo(entry.name);
-        return { ...entry, installed: info.installed, managed: info.managed, location: info.location };
-      });
+      const registry = this._connector!.registry as Record<string, unknown>
+      const getCatalogSync = registry.getCatalogSync as () => unknown[]
+      catalog = getCatalogSync.call(registry).map((e) => {
+        const entry = e as Record<string, unknown>
+        const installer = this._connector!.installer as Record<string, unknown>
+        const getInstallInfo = installer.getInstallInfo as (name: string) => { installed: boolean; managed?: boolean; location?: string }
+        const info = getInstallInfo.call(installer, entry.name as string)
+        return { ...entry, installed: info.installed, managed: info.managed, location: info.location }
+      })
     }
-    const bundled = connector.registry._loadBundled();
+    const registry = this._connector!.registry as Record<string, unknown>
+    const loadBundled = registry._loadBundled as () => unknown[]
+    const bundled = loadBundled.call(registry)
     for (const entry of catalog) {
-      const b = bundled.find((x) => x.name === entry.name);
-      if (!b) continue;
-      if (!entry.check_ready && b.check_ready) entry.check_ready = b.check_ready;
-      if ((!entry.env_config || entry.env_config.length === 0) && b.env_config?.length) {
-        entry.env_config = b.env_config;
+      const e = entry as Record<string, unknown>
+      const b = (bundled as Array<Record<string, unknown>>).find(x => x.name === e.name)
+      if (b) {
+        if (!e.check_ready && b.check_ready) e.check_ready = b.check_ready
+        if ((!e.env_config || !(e.env_config as unknown[]).length) && (b.env_config as unknown[] | undefined)?.length) e.env_config = b.env_config
+        if (!e.install && b.install) e.install = b.install
+        if (!e.launch && b.launch) e.launch = b.launch
       }
-      if (!entry.install && b.install) entry.install = b.install;
-      if (!entry.launch && b.launch) entry.launch = b.launch;
     }
-    return catalog;
+    return catalog
   }
 
-  async getEnvFields(type: string): Promise<FieldSchema[]> {
-    return this._ensureConnector().getEnvFields(type);
+  async getEnvFields(agentType: string): Promise<unknown[]> {
+    this._ensureConnector()
+    const getEnvFields = this._connector!.getEnvFields as (type: string) => unknown[]
+    return getEnvFields.call(this._connector, agentType)
   }
 
-  getAgentEnv(type: string): AgentEnv {
-    return this._ensureConnector().getAgentEnv(type);
+  getAgentEnv(agentType: string): unknown {
+    const getAgentEnv = this._connector!.getAgentEnv as (type: string) => unknown
+    return getAgentEnv.call(this._connector, agentType)
   }
 
-  getAgentInstanceEnv(name: string): AgentEnv {
-    return this._ensureConnector().getAgentInstanceEnv(name);
+  getAgentInstanceEnv(agentName: string): unknown {
+    const getInstanceEnv = this._connector!.getAgentInstanceEnv as (name: string) => unknown
+    return getInstanceEnv.call(this._connector, agentName)
   }
 
-  saveAgentEnv(type: string, env: AgentEnv): OperationResult {
-    const connector = this._ensureConnector();
-    connector.saveAgentEnv(type, env);
+  saveAgentEnv(agentType: string, env: Record<string, string>): unknown {
+    const saveEnv = this._connector!.saveAgentEnv as (type: string, env: unknown) => void
+    saveEnv.call(this._connector, agentType, env)
 
-    // OpenClaw uses native auth profiles — keep them in sync with the env.
-    if (type === 'openclaw') {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const OpenClawAdapter = require('@openagents-org/agent-launcher/src/adapters/openclaw') as {
-          configureNativeAuth?(env: AgentEnv): void;
-        };
-        OpenClawAdapter.configureNativeAuth?.(env);
-      } catch { /* optional */ }
-    }
-    this.signalReload();
-    return { success: true };
+    try {
+      if (agentType === 'openclaw') {
+        const OpenClawAdapter = require('@openagents-org/agent-launcher/src/adapters/openclaw')
+        OpenClawAdapter.configureNativeAuth(env)
+      }
+    } catch {}
+
+    this.signalReload()
+    return { success: true }
   }
 
-  saveAgentInstanceEnv(name: string, env: AgentEnv): OperationResult {
-    this._ensureConnector().saveAgentInstanceEnv(name, env);
-    this.signalReload();
-    return { success: true };
+  saveAgentInstanceEnv(agentName: string, env: Record<string, string>): unknown {
+    const saveEnv = this._connector!.saveAgentInstanceEnv as (name: string, env: unknown) => void
+    saveEnv.call(this._connector, agentName, env)
+    this.signalReload()
+    return { success: true }
   }
 
-  async testLLM(env: AgentEnv): Promise<{
-    success: boolean;
-    model?: string;
-    response?: string;
-    error?: string;
-  }> {
-    return this._ensureConnector().testLLM(env);
+  async testLLM(env: Record<string, string>): Promise<unknown> {
+    const testLLM = this._connector!.testLLM as (env: unknown) => Promise<unknown>
+    return testLLM.call(this._connector, env)
   }
 
   signalReload(): void {
-    const connector = this._connector;
-    if (!connector) return;
-    const pid = connector.getDaemonPid();
-    if (!pid) return;
+    const getDaemonPid = this._connector!.getDaemonPid as () => number | null
+    const pid = getDaemonPid.call(this._connector)
+    if (!pid) return
+
     if (process.platform === 'win32') {
-      connector.sendDaemonCommand('reload');
+      const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
+      sendCmd.call(this._connector, 'reload')
     } else {
-      try { process.kill(pid, 'SIGHUP'); } catch { /* ignore */ }
+      try { process.kill(pid, 'SIGHUP') } catch {}
     }
   }
 
-  // ── Workspaces ───────────────────────────────────────────────────────────
-  getNetworks(): Workspace[] {
-    return this._connector ? this._connector.listWorkspaces() : [];
+  getNetworks(): unknown[] {
+    const listWorkspaces = this._connector!.listWorkspaces as () => unknown[]
+    return listWorkspaces.call(this._connector)
   }
 
-  async createWorkspace(name?: string): Promise<WorkspaceCreateResult> {
-    return this._ensureConnector().createWorkspace({ name: name || 'My Workspace' });
+  async createWorkspace(name: string): Promise<unknown> {
+    const createWorkspace = this._connector!.createWorkspace as (opts: unknown) => Promise<unknown>
+    return createWorkspace.call(this._connector, { name: name || 'My Workspace' })
   }
 
-  async connectWorkspace(agentName: string, tokenOrSlug: string): Promise<OperationResult> {
-    const connector = this._ensureConnector();
+  async connectWorkspace(agentName: string, tokenOrSlug: string): Promise<unknown> {
     try {
-      const info = await connector.resolveToken(tokenOrSlug);
-      const slug = info.slug ?? info.workspace_id;
-      const wsName = info.name ?? slug;
-      connector.config.addNetwork({
+      const resolveToken = this._connector!.resolveToken as (token: string) => Promise<{ slug?: string; workspace_id?: string; name?: string; endpoint?: string }>
+      const info = await resolveToken.call(this._connector, tokenOrSlug)
+      const slug = info.slug || info.workspace_id
+      const wsName = info.name || slug
+
+      const addNetwork = (this._connector!.config as Record<string, unknown>).addNetwork as (opts: unknown) => void
+      addNetwork.call((this._connector!.config as Record<string, unknown>), {
         id: info.workspace_id,
         slug,
         name: wsName,
-        endpoint: info.endpoint ?? connector.workspace?.endpoint,
+        endpoint: info.endpoint,
         token: tokenOrSlug,
-      });
-      connector.connectWorkspace(agentName, slug);
+      })
+
+      const connectWorkspace = this._connector!.connectWorkspace as (name: string, slug: string) => void
+      connectWorkspace.call(this._connector, agentName, slug as string)
     } catch {
-      connector.connectWorkspace(agentName, tokenOrSlug);
+      const connectWorkspace = this._connector!.connectWorkspace as (name: string, slug: string) => void
+      connectWorkspace.call(this._connector, agentName, tokenOrSlug)
     }
-    this.signalReload();
-    return { success: true };
+    this.signalReload()
+    return { success: true }
   }
 
-  async disconnectWorkspace(agentName: string): Promise<OperationResult> {
-    this._ensureConnector().disconnectWorkspace(agentName);
-    this.signalReload();
-    return { success: true };
+  async disconnectWorkspace(agentName: string): Promise<unknown> {
+    const disconnectWorkspace = this._connector!.disconnectWorkspace as (name: string) => void
+    disconnectWorkspace.call(this._connector, agentName)
+    this.signalReload()
+    return { success: true }
   }
 
-  async removeWorkspace(slug: string): Promise<OperationResult> {
-    const result = await this._ensureConnector().removeWorkspace(slug);
-    this.signalReload();
-    return result;
+  async removeWorkspace(slug: string): Promise<unknown> {
+    const removeWorkspace = this._connector!.removeWorkspace as (slug: string) => Promise<unknown>
+    const result = await removeWorkspace.call(this._connector, slug)
+    this.signalReload()
+    return result
   }
 
-  // ── Agent type install / uninstall ───────────────────────────────────────
-  async checkAgentType(type: string): Promise<CheckTypeResult> {
-    const connector = this._ensureConnector();
-    const installed = connector.isInstalled(type);
-    const binary = installed ? connector.installer.which(type) : null;
-    return { installed, binary: binary || null };
+  async checkAgentType(agentType: string): Promise<unknown> {
+    const isInstalled = this._connector!.isInstalled as (type: string) => boolean
+    const installed = isInstalled.call(this._connector, agentType)
+    const installer = this._connector!.installer as Record<string, unknown>
+    const which = installer.which as (type: string) => string | null
+    const binary = installed ? which.call(installer, agentType) : null
+    return { installed, binary: binary || null }
   }
 
-  async installAgentType(type: string): Promise<OperationResult> {
-    return this._ensureConnector().install(type);
+  async installAgentType(agentType: string): Promise<unknown> {
+    const install = this._connector!.install as (type: string) => Promise<unknown>
+    return install.call(this._connector, agentType)
   }
 
-  async installAgentTypeStreaming(type: string, onData?: InstallStreamCallback): Promise<OperationResult> {
-    const connector = this._ensureConnector();
-    const result = await connector.installer.installStreaming(type, onData);
-    connector.clearCatalogCache();
-    return result;
+  async installAgentTypeStreaming(agentType: string, onData: (data: string) => void): Promise<unknown> {
+    const installer = this._connector!.installer as Record<string, unknown>
+    const installStreaming = installer.installStreaming as (type: string, onData: (data: string) => void) => Promise<unknown>
+    const result = await installStreaming.call(installer, agentType, onData)
+    const clearCache = this._connector!.clearCatalogCache as () => void
+    clearCache.call(this._connector)
+    return result
   }
 
-  async uninstallAgentType(type: string): Promise<OperationResult> {
-    const connector = this._ensureConnector();
-    const result = await connector.uninstall(type);
-    connector.clearCatalogCache();
-    return result;
+  async uninstallAgentType(agentType: string): Promise<unknown> {
+    const uninstall = this._connector!.uninstall as (type: string) => Promise<unknown>
+    const result = await uninstall.call(this._connector, agentType)
+    const clearCache = this._connector!.clearCatalogCache as () => void
+    clearCache.call(this._connector)
+    return result
   }
 
-  async uninstallAgentTypeStreaming(type: string, onData?: InstallStreamCallback): Promise<OperationResult> {
-    const connector = this._ensureConnector();
-    const result = await connector.installer.uninstallStreaming(type, onData);
-    connector.clearCatalogCache();
-    return result;
+  async uninstallAgentTypeStreaming(agentType: string, onData: (data: string) => void): Promise<unknown> {
+    const installer = this._connector!.installer as Record<string, unknown>
+    const uninstallStreaming = installer.uninstallStreaming as (type: string, onData: (data: string) => void) => Promise<unknown>
+    const result = await uninstallStreaming.call(installer, agentType, onData)
+    const clearCache = this._connector!.clearCatalogCache as () => void
+    clearCache.call(this._connector)
+    return result
   }
 
-  // ── Daemon lifecycle ─────────────────────────────────────────────────────
-  async startAgent(name: string): Promise<OperationResult> {
-    await this._ensureDaemon();
-    this._ensureConnector().sendDaemonCommand(`start:${name}`);
-    return { success: true, message: `Start command sent for ${name}` };
+  async startAgent(name: string): Promise<unknown> {
+    await this._ensureDaemon()
+    const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
+    sendCmd.call(this._connector, `start:${name}`)
+    return { success: true, message: `Start command sent for ${name}` }
   }
 
-  async stopAgent(name: string): Promise<OperationResult> {
-    const connector = this._ensureConnector();
-    const pid = connector.getDaemonPid();
-    if (!pid) return { success: true, message: 'Daemon not running' };
-    connector.sendDaemonCommand(`stop:${name}`);
-    return { success: true, message: `Stop command sent for ${name}` };
+  async stopAgent(name: string): Promise<unknown> {
+    const getDaemonPid = this._connector!.getDaemonPid as () => number | null
+    const pid = getDaemonPid.call(this._connector)
+    if (!pid) return { success: true, message: 'Daemon not running' }
+    const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
+    sendCmd.call(this._connector, `stop:${name}`)
+    return { success: true, message: `Stop command sent for ${name}` }
   }
 
-  async startAll(): Promise<OperationResult> {
-    await this._ensureDaemon();
-    this._ensureConnector().sendDaemonCommand('reload');
-    return { success: true, message: 'Start all command sent' };
+  async startAll(): Promise<unknown> {
+    await this._ensureDaemon()
+    const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
+    sendCmd.call(this._connector, 'reload')
+    return { success: true, message: 'Start all command sent' }
   }
 
-  async stopAll(): Promise<OperationResult> {
-    if (!this._connector) return { success: false, message: 'Daemon not running' };
-    const stopped = this._connector.stopDaemon();
-    return { success: stopped, message: stopped ? 'Daemon stopped' : 'Daemon not running' };
+  async stopAll(): Promise<unknown> {
+    const stopDaemon = this._connector!.stopDaemon as () => boolean
+    const stopped = stopDaemon.call(this._connector)
+    return { success: stopped, message: stopped ? 'Daemon stopped' : 'Daemon not running' }
   }
 
-  async _ensureDaemon(): Promise<OperationResult | void> {
-    const connector = this._ensureConnector();
-    if (connector.getDaemonPid()) return;
+  async _ensureDaemon(): Promise<void> {
+    const getDaemonPid = this._connector!.getDaemonPid as () => number | null
+    const pid = getDaemonPid.call(this._connector)
+    if (pid) return
 
-    const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
-    const nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''));
-    const nodeBinLegacy = path.join(portableNodeDir, 'bin', 'node');
-    if (!fs.existsSync(nodeBin) && !fs.existsSync(nodeBinLegacy)) return;
+    const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs')
+    const nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''))
+    const nodeBinLegacy = path.join(portableNodeDir, 'bin', 'node')
+    if (!fs.existsSync(nodeBin) && !fs.existsSync(nodeBinLegacy)) return
 
-    return this._startDaemon();
+    await this._startDaemon()
   }
 
-  getAllStatus(): Record<string, AgentStatusEntry> {
-    return this._connector ? this._connector.getDaemonStatus() : {};
+  getAllStatus(): unknown {
+    const getDaemonStatus = this._connector!.getDaemonStatus as () => unknown
+    return getDaemonStatus.call(this._connector)
   }
 
-  getLogs(name?: string | null, lines = 200): LogsResult {
-    if (!this._connector) return { lines: [] };
-    return { lines: this._connector.getLogs(name, lines) };
+  getLogs(name: string, lines = 200): unknown {
+    const getLogs = this._connector!.getLogs as (name: string, lines: number) => string[]
+    const logLines = getLogs.call(this._connector, name, lines)
+    return { lines: logLines }
   }
 
-  tailLogs(name?: string | null, lines = 200, offset = 0): TailLogsResult {
-    if (!this._connector) return { lines: [], size: 0 };
-    return this._connector.config.tailLogs({ agent: name || undefined, lines, offset });
+  tailLogs(name: string, lines = 200, offset = 0): unknown {
+    const config = this._connector!.config as Record<string, unknown>
+    const tailLogs = config.tailLogs as (opts: unknown) => unknown
+    return tailLogs.call(config, { agent: name || undefined, lines, offset })
   }
 
-  clearLogsInRange(start: string | number | Date, end: string | number | Date): ClearLogsResult {
-    const startTime = normalizeTimeValue(start);
-    const endTime = normalizeTimeValue(end);
-    if (!startTime || !endTime) throw new Error('Start time and end time are required');
-    if (startTime.getTime() > endTime.getTime()) throw new Error('Start time must be before end time');
+  clearLogsInRange(start: string | number | Date, end: string | number | Date): unknown {
+    const startTime = normalizeTimeValue(start)
+    const endTime = normalizeTimeValue(end)
 
-    const logFile = path.join(CONFIG_DIR, 'daemon.log');
-    if (!fs.existsSync(logFile)) return { removed: 0, remaining: 0 };
+    if (!startTime || !endTime) {
+      throw new Error('Start time and end time are required')
+    }
+    if (startTime.getTime() > endTime.getTime()) {
+      throw new Error('Start time must be before end time')
+    }
 
-    const content = fs.readFileSync(logFile, 'utf-8');
-    const hasTrailingNewline = content.endsWith('\n');
-    const allLines = content.split('\n');
-    if (hasTrailingNewline) allLines.pop();
-    const { keptLines, removed } = filterLogsByTimeRange(allLines, startTime, endTime);
-    const nextContent = keptLines.join('\n') + (hasTrailingNewline && keptLines.length > 0 ? '\n' : '');
-    const tempFile = `${logFile}.tmp`;
-    fs.writeFileSync(tempFile, nextContent, 'utf-8');
-    fs.renameSync(tempFile, logFile);
-    return { removed, remaining: keptLines.length };
+    const logFile = path.join(CONFIG_DIR, 'daemon.log')
+    if (!fs.existsSync(logFile)) return { removed: 0, remaining: 0 }
+
+    const content = fs.readFileSync(logFile, 'utf-8')
+    const hasTrailingNewline = content.endsWith('\n')
+    const allLines = content.split('\n')
+    if (hasTrailingNewline) allLines.pop()
+
+    const { keptLines, removed } = filterLogsByTimeRange(allLines, startTime, endTime)
+
+    const nextContent = keptLines.join('\n') + (hasTrailingNewline && keptLines.length > 0 ? '\n' : '')
+    const tempFile = `${logFile}.tmp`
+    fs.writeFileSync(tempFile, nextContent, 'utf-8')
+    fs.renameSync(tempFile, logFile)
+
+    return { removed, remaining: keptLines.length }
   }
 
-  healthCheck(type: string): HealthStatus | null {
-    return this._connector ? this._connector.healthCheck(type) : null;
+  healthCheck(type: string): unknown {
+    const healthCheck = this._connector!.healthCheck as (type: string) => unknown
+    return healthCheck.call(this._connector, type)
   }
 
-  // ── Internal ─────────────────────────────────────────────────────────────
-  private _startDaemon(): OperationResult {
-    const connector = this._connector;
-    if (!connector) return { success: false, message: 'Core library not loaded' };
-    try { connector.stopDaemon(); } catch { /* ignore */ }
+  private _startDaemon(): { success: boolean; pid?: number; message: string } {
+    try {
+      const stopDaemon = this._connector!.stopDaemon as () => void
+      stopDaemon.call(this._connector)
+    } catch {}
 
-    const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs');
-    const openagentsDir = path.join(os.homedir(), '.openagents');
-    const extraDirs: string[] = [portableNodeDir, path.join(portableNodeDir, 'bin')];
+    const { spawn } = require('child_process')
+    const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs')
+    const openagentsDir = path.join(os.homedir(), '.openagents')
 
-    const runtimesDir = path.join(openagentsDir, 'runtimes');
+    const extraDirs = [
+      portableNodeDir,
+      path.join(portableNodeDir, 'bin'),
+    ]
+    const runtimesDir = path.join(openagentsDir, 'runtimes')
     try {
       for (const d of fs.readdirSync(runtimesDir, { withFileTypes: true })) {
-        if (d.isDirectory()) extraDirs.push(path.join(runtimesDir, d.name, 'node_modules', '.bin'));
+        if (d.isDirectory()) extraDirs.push(path.join(runtimesDir, d.name, 'node_modules', '.bin'))
       }
-    } catch { /* directory may not exist */ }
-
-    extraDirs.push(path.join(openagentsDir, 'core', 'node_modules', '.bin'));
-    extraDirs.push(path.join(portableNodeDir, 'node_modules', '.bin'));
-
+    } catch {}
+    extraDirs.push(path.join(openagentsDir, 'core', 'node_modules', '.bin'))
+    extraDirs.push(path.join(portableNodeDir, 'node_modules', '.bin'))
     if (process.platform === 'win32') {
-      extraDirs.push(path.join(process.env.APPDATA || '', 'npm'));
+      extraDirs.push(path.join(process.env.APPDATA || '', 'npm'))
       try {
-        const npmPrefix = execSync('npm config get prefix', {
-          encoding: 'utf-8',
-          timeout: 5000,
-          windowsHide: true,
-        }).trim();
-        if (npmPrefix && !extraDirs.includes(npmPrefix)) extraDirs.push(npmPrefix);
-      } catch { /* npm may not be on PATH */ }
+        const { execSync: _exec } = require('child_process')
+        const npmPrefix = _exec('npm config get prefix', {
+          encoding: 'utf-8', timeout: 5000, windowsHide: true,
+        }).trim()
+        if (npmPrefix && !extraDirs.includes(npmPrefix)) extraDirs.push(npmPrefix)
+      } catch {}
     }
+    const enhancedPath = [...extraDirs, process.env.PATH || ''].join(path.delimiter)
 
-    const enhancedPath = [...extraDirs, process.env.PATH || ''].join(path.delimiter);
-
+    let cliPath: string | null = null
     const cliCandidates = [
       path.join(LOCAL_CORE, 'bin', 'agent-connector.js'),
       path.join(portableNodeDir, 'node_modules', '@openagents-org', 'agent-launcher', 'bin', 'agent-connector.js'),
-    ];
-    const cliPath = cliCandidates.find((c) => {
-      try { return fs.existsSync(c); } catch { return false; }
-    });
+    ]
+    for (const c of cliCandidates) {
+      try { if (fs.existsSync(c)) { cliPath = c; break } } catch {}
+    }
     if (!cliPath) {
-      return { success: false, message: 'agent-launcher CLI not found. Install an agent first via the Install tab.' };
+      return { success: false, message: 'agent-launcher CLI not found. Install an agent first via the Install tab.' }
     }
 
-    let nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''));
+    let nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''))
     if (!fs.existsSync(nodeBin)) {
       try {
-        nodeBin = execSync(process.platform === 'win32' ? 'where node' : 'which node', {
-          encoding: 'utf-8',
-          timeout: 5000,
-          env: { ...process.env, PATH: enhancedPath },
-        }).split(/\r?\n/)[0].trim();
-      } catch {
-        nodeBin = 'node';
-      }
+        const { execSync } = require('child_process')
+        nodeBin = execSync(
+          process.platform === 'win32' ? 'where node' : 'which node',
+          { encoding: 'utf-8', timeout: 5000, env: { ...process.env, PATH: enhancedPath } }
+        ).split(/\r?\n/)[0].trim()
+      } catch { nodeBin = 'node' }
     }
 
     try {
-      fs.mkdirSync(CONFIG_DIR, { recursive: true });
-      const logFile = path.join(CONFIG_DIR, 'daemon.log');
-      const pidFile = path.join(CONFIG_DIR, 'daemon.pid');
-      const logFd = fs.openSync(logFile, 'a');
+      fs.mkdirSync(CONFIG_DIR, { recursive: true })
+      const logFile = path.join(CONFIG_DIR, 'daemon.log')
+      const pidFile = path.join(CONFIG_DIR, 'daemon.pid')
+      const logFd = fs.openSync(logFile, 'a')
 
       const proc = spawn(nodeBin, [cliPath, 'up', '--foreground'], {
         detached: true,
         stdio: ['ignore', logFd, logFd],
         env: { ...process.env, PATH: enhancedPath },
         windowsHide: true,
-      });
-      proc.unref();
-      if (proc.pid) fs.writeFileSync(pidFile, String(proc.pid), 'utf-8');
-      fs.closeSync(logFd);
+      })
+      proc.unref()
+      fs.writeFileSync(pidFile, String(proc.pid), 'utf-8')
+      fs.closeSync(logFd)
 
-      return { success: true, message: `Daemon started (PID ${proc.pid})` };
-    } catch (e) {
-      return { success: false, message: `Failed to start daemon: ${(e as Error).message}` };
+      return { success: true, pid: proc.pid, message: `Daemon started (PID ${proc.pid})` }
+    } catch (e: unknown) {
+      return { success: false, message: `Failed to start daemon: ${(e as Error).message}` }
     }
   }
 }
 
-// ── Log time-range filtering helpers ──────────────────────────────────────
 function normalizeTimeValue(value: string | number | Date): Date | null {
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
   if (typeof value === 'number') {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
   }
   if (typeof value === 'string' && value.trim()) {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
   }
-  return null;
+  return null
 }
 
-function filterLogsByTimeRange(
-  lines: string[],
-  start: Date,
-  end: Date,
-): { keptLines: string[]; removed: number } {
-  const headerTimes = resolveLogHeaderTimestamps(lines, end);
-  let activeRemove = false;
-  let removed = 0;
-  const keptLines: string[] = [];
+function filterLogsByTimeRange(lines: string[], start: Date, end: Date): { keptLines: string[]; removed: number } {
+  const headerTimes = resolveLogHeaderTimestamps(lines, end)
+  let activeRemove = false
+  let removed = 0
+  const keptLines: string[] = []
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const headerTime = headerTimes[index];
+  for (let index = 0; index < lines.length; index++) {
+    const headerTime = headerTimes[index]
     if (headerTime) {
-      const time = headerTime.getTime();
-      activeRemove = time >= start.getTime() && time <= end.getTime();
+      const time = headerTime.getTime()
+      activeRemove = time >= start.getTime() && time <= end.getTime()
     }
-    if (activeRemove) removed += 1;
-    else keptLines.push(lines[index]);
+    if (activeRemove) {
+      removed++
+    } else {
+      keptLines.push(lines[index])
+    }
   }
-  return { keptLines, removed };
+
+  return { keptLines, removed }
 }
 
-interface IsoToken {
-  kind: 'iso';
-  date: Date;
-}
-interface ClockToken {
-  kind: 'clock';
-  seconds: number;
-}
-type LogTimestampToken = IsoToken | ClockToken;
+function resolveLogHeaderTimestamps(lines: string[], referenceTime: Date): (Date | null)[] {
+  const resolved: (Date | null)[] = new Array(lines.length).fill(null)
+  let currentDay = startOfLocalDay(referenceTime)
+  let lastClockSeconds: number | null = null
 
-function resolveLogHeaderTimestamps(lines: string[], referenceTime: Date): Array<Date | null> {
-  const resolved: Array<Date | null> = new Array(lines.length).fill(null);
-  let currentDay = startOfLocalDay(referenceTime);
-  let lastClockSeconds: number | null = null;
-
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const token = parseLogTimestampToken(lines[index]);
-    if (!token) continue;
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const token = parseLogTimestampToken(lines[index])
+    if (!token) continue
 
     if (token.kind === 'iso') {
-      resolved[index] = token.date;
-      currentDay = startOfLocalDay(token.date);
-      lastClockSeconds =
-        token.date.getHours() * 3600 + token.date.getMinutes() * 60 + token.date.getSeconds();
-      continue;
+      resolved[index] = token.date
+      currentDay = startOfLocalDay(token.date)
+      lastClockSeconds = (
+        token.date.getHours() * 3600 +
+        token.date.getMinutes() * 60 +
+        token.date.getSeconds()
+      )
+      continue
     }
+
     if (lastClockSeconds !== null && token.seconds > lastClockSeconds) {
-      currentDay = addLocalDays(currentDay, -1);
+      currentDay = addLocalDays(currentDay, -1)
     }
-    resolved[index] = withLocalClock(currentDay, token.seconds);
-    lastClockSeconds = token.seconds;
+
+    resolved[index] = withLocalClock(currentDay, token.seconds)
+    lastClockSeconds = token.seconds
   }
-  return resolved;
+
+  return resolved
 }
 
-function parseLogTimestampToken(line: string): LogTimestampToken | null {
-  if (!line) return null;
-  const isoMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))/);
+function parseLogTimestampToken(line: string): { kind: 'iso'; date: Date } | { kind: 'clock'; seconds: number } | null {
+  if (!line) return null
+
+  const isoMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))/)
   if (isoMatch) {
-    const date = new Date(isoMatch[1]);
-    if (!Number.isNaN(date.getTime())) return { kind: 'iso', date };
+    const date = new Date(isoMatch[1])
+    if (!Number.isNaN(date.getTime())) return { kind: 'iso', date }
   }
-  const clockMatch = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+
+  const clockMatch = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/)
   if (clockMatch) {
     return {
       kind: 'clock',
       seconds: Number(clockMatch[1]) * 3600 + Number(clockMatch[2]) * 60 + Number(clockMatch[3]),
-    };
+    }
   }
-  return null;
+
+  return null
 }
 
 function startOfLocalDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
 function addLocalDays(date: Date, days: number): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days)
 }
 
 function withLocalClock(day: Date, seconds: number): Date {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes, secs);
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes, secs)
 }

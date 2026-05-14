@@ -1,68 +1,65 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { app } from 'electron';
-
-import type { AppSettings } from '../shared/models';
+import fs from 'fs'
+import path from 'path'
+import { app } from 'electron'
 
 export class Store {
-  private _data: AppSettings;
-  private _pathResolved = false;
-  private _path: string | null = null;
+  private _data: Record<string, unknown> = {}
+  private _pathResolved = false
+  private _path: string | null = null
 
-  constructor(defaults: AppSettings = {}) {
-    this._data = { ...defaults };
+  constructor(defaults: Record<string, unknown> = {}) {
+    this._data = { ...defaults }
   }
 
   private _ensurePath(): void {
-    if (this._pathResolved) return;
-    this._path = path.join(app.getPath('userData'), 'settings.json');
-    this._pathResolved = true;
-    this._load();
+    if (!this._pathResolved) {
+      this._path = path.join(app.getPath('userData'), 'settings.json')
+      this._pathResolved = true
+      this._load()
+    }
   }
 
   private _load(): void {
     try {
       if (this._path && fs.existsSync(this._path)) {
-        const raw = fs.readFileSync(this._path, 'utf-8');
-        this._data = { ...this._data, ...JSON.parse(raw) };
+        const raw = fs.readFileSync(this._path, 'utf-8')
+        this._data = { ...this._data, ...JSON.parse(raw) }
       }
-    } catch {
-      // ignore corrupt file
-    }
+    } catch {}
   }
 
   private _save(): void {
-    this._ensurePath();
-    if (!this._path) return;
+    this._ensurePath()
     try {
-      fs.mkdirSync(path.dirname(this._path), { recursive: true });
-      fs.writeFileSync(this._path, JSON.stringify(this._data, null, 2), 'utf-8');
+      const dir = path.dirname(this._path!)
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(this._path!, JSON.stringify(this._data, null, 2), 'utf-8')
     } catch (err) {
-      console.error('Failed to save settings:', err);
+      console.error('Failed to save settings:', err)
     }
   }
 
-  get<K extends keyof AppSettings>(key?: K): AppSettings[K] | AppSettings {
-    this._ensurePath();
-    if (key === undefined) return { ...this._data };
-    return this._data[key];
+  get(key?: string): unknown {
+    this._ensurePath()
+    if (key === undefined) return { ...this._data }
+    return this._data[key]
   }
 
-  set<K extends keyof AppSettings>(key: K | AppSettings, value?: AppSettings[K]): void {
-    if (typeof key === 'object' && key !== null) {
-      Object.assign(this._data, key);
+  set(key: string | Record<string, unknown>, value?: unknown): void {
+    if (typeof key === 'object') {
+      Object.assign(this._data, key)
     } else {
-      this._data[key as K] = value as AppSettings[K];
+      this._data[key] = value
     }
-    this._save();
+    this._save()
   }
 
-  delete(key: keyof AppSettings): void {
-    delete this._data[key];
-    this._save();
+  delete(key: string): void {
+    delete this._data[key]
+    this._save()
   }
 
-  has(key: keyof AppSettings): boolean {
-    return key in this._data;
+  has(key: string): boolean {
+    return key in this._data
   }
 }

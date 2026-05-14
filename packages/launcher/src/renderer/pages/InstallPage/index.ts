@@ -1,1 +1,0 @@
-export { InstallPage } from './InstallPage';

@@ -9,7 +9,10 @@
       "Bash(/home/xiang/openagents/packages/launcher/node_modules/electron/dist/electron --version)",
       "Bash(unset ELECTRON_RUN_AS_NODE)",
       "Bash(/home/xiang/openagents/packages/launcher/node_modules/electron/dist/electron --version --no-sandbox)",
-      "Bash(HEADLESS=1 npm run dev)"
+      "Bash(HEADLESS=1 npm run dev)",
+      "Bash(npm show *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
     ]
   }
 }
