@@ -309,6 +309,26 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
 }
 
 /**
+ * Guardrails shared across all adapter prompt builders.
+ */
+function buildGuardrails() {
+  return (
+    '\nIMPORTANT: Never use AskUserQuestion. ' +
+    'AskUserQuestion blocks the subprocess and will hang the thread. ' +
+    'If you need to ask the user something, just write the question ' +
+    'as your text response.\n' +
+    '\nIMPORTANT: When the user gives you a numbered list, bulleted list, or ' +
+    'multiple tasks in a single message, you MUST create a to-do list BEFORE ' +
+    'doing any work. This is mandatory — no exceptions, even for simple tasks. ' +
+    'The to-do list lets the user track your progress in real time.\n' +
+    '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +
+    'CronList, ScheduleWakeup). For timers, routines, and recurring tasks, ' +
+    'ALWAYS use the workspace REST API (curl commands in your skill instructions). ' +
+    'Built-in scheduling is local-only and won\'t appear in the workspace.\n'
+  );
+}
+
+/**
  * Build the system prompt for Claude adapter (MCP-based).
  * Claude gets identity + collaboration instructions but NOT API skills.
  */
@@ -331,26 +351,7 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     );
   }
 
-  parts.push(
-    '\nIMPORTANT: Never use AskUserQuestion. ' +
-    'AskUserQuestion blocks the subprocess and will hang the thread. ' +
-    'If you need to ask the user something, just write the question ' +
-    'as your text response.\n'
-  );
-
-  parts.push(
-    '\nIMPORTANT: When the user gives you a numbered list, bulleted list, or ' +
-    'multiple tasks in a single message, you MUST create a to-do list BEFORE ' +
-    'doing any work. This is mandatory — no exceptions, even for simple tasks. ' +
-    'The to-do list lets the user track your progress in real time.\n'
-  );
-
-  parts.push(
-    '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +
-    'CronList, ScheduleWakeup). For timers, routines, and recurring tasks, ' +
-    'ALWAYS use the workspace REST API (curl commands in your skill instructions). ' +
-    'Built-in scheduling is local-only and won\'t appear in the workspace.\n'
-  );
+  parts.push(buildGuardrails());
 
   return parts.join('\n');
 }
@@ -366,6 +367,7 @@ function buildOpenclawSystemPrompt({ agentName, workspaceId, channelName, endpoi
   parts.push(buildApiSkillsPrompt({
     endpoint, workspaceId, token, agentName, channelName, disabledModules, mode,
   }));
+  parts.push(buildGuardrails());
   return parts.join('\n');
 }
 
@@ -394,7 +396,7 @@ function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channel
     '---\n\n'
   );
 
-  return frontmatter + identity + '\n' + collab + '\n' + body;
+  return frontmatter + identity + '\n' + collab + '\n' + body + '\n' + buildGuardrails();
 }
 
 /**
@@ -405,7 +407,7 @@ function buildOpenCodeSystemPrompt({ agentName, workspaceId, channelName, endpoi
   const collab = buildCollaborationPrompt();
   const modePrompt = buildModePrompt(mode);
   const api = buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channelName, disabledModules, mode });
-  return identity + '\n' + collab + '\n' + modePrompt + '\n' + api;
+  return identity + '\n' + collab + '\n' + modePrompt + '\n' + api + '\n' + buildGuardrails();
 }
 
 /**
@@ -429,7 +431,7 @@ function buildOpenCodeSkillMd({ endpoint, workspaceId, token, agentName, channel
     `You are agent '${agentName}' connected to OpenAgents workspace ${workspaceId}.\n` +
     'Use these APIs via bash + curl to interact with the workspace.\n\n';
 
-  return frontmatter + identity + api;
+  return frontmatter + identity + api + '\n' + buildGuardrails();
 }
 
 /**
@@ -460,13 +462,44 @@ function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelNa
     '  or collaborating with other agents via @mentions.\n' +
     '---\n\n';
 
-  return frontmatter + identity + '\n' + collab + '\n' + api;
+  return frontmatter + identity + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
+}
+
+/**
+ * Build a SKILL.md file for Cursor CLI's skill auto-discovery.
+ *
+ * Written to .cursor/skills/openagents-workspace.md before each CLI spawn.
+ * Cursor discovers skills from the .cursor/skills/ directory automatically.
+ */
+function buildCursorSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules }) {
+  const api = buildApiSkillsPrompt({
+    endpoint, workspaceId, token, agentName,
+    channelName: channelName || 'general',
+    disabledModules,
+    mode: 'execute',
+  });
+
+  const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
+  const collab = buildCollaborationPrompt();
+
+  const frontmatter =
+    '---\n' +
+    'name: openagents-workspace\n' +
+    'description: |\n' +
+    '  OpenAgents Workspace collaboration tools — shared files, browser,\n' +
+    '  and multi-agent coordination. Use when: sharing files or reports,\n' +
+    '  browsing websites, reading shared files, checking workspace agents,\n' +
+    '  or collaborating with other agents via @mentions.\n' +
+    '---\n\n';
+
+  return frontmatter + identity + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
 }
 
 module.exports = {
   buildWorkspaceIdentity,
   buildCollaborationPrompt,
   buildModePrompt,
+  buildGuardrails,
   buildApiSkillsPrompt,
   buildClaudeSystemPrompt,
   buildOpenclawSystemPrompt,
@@ -474,4 +507,5 @@ module.exports = {
   buildOpenCodeSystemPrompt,
   buildOpenCodeSkillMd,
   buildClaudeSkillMd,
+  buildCursorSkillMd,
 };
