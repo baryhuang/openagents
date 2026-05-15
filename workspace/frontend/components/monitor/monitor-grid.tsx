@@ -11,7 +11,6 @@ import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/helpers';
 
-const TILE_COUNT = 6;
 const POLL_INTERVAL = 5_000;
 
 export interface TileData {
@@ -31,8 +30,7 @@ export function MonitorGrid() {
   // Message cache for instant overlay loading — stores all fetched messages per session (chronological)
   const messageCacheRef = React.useRef<Record<string, WorkspaceMessage[]>>({});
 
-  // Top 6 most recent active sessions
-  const topSessions = useMemo(() => {
+  const activeSessions = useMemo(() => {
     return [...sessions]
       .filter((s) => s.status === 'active')
       .sort((a, b) => {
@@ -41,9 +39,11 @@ export function MonitorGrid() {
         const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
         const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
         return bTime - aTime;
-      })
-      .slice(0, TILE_COUNT);
+      });
   }, [sessions]);
+
+  const tileCount = activeSessions.length >= 9 ? 9 : 6;
+  const topSessions = useMemo(() => activeSessions.slice(0, tileCount), [activeSessions, tileCount]);
 
   // Fetch last turn data for all visible tiles
   const fetchTileData = useCallback(async () => {
@@ -150,7 +150,7 @@ export function MonitorGrid() {
       }
 
       const num = parseInt(e.key, 10);
-      if (num >= 1 && num <= 6) {
+      if (num >= 1 && num <= 9) {
         const idx = num - 1;
         const session = topSessions[idx];
         if (session) {
@@ -201,7 +201,7 @@ export function MonitorGrid() {
     <>
       <div className="relative h-full flex flex-col">
         {/* Tile grid */}
-        <div className="grid grid-cols-3 grid-rows-2 gap-2.5 flex-1 min-h-0">
+        <div className={cn('grid grid-cols-3 gap-2.5 flex-1 min-h-0', tileCount === 9 ? 'grid-rows-3' : 'grid-rows-2')}>
           {topSessions.map((session, idx) => (
             <MonitorTile
               key={session.sessionId}
@@ -214,7 +214,7 @@ export function MonitorGrid() {
               shortcutKey={idx + 1}
             />
           ))}
-          {Array.from({ length: Math.max(0, TILE_COUNT - topSessions.length) }).map((_, i) => (
+          {Array.from({ length: Math.max(0, tileCount - topSessions.length) }).map((_, i) => (
             <div
               key={`empty-${i}`}
               className="border border-dashed border-input rounded-xl flex items-center justify-center text-muted-foreground/40 text-xs"
