@@ -25,10 +25,16 @@ contextBridge.exposeInMainWorld('api', {
   installAgentTypeStreaming: (type: string) => ipcRenderer.invoke('agents:install-type-streaming', type),
   onInstallOutput: (callback: (data: string) => void) => ipcRenderer.on('install:output', (_e, data) => callback(data)),
   removeInstallOutputListener: () => ipcRenderer.removeAllListeners('install:output'),
+  onInstallProgress: (callback: (ev: unknown) => void) => ipcRenderer.on('install:progress', (_e, ev) => callback(ev)),
+  removeInstallProgressListener: () => ipcRenderer.removeAllListeners('install:progress'),
   uninstallAgentType: (type: string) => ipcRenderer.invoke('agents:uninstall-type', type),
   uninstallAgentTypeStreaming: (type: string) => ipcRenderer.invoke('agents:uninstall-type-streaming', type),
   checkAgentType: (type: string) => ipcRenderer.invoke('agents:check-type', type),
   getCatalog: () => ipcRenderer.invoke('agents:catalog'),
+  getInstalledAgents: () => ipcRenderer.invoke('agents:installed-list'),
+  checkAgentUpdates: () => ipcRenderer.invoke('agents:check-updates'),
+  rollbackAgentType: (type: string) => ipcRenderer.invoke('agents:rollback', type),
+  getAgentChangelog: (type: string) => ipcRenderer.invoke('agents:changelog', type),
 
   getEnvFields: (type: string) => ipcRenderer.invoke('agents:env-fields', type),
   getAgentEnv: (type: string) => ipcRenderer.invoke('agents:get-env', type),
@@ -55,6 +61,10 @@ contextBridge.exposeInMainWorld('api', {
   updateCore: () => ipcRenderer.invoke('core:update'),
   onCoreUpdate: (cb: (info: { current: string; latest: string }) => void) =>
     ipcRenderer.on('core-update-available', (_e, info) => cb(info)),
+  onAgentUpdatesChanged: (cb: (updates: Array<{ name: string; current: string | null; latest: string | null }>) => void) =>
+    ipcRenderer.on('agent-updates-changed', (_e, updates) => cb(updates)),
+  onNavigateToInstall: (cb: (agentName: string) => void) =>
+    ipcRenderer.on('navigate-to-install', (_e, name) => cb(name)),
 
   getIconPath: (name: string) => ipcRenderer.invoke('icons:get-path', name),
   getIconsDir: () => ipcRenderer.invoke('icons:get-dir'),

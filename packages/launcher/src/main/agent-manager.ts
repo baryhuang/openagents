@@ -1,10 +1,27 @@
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import https from 'https'
 
 const CONFIG_DIR = path.join(os.homedir(), '.openagents')
 const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher')
 const LOCAL_CORE = path.resolve(__dirname, '../../../agent-connector')
+const INSTALLED_HISTORY_FILE = path.join(CONFIG_DIR, 'installed_agents_history.json')
+
+export interface InstalledAgentRecord {
+  name: string
+  version: string | null
+  installedAt: string
+  previousVersion?: string | null
+  history?: Array<{ version: string; installedAt: string }>
+}
+
+interface NpmRegistryInfo {
+  'dist-tags'?: { latest?: string }
+  versions?: Record<string, unknown>
+  time?: Record<string, string>
+  homepage?: string
+}
 
 function loadCore(): Record<string, unknown> | null {
   if (fs.existsSync(path.join(LOCAL_CORE, 'package.json'))) {
@@ -26,6 +43,9 @@ export class AgentManager {
   private _healthByType = new Map<string, unknown>()
   private _healthRefreshInFlight = new Set<string>()
   private _lastHealthRefreshAt = 0
+  private _healthQueue: string[] = []
+  private _healthProcessing = false
+  private _statusCache: { value: unknown; at: number } = { value: {}, at: 0 }
   _connector: Record<string, unknown> | null = null
 
   constructor(store: unknown) {
@@ -114,13 +134,25 @@ export class AgentManager {
 
   private _scheduleHealthRefresh(agents: Array<{ type?: string; name: string }>): void {
     const now = Date.now()
-    if (now - this._lastHealthRefreshAt < 3000) return
+    if (now - this._lastHealthRefreshAt < 30_000) return
     this._lastHealthRefreshAt = now
 
     const types = [...new Set((agents || []).map(a => a.type || 'openclaw'))]
     for (const type of types) {
       if (this._healthRefreshInFlight.has(type)) continue
+      if (this._healthQueue.includes(type)) continue
       this._healthRefreshInFlight.add(type)
+      this._healthQueue.push(type)
+    }
+    this._processHealthQueue()
+  }
+
+  private _processHealthQueue(): void {
+    if (this._healthProcessing) return
+    this._healthProcessing = true
+    const tick = (): void => {
+      const type = this._healthQueue.shift()
+      if (!type) { this._healthProcessing = false; return }
       setTimeout(() => {
         try {
           const healthCheck = this._connector?.healthCheck as ((type: string) => unknown) | undefined
@@ -131,8 +163,10 @@ export class AgentManager {
         } finally {
           this._healthRefreshInFlight.delete(type)
         }
+        setTimeout(tick, 250)
       }, 0)
     }
+    tick()
   }
 
   async addAgent(agentConfig: { name: string; type?: string; path?: string; env?: Record<string, string> }): Promise<unknown> {
@@ -322,6 +356,7 @@ export class AgentManager {
     const result = await installStreaming.call(installer, agentType, onData)
     const clearCache = this._connector!.clearCatalogCache as () => void
     clearCache.call(this._connector)
+    this._recordInstall(agentType)
     return result
   }
 
@@ -330,6 +365,7 @@ export class AgentManager {
     const result = await uninstall.call(this._connector, agentType)
     const clearCache = this._connector!.clearCatalogCache as () => void
     clearCache.call(this._connector)
+    this._recordUninstall(agentType)
     return result
   }
 
@@ -339,7 +375,177 @@ export class AgentManager {
     const result = await uninstallStreaming.call(installer, agentType, onData)
     const clearCache = this._connector!.clearCatalogCache as () => void
     clearCache.call(this._connector)
+    this._recordUninstall(agentType)
     return result
+  }
+
+  /** Read installed package version by inspecting runtime prefix package.json. */
+  getInstalledVersion(agentType: string): string | null {
+    try {
+      const entry = this._getRegistryEntry(agentType)
+      const npmPkg = this._resolveNpmPackage(entry)
+      if (!npmPkg) return null
+      const candidates = [
+        path.join(CONFIG_DIR, 'runtimes', agentType, 'node_modules', npmPkg, 'package.json'),
+        path.join(CONFIG_DIR, 'nodejs', 'node_modules', npmPkg, 'package.json'),
+      ]
+      for (const c of candidates) {
+        try {
+          if (fs.existsSync(c)) {
+            const pkg = JSON.parse(fs.readFileSync(c, 'utf-8'))
+            if (pkg?.version) return pkg.version
+          }
+        } catch {}
+      }
+    } catch {}
+    return null
+  }
+
+  private _getRegistryEntry(agentType: string): Record<string, unknown> | null {
+    try {
+      const registry = this._connector?.registry as Record<string, unknown> | undefined
+      if (!registry) return null
+      const getEntry = registry.getEntry as ((t: string) => unknown) | undefined
+      const entry = getEntry ? (getEntry.call(registry, agentType) as Record<string, unknown> | null) : null
+      return entry || null
+    } catch { return null }
+  }
+
+  private _resolveNpmPackage(entry: Record<string, unknown> | null): string | null {
+    if (!entry) return null
+    const install = entry.install as Record<string, unknown> | undefined
+    if (!install) return null
+    if (install.npm_package) return install.npm_package as string
+    const cmd = (install[Installer.platformKey()] || install.command) as string | undefined
+    if (!cmd) return install.binary as string | null
+    const m = cmd.match(/npm install\s+(?:-g\s+)?(@?[\w-]+(?:\/[\w-]+)?)(?:@\S*)?$/)
+    if (m) return m[1]
+    return (install.binary as string | undefined) || null
+  }
+
+  getInstalledHistory(): Record<string, InstalledAgentRecord> {
+    try {
+      if (fs.existsSync(INSTALLED_HISTORY_FILE)) {
+        const data = JSON.parse(fs.readFileSync(INSTALLED_HISTORY_FILE, 'utf-8'))
+        if (data && typeof data === 'object') return data
+      }
+    } catch {}
+    return {}
+  }
+
+  private _writeInstalledHistory(data: Record<string, InstalledAgentRecord>): void {
+    try {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true })
+      fs.writeFileSync(INSTALLED_HISTORY_FILE, JSON.stringify(data, null, 2), 'utf-8')
+    } catch {}
+  }
+
+  private _recordInstall(agentType: string): void {
+    try {
+      const data = this.getInstalledHistory()
+      const version = this.getInstalledVersion(agentType)
+      const prev = data[agentType]
+      const history = prev?.history ? [...prev.history] : []
+      if (prev?.version && prev.version !== version) {
+        history.unshift({ version: prev.version, installedAt: prev.installedAt })
+      }
+      data[agentType] = {
+        name: agentType,
+        version,
+        installedAt: new Date().toISOString(),
+        previousVersion: prev?.version || null,
+        history: history.slice(0, 10),
+      }
+      this._writeInstalledHistory(data)
+    } catch {}
+  }
+
+  private _recordUninstall(agentType: string): void {
+    try {
+      const data = this.getInstalledHistory()
+      if (data[agentType]) {
+        delete data[agentType]
+        this._writeInstalledHistory(data)
+      }
+    } catch {}
+  }
+
+  listInstalledAgents(): InstalledAgentRecord[] {
+    const data = this.getInstalledHistory()
+    const out: InstalledAgentRecord[] = []
+    for (const name of Object.keys(data)) {
+      const r = data[name]
+      out.push({ ...r, version: r.version || this.getInstalledVersion(name) })
+    }
+    return out
+  }
+
+  async rollbackAgentType(agentType: string, onData: (data: string) => void): Promise<{ success: boolean; version: string | null; error?: string }> {
+    const data = this.getInstalledHistory()
+    const record = data[agentType]
+    const target = record?.history?.[0]?.version || record?.previousVersion
+    if (!target) return { success: false, version: null, error: 'No previous version to roll back to' }
+
+    const entry = this._getRegistryEntry(agentType)
+    const npmPkg = this._resolveNpmPackage(entry)
+    if (!npmPkg) return { success: false, version: null, error: 'Cannot determine npm package for rollback' }
+
+    const { spawn } = require('child_process') as typeof import('child_process')
+    const prefixDir = path.join(CONFIG_DIR, 'runtimes', agentType)
+    fs.mkdirSync(prefixDir, { recursive: true })
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+    const args = ['install', '--save', '--prefix', prefixDir, `${npmPkg}@${target}`]
+
+    if (onData) onData(`$ ${npmCmd} ${args.join(' ')}\n\n`)
+
+    return new Promise((resolve) => {
+      const proc = spawn(npmCmd, args, { shell: true, cwd: prefixDir, stdio: ['ignore', 'pipe', 'pipe'] })
+      proc.stdout?.setEncoding('utf-8')
+      proc.stderr?.setEncoding('utf-8')
+      proc.stdout?.on('data', (d) => onData && onData(d))
+      proc.stderr?.on('data', (d) => onData && onData(d))
+      proc.on('error', (err) => resolve({ success: false, version: null, error: err.message }))
+      proc.on('close', (code) => {
+        if (code === 0) {
+          this._recordInstall(agentType)
+          if (onData) onData(`\nRolled back to ${target}.\n`)
+          resolve({ success: true, version: target })
+        } else {
+          resolve({ success: false, version: null, error: `Rollback failed with code ${code}` })
+        }
+      })
+    })
+  }
+
+  async checkAgentUpdates(): Promise<Array<{ name: string; current: string | null; latest: string | null }>> {
+    const installed = this.listInstalledAgents()
+    const results = await Promise.all(installed.map(async (rec) => {
+      const entry = this._getRegistryEntry(rec.name)
+      const npmPkg = this._resolveNpmPackage(entry)
+      if (!npmPkg) return { name: rec.name, current: rec.version, latest: null }
+      const info = await fetchNpmInfo(npmPkg).catch(() => null)
+      return { name: rec.name, current: rec.version, latest: info?.['dist-tags']?.latest || null }
+    }))
+    return results
+  }
+
+  async getAgentChangelog(agentType: string): Promise<{ versions: Array<{ version: string; date?: string }>; homepage?: string; error?: string }> {
+    const entry = this._getRegistryEntry(agentType)
+    const homepage = (entry?.homepage as string | undefined) || undefined
+    const npmPkg = this._resolveNpmPackage(entry)
+    if (!npmPkg) return { versions: [], homepage, error: 'No npm package' }
+    try {
+      const info = await fetchNpmInfo(npmPkg)
+      const time = info.time || {}
+      const versions = Object.keys(info.versions || {})
+        .filter((v) => /^\d/.test(v))
+        .sort(compareVersionsDesc)
+        .slice(0, 12)
+        .map((v) => ({ version: v, date: time[v] }))
+      return { versions, homepage }
+    } catch (e: unknown) {
+      return { versions: [], homepage, error: (e as Error).message }
+    }
   }
 
   async startAgent(name: string): Promise<unknown> {
@@ -385,8 +591,15 @@ export class AgentManager {
   }
 
   getAllStatus(): unknown {
+    const now = Date.now()
+    if (this._statusCache.value && now - this._statusCache.at < 1000) {
+      return this._statusCache.value
+    }
     const getDaemonStatus = this._connector!.getDaemonStatus as () => unknown
-    return getDaemonStatus.call(this._connector)
+    let value: unknown = {}
+    try { value = getDaemonStatus.call(this._connector) } catch { value = {} }
+    this._statusCache = { value, at: now }
+    return value
   }
 
   getLogs(name: string, lines = 200): unknown {
@@ -513,6 +726,50 @@ export class AgentManager {
       return { success: false, message: `Failed to start daemon: ${(e as Error).message}` }
     }
   }
+}
+
+class Installer {
+  static platformKey(): 'macos' | 'linux' | 'windows' {
+    if (process.platform === 'darwin') return 'macos'
+    if (process.platform === 'win32') return 'windows'
+    return 'linux'
+  }
+}
+
+function fetchNpmInfo(pkg: string): Promise<NpmRegistryInfo> {
+  return new Promise((resolve, reject) => {
+    const url = `https://registry.npmjs.org/${encodeURIComponent(pkg).replace('%40', '@')}`
+    const req = https.get(url, { headers: { Accept: 'application/json' } }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        fetchNpmInfo(res.headers.location as string).then(resolve, reject)
+        return
+      }
+      if (res.statusCode !== 200) {
+        reject(new Error(`HTTP ${res.statusCode}`))
+        return
+      }
+      let data = ''
+      res.setEncoding('utf-8')
+      res.on('data', (c) => { data += c })
+      res.on('end', () => {
+        try { resolve(JSON.parse(data) as NpmRegistryInfo) }
+        catch (e) { reject(e as Error) }
+      })
+    })
+    req.on('error', reject)
+    req.setTimeout(10000, () => req.destroy(new Error('npm registry timeout')))
+  })
+}
+
+function compareVersionsDesc(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0)
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0
+    const y = pb[i] || 0
+    if (x !== y) return y - x
+  }
+  return 0
 }
 
 function normalizeTimeValue(value: string | number | Date): Date | null {

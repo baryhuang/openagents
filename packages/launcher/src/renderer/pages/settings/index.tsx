@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback, useRef } from "react"
-import { Switch } from "../components/ui/Switch"
-import { Label } from "../components/ui/Label"
-import { Button } from "../components/ui/Button"
-import { Separator } from "../components/ui/Separator"
-import type { RuntimeInfo, Workspace } from "../types"
-import type { ToastType } from "../hooks/useToast"
+import { Switch } from "../../components/ui/Switch"
+import { Label } from "../../components/ui/Label"
+import { Button } from "../../components/ui/Button"
+import { Separator } from "../../components/ui/Separator"
+import { Skeleton } from "../../components/ui/Skeleton"
+import type { RuntimeInfo, Workspace } from "../../types"
+import type { ToastType } from "../../hooks/useToast"
 
 interface SettingsProps {
   showToast: (msg: string, type?: ToastType) => void
@@ -43,7 +44,10 @@ export default function Settings({
     try {
       const info = await window.api.runtimeInfo()
       if (mounted.current) setRuntimeInfo(info)
-    } catch {}
+      return info
+    } catch {
+      return null
+    }
   }, [])
 
   const loadWorkspaces = useCallback(async () => {
@@ -63,14 +67,35 @@ export default function Settings({
 
   useEffect(() => {
     loadSettings()
-    loadRuntime()
-    loadWorkspaces()
     loadLauncherVersion()
-    const interval = setInterval(() => {
-      loadRuntime()
-      loadWorkspaces()
-    }, 5000)
-    return () => clearInterval(interval)
+    loadWorkspaces()
+    // Defer the slow runtime check so the page paints first, then keep
+    // re-polling at short intervals while the background latestVersion is
+    // still pending, then back off to the slow interval.
+    let shortPolls = 0
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const scheduleNext = (info: RuntimeInfo | null): void => {
+      if (cancelled) return
+      const stillLoading = !info || !info.latestVersion
+      const delay = stillLoading && shortPolls < 10 ? 2000 : 30000
+      timer = setTimeout(async () => {
+        if (cancelled) return
+        shortPolls += 1
+        const next = await loadRuntime()
+        loadWorkspaces()
+        scheduleNext(next ?? null)
+      }, delay)
+    }
+    const initial = setTimeout(async () => {
+      const info = await loadRuntime()
+      scheduleNext(info ?? null)
+    }, 0)
+    return () => {
+      cancelled = true
+      clearTimeout(initial)
+      if (timer) clearTimeout(timer)
+    }
   }, [loadSettings, loadRuntime, loadWorkspaces, loadLauncherVersion])
 
   const handleStartOnBoot = async (checked: boolean): Promise<void> => {
@@ -104,11 +129,13 @@ export default function Settings({
     label: string
     value: string
     ok: boolean | null
+    loading: boolean
   }> = [
     {
       label: "Node.js:",
       value: runtimeInfo?.nodeVersion || "Not installed",
       ok: runtimeInfo ? !!runtimeInfo.nodeVersion : null,
+      loading: !runtimeInfo,
     },
     {
       label: "npm:",
@@ -116,6 +143,7 @@ export default function Settings({
         ? `v${runtimeInfo.npmVersion}`
         : "Not installed",
       ok: runtimeInfo ? !!runtimeInfo.npmVersion : null,
+      loading: !runtimeInfo,
     },
     {
       label: "Core Library:",
@@ -123,6 +151,7 @@ export default function Settings({
         ? `v${runtimeInfo.coreVersion}`
         : "Not installed",
       ok: runtimeInfo ? !!runtimeInfo.coreVersion : null,
+      loading: !runtimeInfo,
     },
     {
       label: "Latest Available:",
@@ -137,6 +166,8 @@ export default function Settings({
         runtimeInfo && runtimeInfo.latestVersion
           ? runtimeInfo.coreVersion === runtimeInfo.latestVersion
           : null,
+      loading:
+        !runtimeInfo || (!!runtimeInfo.npmVersion && !runtimeInfo.latestVersion),
     },
   ]
 
@@ -196,15 +227,13 @@ export default function Settings({
         </div>
       </div>
 
-      {/* Workspaces — legacy look */}
+      {/* Workspaces */}
       <div className="card-legacy">
         <h3>Workspaces</h3>
         {workspaces.length === 0 ? (
-          <span className="hint" style={{ marginBottom: 0 }}>
-            No workspaces configured.
-          </span>
+          <span className="hint mb-0">No workspaces configured.</span>
         ) : (
-          <ul className="workspace-url-list">
+          <ul className="list-none p-0 m-0">
             {workspaces.map((ws) => {
               const slug = ws.slug || ws.id
               const name = ws.name || slug
@@ -213,10 +242,13 @@ export default function Settings({
                 ? `${url}?token=${encodeURIComponent(ws.token)}`
                 : url
               return (
-                <li key={ws.id} className="workspace-url-item">
-                  <span className="workspace-url-name">{name}</span>
+                <li
+                  key={ws.id}
+                  className="flex justify-between items-center gap-2.5 py-2 text-xs border-b border-(--border) last:border-b-0"
+                >
+                  <span className="font-semibold text-(--text-primary)">{name}</span>
                   <span
-                    className="workspace-url-link"
+                    className="text-[11px] text-(--text-link) cursor-pointer break-all hover:underline"
                     onClick={() => window.api.openExternal(fullUrl)}
                   >
                     {url}
@@ -225,7 +257,7 @@ export default function Settings({
                     size="sm"
                     variant="destructive"
                     onClick={() => removeWorkspace(slug)}
-                    style={{ marginLeft: 8 }}
+                    className="ml-2"
                   >
                     Remove
                   </Button>
@@ -236,30 +268,36 @@ export default function Settings({
         )}
       </div>
 
-      {/* Runtime — legacy status rows */}
+      {/* Runtime */}
       <div className="card-legacy">
         <h3>Runtime</h3>
-        {runtimeRows.map((row) => (
-          <div key={row.label} className="status-row">
+        {runtimeRows.map((row, idx) => (
+          <div
+            key={row.label}
+            className={`flex justify-between items-center py-2.75 text-[13px] border-b border-(--border) ${idx === runtimeRows.length - 1 ? "border-b-0 mb-2" : ""}`}
+          >
             <span>{row.label}</span>
-            <span
-              style={{
-                color: runtimeColor(row.ok),
-              }}
-            >
-              {runtimeInfo ? row.value : "Checking..."}
-            </span>
+            {row.loading ? (
+              <Skeleton className="h-3 w-32" />
+            ) : (
+              <span style={{ color: runtimeColor(row.ok) }}>{row.value}</span>
+            )}
           </div>
         ))}
       </div>
 
-      {/* About — legacy */}
+      {/* About */}
       <div className="card-legacy">
         <h3>About</h3>
-        <p style={{ fontSize: 13, marginBottom: 8 }}>
-          OpenAgents Launcher {launcherVersion}
+        <p className="text-[13px] mb-2 flex items-center gap-1.5">
+          OpenAgents Launcher{" "}
+          {launcherVersion === "--" ? (
+            <Skeleton className="h-3 w-12 inline-block" />
+          ) : (
+            launcherVersion
+          )}
         </p>
-        <p style={{ fontSize: 13 }}>
+        <p className="text-[13px]">
           <a
             href="#"
             onClick={(e) => {

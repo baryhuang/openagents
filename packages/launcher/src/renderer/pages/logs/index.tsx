@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useCallback, useState } from "react"
-import { Button } from "../components/ui/Button"
-import { Modal, ModalTitle } from "../components/ui/Modal"
-import { useAgentsStore } from "../store/agents"
-import type { ToastType } from "../hooks/useToast"
+import { Button } from "../../components/ui/Button"
+import { Modal, ModalTitle } from "../../components/ui/Modal"
+import { useAgentsStore } from "../../store/agents"
+import type { ToastType } from "../../hooks/useToast"
 
 const LOGS_INITIAL_LINES = 200
 const LOGS_MAX_BUFFER = 400
@@ -154,10 +154,11 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
     <section className="flex flex-col h-full">
       <h1 className="mb-5">Logs</h1>
 
-      <div className="log-controls">
+      <div className="flex flex-wrap items-center gap-2.5 mb-3">
         <select
           value={agentFilter}
           onChange={(e) => handleFilterChange(e.target.value)}
+          className="px-3 py-1.5 text-xs bg-(--bg-input) text-(--text-primary) rounded-sm border border-transparent outline-none"
         >
           <option value="">All agents</option>
           {agents.map((a) => (
@@ -181,15 +182,12 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
         <Button size="sm" onClick={copyLogs}>
           Copy Logs
         </Button>
-        <label
-          className="flex items-center gap-1 text-[12px] text-[var(--text-secondary)] cursor-pointer"
-          style={{ marginLeft: 4 }}
-        >
+        <label className="flex items-center gap-1 ml-1 text-xs text-(--text-secondary) cursor-pointer">
           <input
             type="checkbox"
             checked={autoRefresh}
             onChange={(e) => setAutoRefresh(e.target.checked)}
-            style={{ accentColor: "var(--accent)" }}
+            className="accent-(--accent)"
           />
           Auto-refresh
         </label>
@@ -197,8 +195,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
 
       <pre
         ref={logViewerRef}
-        className="log-viewer flex-1"
-        style={{ maxHeight: "calc(100vh - 200px)" }}
+        className="log-viewer flex-1 max-h-[calc(100vh-200px)]"
       >
         {logLines.length > 0
           ? logLines.join("\n")

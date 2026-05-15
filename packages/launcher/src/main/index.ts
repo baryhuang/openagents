@@ -2,9 +2,18 @@ import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } from 'ele
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import { execSync } from 'child_process'
+import { execSync, execFile } from 'child_process'
 import { Store } from './store'
 import { AgentManager } from './agent-manager'
+
+function execFileAsync(file: string, args: string[], opts: { timeout?: number; env?: NodeJS.ProcessEnv } = {}): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { timeout: opts.timeout || 10000, env: opts.env, encoding: 'utf-8' }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve((stdout || '').toString().trim())
+    })
+  })
+}
 
 app.setName('OpenAgents Launcher')
 
@@ -26,6 +35,23 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let agentManager: AgentManager | null = null
 let coreVersion: string | null = null
+
+let _launcherVersionCache: string | null = null
+function getLauncherVersion(): string {
+  if (_launcherVersionCache) return _launcherVersionCache
+  try { _launcherVersionCache = require('../../package.json').version as string } catch { _launcherVersionCache = '0.0.0' }
+  return _launcherVersionCache!
+}
+
+interface RuntimeInfo { nodeVersion: string | null; npmVersion: string | null; coreVersion: string | null; latestVersion: string | null }
+const _runtimeCache: { value: RuntimeInfo; stableAt: number; latestAt: number; refreshing: boolean } = {
+  value: { nodeVersion: null, npmVersion: null, coreVersion: null, latestVersion: null },
+  stableAt: 0,
+  latestAt: 0,
+  refreshing: false,
+}
+const RUNTIME_STABLE_TTL = 60_000 * 30
+const RUNTIME_LATEST_TTL = 60_000 * 10
 
 const STARTUP_LOG = path.join(os.homedir(), '.openagents', 'startup.log')
 function slog(msg: string): void {
@@ -335,6 +361,8 @@ function createTray(): void {
   tray.on('click', () => createWindow())
 }
 
+let _pendingAgentUpdates: Array<{ name: string; current: string | null; latest: string | null }> = []
+
 function updateTrayMenu(): void {
   if (!tray) return
 
@@ -343,10 +371,27 @@ function updateTrayMenu(): void {
     ? agents.map(a => ({ label: `${a.name} (${a.state})`, enabled: false }))
     : [{ label: 'No agents configured', enabled: false }]
 
+  const updateItems: Electron.MenuItemConstructorOptions[] = _pendingAgentUpdates.length > 0
+    ? [
+        { type: 'separator' },
+        { label: `Updates available (${_pendingAgentUpdates.length})`, enabled: false },
+        ..._pendingAgentUpdates.slice(0, 5).map((u): Electron.MenuItemConstructorOptions => ({
+          label: `${u.name}: v${u.current ?? '?'} → v${u.latest ?? '?'}`,
+          click: () => {
+            createWindow()
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('navigate-to-install', u.name)
+            }
+          },
+        })),
+      ]
+    : []
+
   const menu = Menu.buildFromTemplate([
     { label: 'Open Dashboard', click: () => createWindow() },
     { type: 'separator' },
     ...agentItems,
+    ...updateItems,
     { type: 'separator' },
     {
       label: 'Quit OpenAgents',
@@ -370,6 +415,153 @@ function updateTrayMenu(): void {
   ])
 
   tray.setContextMenu(menu)
+  if (_pendingAgentUpdates.length > 0) {
+    tray.setToolTip(`OpenAgents Launcher · ${_pendingAgentUpdates.length} update${_pendingAgentUpdates.length > 1 ? 's' : ''} available`)
+  } else {
+    tray.setToolTip('OpenAgents Launcher')
+  }
+}
+
+async function refreshAgentUpdates(): Promise<void> {
+  if (!agentManager) return
+  try {
+    const all = await agentManager.checkAgentUpdates()
+    _pendingAgentUpdates = all.filter((u) => u.current && u.latest && u.current !== u.latest)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('agent-updates-changed', _pendingAgentUpdates)
+    }
+    updateTrayMenu()
+  } catch {}
+}
+
+type InstallPhase = 'idle' | 'preparing' | 'downloading' | 'installing' | 'verifying' | 'done' | 'error'
+type InstallVerb = 'install' | 'update' | 'uninstall' | 'rollback'
+
+function broadcastInstallProgress(payload: {
+  agent: string
+  verb: InstallVerb
+  phase: InstallPhase
+  detail?: string
+  log?: string
+  error?: string
+}): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('install:progress', payload)
+  }
+}
+
+function classifyInstallChunk(chunk: string, verb: InstallVerb): { phase?: InstallPhase; detail?: string } {
+  const line = chunk.toLowerCase()
+  if (verb === 'uninstall') {
+    if (line.includes('removed') || line.includes('uninstall')) return { phase: 'installing', detail: 'Removing files' }
+    if (line.includes('done!')) return { phase: 'verifying', detail: 'Cleaning shims' }
+    return {}
+  }
+  if (line.includes('downloading') || /\b\d+\s*%/.test(line) || line.includes('mb')) {
+    return { phase: 'downloading', detail: chunk.trim().slice(0, 80) }
+  }
+  if (line.includes('extracting') || line.includes('expanding')) {
+    return { phase: 'installing', detail: 'Extracting archive' }
+  }
+  if (line.includes('npm warn') || line.includes('npm http')) {
+    return { phase: 'installing' }
+  }
+  if (line.includes('added ') && line.includes('package')) {
+    return { phase: 'verifying', detail: chunk.trim().slice(0, 80) }
+  }
+  if (line.includes('done!') || line.includes('installed.')) {
+    return { phase: 'verifying', detail: 'Finalizing' }
+  }
+  return {}
+}
+
+async function runInstallWithPhases<T>(
+  agent: string,
+  verb: InstallVerb,
+  runner: (onData: (data: string) => void) => Promise<T>,
+): Promise<T> {
+  let currentPhase: InstallPhase = 'preparing'
+  broadcastInstallProgress({ agent, verb, phase: 'preparing', detail: 'Resolving dependencies' })
+
+  const onData = (data: string): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('install:output', data)
+    const { phase, detail } = classifyInstallChunk(data, verb)
+    if (phase && phase !== currentPhase) {
+      currentPhase = phase
+      broadcastInstallProgress({ agent, verb, phase, detail })
+    } else if (detail) {
+      broadcastInstallProgress({ agent, verb, phase: currentPhase, detail })
+    }
+  }
+
+  try {
+    const result = await runner(onData)
+    broadcastInstallProgress({ agent, verb, phase: 'done', detail: 'Complete' })
+    return result
+  } catch (e: unknown) {
+    broadcastInstallProgress({ agent, verb, phase: 'error', error: (e as Error).message })
+    throw e
+  }
+}
+
+function resolveNpmInvocation(): { node: string; args: string[] } | null {
+  const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node')
+  const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node')
+  if (!fs.existsSync(nodeBin)) return null
+  const candidates = [
+    path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ]
+  const npmCli = candidates.find(p => fs.existsSync(p))
+  if (npmCli) return { node: nodeBin, args: [npmCli] }
+  if (process.platform !== 'win32') {
+    const npmBin = path.join(PORTABLE_NODE_DIR, 'bin', 'npm')
+    if (fs.existsSync(npmBin)) return { node: npmBin, args: [] }
+  }
+  return null
+}
+
+async function refreshRuntimeInfo(force = false): Promise<RuntimeInfo> {
+  const now = Date.now()
+  const info = _runtimeCache.value
+  info.coreVersion = coreVersion || info.coreVersion || null
+
+  if (_runtimeCache.refreshing) return info
+  const needStable = force || !info.nodeVersion || !info.npmVersion || (now - _runtimeCache.stableAt > RUNTIME_STABLE_TTL)
+  const needLatest = force || !info.latestVersion || (now - _runtimeCache.latestAt > RUNTIME_LATEST_TTL)
+  if (!needStable && !needLatest) return info
+
+  _runtimeCache.refreshing = true
+  try {
+    const env = { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') }
+    const npm = resolveNpmInvocation()
+
+    if (needStable) {
+      const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node')
+      const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node')
+      if (fs.existsSync(nodeBin)) {
+        try { info.nodeVersion = await execFileAsync(nodeBin, ['--version'], { timeout: 5000 }) } catch {}
+      }
+      if (npm) {
+        try {
+          info.npmVersion = await execFileAsync(npm.node, [...npm.args, '--version'], { timeout: 5000, env })
+        } catch {}
+      }
+      _runtimeCache.stableAt = now
+    }
+
+    if (needLatest) {
+      if (npm) {
+        try {
+          info.latestVersion = await execFileAsync(npm.node, [...npm.args, 'view', CORE_PKG, 'version'], { timeout: 10_000, env })
+        } catch {}
+      }
+      _runtimeCache.latestAt = now
+    }
+  } finally {
+    _runtimeCache.refreshing = false
+  }
+  return info
 }
 
 function setupIPC(): void {
@@ -378,34 +570,40 @@ function setupIPC(): void {
     pythonFound: true,
     sdkInstalled: true,
     sdkVersion: coreVersion || 'not installed',
-    launcherVersion: require('../../package.json').version,
+    launcherVersion: getLauncherVersion(),
     runtime: 'node',
   }))
   ipcMain.handle('python:install', () => ({ success: true, message: 'No installation needed — using Node.js agent-connector' }))
 
-  ipcMain.handle('runtime:info', async () => {
-    const info: Record<string, string | null> = { nodeVersion: null, npmVersion: null, coreVersion: coreVersion || null, latestVersion: null }
-    const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node')
-    const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node')
-    if (fs.existsSync(nodeBin)) {
-      try { info.nodeVersion = execSync(`"${nodeBin}" --version`, { encoding: 'utf-8', timeout: 5000 }).trim() } catch {}
-    }
-    const npmCmd = findNpmCommand()
-    if (npmCmd) {
+  ipcMain.handle('runtime:info', async (_e, opts?: { force?: boolean }) => {
+    const force = !!(opts && opts.force)
+    const info = _runtimeCache.value
+    const needStable = force || !info.nodeVersion || !info.npmVersion
+    if (needStable && !_runtimeCache.refreshing) {
+      _runtimeCache.refreshing = true
       try {
-        info.npmVersion = execSync(`${npmCmd} --version`, {
-          encoding: 'utf-8', timeout: 5000,
-          env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
-        }).trim()
-      } catch {}
-      try {
-        info.latestVersion = execSync(`${npmCmd} view ${CORE_PKG} version`, {
-          encoding: 'utf-8', timeout: 10000,
-          env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
-        }).trim()
-      } catch {}
+        const env = { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') }
+        const npm = resolveNpmInvocation()
+        const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node')
+        const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node')
+        if (fs.existsSync(nodeBin)) {
+          try { info.nodeVersion = await execFileAsync(nodeBin, ['--version'], { timeout: 5000 }) } catch {}
+        }
+        if (npm) {
+          try { info.npmVersion = await execFileAsync(npm.node, [...npm.args, '--version'], { timeout: 5000, env }) } catch {}
+        }
+        _runtimeCache.stableAt = Date.now()
+      } finally {
+        _runtimeCache.refreshing = false
+      }
     }
-    return info
+    info.coreVersion = coreVersion || info.coreVersion || null
+    const needLatest = force || !info.latestVersion || (Date.now() - _runtimeCache.latestAt > RUNTIME_LATEST_TTL)
+    if (needLatest) {
+      // Don't block IPC on the network call. Refresh in background.
+      void refreshRuntimeInfo(force).catch(() => {})
+    }
+    return { ...info }
   })
 
   const requireManager = (): AgentManager => {
@@ -434,15 +632,33 @@ function setupIPC(): void {
 
   ipcMain.handle('agents:install-type', (_e, agentType) => requireManager().installAgentType(agentType))
   ipcMain.handle('agents:install-type-streaming', async (_e, agentType) => {
-    return requireManager().installAgentTypeStreaming(agentType, (data) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('install:output', data)
-    })
+    const verb = agentManager?.getInstalledVersion(agentType) ? 'update' : 'install'
+    return runInstallWithPhases(agentType, verb, (cb) =>
+      requireManager().installAgentTypeStreaming(agentType, cb),
+    )
   })
   ipcMain.handle('agents:uninstall-type', (_e, agentType) => requireManager().uninstallAgentType(agentType))
   ipcMain.handle('agents:uninstall-type-streaming', async (_e, agentType) => {
-    return requireManager().uninstallAgentTypeStreaming(agentType, (data) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('install:output', data)
-    })
+    return runInstallWithPhases(agentType, 'uninstall', (cb) =>
+      requireManager().uninstallAgentTypeStreaming(agentType, cb),
+    )
+  })
+
+  ipcMain.handle('agents:installed-list', () => agentManager ? agentManager.listInstalledAgents() : [])
+  ipcMain.handle('agents:check-updates', async () => {
+    if (!agentManager) return []
+    try { return await agentManager.checkAgentUpdates() } catch { return [] }
+  })
+  ipcMain.handle('agents:rollback', async (_e, agentType) => {
+    if (!agentManager) return { success: false, error: 'Launcher initializing' }
+    return runInstallWithPhases(agentType, 'rollback', (cb) =>
+      agentManager!.rollbackAgentType(agentType, cb),
+    )
+  })
+  ipcMain.handle('agents:changelog', async (_e, agentType) => {
+    if (!agentManager) return { versions: [], error: 'Launcher initializing' }
+    try { return await agentManager.getAgentChangelog(agentType) }
+    catch (e: unknown) { return { versions: [], error: (e as Error).message } }
   })
   ipcMain.handle('agents:check-type', (_e, agentType) => {
     if (!agentManager) return { installed: false, binary: null }
@@ -704,8 +920,12 @@ app.whenReady().then(async () => {
   if (!isHeadless) createWindow()
 
   const FOUR_HOURS = 4 * 60 * 60 * 1000
+  const ONE_HOUR = 60 * 60 * 1000
   setInterval(() => checkCoreUpdate().catch(() => {}), FOUR_HOURS)
   setTimeout(() => checkCoreUpdate().catch(() => {}), 30000)
+
+  setTimeout(() => refreshAgentUpdates(), 45000)
+  setInterval(() => refreshAgentUpdates(), ONE_HOUR)
 })
 
 app.on('window-all-closed', () => { /* keep running in tray */ })

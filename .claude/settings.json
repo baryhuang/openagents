@@ -12,7 +12,10 @@
       "Bash(HEADLESS=1 npm run dev)",
       "Bash(npm show *)",
       "Bash(npm install *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx electron-vite *)",
+      "Bash(sed -i '' -e 's|\"./pages/Dashboard\"|\"./pages/dashboard\"|' -e 's|\"./pages/Agents\"|\"./pages/agents\"|' -e 's|\"./pages/Install\"|\"./pages/install\"|' -e 's|\"./pages/Logs\"|\"./pages/logs\"|' -e 's|\"./pages/Settings\"|\"./pages/settings\"|' /Users/ashin/Documents/Projects/openagents/packages/launcher/src/renderer/App.tsx)",
+      "Bash(sed -i '' -e 's|\"../Agents/AgentDetail\"|\"../agents/AgentDetail\"|' /Users/ashin/Documents/Projects/openagents/packages/launcher/src/renderer/pages/install/index.tsx)"
     ]
   }
 }

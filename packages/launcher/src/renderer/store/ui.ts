@@ -10,6 +10,11 @@ interface UiState {
   currentTab: string
   setCurrentTab: (tab: string) => void
 
+  // Deep-link request: when set, the Install page should auto-open this agent's
+  // detail view (used by Dashboard banner click and tray-menu update items).
+  installFocusAgent: string | null
+  setInstallFocusAgent: (name: string | null) => void
+
   // Activity log — replaces legacy activityEntries[]
   activityLog: ActivityEntry[]
   addActivity: (msg: string) => void
@@ -22,6 +27,9 @@ interface UiState {
 export const useUiStore = create<UiState>((set) => ({
   currentTab: 'dashboard',
   setCurrentTab: (tab) => set({ currentTab: tab }),
+
+  installFocusAgent: null,
+  setInstallFocusAgent: (name) => set({ installFocusAgent: name }),
 
   activityLog: [],
   addActivity: (msg) => {

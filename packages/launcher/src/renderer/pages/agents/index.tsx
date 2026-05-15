@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useCallback, useState } from "react"
-import { useAgentsStore } from "../store/agents"
-import { useUiStore } from "../store/ui"
+import { useAgentsStore } from "../../store/agents"
+import { useUiStore } from "../../store/ui"
 import { useShallow } from "zustand/react/shallow"
-import AgentIcon from "../components/AgentIcon"
-import StatusDot, { displayState } from "../components/ui/StatusDot"
-import { Button } from "../components/ui/Button"
-import { Modal, ModalTitle } from "../components/ui/Modal"
-import type { Agent, CatalogEntry, EnvField, HealthCheck } from "../types"
-import type { ToastType } from "../hooks/useToast"
+import AgentIcon from "../../components/AgentIcon"
+import StatusDot, { displayState } from "../../components/ui/StatusDot"
+import { Button } from "../../components/ui/Button"
+import { Modal, ModalTitle } from "../../components/ui/Modal"
+import type { Agent, CatalogEntry, EnvField, HealthCheck } from "../../types"
+import type { ToastType } from "../../hooks/useToast"
 
 function formatHealthLabel(health: HealthCheck | null): string {
   if (!health) return "Not configured"
@@ -24,9 +24,11 @@ interface AgentsProps {
   showToast: (msg: string, type?: ToastType) => void
 }
 
+const LIST_ITEM = "flex flex-col gap-3 px-[18px] py-4 mb-2.5 bg-(--bg-card) border border-(--border) rounded-(--radius) shadow-sm transition-all duration-200 hover:shadow-md hover:border-(--border-hover)"
+
 function SkeletonListItem(): React.JSX.Element {
   return (
-    <div className="agent-list-item">
+    <div className={LIST_ITEM}>
       <div className="skeleton-shimmer rounded-full h-2.5 w-[62%] mb-2.5" />
       <div className="skeleton-shimmer rounded-full h-2.5 w-[42%]" />
     </div>
@@ -169,7 +171,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
   return (
     <section>
       <h1 className="mb-6">My Agents</h1>
-      <div className="agents-toolbar">
+      <div className="flex gap-2.5 mb-4">
         <Button variant="primary" onClick={() => setNewAgentOpen(true)}>
           + New Agent
         </Button>
@@ -182,7 +184,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           <SkeletonListItem />
         </div>
       ) : agents.length === 0 ? (
-        <p className="hint" style={{ padding: "20px 0" }}>
+        <p className="hint py-5">
           No agents configured. Click &quot;+ New Agent&quot; to get started.
         </p>
       ) : (
@@ -210,23 +212,23 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
               )
 
             return (
-              <div key={agent.name} className="agent-list-item">
-                <div className="agent-list-top">
-                  <div className="agent-list-info">
-                    <div className="agent-list-name-row">
+              <div key={agent.name} className={LIST_ITEM}>
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5 mb-1">
                       <AgentIcon type={agent.type} size={28} />
-                      <h4>{agent.name}</h4>
+                      <h4 className="text-sm font-semibold m-0">{agent.name}</h4>
                     </div>
-                    <span className="agent-type-label">{agent.type}</span>
-                    <span className="agent-config-hint">
+                    <span className="block text-xs text-(--text-secondary) mb-0.5">{agent.type}</span>
+                    <span className="block text-[11px] text-(--text-tertiary)">
                       {agent.runtimeMismatch ? (
-                        <span style={{ color: "var(--danger-text)" }}>
+                        <span className="text-(--danger-text)">
                           Launcher core update required
                         </span>
                       ) : health?.ready ? (
                         <>🔑 {readyLabel}</>
                       ) : (
-                        <span style={{ color: "var(--warning-text)" }}>
+                        <span className="text-(--warning-text)">
                           ⚠ {readyLabel}
                         </span>
                       )}
@@ -234,27 +236,27 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                         " · " + envDisplay.join(" · ")}
                     </span>
                     {agent.lastError && (
-                      <span className="agent-error">{agent.lastError}</span>
+                      <span className="block text-[11px] text-(--danger-text)">{agent.lastError}</span>
                     )}
                   </div>
-                  <div className="agent-list-status">
+                  <div className="flex flex-col items-end gap-1 shrink-0">
                     <div className="flex items-center gap-1.5">
                       <StatusDot state={agent.state} />
-                      <span className="agent-state-text">
+                      <span className="text-[13px] font-semibold">
                         {displayState(agent.state)}
                       </span>
                     </div>
                     {wsDisplay ? (
-                      <span className="agent-ws-label">{wsDisplay}</span>
+                      <span className="text-[11px] text-(--text-secondary)">{wsDisplay}</span>
                     ) : (
-                      <span className="agent-ws-label muted">
+                      <span className="text-[11px] text-(--text-tertiary)">
                         Not connected
                       </span>
                     )}
                   </div>
                 </div>
-                <div className="agent-list-bottom">
-                  <div className="agent-list-actions">
+                <div className="flex justify-between items-center pt-2.5 border-t border-(--border)">
+                  <div className="flex gap-1.5 flex-wrap">
                     <Button
                       size="sm"
                       variant={isRunning ? "default" : "primary"}
