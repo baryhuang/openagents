@@ -103,7 +103,7 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
         </DialogDescription>
 
         {/* Agent list */}
-        <div className="mt-3 space-y-1.5">
+        <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
           {onlineAgents.length === 0 && (
             <p className="text-sm text-muted-foreground py-4 text-center">No agents are currently online.</p>
           )}
