@@ -56,6 +56,7 @@
 		9F71FF770F7CC4CBA766C90F /* ThreadListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F49A1295D6A71CF2F15A8BBA /* ThreadListView.swift */; };
 		A2CD5A2CB225F7792DC53C66 /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12A6515B7075FE8EAE5A481 /* Workspace.swift */; };
 		A3C18161FE398E035D71F5BB /* PushSink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31485CDEBC641234F7197935 /* PushSink.swift */; };
+		A4C7B55A692D2FB4B340570C /* SwiftUIJSONRender in Frameworks */ = {isa = PBXBuildFile; productRef = B645A3127E122F8A66288F2E /* SwiftUIJSONRender */; };
 		A51F0D9F2D06EE9B22459C81 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2D1A314CF8BC692761F6F63 /* ChatView.swift */; };
 		A624D346DFEA3F8F4C41D376 /* PushSink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31485CDEBC641234F7197935 /* PushSink.swift */; };
 		A8866B86D85D3C7A631EB1EA /* DateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4309C1958ECD63080F3246 /* DateFormatting.swift */; };
@@ -89,6 +90,7 @@
 		F66D94202E74F614CBD85FA8 /* SettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BEFDB8EAD399989E7939F2 /* SettingsSheet.swift */; };
 		F677A439515DA1875D05ECC0 /* AgentColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD5F352606D678F99957E2F /* AgentColor.swift */; };
 		FA11CAB36EF0F2227BFFCF11 /* FileChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F64D81367061DABBA5EC83 /* FileChipView.swift */; };
+		FACFD5EC0A0A67CDD735CD57 /* SwiftUIJSONRender in Frameworks */ = {isa = PBXBuildFile; productRef = A7CB0643B35BD65B65983D5D /* SwiftUIJSONRender */; };
 		FCD128EB844C8F45F0785004 /* MarkdownSegments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60D250D0F8C1A2E0F9CD2AB0 /* MarkdownSegments.swift */; };
 		FE51D3BDF4335B083EC9DD12 /* HTMLBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B8E461D6AC4E8EA6FB20B1D /* HTMLBlockView.swift */; };
 /* End PBXBuildFile section */
@@ -142,12 +144,21 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		3488993BE768466CD572C46A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A4C7B55A692D2FB4B340570C /* SwiftUIJSONRender in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DAEA24F945A83ED04D3D0498 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				B6529A1C4C517B0D91163E46 /* FirebaseCore in Frameworks */,
 				25AFCD33B25544F88BF2094D /* FirebaseMessaging in Frameworks */,
+				FACFD5EC0A0A67CDD735CD57 /* SwiftUIJSONRender in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -286,6 +297,7 @@
 			buildPhases = (
 				87ED0EF694E0A5E040C7085A /* Sources */,
 				5C8BF21875C2A512674A92AE /* Resources */,
+				3488993BE768466CD572C46A /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -293,6 +305,7 @@
 			);
 			name = OpenAgentsGo_macOS;
 			packageProductDependencies = (
+				B645A3127E122F8A66288F2E /* SwiftUIJSONRender */,
 			);
 			productName = OpenAgentsGo_macOS;
 			productReference = 657BCC02FD23538732562FEA /* OpenAgentsGo.app */;
@@ -314,6 +327,7 @@
 			packageProductDependencies = (
 				A0AA091EAC84A3FD2AC24C00 /* FirebaseCore */,
 				61AFC404B631FCEF5138C2D2 /* FirebaseMessaging */,
+				A7CB0643B35BD65B65983D5D /* SwiftUIJSONRender */,
 			);
 			productName = OpenAgentsGo_iOS;
 			productReference = 740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */;
@@ -347,6 +361,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				6F501275FB3611BB98A1B2F3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				B5257B404DB78704678823FD /* XCRemoteSwiftPackageReference "swiftui-json-render" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D476D796F5F151440069AC0A /* Products */;
@@ -748,6 +763,14 @@
 				minimumVersion = 11.0.0;
 			};
 		};
+		B5257B404DB78704678823FD /* XCRemoteSwiftPackageReference "swiftui-json-render" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/bipa-app/swiftui-json-render";
+			requirement = {
+				kind = exactVersion;
+				version = 0.2.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -760,6 +783,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6F501275FB3611BB98A1B2F3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseCore;
+		};
+		A7CB0643B35BD65B65983D5D /* SwiftUIJSONRender */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B5257B404DB78704678823FD /* XCRemoteSwiftPackageReference "swiftui-json-render" */;
+			productName = SwiftUIJSONRender;
+		};
+		B645A3127E122F8A66288F2E /* SwiftUIJSONRender */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B5257B404DB78704678823FD /* XCRemoteSwiftPackageReference "swiftui-json-render" */;
+			productName = SwiftUIJSONRender;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
