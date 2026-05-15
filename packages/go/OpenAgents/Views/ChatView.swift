@@ -1085,12 +1085,6 @@ private struct TableView: View {
     }
 }
 
-#if os(macOS)
-private typealias PlatformImage = NSImage
-#else
-private typealias PlatformImage = UIImage
-#endif
-
 private struct AttachmentChip: View {
     let attachment: PendingAttachment
     let onRemove: () -> Void
