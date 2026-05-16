@@ -350,6 +350,16 @@ struct ChatView: View {
                             MessageBubble(
                                 message: message,
                                 showSenderLabel: shouldShowSenderLabel(for: message, groupIndex: index, in: groups),
+                                onAttachmentAction: { action in
+                                    Task {
+                                        await store.sendToolResult(
+                                            channel: message.sessionId,
+                                            toolCallId: message.attachment?.toolCallId,
+                                            actionId: action.id,
+                                            value: action.value,
+                                        )
+                                    }
+                                },
                             )
                             .id(message.id)
                         case .steps(let stepMessages):
@@ -1213,6 +1223,10 @@ private struct ErrorBanner: View {
 private struct MessageBubble: View {
     let message: Message
     var showSenderLabel: Bool = true
+    /// Fired when the user interacts with an A2UI-rendered component. Caller
+    /// is responsible for routing this back to the agent (typically via
+    /// `WorkspaceStore.sendToolResult`).
+    var onAttachmentAction: ((A2UIAction) -> Void)? = nil
 
     /// Opposite-side gap between the bubble and the chat edge.
     private static let sideGap: CGFloat = 60
@@ -1330,9 +1344,7 @@ private struct MessageBubble: View {
                 }
                 if let attachment = message.attachment {
                     A2UIRendererView(json: attachment.json) { action in
-                        // Phase 5 wires this to send a tool-result upstream.
-                        // For now, log so devs can see the agent's action id round-trip locally.
-                        logInfo("a2ui", "action id=\(action.id) toolCallId=\(attachment.toolCallId ?? "nil")")
+                        onAttachmentAction?(action)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }

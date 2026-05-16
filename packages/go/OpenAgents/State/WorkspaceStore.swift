@@ -711,6 +711,29 @@ final class WorkspaceStore {
         }
     }
 
+    /// Forward an A2UI action result upstream. Called when the user interacts
+    /// with a rendered spec component; non-throwing so SwiftUI callbacks stay
+    /// fire-and-forget. Failures are logged but never surface as banners —
+    /// a missed interaction is less disruptive than blocking the chat UI.
+    func sendToolResult(
+        channel: String,
+        toolCallId: String?,
+        actionId: String,
+        value: JSONValue?,
+    ) async {
+        do {
+            _ = try await api.sendToolResult(
+                channel: channel,
+                toolCallId: toolCallId,
+                actionId: actionId,
+                value: value,
+            )
+            logInfo("a2ui", "tool_result sent action=\(actionId) tc=\(toolCallId ?? "nil")")
+        } catch {
+            logError("a2ui", "tool_result failed action=\(actionId): \(error.localizedDescription)")
+        }
+    }
+
     func createThread(master: String, participants: [String]) async {
         do {
             let session = try await api.createChannel(master: master, participants: participants)
