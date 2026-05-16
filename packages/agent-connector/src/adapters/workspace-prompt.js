@@ -343,6 +343,7 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n'
   );
   parts.push(buildCollaborationPrompt());
+  parts.push(buildA2UIPrompt());
 
   if (mode === 'plan') {
     parts.push(
@@ -357,12 +358,59 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
 }
 
 /**
+ * Teach the LLM how to emit interactive UI alongside its text response.
+ * The frontend (OpenAgents Go) renders any A2UI-shaped JSON spec inline
+ * in the chat bubble; the agent-connector strips the fenced block before
+ * posting and ferries the spec via payload.spec.
+ */
+function buildA2UIPrompt() {
+  return (
+    '\n## Rendering interactive UI\n' +
+    'When you want the user to interact with structured UI (a button choice, ' +
+    'a form, a chart, a table, a confirmation dialog) instead of just reading ' +
+    'text, emit a fenced code block tagged `a2ui` containing a JSON spec. The ' +
+    "frontend renders it inline below any markdown narration you write.\n\n" +
+    "The spec is a tree of `{ type, props, children?, action? }` nodes. " +
+    'Supported component types include `Stack`, `Heading`, `Text`, `Image`, ' +
+    '`Icon`, `Button`, `ChoiceList`, `ConfirmDialog`, `AmountInput`, `Card`, ' +
+    '`Divider`, `Spacer`, `Alert`, `LineChart`, `PieChart`, `AssetPrice`, ' +
+    '`BalanceCard`, `TransactionList`, `TransactionRow`. Unknown types render ' +
+    'as a placeholder chip, so feel free to compose freely.\n\n' +
+    'Interactive components attach an `action` object with a `name` field you ' +
+    'choose. Example:\n\n' +
+    '```a2ui\n' +
+    '{\n' +
+    '  "type": "Stack",\n' +
+    '  "props": { "direction": "vertical", "spacing": 12 },\n' +
+    '  "children": [\n' +
+    '    { "type": "Heading", "props": { "text": "Pick a time", "level": 2 } },\n' +
+    '    { "type": "Button", "props": { "label": "Morning", "action": { "name": "pick_morning" } } },\n' +
+    '    { "type": "Button", "props": { "label": "Evening", "action": { "name": "pick_evening" } } }\n' +
+    '  ]\n' +
+    '}\n' +
+    '```\n\n' +
+    'When the user interacts with a rendered component, you will receive a ' +
+    "user message shaped like `[ui_action] action=pick_morning tool_call_id=... value=...`. " +
+    "Use the `action` name (which you chose) to decide what to do next; the " +
+    "spec you emitted earlier is in your conversation history for context.\n\n" +
+    'Use a spec when:\n' +
+    '- The user needs to make a discrete choice (offer buttons rather than ' +
+    'asking them to type a free-form answer).\n' +
+    '- Structured data is easier to scan as a chart or table than as prose.\n' +
+    '- You need explicit confirmation before a destructive action.\n' +
+    "- A form would gather several fields faster than back-and-forth chat.\n\n" +
+    "Don't emit a spec for ordinary prose answers — narration alone is fine.\n"
+  );
+}
+
+/**
  * Build the full system prompt for OpenClaw/non-MCP agents.
  */
 function buildOpenclawSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules }) {
   const parts = [];
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
   parts.push(buildCollaborationPrompt());
+  parts.push(buildA2UIPrompt());
   parts.push(buildModePrompt(mode));
   parts.push(buildApiSkillsPrompt({
     endpoint, workspaceId, token, agentName, channelName, disabledModules, mode,
