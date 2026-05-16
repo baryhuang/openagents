@@ -131,8 +131,14 @@ private struct ComposerRepresentable: NSViewRepresentable {
             onSlashKey: onSlashKey,
         )
         if textView.string != text {
-            // Preserve the user's selection if we're just syncing identical text.
-            textView.string = text
+            // Skip the sync while an IME is composing — overwriting the
+            // string wipes the marked-text range and cancels the user's
+            // in-flight Chinese / Japanese / Korean composition. The IME
+            // will commit through the normal text-change path when the
+            // user picks a candidate.
+            if !textView.hasMarkedText() {
+                textView.string = text
+            }
         }
 
         // Two-way focus binding without re-entering an update cycle.
@@ -196,10 +202,12 @@ private struct ComposerRepresentable: NSViewRepresentable {
             if isFocused.wrappedValue { isFocused.wrappedValue = false }
         }
 
-        // IME-safe Return-to-send. AppKit routes plain Return through `insertNewline:`.
-        // Shift+Return → `insertNewlineIgnoringFieldEditor:`, which we let fall through
-        // so AppKit inserts a literal newline. While the IME is composing,
-        // `hasMarkedText()` is true and we yield to the IME so it can commit.
+        // IME-safe Return-to-send. AppKit routes both plain Return and
+        // Shift+Return through `insertNewline:` in a regular (non-field-editor)
+        // NSTextView, so we can't distinguish via the selector alone. Inspect
+        // the current NSEvent's modifier flags: shift held → fall through so
+        // AppKit inserts a literal newline; no shift → send. While the IME is
+        // composing, `hasMarkedText()` is true and we yield so it can commit.
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             // Slash-command popup gets first crack at arrow / Tab / Return / Esc
             // when it's open. If it consumes the key, we stop here.
@@ -207,6 +215,9 @@ private struct ComposerRepresentable: NSViewRepresentable {
 
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 if textView.hasMarkedText() {
+                    return false
+                }
+                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
                     return false
                 }
                 onSend()
@@ -395,7 +406,14 @@ private struct ComposerRepresentable: UIViewRepresentable {
             onPasteFileURLs: onPasteFileURLs,
         )
         if textView.text != text {
-            textView.text = text
+            // Skip the sync while an IME is composing — assigning text wipes
+            // markedTextRange and cancels the user's in-flight Chinese /
+            // Japanese / Korean composition. The IME will commit through the
+            // normal text-change path when the user picks a candidate.
+            // (Same fix as React Native's iOS controlled-input patch.)
+            if textView.markedTextRange == nil {
+                textView.text = text
+            }
         }
 
         // Auto-PROMOTE to first responder when the binding asks for focus,
