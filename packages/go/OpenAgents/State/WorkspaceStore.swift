@@ -433,6 +433,7 @@ final class WorkspaceStore {
             mentions: [],
             messageType: "chat",
             timestamp: Int64(Date().timeIntervalSince1970 * 1000),
+            attachment: nil,
         )
         var page = pagesBySession[channel] ?? ChannelMessages()
         page.messages.append(optimistic)
@@ -482,6 +483,7 @@ final class WorkspaceStore {
                     mentions: prev.mentions,
                     messageType: prev.messageType,
                     timestamp: prev.timestamp,
+                    attachment: prev.attachment,
                 )
                 pagesBySession[channel] = p
             }
