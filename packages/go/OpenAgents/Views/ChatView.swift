@@ -1229,7 +1229,8 @@ private struct MessageBubble: View {
 
     var body: some View {
         let segments = MarkdownSegmenter.segments(in: message.content)
-        let hasWideContent = segments.contains { segment in
+        let hasAttachment = message.attachment != nil
+        let hasWideContent = hasAttachment || segments.contains { segment in
             switch segment {
             case .prose, .fileChip: return false
             case .code, .table, .htmlBlock: return true
@@ -1326,6 +1327,14 @@ private struct MessageBubble: View {
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                }
+                if let attachment = message.attachment {
+                    A2UIRendererView(json: attachment.json) { action in
+                        // Phase 5 wires this to send a tool-result upstream.
+                        // For now, log so devs can see the agent's action id round-trip locally.
+                        logInfo("a2ui", "action id=\(action.id) toolCallId=\(attachment.toolCallId ?? "nil")")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             // Only force full-row width when the bubble actually contains code/table; otherwise
