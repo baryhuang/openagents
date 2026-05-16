@@ -162,6 +162,22 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
     if (installListSignal > 0) setSelectedName(null)
   }, [installListSignal])
 
+  const loadAll = useCallback(async () => {
+    try {
+      const [cat, inst, upd] = await Promise.all([
+        window.api.getCatalog(),
+        window.api.getInstalledAgents().catch(() => [] as InstalledAgentRecord[]),
+        window.api.checkAgentUpdates().catch(() => [] as AgentUpdateInfo[]),
+      ])
+      setCatalog(cat)
+      setInstalled(inst)
+      setUpdates(upd)
+      setLoading(false)
+    } catch {
+      setLoading(false)
+    }
+  }, [setInstalled, setUpdates])
+
   const handleInlineInstall = useCallback(async (entry: CatalogEntry, verb: "install" | "update"): Promise<void> => {
     // Route into the detail page first so the user sees full context
     // (progress card, configuration, log) instead of just a card-level spinner.
@@ -191,24 +207,10 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
       showToast(`${entry.label || entry.name} uninstalled`, "success")
     } catch (e: unknown) {
       showToast(`Uninstall failed: ${(e as Error).message}`, "error")
+    } finally {
+      await loadAll()
     }
-  }, [uninstallTarget, showToast])
-
-  const loadAll = useCallback(async () => {
-    try {
-      const [cat, inst, upd] = await Promise.all([
-        window.api.getCatalog(),
-        window.api.getInstalledAgents().catch(() => [] as InstalledAgentRecord[]),
-        window.api.checkAgentUpdates().catch(() => [] as AgentUpdateInfo[]),
-      ])
-      setCatalog(cat)
-      setInstalled(inst)
-      setUpdates(upd)
-      setLoading(false)
-    } catch {
-      setLoading(false)
-    }
-  }, [setInstalled, setUpdates])
+  }, [uninstallTarget, showToast, loadAll])
 
   // Refresh catalog when a job reaches a terminal state.
   useEffect(() => {
@@ -288,9 +290,13 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
     <section>
       <div className="flex items-baseline justify-between mb-4">
         <h1 className="m-0">Agent Marketplace</h1>
-        <span className="hint m-0">
-          {catalog.length} agents · {installedList.length} installed
-        </span>
+        {loading ? (
+          <span className="skeleton-shimmer rounded-full h-3 w-30" />
+        ) : (
+          <span className="hint m-0">
+            {catalog.length} agents · {installedList.length} installed
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5 mb-3.5 [&>*]:shrink-0">
