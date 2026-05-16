@@ -56,3 +56,65 @@ extension JSONValue {
         return try? JSONDecoder().decode(JSONValue.self, from: data)
     }
 }
+
+// MARK: - Previews
+
+#Preview("Prose") {
+    A2UIRendererView(json: """
+    {
+      "type": "Stack",
+      "props": { "direction": "vertical", "spacing": 8 },
+      "children": [
+        { "type": "Heading", "props": { "text": "Hello", "level": 2 } },
+        { "type": "Text", "props": { "content": "A simple prose layout." } }
+      ]
+    }
+    """)
+    .padding()
+}
+
+#Preview("Choice list") {
+    A2UIRendererView(json: """
+    {
+      "type": "Stack",
+      "props": { "direction": "vertical", "spacing": 12 },
+      "children": [
+        { "type": "Heading", "props": { "text": "Pick a date", "level": 2 } },
+        { "type": "Button",
+          "props": { "label": "Today",
+                     "action": { "name": "pick_today" } } },
+        { "type": "Button",
+          "props": { "label": "Tomorrow",
+                     "action": { "name": "pick_tomorrow" } } },
+        { "type": "Button",
+          "props": { "label": "Custom",
+                     "action": { "name": "pick_custom" } } }
+      ]
+    }
+    """) { action in
+        print("Action: \\(action.id)")
+    }
+    .padding()
+}
+
+#Preview("Unknown component fallback") {
+    A2UIRendererView(json: """
+    {
+      "type": "Stack",
+      "props": { "direction": "vertical", "spacing": 8 },
+      "children": [
+        { "type": "Heading", "props": { "text": "Mixed render", "level": 2 } },
+        { "type": "InteractiveDataExplorer3D",
+          "props": { "data": [1, 2, 3] } },
+        { "type": "Text",
+          "props": { "content": "Sibling rendered fine despite the unknown above." } }
+      ]
+    }
+    """)
+    .padding()
+}
+
+#Preview("Malformed JSON") {
+    A2UIRendererView(json: "not even json")
+        .padding()
+}
