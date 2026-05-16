@@ -196,10 +196,12 @@ private struct ComposerRepresentable: NSViewRepresentable {
             if isFocused.wrappedValue { isFocused.wrappedValue = false }
         }
 
-        // IME-safe Return-to-send. AppKit routes plain Return through `insertNewline:`.
-        // Shift+Return → `insertNewlineIgnoringFieldEditor:`, which we let fall through
-        // so AppKit inserts a literal newline. While the IME is composing,
-        // `hasMarkedText()` is true and we yield to the IME so it can commit.
+        // IME-safe Return-to-send. AppKit routes both plain Return and
+        // Shift+Return through `insertNewline:` in a regular (non-field-editor)
+        // NSTextView, so we can't distinguish via the selector alone. Inspect
+        // the current NSEvent's modifier flags: shift held → fall through so
+        // AppKit inserts a literal newline; no shift → send. While the IME is
+        // composing, `hasMarkedText()` is true and we yield so it can commit.
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             // Slash-command popup gets first crack at arrow / Tab / Return / Esc
             // when it's open. If it consumes the key, we stop here.
@@ -207,6 +209,9 @@ private struct ComposerRepresentable: NSViewRepresentable {
 
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 if textView.hasMarkedText() {
+                    return false
+                }
+                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
                     return false
                 }
                 onSend()
