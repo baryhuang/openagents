@@ -131,8 +131,14 @@ private struct ComposerRepresentable: NSViewRepresentable {
             onSlashKey: onSlashKey,
         )
         if textView.string != text {
-            // Preserve the user's selection if we're just syncing identical text.
-            textView.string = text
+            // Skip the sync while an IME is composing — overwriting the
+            // string wipes the marked-text range and cancels the user's
+            // in-flight Chinese / Japanese / Korean composition. The IME
+            // will commit through the normal text-change path when the
+            // user picks a candidate.
+            if !textView.hasMarkedText() {
+                textView.string = text
+            }
         }
 
         // Two-way focus binding without re-entering an update cycle.
@@ -400,7 +406,14 @@ private struct ComposerRepresentable: UIViewRepresentable {
             onPasteFileURLs: onPasteFileURLs,
         )
         if textView.text != text {
-            textView.text = text
+            // Skip the sync while an IME is composing — assigning text wipes
+            // markedTextRange and cancels the user's in-flight Chinese /
+            // Japanese / Korean composition. The IME will commit through the
+            // normal text-change path when the user picks a candidate.
+            // (Same fix as React Native's iOS controlled-input patch.)
+            if textView.markedTextRange == nil {
+                textView.text = text
+            }
         }
 
         // Auto-PROMOTE to first responder when the binding asks for focus,
