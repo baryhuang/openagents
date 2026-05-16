@@ -146,6 +146,28 @@ struct ChatView: View {
                 contentSidebarToggle
             }
         }
+        #else
+        .toolbar {
+            // AvatarStack lives on the right side of the window toolbar so
+            // the in-content header is no longer needed to surface the
+            // participating agents. ContentSidebarToggle sits to its right
+            // so the affordance stays in the same physical corner whether
+            // the avatars are visible or not.
+            ToolbarItem(placement: .primaryAction) {
+                if let session = store.currentSession {
+                    let sessionAgents = store.agents.filter {
+                        session.participants.isEmpty || session.participants.contains($0.agentName)
+                    }
+                    if !sessionAgents.isEmpty {
+                        AvatarStack(agents: sessionAgents)
+                            .frame(width: 28, height: 28)
+                    }
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                contentSidebarToggle
+            }
+        }
         #endif
     }
 
@@ -155,14 +177,12 @@ struct ChatView: View {
                 ErrorBanner(message: error) { store.lastError = nil }
             }
             if let session = store.currentSession {
-                #if os(iOS)
-                // On iPhone the nav bar (provided by the collapsed NavigationSplitView)
-                // already shows the title — drop the in-content header to save vertical
-                // room for messages.
-                #else
-                header(for: session)
-                Divider()
-                #endif
+                // No in-content header anywhere — the window toolbar shows the
+                // thread title + agent-name subtitle on macOS, and the
+                // collapsed NavigationSplitView nav bar shows the title on
+                // iPhone. Functional bits (contentSidebarToggle, AvatarStack)
+                // live in `.toolbar` so they share the window chrome instead
+                // of duplicating the title row inside the chat panel.
                 messageList(for: session)
                 Divider()
                 inputBar
@@ -281,34 +301,6 @@ struct ChatView: View {
     #endif
 
     // MARK: - Sections
-
-    private func header(for session: Session) -> some View {
-        let sessionAgents = store.agents.filter {
-            session.participants.isEmpty || session.participants.contains($0.agentName)
-        }
-        return HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.title)
-                    .font(.headline)
-                if !sessionAgents.isEmpty {
-                    Text(sessionAgents.map(\.agentName).joined(separator: ", "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            Spacer()
-            if !sessionAgents.isEmpty {
-                AvatarStack(agents: sessionAgents)
-                    .frame(width: 36, height: 36)
-            }
-            contentSidebarToggle
-                .padding(.leading, 6)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
 
     private func messageList(for session: Session) -> some View {
         let messages = store.currentMessages
