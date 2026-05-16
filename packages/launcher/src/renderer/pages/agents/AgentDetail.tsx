@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react"
 import { Button } from "../../components/ui/Button"
 import { Input } from "../../components/ui/Input"
+import { PasswordInput } from "../../components/ui/PasswordInput"
 import { Badge } from "../../components/ui/Badge"
 import { Modal, ModalTitle } from "../../components/ui/Modal"
 import AgentIcon from "../../components/AgentIcon"
@@ -17,6 +18,7 @@ interface AgentDetailProps {
   entry: CatalogEntry
   onBack: () => void
   onAfterInstall: (entry: CatalogEntry) => void
+  onOpenWizard?: (entry: CatalogEntry) => void
   showToast: (message: string, type?: ToastType) => void
 }
 
@@ -31,6 +33,7 @@ export default function AgentDetail({
   entry,
   onBack,
   onAfterInstall,
+  onOpenWizard,
   showToast,
 }: AgentDetailProps): React.JSX.Element {
   const [envFields, setEnvFields] = useState<EnvField[]>([])
@@ -46,8 +49,10 @@ export default function AgentDetail({
   const [confirmingUninstall, setConfirmingUninstall] = useState(false)
 
   const job = useInstallStore((s) => s.jobs[entry.name])
-  const clearJob = useInstallStore((s) => s.clearJob)
 
+  // Re-fetch when a job for this agent reaches a terminal state so the
+  // header / version / rollback availability reflect the new install record.
+  const jobPhase = job?.phase
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -72,7 +77,12 @@ export default function AgentDetail({
       }
     })()
     return () => { cancelled = true }
-  }, [entry.name, entry.installed])
+  }, [entry.name, entry.installed, jobPhase])
+
+  // Reset scroll on entry change so deep dives don't inherit a previous scroll.
+  useEffect(() => {
+    document.querySelector("main")?.scrollTo({ top: 0 })
+  }, [entry.name])
 
   const isInstalled = entry.installed
   const isManaged = entry.managed !== false
@@ -171,9 +181,8 @@ export default function AgentDetail({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
+      <div>
         <Button size="sm" variant="ghost" onClick={onBack}>← Back</Button>
-        <span className="hint m-0">Agent details</span>
       </div>
 
       <div className="flex items-start gap-4 pt-1 pb-3 border-b border-(--border)">
@@ -216,6 +225,11 @@ export default function AgentDetail({
               <Button size="sm" variant="primary" onClick={startInstall} disabled={isInstalling}>
                 {hasUpdate ? `Update to v${latestVersion}` : "Update"}
               </Button>
+              {onOpenWizard && (
+                <Button size="sm" onClick={() => onOpenWizard(entry)} disabled={isInstalling}>
+                  Setup wizard
+                </Button>
+              )}
               {(installed?.history?.length || installed?.previousVersion) && (
                 <Button size="sm" onClick={startRollback} disabled={isInstalling}>
                   Roll back
@@ -229,20 +243,15 @@ export default function AgentDetail({
         </div>
       </div>
 
-      {job && (
+      {job && job.verb !== "uninstall" && job.verb !== "rollback" && isInstalling && (
         <div className={SECTION}>
-          <h4 className={SECTION_H4}>{job.verb === "uninstall" ? "Uninstall progress" : job.verb === "rollback" ? "Rollback progress" : "Install progress"}</h4>
+          <h4 className={SECTION_H4}>{job.verb === "update" ? "Update progress" : "Install progress"}</h4>
           <PhaseBar phase={job.phase} detail={job.detail} errored={job.phase === "error"} />
           <div className="flex items-center justify-between mt-3">
             <span className="text-[11px] text-(--text-tertiary)">{job.detail || job.phase}</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setShowLog((v) => !v)}>
-                {showLog ? "Hide log" : "View log"}
-              </Button>
-              {(job.phase === "done" || job.phase === "error") && (
-                <Button size="sm" onClick={() => clearJob(entry.name)}>Dismiss</Button>
-              )}
-            </div>
+            <Button size="sm" variant="ghost" onClick={() => setShowLog((v) => !v)}>
+              {showLog ? "Hide log" : "View log"}
+            </Button>
           </div>
           {showLog && (
             <pre className="log-viewer mt-3" style={{ maxHeight: 240 }}>{job.log}</pre>
@@ -393,20 +402,22 @@ export default function AgentDetail({
         ) : (
           <>
             <p className="hint" style={{ margin: "0 0 12px" }}>Environment variables saved to <code className="inline-code">~/.openagents/env/</code>.</p>
-            {envFields.map((f) => (
-              <div className="form-group" key={f.name}>
-                <label>
-                  {f.description || f.name}
-                  {f.required && <span className="required"> *</span>}
-                </label>
-                <Input
-                  type={f.password ? "password" : "text"}
-                  value={envValues[f.name] ?? f.default ?? ""}
-                  onChange={(e) => setEnvValues({ ...envValues, [f.name]: e.target.value })}
-                  placeholder={f.placeholder || `Enter ${f.name}…`}
-                />
-              </div>
-            ))}
+            {envFields.map((f) => {
+              const FieldInput = f.password ? PasswordInput : Input
+              return (
+                <div className="form-group" key={f.name}>
+                  <label>
+                    {f.description || f.name}
+                    {f.required && <span className="required"> *</span>}
+                  </label>
+                  <FieldInput
+                    value={envValues[f.name] ?? f.default ?? ""}
+                    onChange={(e) => setEnvValues({ ...envValues, [f.name]: e.target.value })}
+                    placeholder={f.placeholder || `Enter ${f.name}…`}
+                  />
+                </div>
+              )
+            })}
             {testResult && (
               <p className={testResult.ok ? "test-success" : "test-error"} style={{ fontSize: 12, marginBottom: 8 }}>
                 {testResult.message}

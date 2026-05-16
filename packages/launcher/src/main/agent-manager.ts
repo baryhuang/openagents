@@ -518,13 +518,20 @@ export class AgentManager {
   }
 
   async checkAgentUpdates(): Promise<Array<{ name: string; current: string | null; latest: string | null }>> {
-    const installed = this.listInstalledAgents()
-    const results = await Promise.all(installed.map(async (rec) => {
-      const entry = this._getRegistryEntry(rec.name)
+    // Use the full catalog (every entry with installed=true), not just the
+    // history file — agents installed globally / pre-launcher won't be in
+    // the history but are still installed and worth checking for updates.
+    const catalog = (await this.getCatalog()) as Array<Record<string, unknown>>
+    const installedEntries = catalog.filter((e) => e.installed === true)
+    const historyByName = new Map(this.listInstalledAgents().map((r) => [r.name, r.version]))
+
+    const results = await Promise.all(installedEntries.map(async (entry) => {
+      const name = entry.name as string
       const npmPkg = this._resolveNpmPackage(entry)
-      if (!npmPkg) return { name: rec.name, current: rec.version, latest: null }
+      const current = historyByName.get(name) || this.getInstalledVersion(name)
+      if (!npmPkg) return { name, current, latest: null }
       const info = await fetchNpmInfo(npmPkg).catch(() => null)
-      return { name: rec.name, current: rec.version, latest: info?.['dist-tags']?.latest || null }
+      return { name, current, latest: resolveLatestVersion(info) }
     }))
     return results
   }
@@ -537,9 +544,7 @@ export class AgentManager {
     try {
       const info = await fetchNpmInfo(npmPkg)
       const time = info.time || {}
-      const versions = Object.keys(info.versions || {})
-        .filter((v) => /^\d/.test(v))
-        .sort(compareVersionsDesc)
+      const versions = sortedPublishedVersions(info)
         .slice(0, 12)
         .map((v) => ({ version: v, date: time[v] }))
       return { versions, homepage }
@@ -770,6 +775,19 @@ function compareVersionsDesc(a: string, b: string): number {
     if (x !== y) return y - x
   }
   return 0
+}
+
+// Versions published to npm, sorted highest-first (includes pre-releases like
+// beta / rc — npm's dist-tags.latest excludes them, which made the marketplace
+// card miss updates that the detail page surfaced via the changelog fallback).
+function sortedPublishedVersions(info: NpmRegistryInfo | null): string[] {
+  return Object.keys(info?.versions || {})
+    .filter((v) => /^\d/.test(v))
+    .sort(compareVersionsDesc)
+}
+
+function resolveLatestVersion(info: NpmRegistryInfo | null): string | null {
+  return sortedPublishedVersions(info)[0] || info?.['dist-tags']?.latest || null
 }
 
 function normalizeTimeValue(value: string | number | Date): Date | null {

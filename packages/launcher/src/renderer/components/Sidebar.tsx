@@ -13,8 +13,12 @@ const NAV_ITEMS = [
 ]
 
 export default function Sidebar(): React.JSX.Element {
-  const { currentTab, setCurrentTab } = useUiStore(
-    useShallow((s) => ({ currentTab: s.currentTab, setCurrentTab: s.setCurrentTab })),
+  const { currentTab, setCurrentTab, goToInstallList } = useUiStore(
+    useShallow((s) => ({
+      currentTab: s.currentTab,
+      setCurrentTab: s.setCurrentTab,
+      goToInstallList: s.goToInstallList,
+    })),
   )
   const { coreVersion, launcherVersion, coreUpdateInfo } = useAgentsStore(
     useShallow((s) => ({ coreVersion: s.coreVersion, launcherVersion: s.launcherVersion, coreUpdateInfo: s.coreUpdateInfo })),
@@ -47,7 +51,7 @@ export default function Sidebar(): React.JSX.Element {
             <li key={item.id} className="m-0">
               <button
                 type="button"
-                onClick={() => setCurrentTab(item.id)}
+                onClick={() => item.id === "install" ? goToInstallList() : setCurrentTab(item.id)}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-3 py-2 mb-[2px]",
                   "rounded-sm text-[13px] font-medium text-left cursor-pointer",

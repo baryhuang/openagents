@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react"
 import { Modal, ModalTitle } from "./ui/Modal"
 import { Button } from "./ui/Button"
 import { Input } from "./ui/Input"
+import { PasswordInput } from "./ui/PasswordInput"
 import AgentIcon from "./AgentIcon"
 import { cn } from "../lib/utils"
 import { useUiStore } from "../store/ui"
@@ -122,20 +123,22 @@ export default function SetupWizard({ entry, open, onClose, showToast }: SetupWi
             <p className="hint">No configuration required. You can create your first agent.</p>
           ) : (
             <>
-              {envFields.map((f) => (
-                <div className="form-group" key={f.name}>
-                  <label>
-                    {f.description || f.name}
-                    {f.required && <span className="required"> *</span>}
-                  </label>
-                  <Input
-                    type={f.password ? "password" : "text"}
-                    value={envValues[f.name] ?? f.default ?? ""}
-                    onChange={(e) => setEnvValues({ ...envValues, [f.name]: e.target.value })}
-                    placeholder={f.placeholder || `Enter ${f.name}…`}
-                  />
-                </div>
-              ))}
+              {envFields.map((f) => {
+                const FieldInput = f.password ? PasswordInput : Input
+                return (
+                  <div className="form-group" key={f.name}>
+                    <label>
+                      {f.description || f.name}
+                      {f.required && <span className="required"> *</span>}
+                    </label>
+                    <FieldInput
+                      value={envValues[f.name] ?? f.default ?? ""}
+                      onChange={(e) => setEnvValues({ ...envValues, [f.name]: e.target.value })}
+                      placeholder={f.placeholder || `Enter ${f.name}…`}
+                    />
+                  </div>
+                )
+              })}
               {testResult && (
                 <p className={testResult.ok ? "test-success" : "test-error"} style={{ fontSize: 12, marginBottom: 8 }}>
                   {testResult.message}

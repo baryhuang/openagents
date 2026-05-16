@@ -6,6 +6,7 @@ import AgentIcon from "../../components/AgentIcon"
 import StatusDot, { displayState } from "../../components/ui/StatusDot"
 import { Button } from "../../components/ui/Button"
 import { Modal, ModalTitle } from "../../components/ui/Modal"
+import { PasswordInput } from "../../components/ui/PasswordInput"
 import type { Agent, CatalogEntry, EnvField, HealthCheck } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 
@@ -680,17 +681,30 @@ function ConfigureDialog({
                     {f.description}
                     {f.required && <span className="required"> *</span>}
                   </label>
-                  <input
-                    type={f.password ? "password" : "text"}
-                    value={values[f.name] || ""}
-                    onChange={(e) =>
-                      setValues((prev) => ({
-                        ...prev,
-                        [f.name]: e.target.value,
-                      }))
-                    }
-                    placeholder={f.placeholder || `Enter ${f.name}...`}
-                  />
+                  {f.password ? (
+                    <PasswordInput
+                      value={values[f.name] || ""}
+                      onChange={(e) =>
+                        setValues((prev) => ({
+                          ...prev,
+                          [f.name]: e.target.value,
+                        }))
+                      }
+                      placeholder={f.placeholder || `Enter ${f.name}...`}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={values[f.name] || ""}
+                      onChange={(e) =>
+                        setValues((prev) => ({
+                          ...prev,
+                          [f.name]: e.target.value,
+                        }))
+                      }
+                      placeholder={f.placeholder || `Enter ${f.name}...`}
+                    />
+                  )}
                 </div>
               ))}
             </div>

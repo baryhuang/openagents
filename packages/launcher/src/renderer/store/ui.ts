@@ -15,6 +15,12 @@ interface UiState {
   installFocusAgent: string | null
   setInstallFocusAgent: (name: string | null) => void
 
+  // Bumped each time the user explicitly clicks the Install sidebar tab.
+  // The Install page watches this and clears any open detail view so the
+  // user always lands on the marketplace list when entering via the tab.
+  installListSignal: number
+  goToInstallList: () => void
+
   // Activity log — replaces legacy activityEntries[]
   activityLog: ActivityEntry[]
   addActivity: (msg: string) => void
@@ -30,6 +36,10 @@ export const useUiStore = create<UiState>((set) => ({
 
   installFocusAgent: null,
   setInstallFocusAgent: (name) => set({ installFocusAgent: name }),
+
+  installListSignal: 0,
+  goToInstallList: () =>
+    set((s) => ({ currentTab: 'install', installListSignal: s.installListSignal + 1 })),
 
   activityLog: [],
   addActivity: (msg) => {

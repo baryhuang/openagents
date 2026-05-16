@@ -7,7 +7,13 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "npm run build && electron-builder"
+    "build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
+    "build:mac:x64": "npm run build && electron-builder --mac --x64 --publish never",
+    "build:mac:arm64": "npm run build && electron-builder --mac --arm64 --publish never",
+    "build:win": "npm run build && electron-builder --win --publish never",
+    "build:linux": "npm run build && electron-builder --linux --publish never",
+    "build:all": "npm run build && electron-builder --win --mac --linux --publish never",
+    "dist": "npm run build && electron-builder --publish always"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -33,28 +39,43 @@
   "build": {
     "appId": "com.openagents.launcher",
     "productName": "OpenAgents Launcher",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "out/**/*",
       "package.json"
     ],
     "directories": {
-      "buildResources": "assets"
+      "buildResources": "assets",
+      "output": "dist"
     },
     "mac": {
       "target": [
         {
           "target": "dmg",
           "arch": [
-            "universal"
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
           ]
         }
       ],
       "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "identity": "ZHONGYUAN ZHU (AP69DBR725)",
       "notarize": true
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
     },
     "win": {
       "target": [
@@ -79,6 +100,12 @@
       ],
       "icon": "assets/icon.ico"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
     "linux": {
       "target": [
         {
@@ -94,7 +121,11 @@
           ]
         }
       ],
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "category": "Development",
+      "desktop": {
+        "StartupNotify": "true"
+      }
     },
     "publish": {
       "provider": "github",

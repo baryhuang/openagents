@@ -3,3 +3,11 @@ out
 dist
 .DS_Store
 *.log
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo
+
+# Local tool configuration (often contains machine-specific paths)
+.claude/
+.vscode/
+.idea/

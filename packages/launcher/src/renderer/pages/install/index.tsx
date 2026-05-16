@@ -63,11 +63,13 @@ function AgentActions({
         >Install</Button>
       ) : (
         <>
-          <Button
-            size={size}
-            variant={hasUpdate ? "primary" : "default"}
-            onClick={(e) => { e.stopPropagation(); onInstall(entry, "update") }}
-          >Update</Button>
+          {hasUpdate && (
+            <Button
+              size={size}
+              variant="primary"
+              onClick={(e) => { e.stopPropagation(); onInstall(entry, "update") }}
+            >Update</Button>
+          )}
           <Button
             size={size}
             variant="destructive"
@@ -143,6 +145,7 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
   const jobs = useInstallStore((s) => s.jobs)
   const installFocusAgent = useUiStore((s) => s.installFocusAgent)
   const setInstallFocusAgent = useUiStore((s) => s.setInstallFocusAgent)
+  const installListSignal = useUiStore((s) => s.installListSignal)
 
   // Deep-link: when triggered via tray menu or Dashboard banner, open the
   // detail view for the requested agent and clear the request flag.
@@ -153,16 +156,22 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
     }
   }, [installFocusAgent, setInstallFocusAgent])
 
+  // Clicking the Install sidebar tab bumps installListSignal — always return
+  // to the marketplace list rather than resuming the previous detail view.
+  useEffect(() => {
+    if (installListSignal > 0) setSelectedName(null)
+  }, [installListSignal])
+
   const handleInlineInstall = useCallback(async (entry: CatalogEntry, verb: "install" | "update"): Promise<void> => {
+    // Route into the detail page first so the user sees full context
+    // (progress card, configuration, log) instead of just a card-level spinner.
+    setSelectedName(entry.name)
+    const wasInstalled = installedList.some((r) => r.name === entry.name)
     useInstallStore.getState().startJob({ agent: entry.name, verb })
     try {
       await window.api.installAgentTypeStreaming(entry.name)
       showToast(`${entry.label || entry.name} ${verb === "update" ? "updated" : "installed"}`, "success")
-      // Reload catalog; open wizard only for fresh installs.
-      const wasInstalled = installedList.some((r) => r.name === entry.name)
-      await new Promise((r) => setTimeout(r, 200))
-      // We don't trigger the wizard inline — keep that flow in the detail page.
-      void wasInstalled
+      if (!wasInstalled && verb === "install") setWizardEntry(entry)
     } catch (e: unknown) {
       showToast(`${verb} failed: ${(e as Error).message}`, "error")
     }
@@ -267,6 +276,7 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
               setWizardEntry(e)
             }
           }}
+          onOpenWizard={(e) => setWizardEntry(e)}
           showToast={showToast}
         />
         <SetupWizard entry={wizardEntry} open={!!wizardEntry} onClose={() => setWizardEntry(null)} showToast={showToast} />
@@ -341,13 +351,13 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1920px]:grid-cols-6 min-[2400px]:grid-cols-7 min-[2880px]:grid-cols-8 gap-3">
           <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
         </div>
       ) : filteredSorted.length === 0 ? (
         <p className="hint">No agents match the current filters.</p>
       ) : view === "grid" ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1920px]:grid-cols-6 min-[2400px]:grid-cols-7 min-[2880px]:grid-cols-8 gap-3">
           {filteredSorted.map((c) => {
             const hasUpdate = hasPendingUpdate(updates, c.name)
             const job = jobs[c.name]
@@ -398,7 +408,7 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
           })}
         </div>
       ) : (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-2.5">
           {filteredSorted.map((c) => {
             const hasUpdate = hasPendingUpdate(updates, c.name)
             const job = jobs[c.name]
