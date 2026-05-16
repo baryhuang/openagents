@@ -389,6 +389,37 @@ function buildA2UIPrompt() {
     '  ]\n' +
     '}\n' +
     '```\n\n' +
+    '### Exact prop names (these are checked verbatim — guessing will render "No data")\n\n' +
+    'Layout / content:\n' +
+    '- `Stack` — props: `direction` ("vertical"|"horizontal"), `spacing`, `alignment`\n' +
+    '- `Card` — props: `title`, `padding`, `cornerRadius`\n' +
+    '- `Divider`, `Spacer` — props: `size`, `orientation`\n' +
+    '- `Heading` — props: `text`, `level` (1–4)\n' +
+    '- `Text` — props: `content` **(NOT `text`)**, `style`, `weight`, `color`\n' +
+    '- `Image` — props: `url`, `name`, `contentMode`, `width`, `height`\n' +
+    '- `Icon` — props: `name`, `size`, `color`\n\n' +
+    'Interactive:\n' +
+    '- `Button` — props: `label`, `style` ("primary"|"secondary"|"destructive"), `icon`, `disabled`, `action: {name, params?}`\n' +
+    '- `ConfirmDialog` — props: `title`, `message`, `confirmLabel`, `cancelLabel`, `triggerLabel`, `action`\n' +
+    '- `ChoiceList` — props: `question`, `options: [{id, label}]`, `action`\n' +
+    '- `AmountInput` — props: `label`, `placeholder`, `currency`, `action`\n' +
+    '- `input` (lowercase) — props: `inputType` ("text"|"choice"|"number"|"date"), `id`, `label`, `placeholder`, `options`\n\n' +
+    'Feedback:\n' +
+    '- `Alert` — props: `title`, `message`, `severity` ("info"|"success"|"warning"|"error"), `dismissible`, `action`\n\n' +
+    'Charts (Swift Charts under the hood — needs **non-empty** data with the right key):\n' +
+    '- `LineChart` — props: `title`, `color`, `points: [{x, y}]` **(NOT `data`)**\n' +
+    '- `PieChart` — props: `title`, `segments: [{label, value, color?}]` **(NOT `slices`)**, `showLegend`\n' +
+    '- `chart` (lowercase) — simple sparkline/bar: props: `style` ("sparkline"|"bar"), `data: [number, ...]`, `labels`, `color`\n\n' +
+    'Data display:\n' +
+    '- `metric` (lowercase) — props: `label`, `value`, `caption`, `captionColor`, `icon`\n' +
+    '- `list` (lowercase) — props: `items: [{title, subtitle, trailing, icon}]`, `maxVisible`, `expandLabel`\n' +
+    '- `table` (lowercase) — **key-value rows only, not multi-column**: props: `rows: [{label, value}]`, `maxVisible`\n\n' +
+    'There is no multi-column data table in the catalog. For tabular data with ' +
+    'columns you have two choices: (a) use `list` with title/subtitle/trailing ' +
+    'mapped to your columns, or (b) compose a Stack of horizontal Stacks of Text ' +
+    'manually. Pick whichever reads better.\n\n' +
+    'If your data is empty or you can\'t fit it into the available primitives, ' +
+    'fall back to plain markdown — don\'t emit a spec just to wrap text in a card.\n\n' +
     'When the user interacts with a rendered component, you will receive a ' +
     "user message shaped like `[ui_action] action=pick_morning tool_call_id=... value=...`. " +
     "Use the `action` name (which you chose) to decide what to do next; the " +

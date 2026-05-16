@@ -26,7 +26,7 @@ struct A2UIRendererView: View {
 
     var body: some View {
         JSONView(json)
-            .unknownComponentBehavior(.placeholder)
+            .theme(OpenAgentsGoTheme.self)
             .onAction { action in
                 onAction?(bridge(action))
             }

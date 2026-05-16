@@ -499,8 +499,15 @@ class BaseAdapter {
   }
 
   async sendThinking(channel, content) {
+    // Strip ```a2ui blocks if they leak into Claude's intermediate thinking
+    // trace — the real spec gets emitted via sendResponse with proper
+    // payload.spec extraction, so showing the raw block here is just noise
+    // (and a duplicate). If stripping leaves the thinking message empty,
+    // skip it entirely.
+    const { cleanContent } = extractA2UISpec(content);
+    if (!cleanContent || !cleanContent.trim()) return;
     try {
-      await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
+      await this.client.sendMessage(this.workspaceId, channel, this.token, cleanContent, {
         senderType: 'agent',
         senderName: this.agentName,
         messageType: 'thinking',

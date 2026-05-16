@@ -1300,67 +1300,87 @@ private struct MessageBubble: View {
                     .padding(.leading, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            VStack(alignment: alignment, spacing: 6) {
-                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                    switch segment {
-                    case .prose(let text):
-                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            // For prose-only bubbles we let the Text size to its content so short
-                            // messages ("hi") hug the text. When the row contains wide content
-                            // (code/table), we still expand prose to row width so it aligns with
-                            // those blocks.
-                            if fillsRow {
-                                Text(.init(trimmed))
-                                    .textSelection(.enabled)
-                                    .multilineTextAlignment(textAlignment)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, alignment: frameAlignment)
-                            } else {
-                                Text(.init(trimmed))
-                                    .textSelection(.enabled)
-                                    .multilineTextAlignment(textAlignment)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    case .code(let lang, let code):
-                        CodeBlockView(language: lang, content: code, onLightBubble: !message.isFromUser)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    case .htmlBlock(let html):
-                        HTMLBlockView(html: html, onLightBubble: !message.isFromUser)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    case .fileChip(let fileId, let label):
-                        FileChipView(fileId: fileId, label: label, onLightBubble: !message.isFromUser)
-                            .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
-                    case .table(let headers, let rows, let alignments):
-                        TableView(
-                            headers: headers,
-                            rows: rows,
-                            alignments: alignments,
-                            onLightBubble: !message.isFromUser,
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                if let attachment = message.attachment {
-                    A2UIRendererView(json: attachment.json) { action in
-                        onAttachmentAction?(action)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // Text bubble — rendered only when there are non-empty segments.
+            // The A2UI attachment lives OUTSIDE this bubble's chrome (see below)
+            // so a spec doesn't get visually merged with narration / error text
+            // into one big container.
+            let hasVisibleSegments = segments.contains { seg in
+                switch seg {
+                case .prose(let t): return !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                case .code, .htmlBlock, .fileChip, .table: return true
                 }
             }
-            // Only force full-row width when the bubble actually contains code/table; otherwise
-            // let it shrink to its prose content.
-            .modifier(BubbleFillModifier(fillsRow: fillsRow, alignment: frameAlignment))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(bubbleBackground)
-            .foregroundStyle(message.isFromUser ? .white : .primary)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.black.opacity(message.isFromUser ? 0 : 0.06), lineWidth: 0.5),
-            )
+            if hasVisibleSegments {
+                VStack(alignment: alignment, spacing: 6) {
+                    ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                        switch segment {
+                        case .prose(let text):
+                            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty {
+                                // For prose-only bubbles we let the Text size to its content so short
+                                // messages ("hi") hug the text. When the row contains wide content
+                                // (code/table), we still expand prose to row width so it aligns with
+                                // those blocks.
+                                if fillsRow {
+                                    Text(.init(trimmed))
+                                        .textSelection(.enabled)
+                                        .multilineTextAlignment(textAlignment)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(maxWidth: .infinity, alignment: frameAlignment)
+                                } else {
+                                    Text(.init(trimmed))
+                                        .textSelection(.enabled)
+                                        .multilineTextAlignment(textAlignment)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        case .code(let lang, let code):
+                            CodeBlockView(language: lang, content: code, onLightBubble: !message.isFromUser)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        case .htmlBlock(let html):
+                            HTMLBlockView(html: html, onLightBubble: !message.isFromUser)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        case .fileChip(let fileId, let label):
+                            FileChipView(fileId: fileId, label: label, onLightBubble: !message.isFromUser)
+                                .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
+                        case .table(let headers, let rows, let alignments):
+                            TableView(
+                                headers: headers,
+                                rows: rows,
+                                alignments: alignments,
+                                onLightBubble: !message.isFromUser,
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                // Only force full-row width when the bubble actually contains code/table; otherwise
+                // let it shrink to its prose content.
+                .modifier(BubbleFillModifier(fillsRow: fillsRow, alignment: frameAlignment))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(bubbleBackground)
+                .foregroundStyle(message.isFromUser ? .white : .primary)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.black.opacity(message.isFromUser ? 0 : 0.06), lineWidth: 0.5),
+                )
+            }
+
+            // A2UI attachment renders as its own standalone element, NOT inside
+            // the text bubble. Lets the spec own its visual identity instead
+            // of being swallowed by the surrounding chat-bubble chrome. Capped
+            // at 420pt so primary buttons (which explicitly request maxWidth=
+            // .infinity inside SwiftUIJSONRender) don't stretch across the
+            // whole chat panel — matches iMessage app-card sizing.
+            if let attachment = message.attachment {
+                A2UIRendererView(json: attachment.json) { action in
+                    onAttachmentAction?(action)
+                }
+                .frame(maxWidth: 420, alignment: .leading)
+                .padding(.top, hasVisibleSegments ? 6 : 0)
+            }
 
             if !message.isFromUser {
                 copyButton
