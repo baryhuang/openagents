@@ -15,8 +15,8 @@
 		16385E5C4FF9D0CA3376AA32 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F9C2588A4A9C0C5E36DA1C5 /* APIError.swift */; };
 		21B8A36DF9F40292036E1855 /* WorkspaceAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE66E2EFD9113C2A2F91F4D /* WorkspaceAPI.swift */; };
 		22346DF03BD939DB25E90183 /* FileChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F64D81367061DABBA5EC83 /* FileChipView.swift */; };
-		25D03A8503F9816CB2AA5CB4 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31EBC1F1766D711824BD98EA /* WebView.swift */; };
 		25AFCD33B25544F88BF2094D /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 61AFC404B631FCEF5138C2D2 /* FirebaseMessaging */; };
+		25D03A8503F9816CB2AA5CB4 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31EBC1F1766D711824BD98EA /* WebView.swift */; };
 		28372656D9D547CA11989334 /* FileDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD72E57A63E8F9DFBF6B6FC3 /* FileDetailView.swift */; };
 		285B357EF4CEB51AB9BEB3E6 /* NewThreadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48682F70E0BBB65BE50CF69 /* NewThreadSheet.swift */; };
 		2EDC332D19562D0CF313261F /* AuthorizedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C106C643D23BFCF5DF3B1349 /* AuthorizedAsyncImage.swift */; };
@@ -62,8 +62,8 @@
 		AE0CF5963AD17561FDEBE873 /* HTMLBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B8E461D6AC4E8EA6FB20B1D /* HTMLBlockView.swift */; };
 		B42EC88CEDCBCD4D7526967D /* WorkspaceFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43001578E4561E362DB6F9C9 /* WorkspaceFile.swift */; };
 		B4DB7710D46E59C21F372FCE /* StepParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8BEF28DD556E8D6004C2BC2 /* StepParser.swift */; };
-		BB6FC801694F2CECBA19D0FB /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31EBC1F1766D711824BD98EA /* WebView.swift */; };
 		B6529A1C4C517B0D91163E46 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = A0AA091EAC84A3FD2AC24C00 /* FirebaseCore */; };
+		BB6FC801694F2CECBA19D0FB /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31EBC1F1766D711824BD98EA /* WebView.swift */; };
 		BE21EF473A72D777C5840A0A /* WorkspaceHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE6F8171E34A5BC1F0B27A78 /* WorkspaceHistory.swift */; };
 		C055A0B798112D791BEC8148 /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77786041AC1E5D020AFE9315 /* WorkspaceView.swift */; };
 		C0D9887C30A7EFC26834E6CB /* ComposerTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E1E2B60417F9A251427176 /* ComposerTextView.swift */; };
@@ -608,7 +608,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.4;
+				MARKETING_VERSION = 0.2.5;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -696,7 +696,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.4;
+				MARKETING_VERSION = 0.2.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "OpenAgents Go";
