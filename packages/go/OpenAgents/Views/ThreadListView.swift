@@ -38,15 +38,6 @@ struct ThreadListView: View {
         #endif
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    router.switchWorkspace()
-                } label: {
-                    Image(systemName: "rectangle.stack")
-                }
-                .help("Switch workspace")
-                .keyboardShortcut("k", modifiers: [.command, .shift])
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task {
@@ -105,7 +96,7 @@ struct ThreadListView: View {
     private var workspaceHeader: some View {
         let name = store.workspace?.name ?? "Workspace"
         let slug = store.workspace?.slug ?? store.workspaceId
-        return HStack(spacing: 0) {
+        return HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .font(.headline)
@@ -118,6 +109,15 @@ struct ThreadListView: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 0)
+            Button {
+                router.switchWorkspace()
+            } label: {
+                Image(systemName: "rectangle.stack")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Switch workspace")
+            .keyboardShortcut("k", modifiers: [.command, .shift])
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
