@@ -311,13 +311,19 @@ class BrowserManager:
     # Persistent contexts
     # ------------------------------------------------------------------
 
-    def create_bb_context(self) -> str:
-        """Create a new persistent context. Returns the context ID.
+    async def create_bb_context(self, session_id: str = None) -> str:
+        """Save the current session's state and return a Browser Fabric context ID.
 
-        Browser Fabric creates contexts on-the-fly when create_session
-        is called with context_id + persist=True. We generate a unique
-        ID here that will be used later.
+        If session_id is provided, calls save_context on the active session
+        so cookies/localStorage are captured before the session is closed.
         """
+        if self.is_cloud and session_id:
+            result = await self._bf_call(
+                "save_context",
+                {"context_name": f"persist-{session_id[:8]}"},
+                session_id,
+            )
+            return result.get("result", {}).get("context_id", str(__import__("uuid").uuid4()))
         import uuid
         return str(uuid.uuid4())
 
