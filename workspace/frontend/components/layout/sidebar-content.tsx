@@ -235,7 +235,7 @@ export function SidebarContent() {
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5">
               Agents ({onlineCount}/{recentAgents.length})
             </p>
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 max-h-48 overflow-y-auto">
               {recentAgents.map((agent) => {
                 const color = getAgentColor(agent.agentName, agentNames);
                 return (
