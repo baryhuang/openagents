@@ -1,7 +1,17 @@
 import SwiftUI
+import SwiftUIJSONRender
 
 @main
 struct OpenAgentsApp: App {
+    init() {
+        // SwiftUIJSONRender's built-in component catalog is registered lazily
+        // via a private static let — nothing accesses it on its own, so the
+        // registry stays empty and JSONView falls back to "Unsupported"
+        // placeholders for everything. Force the init here so Stack / Button
+        // / Heading / etc. resolve.
+        SwiftUIJSONRender.initializeJSONRender()
+    }
+
     #if os(iOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var pushSink = PushSink()

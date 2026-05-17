@@ -226,6 +226,7 @@ docs/projects
 .mcp.json
 /*.png
 *.db
+*.sqlite
 .next/
 .playwright-mcp/
 tsconfig.tsbuildinfo
