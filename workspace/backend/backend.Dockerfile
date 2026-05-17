@@ -11,12 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Production uses Browserbase (cloud) via BROWSERBASE_API_KEY — no local
-# Chromium is needed in the runtime image. The Playwright Python SDK is
-# still installed (from requirements.txt) so `from playwright.async_api
-# import async_playwright` works; only the ~620MB browser binaries are
-# skipped. For local-browser dev mode, run `playwright install chromium`
-# outside the container or in a dev-specific image.
+# Production uses Browser Fabric (cloud) via BROWSERFABRIC_API_KEY — all
+# browser operations are proxied via REST API, no local Chromium needed.
+# For local-browser dev mode, install playwright and run
+# `playwright install chromium`.
 
 # Copy application code
 COPY . .
