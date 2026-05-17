@@ -319,7 +319,7 @@ class BrowserManager:
         ID here that will be used later.
         """
         import uuid
-        return f"ctx-{uuid.uuid4().hex[:16]}"
+        return str(uuid.uuid4())
 
     def delete_bb_context(self, bb_context_id: str) -> None:
         """Delete a persistent context (fire-and-forget)."""
