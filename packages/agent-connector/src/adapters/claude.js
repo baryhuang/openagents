@@ -569,7 +569,7 @@ class ClaudeAdapter extends BaseAdapter {
     let content = (msg.content || '').trim();
     const attachments = msg.attachments || [];
 
-    const attText = formatAttachmentsForPrompt(attachments);
+    const attText = formatAttachmentsForPrompt(attachments, this.toolMode);
     if (attText) {
       content = content ? content + attText : attText.trim();
     }

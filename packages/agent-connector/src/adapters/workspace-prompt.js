@@ -78,11 +78,12 @@ function buildModePrompt(mode) {
  *
  * In plan mode, only read-only operations are documented.
  */
-function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channelName, disabledModules, mode = 'execute' }) {
+function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channelName, disabledModules, mode = 'execute', isWindows = process.platform === 'win32' }) {
   const disabled = disabledModules || new Set();
   const baseUrl = endpoint.replace(/\/+$/, '');
   const isPlan = mode === 'plan';
   const h = `X-Workspace-Token: ${token}`;
+  const curl = isWindows ? 'curl.exe' : 'curl';
 
   const sections = [];
 
@@ -115,34 +116,53 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     let s = '\n### Shared Files\n\n';
 
     if (!isPlan) {
-      s += (
-        '**To upload a file**, exec this (replace filename/content):\n' +
-        `CONTENT=$(echo -n 'YOUR_CONTENT' | base64) && ` +
-        `curl -s -X POST ${baseUrl}/v1/files/base64 ` +
-        `-H "${h}" ` +
-        '-H "Content-Type: application/json" ' +
-        `-d '{"filename":"report.md",` +
-        `"content_base64":"'"$CONTENT"'",` +
-        `"content_type":"text/markdown",` +
-        `"network":"${workspaceId}",` +
-        `"source":"openagents:${agentName}",` +
-        `"channel_name":"${channelName}"}'\n\n`
-      );
+      if (isWindows) {
+        s += (
+          '**To upload a file**, exec this (replace filename/content):\n' +
+          `$CONTENT = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('YOUR_CONTENT'))\n` +
+          `${curl} -s -X POST ${baseUrl}/v1/files/base64 ` +
+          `-H "${h}" ` +
+          '-H "Content-Type: application/json" ' +
+          `-d "{\\"filename\\":\\"report.md\\",` +
+          `\\"content_base64\\":\\"$CONTENT\\",` +
+          `\\"content_type\\":\\"text/markdown\\",` +
+          `\\"network\\":\\"${workspaceId}\\",` +
+          `\\"source\\":\\"openagents:${agentName}\\",` +
+          `\\"channel_name\\":\\"${channelName}\\"}"\n\n`
+        );
+      } else {
+        s += (
+          '**To upload a file**, exec this (replace filename/content):\n' +
+          `CONTENT=$(echo -n 'YOUR_CONTENT' | base64) && ` +
+          `${curl} -s -X POST ${baseUrl}/v1/files/base64 ` +
+          `-H "${h}" ` +
+          '-H "Content-Type: application/json" ' +
+          `-d '{"filename":"report.md",` +
+          `"content_base64":"'"$CONTENT"'",` +
+          `"content_type":"text/markdown",` +
+          `"network":"${workspaceId}",` +
+          `"source":"openagents:${agentName}",` +
+          `"channel_name":"${channelName}"}'\n\n`
+        );
+      }
     }
 
+    const tmpDir = isWindows ? '$env:TEMP' : '/tmp';
     s += (
       '**List files:**\n' +
-      `\`curl -s -H "${h}" ${baseUrl}/v1/files?network=${workspaceId}\`\n\n` +
-      '**Download file:**\n' +
-      `\`curl -s -H "${h}" ${baseUrl}/v1/files/{file_id}\`\n\n` +
+      `\`${curl} -s -H "${h}" ${baseUrl}/v1/files?network=${workspaceId}\`\n\n` +
+      '**Download file (text):**\n' +
+      `\`${curl} -s -H "${h}" ${baseUrl}/v1/files/{file_id}\`\n\n` +
+      '**Download file (binary/images) — save to disk, then use Read tool to view:**\n' +
+      `\`${curl} -s -H "${h}" ${baseUrl}/v1/files/{file_id} -o ${tmpDir}/{filename}\`\n\n` +
       '**File info (metadata):**\n' +
-      `\`curl -s -H "${h}" ${baseUrl}/v1/files/{file_id}/info\`\n`
+      `\`${curl} -s -H "${h}" ${baseUrl}/v1/files/{file_id}/info\`\n`
     );
 
     if (!isPlan) {
       s += (
         '\n**Delete file:**\n' +
-        `\`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/files/{file_id}\`\n`
+        `\`${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/files/{file_id}\`\n`
       );
     }
 
@@ -157,48 +177,48 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       s += (
         '**To browse a website**, exec these steps (use exec for each):\n' +
         `Step 1 — open tab: ` +
-        `curl -s -X POST ${baseUrl}/v1/browser/tabs ` +
+        `${curl} -s -X POST ${baseUrl}/v1/browser/tabs ` +
         `-H "${h}" -H "Content-Type: application/json" ` +
         `-d '{"url":"https://example.com","network":"${workspaceId}",` +
         `"source":"openagents:${agentName}"}'\n` +
         `Step 2 — read content: ` +
-        `curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/snapshot\n` +
+        `${curl} -s -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID/snapshot\n` +
         `Step 3 — close tab: ` +
-        `curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID\n` +
+        `${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/TAB_ID\n` +
         '(Replace TAB_ID with the id from step 1 response)\n\n'
       );
     }
 
     s += (
       '**List open tabs:**\n' +
-      `\`curl -s -H "${h}" ${baseUrl}/v1/browser/tabs?network=${workspaceId}\`\n\n` +
+      `\`${curl} -s -H "${h}" ${baseUrl}/v1/browser/tabs?network=${workspaceId}\`\n\n` +
       '**Get page content (text):**\n' +
-      `\`curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}/snapshot\`\n\n` +
+      `\`${curl} -s -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}/snapshot\`\n\n` +
       '**Get screenshot (PNG):**\n' +
-      `\`curl -s -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}/screenshot\`\n`
+      `\`${curl} -s -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}/screenshot\`\n`
     );
 
     if (!isPlan) {
       s += (
         '\n**Open tab:**\n' +
-        `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json"` +
+        `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json"` +
         ` ${baseUrl}/v1/browser/tabs` +
         ` -d '{"url":"URL","network":"${workspaceId}",` +
         `"source":"openagents:${agentName}"}'\`\n\n` +
         '**Navigate:**\n' +
-        `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json"` +
+        `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json"` +
         ` ${baseUrl}/v1/browser/tabs/{tab_id}/navigate` +
         ` -d '{"url":"URL"}'\`\n\n` +
         '**Click element:**\n' +
-        `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json"` +
+        `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json"` +
         ` ${baseUrl}/v1/browser/tabs/{tab_id}/click` +
         ` -d '{"selector":"CSS_SELECTOR"}'\`\n\n` +
         '**Type text:**\n' +
-        `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json"` +
+        `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json"` +
         ` ${baseUrl}/v1/browser/tabs/{tab_id}/type` +
         ` -d '{"selector":"CSS_SELECTOR","text":"TEXT"}'\`\n\n` +
         '**Close tab:**\n' +
-        `\`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}\`\n`
+        `\`${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/browser/tabs/{tab_id}\`\n`
       );
     }
 
@@ -209,9 +229,9 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   sections.push(
     '\n### Message History\n\n' +
     '**Get recent messages in the current channel:**\n' +
-    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=${channelName}&type=workspace.message&sort=desc&limit=20"\`\n\n` +
+    `\`${curl} -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=${channelName}&type=workspace.message&sort=desc&limit=20"\`\n\n` +
     '**Get messages from a specific channel:**\n' +
-    `\`curl -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=CHANNEL_NAME&type=workspace.message&sort=desc&limit=20"\`\n`
+    `\`${curl} -s -H "${h}" "${baseUrl}/v1/events?network=${workspaceId}&channel=CHANNEL_NAME&type=workspace.message&sort=desc&limit=20"\`\n`
   );
 
   // Post status update
@@ -219,7 +239,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     sections.push(
       '\n### Post Status Update\n\n' +
       'Post a status/thinking message (visible in the workspace UI as an intermediate step):\n' +
-      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/events -d '{"type":"workspace.message.posted",` +
       `"source":"openagents:${agentName}","target":"channel/${channelName}",` +
       `"payload":{"content":"YOUR_STATUS","message_type":"status"}}'\`\n`
@@ -234,14 +254,14 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       'is replaced each time (send the full list with current statuses).\n\n' +
       '**Status values:** `pending`, `in_progress`, `completed`\n\n' +
       '**Update your to-do list:**\n' +
-      `\`curl -s -X PUT -H "${h}" -H "Content-Type: application/json" ` +
+      `\`${curl} -s -X PUT -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/todos -d '{"todos":[` +
       `{"content":"First task","status":"in_progress"},` +
       `{"content":"Second task","status":"pending"}` +
       `],"network":"${workspaceId}","channel":"${channelName}",` +
       `"source":"openagents:${agentName}"}'\`\n\n` +
       '**Get your to-do list:**\n' +
-      `\`curl -s -H "${h}" "${baseUrl}/v1/todos?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/todos?network=${workspaceId}&channel=${channelName}"\`\n\n` +
       '**IMPORTANT:** When you receive a task with multiple steps or a list of things to do, ' +
       'ALWAYS create a to-do list first before starting work. This lets the user see your ' +
       'progress in real time. Update statuses as you work through each item.\n' +
@@ -259,14 +279,14 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       'Use cases: check back on a deploy, retry after a rate limit, remind ' +
       'yourself to follow up.\n\n' +
       '**Create a timer:**\n' +
-      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/timers -d '{"delay":300,"message":"Check the build",` +
       `"network":"${workspaceId}","channel":"${channelName}",` +
       `"source":"openagents:${agentName}"}'\`\n\n` +
       '**List active timers:**\n' +
-      `\`curl -s -H "${h}" "${baseUrl}/v1/timers?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/timers?network=${workspaceId}&channel=${channelName}"\`\n\n` +
       '**Cancel a timer:**\n' +
-      `\`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/timers/TIMER_ID\`\n`
+      `\`${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/timers/TIMER_ID\`\n`
     );
   }
 
@@ -280,21 +300,21 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       '**Schedule:** Specify `hour` (0-23 UTC), `minute` (0-59), and optional ' +
       '`days` array (0=Mon, 6=Sun). Omit `days` for every day.\n\n' +
       '**Create a routine:**\n' +
-      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/routines -d '{"name":"Daily PR Review","message":"Review open PRs",` +
       `"hour":8,"minute":0,` +
       `"network":"${workspaceId}","channel":"${channelName}",` +
       `"source":"openagents:${agentName}"}'\`\n\n` +
       '**Create a weekday-only routine (Mon-Fri):**\n' +
-      `\`curl -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/routines -d '{"name":"Morning Standup","message":"Post standup summary",` +
       `"hour":9,"minute":0,"days":[0,1,2,3,4],` +
       `"network":"${workspaceId}","channel":"${channelName}",` +
       `"source":"openagents:${agentName}"}'\`\n\n` +
       '**List active routines:**\n' +
-      `\`curl -s -H "${h}" "${baseUrl}/v1/routines?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/routines?network=${workspaceId}&channel=${channelName}"\`\n\n` +
       '**Cancel a routine:**\n' +
-      `\`curl -s -X DELETE -H "${h}" ${baseUrl}/v1/routines/ROUTINE_ID\`\n`
+      `\`${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/routines/ROUTINE_ID\`\n`
     );
   }
 
@@ -302,7 +322,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   sections.push(
     '\n### Discover Agents\n\n' +
     '**List all agents in the workspace (with status and role):**\n' +
-    `\`curl -s -H "${h}" ${baseUrl}/v1/discover?network=${workspaceId}\`\n`
+    `\`${curl} -s -H "${h}" ${baseUrl}/v1/discover?network=${workspaceId}\`\n`
   );
 
   return sections.join('\n');

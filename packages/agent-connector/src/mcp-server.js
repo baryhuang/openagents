@@ -451,7 +451,14 @@ class McpServer {
           if (mt === 'status') return null;
           const sender = m.senderName || m.senderType || '';
           const content = m.content || '';
-          return `[${sender}] ${content}`;
+          let line = `[${sender}] ${content}`;
+          if (m.attachments && m.attachments.length > 0) {
+            const atts = m.attachments.map((a) =>
+              `[Attached: ${a.filename || 'file'} (file_id: ${a.fileId || '?'})]`
+            ).join(' ');
+            line += `\n  ${atts}`;
+          }
+          return line;
         }).filter(Boolean);
         if (!lines.length) return text('No messages yet.');
         return text(lines.join('\n'));
