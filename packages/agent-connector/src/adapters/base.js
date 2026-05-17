@@ -447,6 +447,9 @@ class BaseAdapter {
       const queue = this._channelQueues[channel];
       if (!queue || queue.length === 0) break;
       const nextMsg = queue.shift();
+      if (nextMsg._queueId) {
+        try { await this.sendStatus(channel, 'processing queued message', { queue_id: nextMsg._queueId, queue_status: 'processed' }); } catch {}
+      }
       try {
         await this._handleMessage(nextMsg);
       } catch (e) {
