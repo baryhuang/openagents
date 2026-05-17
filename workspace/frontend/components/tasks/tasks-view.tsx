@@ -26,11 +26,70 @@ function StatusIcon({ status }: { status: TodoItem['status'] }) {
   return <Circle className="size-4 text-zinc-400 shrink-0" />;
 }
 
-interface GroupedTodos {
-  channelName: string;
-  channelTitle: string;
-  agentName: string;
+function StatusSection({
+  title,
+  icon,
+  items,
+  agentNames,
+  sessions,
+}: {
+  title: string;
+  icon: React.ReactNode;
   items: TodoItem[];
+  agentNames: string[];
+  sessions: ReturnType<typeof useWorkspace>['sessions'];
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-2">
+        {icon}
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</h3>
+        <span className="text-xs text-muted-foreground/60">{items.length}</span>
+      </div>
+      <div className="rounded-lg border border-border bg-card overflow-hidden divide-y divide-border">
+        {items.map((item) => {
+          const agentName = item.createdBy.replace('openagents:', '');
+          const agentColor = getAgentColor(agentName, agentNames);
+          const session = sessions.find((s) => s.sessionId === item.channelName);
+          const channelTitle = session?.title || '';
+
+          return (
+            <div key={item.id} className="px-3 py-2 flex items-start gap-2.5">
+              <StatusIcon status={item.status} />
+              <div className="min-w-0 flex-1">
+                <span className={cn(
+                  'text-sm leading-snug',
+                  (item.status === 'completed' || item.status === 'cancelled') && 'line-through text-muted-foreground'
+                )}>
+                  {item.content}
+                </span>
+                {item.status === 'cancelled' && (
+                  <span className="text-[10px] text-muted-foreground/60 ml-1.5">(timed out)</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                <div
+                  className="size-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold shrink-0"
+                  style={{ backgroundColor: agentColor.bg }}
+                  title={agentName}
+                >
+                  {getAgentInitials(agentName)}
+                </div>
+                {channelTitle && (
+                  <span className="text-[10px] text-muted-foreground max-w-[100px] truncate">{channelTitle}</span>
+                )}
+                <span className="text-[10px] text-muted-foreground">
+                  {timeAgo(item.updatedAt || item.createdAt)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function TasksView() {
@@ -44,46 +103,39 @@ export function TasksView() {
   const now = Date.now();
   const oneDayMs = 24 * 60 * 60 * 1000;
 
-  const isActive = (t: TodoItem) => t.status === 'pending' || t.status === 'in_progress';
-  const isDone = (t: TodoItem) => t.status === 'completed' || t.status === 'cancelled';
+  const { inProgressItems, pendingItems, doneItems } = useMemo(() => {
+    const inProgress = todos
+      .filter((t) => t.status === 'in_progress')
+      .sort((a, b) => {
+        const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return bTime - aTime;
+      });
 
-  const { activeGroups, doneGroups } = useMemo(() => {
-    const activeItems = todos.filter(isActive);
-    const doneItems = todos.filter(
-      (t) => isDone(t) && t.updatedAt && now - new Date(t.updatedAt).getTime() < oneDayMs
-    );
+    const pending = todos
+      .filter((t) => t.status === 'pending')
+      .sort((a, b) => {
+        if (a.position !== b.position) return a.position - b.position;
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return aTime - bTime;
+      });
 
-    function buildGroups(items: TodoItem[]): GroupedTodos[] {
-      const groupMap = new Map<string, GroupedTodos>();
-      for (const t of items) {
-        const key = `${t.channelName}:${t.createdBy}`;
-        if (!groupMap.has(key)) {
-          const session = sessions.find((s) => s.sessionId === t.channelName);
-          const agentName = t.createdBy.replace('openagents:', '');
-          groupMap.set(key, {
-            channelName: t.channelName,
-            channelTitle: session?.title || t.channelName,
-            agentName,
-            items: [],
-          });
-        }
-        groupMap.get(key)!.items.push(t);
-      }
-      return Array.from(groupMap.values());
-    }
+    const done = todos
+      .filter((t) =>
+        (t.status === 'completed' || t.status === 'cancelled') &&
+        t.updatedAt && now - new Date(t.updatedAt).getTime() < oneDayMs
+      )
+      .sort((a, b) => {
+        const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return bTime - aTime;
+      });
 
-    const active = buildGroups(activeItems);
-    active.sort((a, b) => {
-      const aInProg = a.items.filter((t) => t.status === 'in_progress').length;
-      const bInProg = b.items.filter((t) => t.status === 'in_progress').length;
-      return bInProg - aInProg;
-    });
+    return { inProgressItems: inProgress, pendingItems: pending, doneItems: done };
+  }, [todos, now, oneDayMs]);
 
-    return { activeGroups: active, doneGroups: buildGroups(doneItems) };
-  }, [todos, sessions, now, oneDayMs]);
-
-  const totalActive = todos.filter(isActive).length;
-  const totalInProgress = todos.filter((t) => t.status === 'in_progress').length;
+  const totalActive = inProgressItems.length + pendingItems.length;
 
   return (
     <div className="h-full flex flex-col">
@@ -94,7 +146,7 @@ export function TasksView() {
           <h2 className="text-sm font-semibold">Tasks</h2>
           {totalActive > 0 && (
             <span className="text-xs text-muted-foreground">
-              {totalActive} active{totalInProgress > 0 && ` · ${totalInProgress} in progress`}
+              {totalActive} active{inProgressItems.length > 0 && ` · ${inProgressItems.length} in progress`}
             </span>
           )}
         </div>
@@ -116,80 +168,29 @@ export function TasksView() {
           </div>
         ) : (
           <div className="p-4 space-y-6">
-            {/* Active tasks */}
-            {activeGroups.length > 0 && (
-              <div>
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Active</h3>
-                <div className="space-y-4">
-                  {activeGroups.map((group) => (
-                    <TaskGroup key={`${group.channelName}:${group.agentName}`} group={group} agentNames={agentNames} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Recently completed / cancelled */}
-            {doneGroups.length > 0 && (
-              <div>
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                  Completed (last 24h)
-                </h3>
-                <div className="space-y-4">
-                  {doneGroups.map((group) => (
-                    <TaskGroup key={`done-${group.channelName}:${group.agentName}`} group={group} agentNames={agentNames} />
-                  ))}
-                </div>
-              </div>
-            )}
+            <StatusSection
+              title="In Progress"
+              icon={<Loader2 className="size-3.5 text-blue-500 animate-spin" />}
+              items={inProgressItems}
+              agentNames={agentNames}
+              sessions={sessions}
+            />
+            <StatusSection
+              title="Pending"
+              icon={<Circle className="size-3.5 text-zinc-400" />}
+              items={pendingItems}
+              agentNames={agentNames}
+              sessions={sessions}
+            />
+            <StatusSection
+              title="Completed"
+              icon={<CheckCircle2 className="size-3.5 text-emerald-500" />}
+              items={doneItems}
+              agentNames={agentNames}
+              sessions={sessions}
+            />
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function TaskGroup({ group, agentNames }: { group: GroupedTodos; agentNames: string[] }) {
-  const agentColor = getAgentColor(group.agentName, agentNames);
-
-  return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      {/* Group header */}
-      <div className="px-3 py-2 bg-muted/30 border-b border-border flex items-center gap-2">
-        <div
-          className="size-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-          style={{ backgroundColor: agentColor.bg }}
-        >
-          {getAgentInitials(group.agentName)}
-        </div>
-        <span className="text-xs font-medium truncate">{group.agentName}</span>
-        <span className="text-xs text-muted-foreground">·</span>
-        <span className="text-xs text-muted-foreground truncate">{group.channelTitle}</span>
-      </div>
-
-      {/* Items */}
-      <div className="divide-y divide-border">
-        {group.items.map((item) => (
-          <div key={item.id} className="px-3 py-2 flex items-start gap-2.5">
-            <StatusIcon status={item.status} />
-            <div className="min-w-0 flex-1">
-              <span className={cn(
-                'text-sm leading-snug',
-                (item.status === 'completed' || item.status === 'cancelled') && 'line-through text-muted-foreground'
-              )}>
-                {item.content}
-              </span>
-              {item.status === 'cancelled' && (
-                <span className="text-[10px] text-muted-foreground/60 ml-1.5">(timed out)</span>
-              )}
-              {item.assignee && item.assignee !== group.agentName && (
-                <span className="text-xs text-muted-foreground ml-1.5">→ {item.assignee}</span>
-              )}
-            </div>
-            <span className="text-[10px] text-muted-foreground shrink-0 pt-0.5">
-              {timeAgo(item.updatedAt || item.createdAt)}
-            </span>
-          </div>
-        ))}
       </div>
     </div>
   );
