@@ -78,12 +78,3 @@ export function getAgentColor(agentName: string, allAgentNames: string[]): Agent
   const index = allAgentNames.indexOf(agentName);
   return AGENT_COLORS[(index >= 0 ? index : 0) % AGENT_COLORS.length];
 }
-
-export function getAgentInitials(agentName: string): string {
-  // For names like "claude-7f3a", take first letter of each segment
-  const parts = agentName.split('-').filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return agentName.slice(0, 2).toUpperCase();
-}

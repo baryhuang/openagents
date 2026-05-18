@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { ListTodo, CheckCircle2, Circle, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import type { TodoItem } from '@/lib/types';
 
 function timeAgo(dateStr: string | null): string {
@@ -30,13 +30,11 @@ function StatusSection({
   title,
   icon,
   items,
-  agentNames,
   sessions,
 }: {
   title: string;
   icon: React.ReactNode;
   items: TodoItem[];
-  agentNames: string[];
   sessions: ReturnType<typeof useWorkspace>['sessions'];
 }) {
   if (items.length === 0) return null;
@@ -51,7 +49,6 @@ function StatusSection({
       <div className="rounded-lg border border-border bg-card overflow-hidden divide-y divide-border">
         {items.map((item) => {
           const agentName = item.createdBy.replace('openagents:', '');
-          const agentColor = getAgentColor(agentName, agentNames);
           const session = sessions.find((s) => s.sessionId === item.channelName);
           const channelTitle = session?.title || '';
 
@@ -70,13 +67,7 @@ function StatusSection({
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0 pt-0.5">
-                <div
-                  className="size-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold shrink-0"
-                  style={{ backgroundColor: agentColor.bg }}
-                  title={agentName}
-                >
-                  {getAgentInitials(agentName)}
-                </div>
+                <AgentAvatar name={agentName} size={16} />
                 {channelTitle && (
                   <span className="text-[10px] text-muted-foreground max-w-[100px] truncate">{channelTitle}</span>
                 )}
@@ -93,8 +84,7 @@ function StatusSection({
 }
 
 export function TasksView() {
-  const { todos, refreshTodos, sessions, agents } = useWorkspace();
-  const agentNames = useMemo(() => agents.map((a) => a.agentName), [agents]);
+  const { todos, refreshTodos, sessions } = useWorkspace();
 
   useEffect(() => {
     refreshTodos();
@@ -172,21 +162,21 @@ export function TasksView() {
               title="In Progress"
               icon={<Loader2 className="size-3.5 text-blue-500 animate-spin" />}
               items={inProgressItems}
-              agentNames={agentNames}
+
               sessions={sessions}
             />
             <StatusSection
               title="Pending"
               icon={<Circle className="size-3.5 text-zinc-400" />}
               items={pendingItems}
-              agentNames={agentNames}
+
               sessions={sessions}
             />
             <StatusSection
               title="Completed"
               icon={<CheckCircle2 className="size-3.5 text-emerald-500" />}
               items={doneItems}
-              agentNames={agentNames}
+
               sessions={sessions}
             />
           </div>

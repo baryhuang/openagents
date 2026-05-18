@@ -5,7 +5,8 @@ import { PanelLeft, Pencil, RefreshCw, Search, Star, Archive, Trash2, MoreVertic
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
-import { getAgentColor, getAgentInitials, timeAgo } from '@/lib/helpers';
+import { timeAgo } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { workspaceApi } from '@/lib/api';
 import type { WorkspaceAgent } from '@/lib/types';
 import {
@@ -19,42 +20,20 @@ import {
 function AvatarStack({ agents, max = 2 }: { agents: WorkspaceAgent[]; max?: number }) {
   const shown = agents.slice(0, max);
   const extra = agents.length - max;
-  const agentNames = agents.map((a) => a.agentName);
 
-  // Single agent: show a larger avatar
   if (shown.length <= 1) {
     const agent = shown[0];
     if (!agent) return null;
-    const color = getAgentColor(agent.agentName, agentNames);
-    return (
-      <div
-        className={cn(
-          'size-[30px] rounded-full flex items-center justify-center text-white text-[10px] font-bold',
-          color.initials
-        )}
-      >
-        {getAgentInitials(agent.agentName)}
-      </div>
-    );
+    return <AgentAvatar name={agent.agentName} size={30} />;
   }
 
-  // Multiple agents: compact overlapping stack
   return (
     <div className="flex -space-x-1.5">
-      {shown.map((agent) => {
-        const color = getAgentColor(agent.agentName, agentNames);
-        return (
-          <div
-            key={agent.agentName}
-            className={cn(
-              'size-[18px] rounded-full flex items-center justify-center text-white text-[7px] font-bold ring-2 ring-white dark:ring-zinc-900',
-              color.initials
-            )}
-          >
-            {getAgentInitials(agent.agentName)}
-          </div>
-        );
-      })}
+      {shown.map((agent) => (
+        <div key={agent.agentName} className="ring-2 ring-white dark:ring-zinc-900 rounded-full">
+          <AgentAvatar name={agent.agentName} size={18} />
+        </div>
+      ))}
       {extra > 0 && (
         <div className="size-[18px] rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-medium text-zinc-600 ring-2 ring-white dark:ring-zinc-900">
           +{extra}

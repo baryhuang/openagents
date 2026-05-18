@@ -19,7 +19,7 @@ import {
 import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { eventToMessage } from '@/lib/types';
 import type { WorkspaceMessage } from '@/lib/types';
 
@@ -234,8 +234,6 @@ export function ChatView() {
 
   const isDM = currentSessionId?.startsWith('dm:') ?? false;
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
-  const agentNames = agents.map((a) => a.agentName);
-
   // Merge real messages with optimistic messages for display
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
 
@@ -451,19 +449,13 @@ export function ChatView() {
               const participants = currentSession?.participants || [];
               const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
               return sessionAgents.map((agent) => {
-                const color = getAgentColor(agent.agentName, agentNames);
                 const isMaster = currentSession?.master === agent.agentName || agent.role === 'master';
                 return (
                   <div
                     key={agent.agentName}
                     className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted border shrink-0"
                   >
-                    <div className={cn(
-                      'size-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold',
-                      color.initials
-                    )}>
-                      {getAgentInitials(agent.agentName)}
-                    </div>
+                    <AgentAvatar name={agent.agentName} size={16} />
                     <span className="text-[11px] font-medium">{agent.agentName.split('-')[0]}</span>
                     {isMaster && (
                       <span className="text-[8px] px-1 py-0 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">
@@ -483,20 +475,11 @@ export function ChatView() {
             if (sessionAgents.length === 0) return null;
             return (
               <div className="flex -space-x-1.5">
-                {sessionAgents.slice(0, 3).map((agent) => {
-                  const color = getAgentColor(agent.agentName, agentNames);
-                  return (
-                    <div
-                      key={agent.agentName}
-                      className={cn(
-                        'size-5 rounded-full flex items-center justify-center text-white text-[7px] font-bold border-2 border-background',
-                        color.initials
-                      )}
-                    >
-                      {getAgentInitials(agent.agentName)}
-                    </div>
-                  );
-                })}
+                {sessionAgents.slice(0, 3).map((agent) => (
+                  <div key={agent.agentName} className="border-2 border-background rounded-full">
+                    <AgentAvatar name={agent.agentName} size={18} />
+                  </div>
+                ))}
                 {sessionAgents.length > 3 && (
                   <div className="size-5 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-medium text-zinc-600 border-2 border-background">
                     +{sessionAgents.length - 3}
@@ -606,19 +589,12 @@ export function ChatView() {
                     {inThread.length > 0 && (
                       <>
                         <DropdownMenuLabel>In this thread</DropdownMenuLabel>
-                        {inThread.map((agent) => {
-                          const color = getAgentColor(agent.agentName, agentNames);
-                          return (
+                        {inThread.map((agent) => (
                             <div
                               key={agent.agentName}
                               className="flex items-center gap-2 px-2 py-1.5 rounded-md group"
                             >
-                              <div className={cn(
-                                'size-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0',
-                                color.initials
-                              )}>
-                                {getAgentInitials(agent.agentName)}
-                              </div>
+                              <AgentAvatar name={agent.agentName} size={20} />
                               <span className="text-sm flex-1 truncate">{agent.agentName}</span>
                               {inThread.length > 1 && (
                                 <button
@@ -630,33 +606,24 @@ export function ChatView() {
                                 </button>
                               )}
                             </div>
-                          );
-                        })}
+                        ))}
                       </>
                     )}
                     {notInThread.length > 0 && (
                       <>
                         {inThread.length > 0 && <DropdownMenuSeparator />}
                         <DropdownMenuLabel>Add to thread</DropdownMenuLabel>
-                        {notInThread.map((agent) => {
-                          const color = getAgentColor(agent.agentName, agentNames);
-                          return (
+                        {notInThread.map((agent) => (
                             <button
                               key={agent.agentName}
                               onClick={() => currentSessionId && addParticipant(currentSessionId, agent.agentName)}
                               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors"
                             >
-                              <div className={cn(
-                                'size-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0',
-                                color.initials
-                              )}>
-                                {getAgentInitials(agent.agentName)}
-                              </div>
+                              <AgentAvatar name={agent.agentName} size={20} />
                               <span className="text-sm flex-1 truncate text-left">{agent.agentName}</span>
                               <Plus className="size-3 text-muted-foreground shrink-0" />
                             </button>
-                          );
-                        })}
+                        ))}
                       </>
                     )}
                     {onlineAgents.length === 0 && (

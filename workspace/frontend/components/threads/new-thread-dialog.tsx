@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { History, Check, Star } from 'lucide-react';
 import type { WorkspaceAgent, WorkspaceSession } from '@/lib/types';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 
 interface NewThreadDialogProps {
   open: boolean;
@@ -108,7 +108,6 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
             <p className="text-sm text-muted-foreground py-4 text-center">No agents are currently online.</p>
           )}
           {onlineAgents.map((agent) => {
-            const color = getAgentColor(agent.agentName, agentNames);
             const isSelected = selected.has(agent.agentName);
             const isMaster = agent.agentName === master;
 
@@ -134,12 +133,7 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
                 </div>
 
                 {/* Avatar */}
-                <div className={cn(
-                  'size-7 rounded-md shrink-0 flex items-center justify-center text-white text-[11px] font-bold',
-                  color.initials
-                )}>
-                  {getAgentInitials(agent.agentName)}
-                </div>
+                <AgentAvatar name={agent.agentName} size={24} />
 
                 {/* Name */}
                 <div className="flex-1 min-w-0">

@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { getAgentColor, getAgentInitials, timeAgo } from '@/lib/helpers';
+import { timeAgo } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import {
   Activity,
   Brain,
@@ -120,7 +121,6 @@ function stripMarkdown(text: string): string {
 export function MonitorTile({ session, tileData, isActive, isCompleted, agents, onClick, shortcutKey }: MonitorTileProps) {
   const participants = session.participants || [];
   const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
-  const agentNames = agents.map((a) => a.agentName);
 
   const activityMs = session.lastEventAt;
   const displayTime = activityMs
@@ -144,20 +144,11 @@ export function MonitorTile({ session, tileData, isActive, isCompleted, agents, 
       {/* Header: avatars + title + time */}
       <div className="flex items-center gap-2 mb-2 shrink-0">
         <div className="flex -space-x-1.5 shrink-0">
-          {sessionAgents.slice(0, 3).map((agent) => {
-            const color = getAgentColor(agent.agentName, agentNames);
-            return (
-              <div
-                key={agent.agentName}
-                className={cn(
-                  'size-5 rounded-full flex items-center justify-center text-white text-[7px] font-bold border-2 border-background',
-                  color.initials
-                )}
-              >
-                {getAgentInitials(agent.agentName)}
-              </div>
-            );
-          })}
+          {sessionAgents.slice(0, 3).map((agent) => (
+            <div key={agent.agentName} className="border-2 border-background rounded-full">
+              <AgentAvatar name={agent.agentName} size={18} />
+            </div>
+          ))}
         </div>
         <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0">
           {session.title || 'Untitled'}
@@ -225,20 +216,7 @@ export function MonitorTile({ session, tileData, isActive, isCompleted, agents, 
           </div>
         ) : lastAgent ? (
           <div className="flex gap-1.5 items-start flex-1 min-h-0">
-            {(() => {
-              const agentData = agents.find((a) => a.agentName === lastAgent.senderName);
-              const color = agentData ? getAgentColor(agentData.agentName, agentNames) : null;
-              return color ? (
-                <div className={cn(
-                  'size-3.5 rounded-full flex items-center justify-center text-white text-[6px] font-bold shrink-0 mt-0.5',
-                  color.initials
-                )}>
-                  {getAgentInitials(lastAgent.senderName)}
-                </div>
-              ) : (
-                <div className="size-3.5 rounded-full bg-zinc-400 shrink-0 mt-0.5" />
-              );
-            })()}
+            <AgentAvatar name={lastAgent.senderName} size={14} className="mt-0.5" />
             <p className="text-xs text-foreground line-clamp-3 min-w-0">
               {truncate(stripMarkdown(lastAgent.content), 200)}
             </p>

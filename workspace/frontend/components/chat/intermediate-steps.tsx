@@ -16,7 +16,7 @@ import {
   RefreshCw,
   ListTodo,
 } from 'lucide-react';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 
 // ── Content Parsing ──
@@ -294,7 +294,6 @@ interface IntermediateStepsProps {
 }
 
 export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents, isActive = false }: IntermediateStepsProps) {
-  const agentNames = agents?.map((a) => a.agentName) ?? [];
   if (steps.length === 0) return null;
   const hasTerminalStatus = steps.some(isTerminalStatus);
 
@@ -319,12 +318,7 @@ export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents
           <div key={`${group.sender}-${gi}`}>
             {hasMultipleAgents && (
               <div className="flex items-center gap-1.5 mb-0.5 mt-1 first:mt-0">
-                <div className={cn(
-                  'size-3.5 rounded-full flex items-center justify-center text-white text-[6px] font-bold',
-                  getAgentColor(group.sender, agentNames).initials
-                )}>
-                  {getAgentInitials(group.sender)}
-                </div>
+                <AgentAvatar name={group.sender} size={14} />
                 <span className="text-[10px] font-medium text-muted-foreground/70">
                   {group.sender}
                 </span>

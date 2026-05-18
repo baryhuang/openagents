@@ -18,7 +18,7 @@ import { workspaceApi } from '@/lib/api';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import type { Workspace, WorkspaceAgent } from '@/lib/types';
 
 interface SettingsDialogProps {
@@ -155,7 +155,6 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
                   <AgentDescriptionField
                     key={agent.agentName}
                     agent={agent}
-                    allAgentNames={workspace.agents.map((a) => a.agentName)}
                     value={descriptions[agent.agentName] || ''}
                     onChange={(v) => setDescriptions((prev) => ({ ...prev, [agent.agentName]: v }))}
                   />
@@ -181,27 +180,17 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
 
 function AgentDescriptionField({
   agent,
-  allAgentNames,
   value,
   onChange,
 }: {
   agent: WorkspaceAgent;
-  allAgentNames: string[];
   value: string;
   onChange: (v: string) => void;
 }) {
-  const color = getAgentColor(agent.agentName, allAgentNames);
-  const initials = getAgentInitials(agent.agentName);
-
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <div
-          className="size-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-          style={{ backgroundColor: color.bg }}
-        >
-          {initials}
-        </div>
+        <AgentAvatar name={agent.agentName} size={24} />
         <span className="text-sm font-medium">{agent.agentName}</span>
         <span className="text-xs text-muted-foreground">
           {agent.agentType || 'unknown'} &middot; {agent.status}

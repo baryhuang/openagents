@@ -6,7 +6,7 @@ import { Copy, Check, User, FileIcon, Download, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { memo, useCallback, useMemo, useState } from 'react';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { MarkdownContent } from './markdown-content';
 import { workspaceApi } from '@/lib/api';
 import { useLayout } from '@/components/layout/layout-context';
@@ -113,7 +113,6 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
   const [copied, setCopied] = useState(false);
 
   const agentNames = agents.map((a) => a.agentName);
-  const agentColor = !isHuman ? getAgentColor(message.senderName, agentNames) : null;
   const agent = agents.find((a) => a.agentName === message.senderName);
   const attachments = (message.metadata?.attachments as Attachment[]) || [];
 
@@ -177,12 +176,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
   return (
     <div className="py-1.5">
       <div className="flex items-start gap-2">
-        <div className={cn(
-          'size-9 rounded-lg shrink-0 flex items-center justify-center text-white text-xs font-bold mt-0.5',
-          agentColor?.initials
-        )}>
-          {getAgentInitials(message.senderName)}
-        </div>
+        <AgentAvatar name={message.senderName} size={36} square className="mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="text-[15px] font-bold text-foreground truncate">

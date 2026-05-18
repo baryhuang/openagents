@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { MoreHorizontal, Crown, UserMinus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { timeAgo, getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { timeAgo } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { SectionHeader } from '@/components/sessions/section-header';
 import {
   DropdownMenu,
@@ -25,7 +26,6 @@ interface AgentStatusCardProps {
 export function AgentStatusCard({ agents }: AgentStatusCardProps) {
   const { refreshAgents } = useWorkspace();
   const [busy, setBusy] = useState(false);
-  const agentNames = agents.map((a) => a.agentName);
 
   const handlePromote = async (agentName: string) => {
     setBusy(true);
@@ -61,24 +61,13 @@ export function AgentStatusCard({ agents }: AgentStatusCardProps) {
         {agents.map((agent) => {
           const isOnline = agent.status === 'online';
           const isMaster = agent.role === 'master';
-          const color = getAgentColor(agent.agentName, agentNames);
 
           return (
             <div
               key={agent.agentName}
               className="flex items-center gap-2.5 px-2 py-1.5 rounded-md group"
             >
-              <div className="relative">
-                <div className={cn('flex items-center justify-center size-7 rounded-full text-white text-[10px] font-bold', color.initials)}>
-                  {getAgentInitials(agent.agentName)}
-                </div>
-                <span
-                  className={cn(
-                    'absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background',
-                    isOnline ? 'bg-green-500' : 'bg-zinc-400'
-                  )}
-                />
-              </div>
+              <AgentAvatar name={agent.agentName} size={28} status={agent.status} showStatus />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{agent.agentName}</p>
                 <p className="text-xs text-muted-foreground">

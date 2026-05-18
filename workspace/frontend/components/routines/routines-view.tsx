@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { CalendarClock, RefreshCw, Trash2 } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import type { RoutineItem } from '@/lib/types';
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -50,7 +50,6 @@ function timeUntil(dateStr: string): string {
 
 export function RoutinesView() {
   const { routines, refreshRoutines, sessions, agents } = useWorkspace();
-  const agentNames = useMemo(() => agents.map((a) => a.agentName), [agents]);
 
   useEffect(() => {
     refreshRoutines();
@@ -103,7 +102,6 @@ export function RoutinesView() {
           <div className="p-4 space-y-3">
             {activeRoutines.map((routine) => {
               const agentName = routine.createdBy.replace('openagents:', '');
-              const agentColor = getAgentColor(agentName, agentNames);
               const session = sessions.find((s) => s.sessionId === routine.channelName);
               const channelTitle = session?.title || routine.channelName;
 
@@ -114,12 +112,7 @@ export function RoutinesView() {
                 >
                   {/* Routine header */}
                   <div className="px-3 py-2.5 flex items-start gap-2.5">
-                    <div
-                      className="size-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5"
-                      style={{ backgroundColor: agentColor.bg }}
-                    >
-                      {getAgentInitials(agentName)}
-                    </div>
+                    <AgentAvatar name={agentName} size={20} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium truncate">{routine.name}</span>

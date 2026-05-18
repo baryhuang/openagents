@@ -22,7 +22,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useLayout, type ViewMode } from './layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
-import { getAgentColor, getAgentInitials, isRecentAgent, timeAgo } from '@/lib/helpers';
+import { isRecentAgent, timeAgo } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { cn } from '@/lib/utils';
 import { workspaceApi } from '@/lib/api';
 import { Switch } from '@/components/ui/switch';
@@ -145,29 +146,19 @@ export function SidebarContent() {
         </div>
 
         <div className="flex-1 flex flex-col items-center py-3 gap-2">
-          {recentAgents.map((agent) => {
-            const color = getAgentColor(agent.agentName, agentNames);
-            return (
-              <Tooltip key={agent.agentName}>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => setSelectedAgentName(agent.agentName)}
-                    className={cn(
-                      'size-7 rounded-full flex items-center justify-center text-white text-[9px] font-bold relative cursor-pointer hover:ring-2 hover:ring-zinc-300 dark:hover:ring-zinc-600 transition-shadow',
-                      color.initials
-                    )}
-                  >
-                    {getAgentInitials(agent.agentName)}
-                    <span className={cn(
-                      'absolute -bottom-0.5 -right-0.5 size-2 rounded-full border-[1.5px] border-background',
-                      agent.status === 'online' ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                    )} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{agent.agentName}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+          {recentAgents.map((agent) => (
+            <Tooltip key={agent.agentName}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setSelectedAgentName(agent.agentName)}
+                  className="cursor-pointer hover:ring-2 hover:ring-zinc-300 dark:hover:ring-zinc-600 transition-shadow rounded-full"
+                >
+                  <AgentAvatar name={agent.agentName} size={28} status={agent.status} showStatus />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{agent.agentName}</TooltipContent>
+            </Tooltip>
+          ))}
         </div>
 
         <div className="px-2.5 py-3 space-y-1">
@@ -236,29 +227,18 @@ export function SidebarContent() {
               Agents ({onlineCount}/{recentAgents.length})
             </p>
             <div className="space-y-0.5 max-h-48 overflow-y-auto">
-              {recentAgents.map((agent) => {
-                const color = getAgentColor(agent.agentName, agentNames);
-                return (
-                  <button
-                    key={agent.agentName}
-                    onClick={() => setSelectedAgentName(agent.agentName)}
-                    className="w-full flex items-center gap-2 px-2 h-8 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer group transition-colors"
-                  >
-                    <div className={cn(
-                      'size-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0 relative',
-                      color.initials
-                    )}>
-                      {getAgentInitials(agent.agentName)}
-                      {agent.status === 'online' && (
-                        <span className="absolute -end-0.5 -bottom-0.5 size-2 rounded-full border-[1.5px] border-background bg-green-500" />
-                      )}
-                    </div>
-                    <span className="text-[13px] font-normal text-foreground group-hover:text-primary truncate text-left">
-                      {agent.agentName}
-                    </span>
-                  </button>
-                );
-              })}
+              {recentAgents.map((agent) => (
+                <button
+                  key={agent.agentName}
+                  onClick={() => setSelectedAgentName(agent.agentName)}
+                  className="w-full flex items-center gap-2 px-2 h-8 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer group transition-colors"
+                >
+                  <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
+                  <span className="text-[13px] font-normal text-foreground group-hover:text-primary truncate text-left">
+                    {agent.agentName}
+                  </span>
+                </button>
+              ))}
             </div>
 
             {/* Collaboration */}

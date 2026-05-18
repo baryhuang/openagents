@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon } from 'lucide-react';
 import type { WorkspaceAgent } from '@/lib/types';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 
 export interface PendingFile {
   file: File;
@@ -272,9 +272,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
       {/* @mention autocomplete dropdown */}
       {showMentions && filteredAgents.length > 0 && (
         <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden">
-          {filteredAgents.map((agent, i) => {
-            const color = getAgentColor(agent.agentName, agentNames);
-            return (
+          {filteredAgents.map((agent, i) => (
               <button
                 key={agent.agentName}
                 className={cn(
@@ -286,9 +284,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
                   insertMention(agent.agentName);
                 }}
               >
-                <div className={cn('size-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold', color.initials)}>
-                  {getAgentInitials(agent.agentName)}
-                </div>
+                <AgentAvatar name={agent.agentName} size={24} status={agent.status} showStatus />
                 <span className="font-medium">{agent.agentName}</span>
                 <span className={cn(
                   'text-[10px] px-1.5 py-0.5 rounded-full ml-auto',
@@ -303,8 +299,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
                   agent.status === 'online' ? 'bg-green-500' : 'bg-zinc-400'
                 )} />
               </button>
-            );
-          })}
+          ))}
         </div>
       )}
 

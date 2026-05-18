@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
-import { getAgentColor, getAgentInitials } from '@/lib/helpers';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -54,8 +54,6 @@ export function AgentProfilePanel() {
 
   if (!agent) return null;
 
-  const agentNames = agents.map((a) => a.agentName);
-  const color = getAgentColor(agent.agentName, agentNames);
   const isOnline = agent.status === 'online';
 
   // Capitalize agent type for display (e.g. "claude" → "Claude")
@@ -97,16 +95,7 @@ export function AgentProfilePanel() {
         {/* Profile header */}
         <div className="px-5 pb-4">
           <div className="flex items-center gap-3">
-            <div className={cn(
-              'size-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0 relative',
-              color.initials
-            )}>
-              {getAgentInitials(agent.agentName)}
-              <span className={cn(
-                'absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background',
-                isOnline ? 'bg-green-500' : 'bg-zinc-300'
-              )} />
-            </div>
+            <AgentAvatar name={agent.agentName} size={40} status={agent.status} showStatus />
             <div className="flex-1 min-w-0">
               <h3 className="text-[15px] font-semibold leading-tight truncate">{agent.agentName}</h3>
               <div className="flex items-center gap-1.5 mt-1">
