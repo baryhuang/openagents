@@ -711,16 +711,62 @@ final class WorkspaceStore {
         }
     }
 
+    /// Remove an agent from a channel. Optimistically drops the agent from
+    /// the local `Session.participants` so the avatar disappears immediately;
+    /// the next discovery refresh confirms the canonical state.
+    func removeAgentFromSession(sessionId: String, agentName: String) async {
+        logInfo("members", "removing \(agentName) from channel=\(sessionId)")
+        if let idx = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
+            var s = sessions[idx]
+            let updated = s.participants.filter { $0 != agentName }
+            sessions[idx] = Session(
+                sessionId: s.sessionId,
+                workspaceId: s.workspaceId,
+                createdBy: s.createdBy,
+                title: s.title,
+                status: s.status,
+                starred: s.starred,
+                participants: updated,
+                master: s.master,
+                createdAt: s.createdAt,
+                lastEventAt: s.lastEventAt,
+            )
+        }
+        do {
+            _ = try await api.removeAgentFromChannel(channelName: sessionId, agentName: agentName)
+        } catch {
+            logWarn("members", "remove failed: \(error.localizedDescription)")
+            lastError = "Failed to remove \(agentName): \(error.localizedDescription)"
+            await refreshDiscovery()
+        }
+    }
+
     /// Send a `routines` control event to every agent in this session. Each
     /// agent posts back a chat message with a markdown table of its own
     /// active routines. Used by the `/routines` slash command. Read-only.
+    ///
+    /// For routine channels (`routines:<agent>`) we target only the owner,
+    /// regardless of what the cached `session.participants` says — the
+    /// channel is a single-agent job queue by design, and falling back to
+    /// "all agents" on an empty cached participant list would invite every
+    /// other agent in the workspace to chime in.
     func requestSessionRoutines(sessionId: String) async {
         guard let session = sessions.first(where: { $0.sessionId == sessionId }) else {
             logWarn("routines", "no session for id=\(sessionId)")
             return
         }
-        let sessionAgents = agents.filter {
-            session.participants.isEmpty || session.participants.contains($0.agentName)
+        let routinePrefix = "routines:"
+        let sessionAgents: [Agent]
+        if let owner = session.routineAgentName,
+           let ownerAgent = agents.first(where: { $0.agentName == owner }) {
+            sessionAgents = [ownerAgent]
+        } else if session.sessionId.hasPrefix(routinePrefix) {
+            logWarn("routines", "owner agent not online for \(sessionId)")
+            return
+        } else {
+            sessionAgents = agents.filter {
+                session.participants.isEmpty || session.participants.contains($0.agentName)
+            }
         }
         guard !sessionAgents.isEmpty else {
             logWarn("routines", "no agents in session=\(sessionId)")

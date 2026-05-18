@@ -48,6 +48,7 @@ struct ChatView: View {
     /// `consumeSlashKey(_:)` instead of letting them produce normal text.
     @State private var slashSuggestionsOpen: Bool = false
     @State private var slashSuggestionIndex: Int = 0
+    @State private var participantsPopoverOpen: Bool = false
 
     private struct SlashCommand: Identifiable {
         let id: String           // also used as the `name` ("restart")
@@ -164,8 +165,22 @@ struct ChatView: View {
                         session.participants.isEmpty || session.participants.contains($0.agentName)
                     }
                     if !sessionAgents.isEmpty {
-                        AvatarStack(agents: sessionAgents)
-                            .frame(width: 28, height: 28)
+                        Button {
+                            participantsPopoverOpen.toggle()
+                        } label: {
+                            AvatarStack(agents: sessionAgents)
+                                .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Manage agents in this thread")
+                        .popover(isPresented: $participantsPopoverOpen, arrowEdge: .bottom) {
+                            ParticipantsPopover(
+                                session: session,
+                                agents: sessionAgents,
+                                store: store,
+                                isPresented: $participantsPopoverOpen,
+                            )
+                        }
                     }
                 }
             }
@@ -1456,5 +1471,54 @@ private struct BubbleFillModifier: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// Popover anchored on the toolbar avatar stack: lists current participants
+/// with a "Remove from thread" button per row. Sends `network.channel.leave`
+/// via `WorkspaceStore.removeAgentFromSession`.
+private struct ParticipantsPopover: View {
+    let session: Session
+    let agents: [Agent]
+    let store: WorkspaceStore
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Agents in this thread")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+            Divider()
+            ForEach(agents) { agent in
+                HStack(spacing: 10) {
+                    AvatarStack(agents: [agent])
+                        .frame(width: 24, height: 24)
+                    Text(agent.agentName)
+                        .font(.body)
+                    Spacer(minLength: 12)
+                    Button(role: .destructive) {
+                        Task {
+                            await store.removeAgentFromSession(
+                                sessionId: session.sessionId,
+                                agentName: agent.agentName,
+                            )
+                            isPresented = false
+                        }
+                    } label: {
+                        Image(systemName: "minus.circle")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove \(agent.agentName) from thread")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+        }
+        .frame(minWidth: 240)
+        .padding(.bottom, 6)
     }
 }

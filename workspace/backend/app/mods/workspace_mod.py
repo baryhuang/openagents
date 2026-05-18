@@ -821,14 +821,25 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     event.metadata["target_agents"] = targets if targets else ["__no_response__"]
 
     # Auto-add targeted agents as channel participants so they can poll
-    # for messages on this channel.
-    from app.models import ChannelMember
-    existing = {p.agent_name for p in (channel.participants or [])}
-    for agent_name in event.metadata.get("target_agents", []):
-        if agent_name not in existing:
-            db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
-            existing.add(agent_name)
-    db.flush()
+    # for messages on this channel. Three guards:
+    #   1. Never add the `__no_response__` sentinel — it's a routing
+    #      signal, not a real agent.
+    #   2. Only auto-add when the sender is a human. Agent→agent routing
+    #      decisions (from the LLM router or master-fallback) used to
+    #      drag bystander agents into channels they didn't belong in.
+    #   3. Routine channels (`routines:<agent>`) are locked single-agent
+    #      job queues — never add anyone but the owner.
+    if event.source and event.source.startswith("human:") and \
+            not channel.name.startswith("routines:"):
+        from app.models import ChannelMember
+        existing = {p.agent_name for p in (channel.participants or [])}
+        for agent_name in event.metadata.get("target_agents", []):
+            if agent_name == "__no_response__":
+                continue
+            if agent_name not in existing:
+                db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
+                existing.add(agent_name)
+        db.flush()
 
     return event
 

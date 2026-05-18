@@ -220,6 +220,21 @@ actor WorkspaceAPI {
         )
     }
 
+    /// Remove an agent from a channel by posting a `network.channel.leave`
+    /// event. The backend deletes the matching `channel_members` row; the
+    /// agent stops being polled for messages on that channel.
+    func removeAgentFromChannel(channelName: String, agentName: String) async throws -> ONMEvent {
+        return try await sendEvent(
+            type: "network.channel.leave",
+            source: "human:user",
+            target: "channel/\(channelName)",
+            payload: [
+                "channel": channelName,
+                "agent_name": agentName,
+            ],
+        )
+    }
+
     /// A page of messages returned in chronological order, with cursor info from the backend.
     struct MessageBatch: Sendable {
         let messages: [Message]   // chronological order (oldest first)
