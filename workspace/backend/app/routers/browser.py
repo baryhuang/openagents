@@ -161,7 +161,6 @@ async def _ensure_connected(tab: BrowserTab, db: Session = None) -> None:
             # Fall through to session recreation below
             manager._pages.pop(tab.id, None)
             manager._locks.pop(tab.id, None)
-            manager._browsers_cdp.pop(tab.id, None)
             manager._sessions.pop(tab.id, None)
             manager._live_urls.pop(tab.id, None)
 
@@ -179,7 +178,11 @@ async def _ensure_connected(tab: BrowserTab, db: Session = None) -> None:
                     tab.url = live["url"]
                 if live["title"] and live["title"] != tab.title:
                     tab.title = live["title"]
-            return
+                return
+            # live is None — session is dead on BF side, fall through to recreate
+            logger.info("Session %s appears dead (get_current_url returned None), will recreate", tab.session_id)
+            manager._sessions.pop(tab.id, None)
+            manager._live_urls.pop(tab.id, None)
         except Exception as e:
             logger.info("Reconnect failed for tab %s (session %s), will create new session: %s",
                         tab.id, tab.session_id, e)

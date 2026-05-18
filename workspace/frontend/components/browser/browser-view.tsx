@@ -17,7 +17,9 @@ export function BrowserView() {
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [sessionDead, setSessionDead] = useState(false);
   const prevBlobRef = useRef<string | null>(null);
+  const failCountRef = useRef(0);
 
   const tab = browserTabs.find((t) => t.id === selectedBrowserTabId);
 
@@ -29,6 +31,8 @@ export function BrowserView() {
     }
 
     let cancelled = false;
+    failCountRef.current = 0;
+    setSessionDead(false);
 
     const fetchScreenshot = async () => {
       try {
@@ -40,10 +44,21 @@ export function BrowserView() {
         if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
 
         const res = await fetch(url, { headers });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          failCountRef.current++;
+          if (failCountRef.current >= 3) {
+            setSessionDead(true);
+            setLoading(false);
+          }
+          return;
+        }
 
         const blob = await res.blob();
         if (cancelled) return;
+
+        failCountRef.current = 0;
+        setSessionDead(false);
 
         if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
 
@@ -52,7 +67,11 @@ export function BrowserView() {
         setScreenshotUrl(blobUrl);
         setLoading(false);
       } catch {
-        // Non-critical — screenshot will retry
+        failCountRef.current++;
+        if (failCountRef.current >= 3) {
+          setSessionDead(true);
+          setLoading(false);
+        }
       }
     };
 
@@ -75,6 +94,9 @@ export function BrowserView() {
     setReconnecting(true);
     try {
       await reconnectBrowserTab(tab.id);
+      setSessionDead(false);
+      failCountRef.current = 0;
+      setLoading(true);
       toast.success('Tab reconnected');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to reconnect');
@@ -219,13 +241,28 @@ export function BrowserView() {
       {/* Browser view area */}
       <div className="flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-900 flex items-start justify-center">
         {tab.liveUrl ? (
-          /* Browserbase live view — interactive iframe */
           <iframe
             src={tab.liveUrl}
             className="w-full h-full border-0"
             allow="clipboard-read; clipboard-write"
             title={`Live browser: ${tab.url}`}
           />
+        ) : sessionDead ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            <div className="text-center space-y-3">
+              <Globe className="size-10 mx-auto opacity-20" />
+              <p className="text-sm font-medium">Browser session expired</p>
+              <p className="text-xs text-muted-foreground">The remote browser timed out. Click reconnect to start a new session.</p>
+              <button
+                onClick={handleReconnect}
+                disabled={reconnecting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw className={cn("size-3.5", reconnecting && "animate-spin")} />
+                {reconnecting ? 'Reconnecting…' : 'Reconnect'}
+              </button>
+            </div>
+          </div>
         ) : loading && !screenshotUrl ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             <RefreshCw className="size-6 animate-spin" />
