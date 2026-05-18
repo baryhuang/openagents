@@ -771,7 +771,10 @@ class McpServer {
           const daysStr = args.days ? `days [${args.days.join(',')}]` : 'every day';
           scheduleStr = `at ${String(args.hour).padStart(2,'0')}:${String(args.minute).padStart(2,'0')} UTC, ${daysStr}`;
         }
-        return text(`Routine created: "${args.name}" ${scheduleStr} (id: ${result.id})`);
+        const channel = (result && result.channel_name) || `routines:${this.agentName}`;
+        return text(
+          `Routine created: "${args.name}" ${scheduleStr} in \`${channel}\` (id: ${result.id})`,
+        );
       }
 
       case 'workspace_list_routines': {

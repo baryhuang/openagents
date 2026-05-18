@@ -67,6 +67,55 @@ class TestCreateRoutine:
         assert data["schedule_hour"] is None
         assert data["schedule_minute"] is None
 
+    def test_routes_into_per_agent_channel(self, client, workspace):
+        """Routine should land in routines:<agent>, regardless of caller's channel."""
+        resp = client.post(
+            "/v1/routines",
+            json=_create_payload(
+                workspace,
+                interval_minutes=15,
+                channel="some-other-channel",  # explicitly ignored
+                source="openagents:agent-alpha",
+            ),
+            headers=_headers(workspace),
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["channel_name"] == "routines:agent-alpha"
+        assert data["created_by"] == "agent-alpha"  # bare, no prefix
+
+    def test_bare_source_also_normalized(self, client, workspace):
+        """Caller sending bare name (no openagents: prefix) still works."""
+        resp = client.post(
+            "/v1/routines",
+            json=_create_payload(
+                workspace,
+                interval_minutes=10,
+                source="agent-alpha",
+            ),
+            headers=_headers(workspace),
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["channel_name"] == "routines:agent-alpha"
+        assert data["created_by"] == "agent-alpha"
+
+    def test_routine_channel_reused_across_routines(self, client, workspace):
+        """Two routines for the same agent share one channel."""
+        for i in range(2):
+            client.post(
+                "/v1/routines",
+                json=_create_payload(workspace, interval_minutes=5 + i),
+                headers=_headers(workspace),
+            )
+        resp = client.get(
+            f"/v1/routines?network={workspace['id']}",
+            headers=_headers(workspace),
+        )
+        routines = resp.json()["data"]["routines"]
+        assert len(routines) == 2
+        assert {r["channel_name"] for r in routines} == {"routines:agent-alpha"}
+
     def test_reject_both_modes(self, client, workspace):
         resp = client.post(
             "/v1/routines",

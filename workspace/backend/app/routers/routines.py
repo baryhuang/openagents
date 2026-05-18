@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import RoutineRecord, Workspace
+from app.models import Channel, ChannelMember, RoutineRecord, Workspace
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _resolve_workspace, _verify_workspace_access
 
@@ -48,6 +48,56 @@ class CreateRoutineRequest(BaseModel):
 # 1-day ceiling — for anything longer, use daily hour/minute mode).
 MIN_INTERVAL_MINUTES = 1
 MAX_INTERVAL_MINUTES = 1440
+
+
+# ---------------------------------------------------------------------------
+# Routine channel — one per agent, per workspace.
+# Routines from any thread always fire into the agent's routine channel.
+# ---------------------------------------------------------------------------
+
+ROUTINE_CHANNEL_PREFIX = "routines:"
+
+
+def _normalize_agent_name(source: str) -> str:
+    """Strip the `openagents:` prefix if present; routines store the bare name."""
+    if source and source.startswith("openagents:"):
+        return source[len("openagents:"):]
+    return source or ""
+
+
+def _routine_channel_name(agent: str) -> str:
+    return f"{ROUTINE_CHANNEL_PREFIX}{agent}"
+
+
+def _get_or_create_routine_channel(db: Session, workspace: Workspace, agent: str) -> Channel:
+    """Find-or-create the per-agent routine channel for this workspace.
+
+    The channel functions as a per-agent job queue: every routine for this
+    agent fires into it. master_agent is set so the existing routing /
+    discovery code treats this as the agent's own thread.
+    """
+    name = _routine_channel_name(agent)
+    existing = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == str(workspace.id),
+            Channel.name == name,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    channel = Channel(
+        workspace_id=str(workspace.id),
+        name=name,
+        title=agent,
+        master_agent=agent,
+        created_by=f"system:routine",
+        status="active",
+    )
+    db.add(channel)
+    db.flush()  # so channel.id is available for the membership row
+    db.add(ChannelMember(channel_id=channel.id, agent_name=agent))
+    return channel
 
 
 # ---------------------------------------------------------------------------
@@ -160,14 +210,21 @@ async def create_routine(
             if not body.days or not all(0 <= d <= 6 for d in body.days):
                 return json_response(ResponseCode.BAD_REQUEST, "days must be array of 0-6 (Mon=0, Sun=6)")
 
-    channel_name = body.channel or "default"
+    # The caller's `channel` is intentionally ignored — every routine lives
+    # in the target agent's dedicated routine channel. This gives each
+    # (workspace, agent) pair a single canonical job queue and keeps regular
+    # conversation threads from being spammed by scheduled output.
+    target_agent = _normalize_agent_name(body.source)
+    if not target_agent:
+        return json_response(ResponseCode.BAD_REQUEST, "source is required")
+    routine_channel = _get_or_create_routine_channel(db, workspace, target_agent)
     next_fire = _compute_next_fires_at(body.hour, body.minute, body.days, body.interval_minutes)
 
     routine = RoutineRecord(
         workspace_id=str(workspace.id),
-        channel_name=channel_name,
+        channel_name=routine_channel.name,
         thread_id=body.thread_id,
-        created_by=body.source,
+        created_by=target_agent,
         name=body.name,
         message=body.message,
         schedule_hour=body.hour,
