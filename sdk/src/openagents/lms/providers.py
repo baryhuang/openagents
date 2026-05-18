@@ -6,8 +6,6 @@ import logging
 from typing import Dict, List, Any, Optional
 from abc import ABC, abstractmethod
 
-import litellm
-
 logger = logging.getLogger(__name__)
 
 
@@ -675,8 +673,23 @@ class LiteLLMProvider(BaseModelProvider):
     For a full list of supported providers, see: https://docs.litellm.ai/docs/providers
     """
 
-    def __init__(self, model_name: str, **kwargs):
+    def __init__(
+        self,
+        model_name: str,
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        **kwargs,
+    ):
+        try:
+            import litellm  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "litellm package is required for LiteLLMProvider. "
+                "Install with: pip install litellm"
+            )
         self.model_name = model_name
+        self._api_key = api_key
+        self._api_base = api_base
 
     async def chat_completion(
         self,
@@ -684,14 +697,23 @@ class LiteLLMProvider(BaseModelProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Generate chat completion using LiteLLM SDK."""
+        import litellm
 
-        kwargs: Dict[str, Any] = {"model": self.model_name, "messages": messages}
+        call_kwargs: Dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "drop_params": True,
+        }
+        if self._api_key:
+            call_kwargs["api_key"] = self._api_key
+        if self._api_base:
+            call_kwargs["api_base"] = self._api_base
 
         if tools:
-            kwargs["tools"] = [{"type": "function", "function": tool} for tool in tools]
-            kwargs["tool_choice"] = "auto"
+            call_kwargs["tools"] = [{"type": "function", "function": tool} for tool in tools]
+            call_kwargs["tool_choice"] = "auto"
 
-        response = await litellm.acompletion(**kwargs)
+        response = await litellm.acompletion(**call_kwargs)
 
         # Standardize response format
         message = response.choices[0].message
