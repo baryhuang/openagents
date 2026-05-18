@@ -235,6 +235,21 @@ actor WorkspaceAPI {
         )
     }
 
+    /// Add an agent to a channel by posting a `network.channel.join` event.
+    /// The backend inserts a `channel_members` row and (if the channel has
+    /// no master yet) promotes the agent to master.
+    func addAgentToChannel(channelName: String, agentName: String) async throws -> ONMEvent {
+        return try await sendEvent(
+            type: "network.channel.join",
+            source: "human:user",
+            target: "channel/\(channelName)",
+            payload: [
+                "channel": channelName,
+                "agent_name": agentName,
+            ],
+        )
+    }
+
     /// A page of messages returned in chronological order, with cursor info from the backend.
     struct MessageBatch: Sendable {
         let messages: [Message]   // chronological order (oldest first)

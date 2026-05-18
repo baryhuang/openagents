@@ -312,7 +312,13 @@ async def _handle_channel_create(event: Event, ctx: PipelineContext) -> Optional
 
 
 async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[Event]:
-    """network.channel.join → add ChannelMember."""
+    """network.channel.join → add ChannelMember.
+
+    Routine channels (`routines:<agent>`) are locked single-agent queues —
+    we silently reject join attempts so a stray client can't break the
+    invariant. The owner is added in-line when the channel is first
+    created (see app/routers/routines.py).
+    """
     from app.models import Channel, ChannelMember
 
     db = ctx.extra["db"]
@@ -321,6 +327,9 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
     channel_name = payload.get("channel")
     agent_name = payload.get("agent_name")
     if not channel_name or not agent_name:
+        return None
+
+    if channel_name.startswith("routines:"):
         return None
 
     channel = db.execute(
@@ -351,7 +360,11 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
 
 
 async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[Event]:
-    """network.channel.leave → remove ChannelMember."""
+    """network.channel.leave → remove ChannelMember.
+
+    Routine channels are locked — removing the owner is also rejected
+    so the queue keeps its single-agent invariant.
+    """
     from app.models import Channel, ChannelMember
 
     db = ctx.extra["db"]
@@ -360,6 +373,9 @@ async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[
     channel_name = payload.get("channel")
     agent_name = payload.get("agent_name")
     if not channel_name or not agent_name:
+        return None
+
+    if channel_name.startswith("routines:"):
         return None
 
     channel = db.execute(

@@ -717,7 +717,7 @@ final class WorkspaceStore {
     func removeAgentFromSession(sessionId: String, agentName: String) async {
         logInfo("members", "removing \(agentName) from channel=\(sessionId)")
         if let idx = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
-            var s = sessions[idx]
+            let s = sessions[idx]
             let updated = s.participants.filter { $0 != agentName }
             sessions[idx] = Session(
                 sessionId: s.sessionId,
@@ -737,6 +737,35 @@ final class WorkspaceStore {
         } catch {
             logWarn("members", "remove failed: \(error.localizedDescription)")
             lastError = "Failed to remove \(agentName): \(error.localizedDescription)"
+            await refreshDiscovery()
+        }
+    }
+
+    /// Add an agent to a channel. Optimistic local update; reverts on failure.
+    func addAgentToSession(sessionId: String, agentName: String) async {
+        logInfo("members", "adding \(agentName) to channel=\(sessionId)")
+        if let idx = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
+            let s = sessions[idx]
+            if !s.participants.contains(agentName) {
+                sessions[idx] = Session(
+                    sessionId: s.sessionId,
+                    workspaceId: s.workspaceId,
+                    createdBy: s.createdBy,
+                    title: s.title,
+                    status: s.status,
+                    starred: s.starred,
+                    participants: s.participants + [agentName],
+                    master: s.master,
+                    createdAt: s.createdAt,
+                    lastEventAt: s.lastEventAt,
+                )
+            }
+        }
+        do {
+            _ = try await api.addAgentToChannel(channelName: sessionId, agentName: agentName)
+        } catch {
+            logWarn("members", "add failed: \(error.localizedDescription)")
+            lastError = "Failed to add \(agentName): \(error.localizedDescription)"
             await refreshDiscovery()
         }
     }

@@ -48,7 +48,7 @@ struct ChatView: View {
     /// `consumeSlashKey(_:)` instead of letting them produce normal text.
     @State private var slashSuggestionsOpen: Bool = false
     @State private var slashSuggestionIndex: Int = 0
-    @State private var participantsPopoverOpen: Bool = false
+    @State private var membersSheetOpen: Bool = false
 
     private struct SlashCommand: Identifiable {
         let id: String           // also used as the `name` ("restart")
@@ -166,21 +166,13 @@ struct ChatView: View {
                     }
                     if !sessionAgents.isEmpty {
                         Button {
-                            participantsPopoverOpen.toggle()
+                            membersSheetOpen.toggle()
                         } label: {
                             AvatarStack(agents: sessionAgents)
                                 .frame(width: 28, height: 28)
                         }
                         .buttonStyle(.plain)
-                        .help("Manage agents in this thread")
-                        .popover(isPresented: $participantsPopoverOpen, arrowEdge: .bottom) {
-                            ParticipantsPopover(
-                                session: session,
-                                agents: sessionAgents,
-                                store: store,
-                                isPresented: $participantsPopoverOpen,
-                            )
-                        }
+                        .help("Manage channel members")
                     }
                 }
             }
@@ -235,6 +227,12 @@ struct ChatView: View {
             // Catches the cold-launch case: app opened via "Open in…", router
             // received URL, then chat view mounted with attachments waiting.
             drainExternalAttachments()
+        }
+        .sheet(isPresented: $membersSheetOpen) {
+            if let session = store.currentSession {
+                MembersSheet(session: session, isPresented: $membersSheetOpen)
+                    .environment(store)
+            }
         }
         #if os(macOS)
         .background(Color(.controlBackgroundColor))
@@ -1474,51 +1472,166 @@ private struct BubbleFillModifier: ViewModifier {
     }
 }
 
-/// Popover anchored on the toolbar avatar stack: lists current participants
-/// with a "Remove from thread" button per row. Sends `network.channel.leave`
-/// via `WorkspaceStore.removeAgentFromSession`.
-private struct ParticipantsPopover: View {
+/// iMessage-style channel member sheet: a list of current channel members
+/// up top with per-row Remove (gated by an alert), and below it a search +
+/// list of online workspace agents not yet in the channel, each with Add.
+/// Routine channels (`routines:<agent>`) are membership-locked — the sheet
+/// shows a notice and hides the edit controls entirely.
+private struct MembersSheet: View {
     let session: Session
-    let agents: [Agent]
-    let store: WorkspaceStore
     @Binding var isPresented: Bool
+    @Environment(WorkspaceStore.self) private var store
+
+    @State private var searchText: String = ""
+    @State private var pendingRemove: Agent?
+
+    private var members: [Agent] {
+        store.agents.filter { session.participants.contains($0.agentName) }
+    }
+
+    private var addableAgents: [Agent] {
+        let inChannel = Set(session.participants)
+        let online = store.agents.filter { $0.isOnline && !inChannel.contains($0.agentName) }
+        let q = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return online }
+        return online.filter { $0.agentName.lowercased().contains(q) }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Agents in this thread")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 6)
-            Divider()
-            ForEach(agents) { agent in
-                HStack(spacing: 10) {
-                    AvatarStack(agents: [agent])
-                        .frame(width: 24, height: 24)
-                    Text(agent.agentName)
-                        .font(.body)
-                    Spacer(minLength: 12)
-                    Button(role: .destructive) {
-                        Task {
-                            await store.removeAgentFromSession(
-                                sessionId: session.sessionId,
-                                agentName: agent.agentName,
-                            )
-                            isPresented = false
-                        }
-                    } label: {
-                        Image(systemName: "minus.circle")
-                            .foregroundStyle(.red)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Remove \(agent.agentName) from thread")
+        NavigationStack {
+            Group {
+                if session.isRoutineChannel {
+                    routineLockedView
+                } else {
+                    editableList
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+            }
+            .navigationTitle("Channel Members")
+            #if os(macOS)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isPresented = false }
+                }
+            }
+            #else
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isPresented = false }
+                }
+            }
+            #endif
+            .alert(
+                "Remove \(pendingRemove?.agentName ?? "agent")?",
+                isPresented: Binding(
+                    get: { pendingRemove != nil },
+                    set: { if !$0 { pendingRemove = nil } },
+                ),
+                presenting: pendingRemove,
+            ) { agent in
+                Button("Remove", role: .destructive) {
+                    Task {
+                        await store.removeAgentFromSession(
+                            sessionId: session.sessionId,
+                            agentName: agent.agentName,
+                        )
+                        pendingRemove = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingRemove = nil }
+            } message: { agent in
+                Text("\(agent.agentName) will stop receiving messages on this channel.")
             }
         }
-        .frame(minWidth: 240)
-        .padding(.bottom, 6)
+        .frame(minWidth: 380, minHeight: 460)
+    }
+
+    private var routineLockedView: some View {
+        List {
+            Section {
+                ForEach(members) { agent in
+                    memberRow(agent, removable: false)
+                }
+            } header: {
+                Text("OWNER")
+            } footer: {
+                Text("This channel is a routine queue — membership is managed by the system.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var editableList: some View {
+        List {
+            Section("IN THIS CHANNEL (\(members.count))") {
+                if members.isEmpty {
+                    Text("No agents yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(members) { agent in
+                        memberRow(agent, removable: true)
+                    }
+                }
+            }
+
+            Section("ADD AGENTS") {
+                #if os(iOS)
+                TextField("Search online agents", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                #else
+                TextField("Search online agents", text: $searchText)
+                #endif
+
+                if addableAgents.isEmpty {
+                    Text(searchText.isEmpty ? "No online agents available." : "No matches.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                } else {
+                    ForEach(addableAgents) { agent in
+                        HStack(spacing: 10) {
+                            AvatarStack(agents: [agent])
+                                .frame(width: 28, height: 28)
+                            Text(agent.agentName)
+                            Spacer()
+                            Button("Add") {
+                                Task {
+                                    await store.addAgentToSession(
+                                        sessionId: session.sessionId,
+                                        agentName: agent.agentName,
+                                    )
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func memberRow(_ agent: Agent, removable: Bool) -> some View {
+        HStack(spacing: 10) {
+            AvatarStack(agents: [agent])
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(agent.agentName)
+                if session.master == agent.agentName {
+                    Text("master")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if removable {
+                Button("Remove", role: .destructive) {
+                    pendingRemove = agent
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
     }
 }
