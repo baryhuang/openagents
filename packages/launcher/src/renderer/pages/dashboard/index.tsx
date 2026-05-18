@@ -7,6 +7,7 @@ import AgentIcon from "../../components/AgentIcon"
 import StatusDot, { displayState } from "../../components/ui/StatusDot"
 import { Button } from "../../components/ui/Button"
 import type { Agent, HealthCheck, AgentUpdateInfo } from "../../types"
+import { useUpdateDismissals } from "../../hooks/useUpdateDismissals"
 import type { ToastType } from "../../hooks/useToast"
 
 interface DashboardProps {
@@ -127,12 +128,19 @@ export default function Dashboard({
     })))
   const { activityLog, setCurrentTab, setInstallFocusAgent } = useUiStore(useShallow((s) => ({ activityLog: s.activityLog, setCurrentTab: s.setCurrentTab, setInstallFocusAgent: s.setInstallFocusAgent })))
   const { updates, setUpdates } = useInstallStore(useShallow((s) => ({ updates: s.updates, setUpdates: s.setUpdates })))
+  const { isDismissed, ignore: ignoreUpdate, later: snoozeUpdate } = useUpdateDismissals()
 
   const inFlight = useRef(false)
   const queued = useRef(false)
   const mounted = useRef(true)
   const [loading, setLoading] = useState(agents.length === 0)
-  const pendingUpdates = updates.filter((u: AgentUpdateInfo) => u.current && u.latest && u.current !== u.latest)
+  const pendingUpdates = updates.filter(
+    (u: AgentUpdateInfo) =>
+      u.current &&
+      u.latest &&
+      u.current !== u.latest &&
+      !isDismissed(u.name, u.latest),
+  )
 
   useEffect(() => {
     mounted.current = true
@@ -250,16 +258,45 @@ export default function Dashboard({
       {pendingUpdates.length > 0 && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 text-xs bg-(--accent-bg) border border-(--accent-border) rounded-(--radius)">
           <span className="text-lg">↑</span>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="font-semibold text-(--text-primary)">
               {pendingUpdates.length === 1
                 ? `Update available for ${pendingUpdates[0].name}`
                 : `${pendingUpdates.length} agent updates available`}
             </div>
-            <div className="text-(--text-secondary)">
+            <div className="text-(--text-secondary) truncate">
               {pendingUpdates.slice(0, 3).map((u) => `${u.name} v${u.current} → v${u.latest}`).join(" · ")}
             </div>
           </div>
+          {/* Stage.md §2.6 — Ignore / Later / Update Now. Per-update
+             dismissal is stored client-side via useUpdateDismissals;
+             "Ignore" sticks until the latest pointer moves, "Later"
+             snoozes 24h. Only surface Ignore/Later when there's exactly
+             one pending update so the buttons map to an unambiguous target. */}
+          {pendingUpdates.length === 1 && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  const u = pendingUpdates[0]
+                  if (u.latest) ignoreUpdate(u.name, u.latest)
+                }}
+              >
+                Ignore
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  const u = pendingUpdates[0]
+                  if (u.latest) snoozeUpdate(u.name, u.latest)
+                }}
+              >
+                Later
+              </Button>
+            </>
+          )}
           <Button
             size="sm"
             variant="primary"
@@ -270,7 +307,7 @@ export default function Dashboard({
               setCurrentTab("install")
             }}
           >
-            {pendingUpdates.length === 1 ? "Review & update" : "View"}
+            {pendingUpdates.length === 1 ? "Update now" : "View"}
           </Button>
         </div>
       )}

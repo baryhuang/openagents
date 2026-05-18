@@ -3,7 +3,6 @@ import { Switch } from "../../components/ui/Switch"
 import { Label } from "../../components/ui/Label"
 import { Button } from "../../components/ui/Button"
 import { Separator } from "../../components/ui/Separator"
-import { Skeleton } from "../../components/ui/Skeleton"
 import type { RuntimeInfo, Workspace } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 
@@ -69,33 +68,13 @@ export default function Settings({
     loadSettings()
     loadLauncherVersion()
     loadWorkspaces()
-    // Defer the slow runtime check so the page paints first, then keep
-    // re-polling at short intervals while the background latestVersion is
-    // still pending, then back off to the slow interval.
-    let shortPolls = 0
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const scheduleNext = (info: RuntimeInfo | null): void => {
-      if (cancelled) return
-      const stillLoading = !info || !info.latestVersion
-      const delay = stillLoading && shortPolls < 10 ? 2000 : 30000
-      timer = setTimeout(async () => {
-        if (cancelled) return
-        shortPolls += 1
-        const next = await loadRuntime()
-        loadWorkspaces()
-        scheduleNext(next ?? null)
-      }, delay)
-    }
-    const initial = setTimeout(async () => {
-      const info = await loadRuntime()
-      scheduleNext(info ?? null)
-    }, 0)
-    return () => {
-      cancelled = true
-      clearTimeout(initial)
-      if (timer) clearTimeout(timer)
-    }
+    loadRuntime()
+    // Mirror legacy: refresh runtime + workspaces every 5s while Settings is mounted.
+    const id = setInterval(() => {
+      loadRuntime()
+      loadWorkspaces()
+    }, 5000)
+    return () => clearInterval(id)
   }, [loadSettings, loadRuntime, loadWorkspaces, loadLauncherVersion])
 
   const handleStartOnBoot = async (checked: boolean): Promise<void> => {
@@ -125,57 +104,48 @@ export default function Settings({
     }
   }
 
-  const runtimeRows: Array<{
-    label: string
-    value: string
-    ok: boolean | null
-    loading: boolean
-  }> = [
-    {
-      label: "Node.js:",
-      value: runtimeInfo?.nodeVersion || "Not installed",
-      ok: runtimeInfo ? !!runtimeInfo.nodeVersion : null,
-      loading: !runtimeInfo,
-    },
-    {
-      label: "npm:",
-      value: runtimeInfo?.npmVersion
-        ? `v${runtimeInfo.npmVersion}`
-        : "Not installed",
-      ok: runtimeInfo ? !!runtimeInfo.npmVersion : null,
-      loading: !runtimeInfo,
-    },
-    {
-      label: "Core Library:",
-      value: runtimeInfo?.coreVersion
-        ? `v${runtimeInfo.coreVersion}`
-        : "Not installed",
-      ok: runtimeInfo ? !!runtimeInfo.coreVersion : null,
-      loading: !runtimeInfo,
-    },
-    {
-      label: "Latest Available:",
-      value: runtimeInfo?.latestVersion
-        ? `v${runtimeInfo.latestVersion}${
-            runtimeInfo.coreVersion === runtimeInfo.latestVersion
-              ? " (up to date)"
-              : " (update available)"
-          }`
-        : "Unable to check",
-      ok:
-        runtimeInfo && runtimeInfo.latestVersion
-          ? runtimeInfo.coreVersion === runtimeInfo.latestVersion
-          : null,
-      loading:
-        !runtimeInfo || (!!runtimeInfo.npmVersion && !runtimeInfo.latestVersion),
-    },
-  ]
-
-  const runtimeColor = (ok: boolean | null): string | undefined => {
-    if (ok === null) return undefined
-    if (ok === true) return "var(--success-text)"
-    return "var(--danger-text)"
-  }
+  // Mirror legacy refreshSettingsRuntime: text + green/red/warning color only.
+  // "Checking..." while the first runtime:info hasn't returned.
+  const runtimeRows: Array<{ label: string; value: string; color?: string }> = (() => {
+    if (!runtimeInfo) {
+      return [
+        { label: "Node.js:", value: "Checking..." },
+        { label: "npm:", value: "Checking..." },
+        { label: "Core Library:", value: "Checking..." },
+        { label: "Latest Available:", value: "Checking..." },
+      ]
+    }
+    const upToDate =
+      !!runtimeInfo.latestVersion && runtimeInfo.coreVersion === runtimeInfo.latestVersion
+    return [
+      {
+        label: "Node.js:",
+        value: runtimeInfo.nodeVersion || "Not installed",
+        color: runtimeInfo.nodeVersion ? "var(--success-text)" : "var(--danger-text)",
+      },
+      {
+        label: "npm:",
+        value: runtimeInfo.npmVersion ? `v${runtimeInfo.npmVersion}` : "Not installed",
+        color: runtimeInfo.npmVersion ? "var(--success-text)" : "var(--danger-text)",
+      },
+      {
+        label: "Core Library:",
+        value: runtimeInfo.coreVersion ? `v${runtimeInfo.coreVersion}` : "Not installed",
+        color: runtimeInfo.coreVersion ? "var(--success-text)" : "var(--danger-text)",
+      },
+      {
+        label: "Latest Available:",
+        value: runtimeInfo.latestVersion
+          ? `v${runtimeInfo.latestVersion}${upToDate ? " (up to date)" : " (update available)"}`
+          : "Unable to check",
+        color: runtimeInfo.latestVersion
+          ? upToDate
+            ? "var(--success-text)"
+            : "var(--warning-text)"
+          : undefined,
+      },
+    ]
+  })()
 
   return (
     <section>
@@ -277,11 +247,7 @@ export default function Settings({
             className={`flex justify-between items-center py-2.75 text-[13px] border-b border-(--border) ${idx === runtimeRows.length - 1 ? "border-b-0 mb-2" : ""}`}
           >
             <span>{row.label}</span>
-            {row.loading ? (
-              <Skeleton className="h-3 w-32" />
-            ) : (
-              <span style={{ color: runtimeColor(row.ok) }}>{row.value}</span>
-            )}
+            <span style={{ color: row.color }}>{row.value}</span>
           </div>
         ))}
       </div>
@@ -290,12 +256,7 @@ export default function Settings({
       <div className="card-legacy">
         <h3>About</h3>
         <p className="text-[13px] mb-2 flex items-center gap-1.5">
-          OpenAgents Launcher{" "}
-          {launcherVersion === "--" ? (
-            <Skeleton className="h-3 w-12 inline-block" />
-          ) : (
-            launcherVersion
-          )}
+          OpenAgents Launcher {launcherVersion}
         </p>
         <p className="text-[13px]">
           <a

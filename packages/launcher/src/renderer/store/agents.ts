@@ -1,33 +1,23 @@
 import { create } from 'zustand'
 import type { Agent } from '../types'
 
-export type DaemonState = 'online' | 'starting' | 'offline'
+export type DaemonState = 'running' | 'starting' | 'stopped' | 'offline'
 
 interface AgentsState {
-  // Agent list — replaces legacy module-level agent array
   agents: Agent[]
   setAgents: (agents: Agent[]) => void
 
-  // Pending start/stop — replaces legacy _pendingAgentActions Set
   pendingAgentActions: Set<string>
   addPendingAction: (name: string) => void
   removePendingAction: (name: string) => void
 
-  // Version info (fetched alongside agent list)
   coreVersion: string | null
   setCoreVersion: (v: string | null) => void
   launcherVersion: string | null
   setLauncherVersion: (v: string | null) => void
 
-  // Core update banner
   coreUpdateInfo: { current: string; latest: string } | null
   setCoreUpdateInfo: (info: { current: string; latest: string } | null) => void
-
-  // Daemon process liveness, polled from main via agents:daemon-status IPC.
-  // We can't derive this from the agent list — "no agents configured" must
-  // not look identical to "daemon crashed".
-  daemonState: DaemonState
-  setDaemonState: (s: DaemonState) => void
 }
 
 export const useAgentsStore = create<AgentsState>((set) => ({
@@ -51,11 +41,19 @@ export const useAgentsStore = create<AgentsState>((set) => ({
 
   coreUpdateInfo: null,
   setCoreUpdateInfo: (info) => set({ coreUpdateInfo: info }),
-
-  daemonState: 'offline',
-  setDaemonState: (s) => set({ daemonState: s }),
 }))
 
+// Derive daemon liveness from the agent list, matching the legacy launcher.
+// running   — any agent is online/running/idle
+// starting  — any agent is starting/reconnecting
+// stopped   — agents exist but none are running
+// offline   — no agents configured
 export function useDaemonStatus(): DaemonState {
-  return useAgentsStore((s) => s.daemonState)
+  return useAgentsStore((s) => {
+    const agents = s.agents
+    if (agents.some((a) => a.state === 'online' || a.state === 'running' || a.state === 'idle')) return 'running'
+    if (agents.some((a) => a.state === 'starting' || a.state === 'reconnecting')) return 'starting'
+    if (agents.length > 0) return 'stopped'
+    return 'offline'
+  })
 }

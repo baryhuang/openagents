@@ -2,9 +2,13 @@ import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } from 'ele
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import { execSync, execFile } from 'child_process'
+import crypto from 'crypto'
+import { pipeline } from 'stream/promises'
+import { Transform } from 'stream'
+import { execSync, execFile, spawnSync } from 'child_process'
 import { Store } from './store'
 import { AgentManager } from './agent-manager'
+import { readPathEnv, writePathEnv, withPathEnv } from './env'
 
 function execFileAsync(file: string, args: string[], opts: { timeout?: number; env?: NodeJS.ProcessEnv } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -13,6 +17,50 @@ function execFileAsync(file: string, args: string[], opts: { timeout?: number; e
       else resolve((stdout || '').toString().trim())
     })
   })
+}
+
+/**
+ * Belt-and-braces guard for the install pipeline. The agent-launcher core
+ * resolves `npm` via `whichBinary('npm')` → first line of `where npm`.
+ *
+ * On Windows with nvm-for-windows installed, `C:\nvm4w\nodejs\` contains both
+ *   - `npm`      (Unix shebang script, no extension)
+ *   - `npm.cmd`  (Windows batch shim)
+ *
+ * `where` lists the bare `npm` first, so cmd.exe ends up trying to run a Unix
+ * script and dies with "is not recognized as an internal or external command"
+ * — breaking every agent install. The bundled portable runtime only ships
+ * `npm.cmd`, so forcing PORTABLE_NODE_DIR to the very front of PATH makes
+ * `where npm` return our `npm.cmd` first instead.
+ *
+ * Idempotent: if PORTABLE_NODE_DIR is already first, this is a no-op.
+ */
+function ensureBundledRuntimeFirstOnPath(): void {
+  if (process.platform !== 'win32') return
+  if (!fs.existsSync(PORTABLE_NODE_DIR)) return
+  const sep = ';'
+  const target = PORTABLE_NODE_DIR.toLowerCase()
+  const parts = readPathEnv().split(sep)
+  if (parts.length > 0 && parts[0].toLowerCase() === target) return
+  const filtered = parts.filter((p) => p.toLowerCase() !== target)
+  writePathEnv([PORTABLE_NODE_DIR, ...filtered].join(sep))
+}
+
+// Smoke-test a node binary. Returns true only if `--version` exits cleanly.
+// Used at startup to detect a corrupt bundled node.exe (e.g. from an
+// interrupted download) that Windows would refuse to spawn with
+// "此应用无法在你的电脑上运行".
+function canExecuteNodeBinary(binaryPath: string): boolean {
+  try {
+    const r = spawnSync(binaryPath, ['--version'], {
+      timeout: 5000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return r.status === 0 && !r.error
+  } catch {
+    return false
+  }
 }
 
 app.setName('OpenAgents Launcher')
@@ -62,51 +110,160 @@ function slog(msg: string): void {
   console.log('[startup]', msg)
 }
 
-function downloadFile(https: typeof import('https'), url: string, destPath: string, onProgress: ((pct: number, detail: string) => void) | null): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const doGet = (u: string): void => {
-      https.get(u, (res) => {
-        if (res.statusCode === 302 || res.statusCode === 301) {
-          doGet(res.headers.location as string)
+// Atomic download with backpressure and on-error cleanup.
+// Writes to `${destPath}.part`, then renames on success. On any error
+// (HTTP error, ECONNRESET mid-stream, write failure) the partial is
+// deleted so the next launch doesn't see a corrupt file at the final path.
+async function downloadFile(
+  https: typeof import('https'),
+  url: string,
+  destPath: string,
+  onProgress: ((pct: number, detail: string) => void) | null,
+): Promise<void> {
+  const tmpPath = destPath + '.part'
+  try { fs.unlinkSync(tmpPath) } catch {}
+
+  const resolveResponse = (u: string, hops = 0): Promise<import('http').IncomingMessage> =>
+    new Promise((resolve, reject) => {
+      if (hops > 5) { reject(new Error('Too many redirects')); return }
+      const req = https.get(u, (res) => {
+        const status = res.statusCode || 0
+        if ((status === 301 || status === 302 || status === 307 || status === 308) && res.headers.location) {
+          res.resume()
+          resolveResponse(res.headers.location, hops + 1).then(resolve, reject)
           return
         }
-        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return }
-        const total = parseInt(res.headers['content-length'] || '0')
-        let downloaded = 0
-        const file = fs.createWriteStream(destPath)
-        res.on('data', (chunk: Buffer) => {
-          downloaded += chunk.length
-          file.write(chunk)
-          if (total && onProgress) onProgress(Math.round(downloaded / total * 100), `${(downloaded / 1e6).toFixed(1)} MB`)
-        })
-        res.on('end', () => { file.end(resolve) })
-        res.on('error', reject)
-      }).on('error', reject)
+        if (status !== 200) {
+          res.resume()
+          reject(new Error(`HTTP ${status} for ${u}`))
+          return
+        }
+        resolve(res)
+      })
+      req.on('error', reject)
+      req.setTimeout(60_000, () => req.destroy(new Error(`Request timed out: ${u}`)))
+    })
+
+  try {
+    const res = await resolveResponse(url)
+    const total = parseInt(res.headers['content-length'] || '0', 10) || 0
+    let downloaded = 0
+    if (onProgress) {
+      res.on('data', (chunk: Buffer) => {
+        downloaded += chunk.length
+        if (total) onProgress(Math.round((downloaded / total) * 100), `${(downloaded / 1e6).toFixed(1)} MB`)
+      })
     }
-    doGet(url)
+    // pipeline() respects backpressure and rejects on any error from either
+    // stream, including mid-download ECONNRESET — exactly the failure mode
+    // that left a corrupt node.exe on disk in the original implementation.
+    await pipeline(res, fs.createWriteStream(tmpPath))
+    if (total && downloaded !== total) {
+      throw new Error(`Short read: got ${downloaded} of ${total} bytes`)
+    }
+    fs.renameSync(tmpPath, destPath)
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath) } catch {}
+    throw err
+  }
+}
+
+function sha256OfFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256')
+    const stream = fs.createReadStream(filePath)
+    stream.on('data', (c) => hash.update(c))
+    stream.on('end', () => resolve(hash.digest('hex').toLowerCase()))
+    stream.on('error', reject)
   })
+}
+
+async function fetchNodeShasum(
+  https: typeof import('https'),
+  nodeVersion: string,
+  relativePath: string,
+): Promise<string | null> {
+  const url = `https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt`
+  return new Promise((resolve) => {
+    https.get(url, (res) => {
+      if (res.statusCode !== 200) { res.resume(); resolve(null); return }
+      let body = ''
+      res.setEncoding('utf-8')
+      res.on('data', (c) => { body += c })
+      res.on('end', () => {
+        for (const line of body.split(/\r?\n/)) {
+          const [sum, file] = line.trim().split(/\s+/)
+          if (file === relativePath && sum) { resolve(sum.toLowerCase()); return }
+        }
+        resolve(null)
+      })
+      res.on('error', () => resolve(null))
+    }).on('error', () => resolve(null))
+  })
+}
+
+// Map process.arch to Node.js distribution arch. Falls back to x64 — Windows
+// ia32 is not produced for v22+ and Node.js does not publish 32-bit Windows
+// binaries anymore.
+function nodeDistArch(): string {
+  if (process.arch === 'arm64') return 'arm64'
+  return 'x64'
+}
+
+async function downloadAndVerify(
+  https: typeof import('https'),
+  url: string,
+  destPath: string,
+  expectedSha: string | null,
+  onProgress: ((pct: number, detail: string) => void) | null,
+): Promise<void> {
+  let lastErr: Error | null = null
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await downloadFile(https, url, destPath, onProgress)
+      if (expectedSha) {
+        const actual = await sha256OfFile(destPath)
+        if (actual !== expectedSha) {
+          try { fs.unlinkSync(destPath) } catch {}
+          throw new Error(`SHA256 mismatch for ${path.basename(destPath)}: expected ${expectedSha.slice(0, 12)}…, got ${actual.slice(0, 12)}…`)
+        }
+      }
+      return
+    } catch (e: unknown) {
+      lastErr = e as Error
+      slog(`download attempt ${attempt} failed for ${url}: ${lastErr.message}`)
+    }
+  }
+  throw lastErr || new Error('download failed')
 }
 
 async function downloadNodejs(nodejsDir: string, onProgress: (pct: number, detail: string) => void): Promise<void> {
   const https = require('https')
   const nodeVersion = 'v22.14.0'
-  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const arch = nodeDistArch()
 
   try { fs.rmSync(nodejsDir, { recursive: true, force: true }) } catch {}
   fs.mkdirSync(nodejsDir, { recursive: true })
   slog(`downloadNodejs: platform=${process.platform} arch=${arch} dir=${nodejsDir}`)
 
   if (process.platform === 'win32') {
-    const nodeExeUrl = `https://nodejs.org/dist/${nodeVersion}/win-${arch}/node.exe`
+    const nodeRelative = `win-${arch}/node.exe`
+    const nodeExeUrl = `https://nodejs.org/dist/${nodeVersion}/${nodeRelative}`
     const nodeExeDest = path.join(nodejsDir, 'node.exe')
-    await downloadFile(https, nodeExeUrl, nodeExeDest, onProgress)
+    const expectedSha = await fetchNodeShasum(https, nodeVersion, nodeRelative)
+    if (!expectedSha) slog(`SHASUMS256.txt unavailable — proceeding without hash verification`)
+    await downloadAndVerify(https, nodeExeUrl, nodeExeDest, expectedSha, onProgress)
+    if (!canExecuteNodeBinary(nodeExeDest)) {
+      try { fs.unlinkSync(nodeExeDest) } catch {}
+      throw new Error('Bundled node.exe failed smoke test (--version did not exit cleanly). The download may be corrupt or blocked by security software.')
+    }
 
     const npmVersion = '10.9.2'
     const npmUrl = `https://registry.npmjs.org/npm/-/npm-${npmVersion}.tgz`
     const npmTgz = path.join(os.tmpdir(), `npm-${npmVersion}.tgz`)
     const npmModDir = path.join(nodejsDir, 'node_modules', 'npm')
     if (onProgress) onProgress(85, 'Installing npm...')
-    await downloadFile(https, npmUrl, npmTgz, null)
+    await downloadAndVerify(https, npmUrl, npmTgz, null, null)
 
     fs.mkdirSync(npmModDir, { recursive: true })
     try {
@@ -230,7 +387,7 @@ async function ensureCoreLibrary(): Promise<void> {
         try {
           execSync(`${npmCmd} install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`, {
             stdio: 'pipe', timeout: 120000,
-            env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+            env: withPathEnv(PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + readPathEnv()),
           })
           try { installedVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version } catch {}
         } catch {}
@@ -267,7 +424,7 @@ async function checkCoreUpdate(): Promise<void> {
   try {
     const latest = execSync(`${npmCmd} view ${CORE_PKG} version`, {
       encoding: 'utf-8', timeout: 15000,
-      env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+      env: withPathEnv(PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + readPathEnv()),
     }).trim()
 
     if (coreVersion && latest && latest !== coreVersion) {
@@ -504,10 +661,22 @@ async function runInstallWithPhases<T>(
   }
 }
 
+// Bundled-only resolver — matches legacy. Settings/runtime info should
+// reflect the launcher's own runtime, not whatever happens to be on PATH.
+function resolveBundledNode(): string | null {
+  const candidates = [
+    path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node'),
+    path.join(PORTABLE_NODE_DIR, 'bin', 'node'),
+  ]
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c
+  }
+  return null
+}
+
 function resolveNpmInvocation(): { node: string; args: string[] } | null {
-  const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node')
-  const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node')
-  if (!fs.existsSync(nodeBin)) return null
+  const nodeBin = resolveBundledNode()
+  if (!nodeBin) return null
   const candidates = [
     path.join(PORTABLE_NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
     path.join(PORTABLE_NODE_DIR, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
@@ -533,19 +702,22 @@ async function refreshRuntimeInfo(force = false): Promise<RuntimeInfo> {
 
   _runtimeCache.refreshing = true
   try {
-    const env = { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') }
+    const env = withPathEnv(PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + readPathEnv())
     const npm = resolveNpmInvocation()
 
     if (needStable) {
-      const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node')
-      const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node')
-      if (fs.existsSync(nodeBin)) {
+      const nodeBin = resolveBundledNode()
+      if (nodeBin) {
         try { info.nodeVersion = await execFileAsync(nodeBin, ['--version'], { timeout: 5000 }) } catch {}
+      } else {
+        info.nodeVersion = null
       }
       if (npm) {
         try {
           info.npmVersion = await execFileAsync(npm.node, [...npm.args, '--version'], { timeout: 5000, env })
         } catch {}
+      } else {
+        info.npmVersion = null
       }
       _runtimeCache.stableAt = now
     }
@@ -582,15 +754,18 @@ function setupIPC(): void {
     if (needStable && !_runtimeCache.refreshing) {
       _runtimeCache.refreshing = true
       try {
-        const env = { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') }
+        const env = withPathEnv(PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + readPathEnv())
         const npm = resolveNpmInvocation()
-        const nodeUnified = path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node')
-        const nodeBin = fs.existsSync(nodeUnified) ? nodeUnified : path.join(PORTABLE_NODE_DIR, 'bin', 'node')
-        if (fs.existsSync(nodeBin)) {
+        const nodeBin = resolveBundledNode()
+        if (nodeBin) {
           try { info.nodeVersion = await execFileAsync(nodeBin, ['--version'], { timeout: 5000 }) } catch {}
+        } else {
+          info.nodeVersion = null
         }
         if (npm) {
           try { info.npmVersion = await execFileAsync(npm.node, [...npm.args, '--version'], { timeout: 5000, env }) } catch {}
+        } else {
+          info.npmVersion = null
         }
         _runtimeCache.stableAt = Date.now()
       } finally {
@@ -634,8 +809,12 @@ function setupIPC(): void {
   })
   ipcMain.handle('agents:clear-logs-range', (_e, start, end) => requireManager().clearLogsInRange(start, end))
 
-  ipcMain.handle('agents:install-type', (_e, agentType) => requireManager().installAgentType(agentType))
+  ipcMain.handle('agents:install-type', (_e, agentType) => {
+    ensureBundledRuntimeFirstOnPath()
+    return requireManager().installAgentType(agentType)
+  })
   ipcMain.handle('agents:install-type-streaming', async (_e, agentType) => {
+    ensureBundledRuntimeFirstOnPath()
     const verb = agentManager?.getInstalledVersion(agentType) ? 'update' : 'install'
     const result = await runInstallWithPhases(agentType, verb, (cb) =>
       requireManager().installAgentTypeStreaming(agentType, cb),
@@ -645,15 +824,31 @@ function setupIPC(): void {
     // fresh data instead of an empty cache — otherwise a just-updated agent
     // could keep showing "Update available" because the renderer overrides
     // its store with the empty list before the hourly background refresh.
-    refreshAgentUpdates().catch(() => {})
+    // Await the refresh before returning so the renderer's follow-up
+    // useEffect → checkAgentUpdates() call (no `force`) sees the freshly
+    // populated cache instead of the empty value clearCatalogCache() just
+    // wrote. Without the await, the rollback / install / uninstall returns,
+    // the detail page re-fetches, gets `[]`, and the "Update to v…" button
+    // disappears even when one is genuinely available.
+    await refreshAgentUpdates().catch(() => {})
     return result
   })
-  ipcMain.handle('agents:uninstall-type', (_e, agentType) => requireManager().uninstallAgentType(agentType))
+  ipcMain.handle('agents:uninstall-type', (_e, agentType) => {
+    ensureBundledRuntimeFirstOnPath()
+    return requireManager().uninstallAgentType(agentType)
+  })
   ipcMain.handle('agents:uninstall-type-streaming', async (_e, agentType) => {
+    ensureBundledRuntimeFirstOnPath()
     const result = await runInstallWithPhases(agentType, 'uninstall', (cb) =>
       requireManager().uninstallAgentTypeStreaming(agentType, cb),
     )
-    refreshAgentUpdates().catch(() => {})
+    // Await the refresh before returning so the renderer's follow-up
+    // useEffect → checkAgentUpdates() call (no `force`) sees the freshly
+    // populated cache instead of the empty value clearCatalogCache() just
+    // wrote. Without the await, the rollback / install / uninstall returns,
+    // the detail page re-fetches, gets `[]`, and the "Update to v…" button
+    // disappears even when one is genuinely available.
+    await refreshAgentUpdates().catch(() => {})
     return result
   })
 
@@ -662,12 +857,34 @@ function setupIPC(): void {
     if (!agentManager) return []
     try { return await agentManager.checkAgentUpdates() } catch { return [] }
   })
+  // Stage.md §2.5 — install at an arbitrary version/dist-tag. The renderer
+  // uses this for update-channel switches (Beta / Nightly) and any future
+  // "install specific version" flows. Shares the streaming + post-job
+  // cache-refresh harness with install / uninstall / rollback.
+  ipcMain.handle('agents:install-at-version-streaming', async (_e, agentType, target) => {
+    if (!agentManager) return { success: false, error: 'Launcher initializing' }
+    ensureBundledRuntimeFirstOnPath()
+    const verb = agentManager.getInstalledVersion(agentType) ? 'update' : 'install'
+    const result = await runInstallWithPhases(agentType, verb, (cb) =>
+      agentManager!.installAgentTypeAtVersionStreaming(agentType, target, cb),
+    )
+    await refreshAgentUpdates().catch(() => {})
+    return result
+  })
+
   ipcMain.handle('agents:rollback', async (_e, agentType) => {
     if (!agentManager) return { success: false, error: 'Launcher initializing' }
+    ensureBundledRuntimeFirstOnPath()
     const result = await runInstallWithPhases(agentType, 'rollback', (cb) =>
       agentManager!.rollbackAgentType(agentType, cb),
     )
-    refreshAgentUpdates().catch(() => {})
+    // Await the refresh before returning so the renderer's follow-up
+    // useEffect → checkAgentUpdates() call (no `force`) sees the freshly
+    // populated cache instead of the empty value clearCatalogCache() just
+    // wrote. Without the await, the rollback / install / uninstall returns,
+    // the detail page re-fetches, gets `[]`, and the "Update to v…" button
+    // disappears even when one is genuinely available.
+    await refreshAgentUpdates().catch(() => {})
     return result
   })
   ipcMain.handle('agents:changelog', async (_e, agentType) => {
@@ -714,7 +931,7 @@ function setupIPC(): void {
     try {
       execSync(`"${npmBin}" install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`, {
         stdio: 'ignore', timeout: 120000,
-        env: { ...process.env, PATH: PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH || '') },
+        env: withPathEnv(PORTABLE_NODE_DIR + (process.platform === 'win32' ? ';' : ':') + readPathEnv()),
       })
       const corePkgPath = path.join(GLOBAL_MODULES, CORE_PKG, 'package.json')
       try { coreVersion = JSON.parse(fs.readFileSync(corePkgPath, 'utf-8')).version } catch {}
@@ -812,8 +1029,31 @@ app.whenReady().then(async () => {
   setupIPC()
   createTray()
 
-  const nodeExists = fs.existsSync(path.join(PORTABLE_NODE_DIR, process.platform === 'win32' ? 'node.exe' : 'node'))
-    || fs.existsSync(path.join(PORTABLE_NODE_DIR, 'bin', 'node'))
+  // Detect a working bundled node, not just file presence. A previous
+  // download interrupted by ECONNRESET leaves a corrupt node.exe at the
+  // expected size — file exists, but Windows refuses to spawn it
+  // ("此应用无法在你的电脑上运行"), which historically left every install,
+  // update and daemon spawn broken forever. Smoke-test up front and wipe
+  // anything that fails so the install path re-runs.
+  const bundledNodePath = process.platform === 'win32'
+    ? path.join(PORTABLE_NODE_DIR, 'node.exe')
+    : path.join(PORTABLE_NODE_DIR, 'node')
+  const altUnixNode = path.join(PORTABLE_NODE_DIR, 'bin', 'node')
+  let nodeExists = false
+  if (fs.existsSync(bundledNodePath)) {
+    if (canExecuteNodeBinary(bundledNodePath)) {
+      nodeExists = true
+    } else {
+      slog(`bundled node at ${bundledNodePath} failed smoke test — wiping for re-download`)
+      try { fs.rmSync(PORTABLE_NODE_DIR, { recursive: true, force: true }) } catch {}
+    }
+  } else if (process.platform !== 'win32' && fs.existsSync(altUnixNode)) {
+    nodeExists = canExecuteNodeBinary(altUnixNode)
+    if (!nodeExists) {
+      slog(`bundled node at ${altUnixNode} failed smoke test — wiping for re-download`)
+      try { fs.rmSync(PORTABLE_NODE_DIR, { recursive: true, force: true }) } catch {}
+    }
+  }
 
   let splash: BrowserWindow | null = null
 
@@ -892,8 +1132,23 @@ app.whenReady().then(async () => {
   updateSplash('Checking for updates...', 60)
   _updateSplash = updateSplash
 
+  // Prepend the bundled portable runtime to PATH so child processes
+  // (npm install, daemon spawn, etc) resolve `node` / `npm` to OUR copies,
+  // not to whatever the user happens to have first on PATH.
+  //
+  // Critical on Windows: nvm-for-windows ships a bare Unix shebang script
+  // named `npm` (no extension) alongside `npm.cmd`. If `where npm` returns
+  // the Unix script first, cmd.exe refuses to run it ("is not recognized
+  // as an internal or external command") — breaks every install. The
+  // bundled prefix only contains `npm.cmd`, so forcing PORTABLE_NODE_DIR
+  // to the front gets us a runnable shim.
+  //
+  // Use read/writePathEnv so we update Windows' canonical `Path` key in
+  // place rather than creating a parallel `PATH` key that the spawn env
+  // spread can leak to children inconsistently.
   if (process.platform === 'win32') {
-    const pathDirs = (process.env.PATH || '').toLowerCase().split(';')
+    const currentPath = readPathEnv()
+    const pathDirs = currentPath.toLowerCase().split(';')
     const candidates = [
       PORTABLE_NODE_DIR,
       path.join(process.env.APPDATA || '', 'npm'),
@@ -902,11 +1157,14 @@ app.whenReady().then(async () => {
     ].filter(d => {
       try { return d && fs.existsSync(d) && !pathDirs.includes(d.toLowerCase()) } catch { return false }
     })
-    if (candidates.length) process.env.PATH += ';' + candidates.join(';')
+    if (candidates.length) {
+      writePathEnv(candidates.join(';') + ';' + currentPath)
+    }
   } else {
     const binDir = path.join(PORTABLE_NODE_DIR, 'bin')
-    if (fs.existsSync(binDir) && !(process.env.PATH || '').includes(binDir)) {
-      process.env.PATH = binDir + ':' + (process.env.PATH || '')
+    const currentPath = readPathEnv()
+    if (fs.existsSync(binDir) && !currentPath.includes(binDir)) {
+      writePathEnv(binDir + ':' + currentPath)
     }
   }
 

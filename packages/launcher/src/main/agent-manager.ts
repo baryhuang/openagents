@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import https from 'https'
 import { spawnSync } from 'child_process'
+import { withPathEnv } from './env'
 
 const CONFIG_DIR = path.join(os.homedir(), '.openagents')
 const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher')
@@ -99,7 +100,7 @@ function resolveWorkingNode(portableNodeDir: string, enhancedPath: string): stri
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5000,
       windowsHide: true,
-      env: { ...process.env, PATH: enhancedPath },
+      env: withPathEnv(enhancedPath),
     }) as string
     for (const line of out.split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean)) {
       if (canExecuteNode(line)) return line
@@ -570,14 +571,27 @@ export class AgentManager {
       const version = this.getInstalledVersion(agentType)
       const prev = data[agentType]
       const history = prev?.history ? [...prev.history] : []
-      if (prev?.version && prev.version !== version) {
-        history.unshift({ version: prev.version, installedAt: prev.installedAt })
+      const versionChanged = !!(prev?.version && version && prev.version !== version)
+      if (versionChanged) {
+        history.unshift({ version: prev.version!, installedAt: prev.installedAt })
       }
+      // Only carry a previousVersion when the install actually changed the
+      // version. A reinstall / repair that lands on the same version must NOT
+      // record `previousVersion = currentVersion` — that self-referential
+      // pointer lights up `canRollback` and points `rollbackAgentType` at the
+      // same version we're already on. End result before this fix: a
+      // permanent "Roll back" button that no-op reinstalls the current
+      // version forever.
+      const nextPreviousVersion = versionChanged
+        ? prev!.version
+        : (prev?.previousVersion && prev.previousVersion !== version
+            ? prev.previousVersion
+            : null)
       data[agentType] = {
         name: agentType,
         version,
         installedAt: new Date().toISOString(),
-        previousVersion: prev?.version || null,
+        previousVersion: nextPreviousVersion,
         history: history.slice(0, 10),
       }
       this._writeInstalledHistory(data)
@@ -599,20 +613,32 @@ export class AgentManager {
     const out: InstalledAgentRecord[] = []
     for (const name of Object.keys(data)) {
       const r = data[name]
-      out.push({ ...r, version: r.version || this.getInstalledVersion(name) })
+      const version = r.version || this.getInstalledVersion(name)
+      // Auto-heal self-referential previousVersion / history entries written
+      // by the pre-fix _recordInstall code. Without this scrub, machines
+      // upgraded from the buggy version keep seeing the Roll back button
+      // even though the only "previous" pointer points at themselves.
+      const cleanHistory = (r.history || []).filter((h) => h.version && h.version !== version)
+      const cleanPrev = r.previousVersion && r.previousVersion !== version ? r.previousVersion : null
+      out.push({ ...r, version, history: cleanHistory, previousVersion: cleanPrev })
     }
     return out
   }
 
-  async rollbackAgentType(agentType: string, onData: (data: string) => void): Promise<{ success: boolean; version: string | null; error?: string }> {
-    const data = this.getInstalledHistory()
-    const record = data[agentType]
-    const target = record?.history?.[0]?.version || record?.previousVersion
-    if (!target) return { success: false, version: null, error: 'No previous version to roll back to' }
-
+  /**
+   * Install an npm-backed agent at an arbitrary version specifier (semver
+   * version, dist-tag, or anything `npm install pkg@<spec>` accepts).
+   * Powers both rollback (previous version) and update-channel installs
+   * (stage.md §2.5 — Beta / Nightly).
+   */
+  async _installAtVersionTag(
+    agentType: string,
+    target: string,
+    onData: (data: string) => void,
+  ): Promise<{ success: boolean; version: string | null; error?: string }> {
     const entry = this._getRegistryEntry(agentType)
     const npmPkg = this._resolveNpmPackage(entry)
-    if (!npmPkg) return { success: false, version: null, error: 'Cannot determine npm package for rollback' }
+    if (!npmPkg) return { success: false, version: null, error: 'Cannot determine npm package' }
 
     const { spawn } = require('child_process') as typeof import('child_process')
     const prefixDir = path.join(CONFIG_DIR, 'runtimes', agentType)
@@ -633,22 +659,64 @@ export class AgentManager {
         if (code === 0) {
           this._recordInstall(agentType)
           this.clearCatalogCache()
-          if (onData) onData(`\nRolled back to ${target}.\n`)
-          resolve({ success: true, version: target })
+          // Read what actually landed — for dist-tags the resolved version
+          // can differ from the input string ("beta" → "2.1.144-beta.3").
+          const resolved = this.getInstalledVersion(agentType) || target
+          if (onData) onData(`\nInstalled ${npmPkg}@${resolved}.\n`)
+          resolve({ success: true, version: resolved })
         } else {
-          resolve({ success: false, version: null, error: `Rollback failed with code ${code}` })
+          resolve({ success: false, version: null, error: `Install failed with code ${code}` })
         }
       })
     })
   }
 
+  /**
+   * Wrapper that exposes the version-tag installer to the install IPC.
+   * Used by the AgentDetail update channel selector (stable / beta / nightly).
+   */
+  async installAgentTypeAtVersionStreaming(
+    agentType: string,
+    target: string,
+    onData: (data: string) => void,
+  ): Promise<{ success: boolean; version: string | null; error?: string }> {
+    return this._installAtVersionTag(agentType, target, onData)
+  }
+
+  async rollbackAgentType(agentType: string, onData: (data: string) => void): Promise<{ success: boolean; version: string | null; error?: string }> {
+    const data = this.getInstalledHistory()
+    const record = data[agentType]
+    const current = record?.version || this.getInstalledVersion(agentType)
+    // Resolve the first history / previousVersion entry that is *different*
+    // from the version currently on disk. Without this filter a stale
+    // previousVersion pointer (pre-fix history records carrying
+    // previousVersion === currentVersion) makes rollback re-install the
+    // same version and the UI keep offering Roll back forever.
+    const candidates = [
+      ...(record?.history || []).map((h) => h.version),
+      record?.previousVersion || null,
+    ].filter((v): v is string => !!v && v !== current)
+    const target = candidates[0]
+    if (!target) return { success: false, version: null, error: 'No previous version to roll back to' }
+
+    // Delegate to the shared install-at-version pipeline so rollback and
+    // channel switching share the same npm spawn + history recording path.
+    return this._installAtVersionTag(agentType, target, onData)
+  }
+
   async checkAgentUpdates(options: { force?: boolean } = {}): Promise<Array<{ name: string; current: string | null; latest: string | null }>> {
     const now = Date.now()
     const ttl = 60 * 60 * 1000
-    if (!options.force) {
-      return this._updatesCache.value
-    }
-    if (this._updatesCache.value.length > 0 && now - this._updatesCache.at < ttl) {
+    // Cache hit ONLY when the renderer didn't ask for a forced refresh,
+    // the cache holds something useful, and the entry is still inside the
+    // TTL. The previous implementation had this inverted: `!options.force`
+    // returned the cache unconditionally, even after `clearCatalogCache()`
+    // had reset it to `[]` — so the detail page silently lost the
+    // "Update to v…" button immediately after a rollback / install /
+    // uninstall, until the hourly background refresh re-populated the
+    // cache.
+    const cacheFresh = this._updatesCache.value.length > 0 && now - this._updatesCache.at < ttl
+    if (!options.force && cacheFresh) {
       return this._updatesCache.value
     }
 
@@ -791,9 +859,22 @@ export class AgentManager {
     const { keptLines, removed } = filterLogsByTimeRange(allLines, startTime, endTime)
 
     const nextContent = keptLines.join('\n') + (hasTrailingNewline && keptLines.length > 0 ? '\n' : '')
-    const tempFile = `${logFile}.tmp`
-    fs.writeFileSync(tempFile, nextContent, 'utf-8')
-    fs.renameSync(tempFile, logFile)
+
+    // Rewrite in place rather than write-temp + rename. The daemon spawn
+    // inherits an open append-mode handle to daemon.log
+    // (`stdio: ['ignore', logFd, logFd]`), and on Windows `renameSync` over a
+    // file with any open handle fails with EPERM — that's why the Clear Logs
+    // dialog used to dead-end with a rename error. `openSync('a')` uses
+    // shared write/read/delete mode, so a parallel `r+` open + truncate
+    // succeeds while the daemon keeps appending at the new file end.
+    const nextBytes = Buffer.from(nextContent, 'utf-8')
+    const fd = fs.openSync(logFile, 'r+')
+    try {
+      if (nextBytes.length > 0) fs.writeSync(fd, nextBytes, 0, nextBytes.length, 0)
+      fs.ftruncateSync(fd, nextBytes.length)
+    } finally {
+      fs.closeSync(fd)
+    }
 
     return { removed, remaining: keptLines.length }
   }
@@ -930,7 +1011,7 @@ export class AgentManager {
       const proc = spawn(nodeBin, [cliPath, 'up', '--foreground'], {
         detached: true,
         stdio: ['ignore', logFd, logFd],
-        env: { ...process.env, PATH: enhancedPath },
+        env: withPathEnv(enhancedPath),
         windowsHide: true,
       })
       proc.once('error', (err: Error) => {

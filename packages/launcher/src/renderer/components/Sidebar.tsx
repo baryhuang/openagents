@@ -26,8 +26,9 @@ export default function Sidebar(): React.JSX.Element {
   const daemonStatus = useDaemonStatus()
 
   const daemonLabel =
-    daemonStatus === "online"   ? "Daemon: running"  :
+    daemonStatus === "running"  ? "Daemon: running"  :
     daemonStatus === "starting" ? "Daemon: starting" :
+    daemonStatus === "stopped"  ? "Daemon: stopped"  :
                                   "Daemon: offline"
 
   return (
@@ -106,8 +107,9 @@ export default function Sidebar(): React.JSX.Element {
         <div className="flex items-center gap-2 text-[11px] font-medium text-(--text-tertiary)" title="Daemon status">
           <span className={cn(
             "inline-block w-[7px] h-[7px] rounded-full shrink-0",
-            daemonStatus === "online"   && "bg-(--success) shadow-[0_0_0_3px_rgba(48,209,88,0.15)]",
+            daemonStatus === "running"  && "bg-(--success) shadow-[0_0_0_3px_rgba(48,209,88,0.15)]",
             daemonStatus === "starting" && "bg-(--warning) animate-[pulse-dot_1.5s_infinite]",
+            daemonStatus === "stopped"  && "bg-(--warning)",
             daemonStatus === "offline"  && "bg-(--text-tertiary)",
           )} />
           <span>{daemonLabel}</span>

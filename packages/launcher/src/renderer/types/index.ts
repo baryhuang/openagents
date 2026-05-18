@@ -70,6 +70,13 @@ export interface CatalogEntry {
   demo?: string
   demo_url?: string
   long_description?: string
+  // Stage.md §2.2 "使用入门指南" — optional structured getting-started hints.
+  // Renderer falls back to deriving from install.binary + check_ready when
+  // these aren't set, so older registry entries still get a useful section.
+  quick_start?: string
+  example_commands?: Array<{ cmd: string; description?: string }>
+  docs?: string
+  github?: string
 }
 
 export interface InstalledAgentRecord {
@@ -139,7 +146,6 @@ declare global {
       startAll(): Promise<unknown>
       stopAll(): Promise<unknown>
       agentStatus(): Promise<Record<string, { state: AgentState; last_error?: string; restarts?: number }>>
-      daemonStatus(): Promise<{ state: 'online' | 'starting' | 'offline'; pid: number | null }>
       agentLogs(name: string, lines: number): Promise<{ lines: string[] }>
       tailAgentLogs(name: string, lines: number, offset: number): Promise<{ lines: string[]; size?: number }>
       clearLogsInRange(start: string, end: string): Promise<{ removed: number; remaining: number }>
@@ -156,6 +162,10 @@ declare global {
       getInstalledAgents(): Promise<InstalledAgentRecord[]>
       checkAgentUpdates(): Promise<AgentUpdateInfo[]>
       rollbackAgentType(type: string): Promise<{ success: boolean; version?: string | null; error?: string }>
+      installAgentTypeAtVersionStreaming(
+        type: string,
+        target: string,
+      ): Promise<{ success: boolean; version?: string | null; error?: string }>
       getAgentChangelog(type: string): Promise<{ versions: Array<{ version: string; date?: string }>; homepage?: string; latest?: string | null; error?: string }>
       getEnvFields(type: string): Promise<EnvField[]>
       getAgentEnv(type: string): Promise<Record<string, string>>

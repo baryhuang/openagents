@@ -10,7 +10,7 @@ import Agents from "./pages/agents"
 import Install from "./pages/install"
 import Logs from "./pages/logs"
 import Settings from "./pages/settings"
-import { InstallMiniBanner } from "./components/InstallProgress"
+import { InstallMiniBanner } from "./components/install-progress/StagedProgress"
 import { useToasts } from "./hooks/useToast"
 import { useInstallProgress } from "./hooks/useInstallProgress"
 

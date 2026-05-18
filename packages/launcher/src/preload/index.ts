@@ -17,7 +17,6 @@ contextBridge.exposeInMainWorld('api', {
   startAll: () => ipcRenderer.invoke('agents:start-all'),
   stopAll: () => ipcRenderer.invoke('agents:stop-all'),
   agentStatus: () => ipcRenderer.invoke('agents:status'),
-  daemonStatus: () => ipcRenderer.invoke('agents:daemon-status'),
   agentLogs: (name: string, lines: number) => ipcRenderer.invoke('agents:logs', name, lines),
   tailAgentLogs: (name: string, lines: number, offset: number) => ipcRenderer.invoke('agents:tail-logs', name, lines, offset),
   clearLogsInRange: (start: string, end: string) => ipcRenderer.invoke('agents:clear-logs-range', start, end),
@@ -35,6 +34,8 @@ contextBridge.exposeInMainWorld('api', {
   getInstalledAgents: () => ipcRenderer.invoke('agents:installed-list'),
   checkAgentUpdates: () => ipcRenderer.invoke('agents:check-updates'),
   rollbackAgentType: (type: string) => ipcRenderer.invoke('agents:rollback', type),
+  installAgentTypeAtVersionStreaming: (type: string, target: string) =>
+    ipcRenderer.invoke('agents:install-at-version-streaming', type, target),
   getAgentChangelog: (type: string) => ipcRenderer.invoke('agents:changelog', type),
 
   getEnvFields: (type: string) => ipcRenderer.invoke('agents:env-fields', type),
