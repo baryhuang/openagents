@@ -443,12 +443,52 @@ class Installer {
           if (onData) onData(`\nDone! ${agentType} is now installed.\n`);
           resolve({ success: true, command: cmd });
         } else {
+          // A partial install can leave a placeholder stub at
+          // bin/<binary>.exe and npm-generated cmd-shims under
+          // node_modules/.bin/<name>{,.cmd,.ps1} that point to it. On
+          // Windows, anything that later tries to run the binary (a health
+          // check, a shell open) triggers a "this app can't run on your PC"
+          // dialog because the stub isn't a real PE executable. Sweep them
+          // up so the next install (or uninstall+reinstall) starts clean.
+          try {
+            this._cleanStaleShims(agentType);
+            this._cleanStubBinary(agentType);
+          } catch {}
           const msg = `Install failed with exit code ${code}`;
           if (onData) onData(`\n${msg}\n`);
           reject(new Error(msg));
         }
       });
     });
+  }
+
+  /**
+   * Remove the placeholder bin/<binary>.exe (and the npm package directory
+   * if it's effectively empty) left over from a failed postinstall.
+   */
+  _cleanStubBinary(agentType) {
+    const entry = this.registry.getEntry(agentType);
+    const install = entry && entry.install;
+    if (!install) return;
+    const binary = install.binary || agentType;
+    const npmPkg = install.npm_package
+      || (() => {
+          const cmd = this._getInstallCommand(install);
+          if (!cmd || !cmd.includes('npm install')) return null;
+          const m = cmd.match(/npm install\s+(?:-g\s+)?(@?[\w-]+(?:\/[\w-]+)?)(?:@\S*)?$/);
+          return m ? m[1] : null;
+        })();
+    if (!npmPkg) return;
+
+    const prefix = getRuntimePrefix(agentType);
+    const pkgDir = path.join(prefix, 'node_modules', npmPkg);
+    const stubDir = path.join(pkgDir, 'bin');
+    for (const ext of ['', '.exe', '.cmd', '.ps1']) {
+      try {
+        const f = path.join(stubDir, binary + ext);
+        if (fs.existsSync(f) && fs.statSync(f).size < 4096) fs.unlinkSync(f);
+      } catch {}
+    }
   }
 
   /**
@@ -680,28 +720,58 @@ class Installer {
     const extraDirs = [];
     try { extraDirs.push(path.dirname(process.execPath)); } catch {}
 
-    // Check for bundled Node.js in ~/.openagents/nodejs/
+    // Whether a usable `node` is already reachable WITHOUT the bundled
+    // standalone node.exe. We must avoid shadowing a working system node with
+    // the launcher's bundled exe: that file is an unsigned standalone
+    // node.exe and on some Windows machines Defender/SmartScreen blocks
+    // CreateProcess on it, which surfaces as `cmd: 拒绝访问` ("Access
+    // Denied") when npm runs `node install.cjs` for packages like
+    // @anthropic-ai/claude-code, plus a "this app can't run on your PC"
+    // dialog.
+    const bundledDir = path.join(this.configDir, 'nodejs');
+    const hasSystemNode = this._hasSystemNode(bundledDir);
+
     if (process.platform === 'win32') {
-      try {
-        const bundledDir = path.join(this.configDir, 'nodejs');
-        if (fs.existsSync(bundledDir)) {
-          // Node.js may be directly in nodejs/ (launcher symlink style) or in nodejs/node-v*/
-          if (fs.existsSync(path.join(bundledDir, 'node.exe'))) {
-            extraDirs.push(bundledDir);
-          }
-          const entries = fs.readdirSync(bundledDir).filter(e => e.startsWith('node-'));
-          if (entries.length > 0) {
-            extraDirs.push(path.join(bundledDir, entries[0]));
-          }
-        }
-      } catch {}
       const appData = env.APPDATA || '';
       if (appData) extraDirs.push(path.join(appData, 'npm'));
       extraDirs.push(env.ProgramFiles ? path.join(env.ProgramFiles, 'nodejs') : 'C:\\Program Files\\nodejs');
       extraDirs.push(env.SystemRoot ? path.join(env.SystemRoot, 'System32') : 'C:\\Windows\\System32');
       extraDirs.push(env.ProgramFiles ? path.join(env.ProgramFiles, 'Git', 'cmd') : 'C:\\Program Files\\Git\\cmd');
+
+      // Bundled node — fallback only. Skip if system node works, otherwise
+      // verify the bundled exe can actually launch before exposing it.
+      if (!hasSystemNode) {
+        try {
+          if (fs.existsSync(bundledDir)) {
+            const directExe = path.join(bundledDir, 'node.exe');
+            if (fs.existsSync(directExe) && this._canExecute(directExe)) {
+              extraDirs.unshift(bundledDir);
+            }
+            for (const entry of fs.readdirSync(bundledDir).filter(e => e.startsWith('node-'))) {
+              const nested = path.join(bundledDir, entry);
+              if (fs.existsSync(path.join(nested, 'node.exe')) && this._canExecute(path.join(nested, 'node.exe'))) {
+                extraDirs.unshift(nested);
+              }
+            }
+          }
+        } catch {}
+      }
     } else {
       extraDirs.push('/usr/local/bin', '/opt/homebrew/bin');
+      if (!hasSystemNode) {
+        try {
+          const candidates = [
+            path.join(bundledDir, 'bin', 'node'),
+            path.join(bundledDir, 'node'),
+          ];
+          for (const bin of candidates) {
+            if (fs.existsSync(bin) && this._canExecute(bin)) {
+              extraDirs.unshift(path.dirname(bin));
+              break;
+            }
+          }
+        } catch {}
+      }
     }
     for (const d of extraDirs) {
       if (d && !(env.PATH || '').includes(d)) {
@@ -709,6 +779,51 @@ class Installer {
       }
     }
     return env;
+  }
+
+  /**
+   * True if `node` exists outside the bundled launcher directory. Uses raw
+   * process.env.PATH (no enhancement) so we don't accidentally detect the
+   * bundled node and conclude that "system node exists".
+   */
+  _hasSystemNode(bundledDir) {
+    try {
+      const { execFileSync } = require('child_process');
+      const cmd = process.platform === 'win32' ? 'where' : 'which';
+      const args = process.platform === 'win32' ? ['node'] : ['node'];
+      const out = execFileSync(cmd, args, {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5000,
+        windowsHide: true,
+        env: { ...process.env },
+      });
+      const prefix = (bundledDir || '').toLowerCase();
+      for (const line of out.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) {
+        if (!prefix || !line.toLowerCase().startsWith(prefix)) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Smoke-test a node binary by running `--version`. Returns false on any
+   * failure (missing exe, blocked by AV, arch mismatch, signature policy).
+   */
+  _canExecute(binaryPath) {
+    try {
+      const { spawnSync } = require('child_process');
+      const r = spawnSync(binaryPath, ['--version'], {
+        timeout: 5000,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      return r.status === 0 && !r.error;
+    } catch {
+      return false;
+    }
   }
 
   /**

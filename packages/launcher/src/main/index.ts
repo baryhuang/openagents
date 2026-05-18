@@ -425,7 +425,7 @@ function updateTrayMenu(): void {
 async function refreshAgentUpdates(): Promise<void> {
   if (!agentManager) return
   try {
-    const all = await agentManager.checkAgentUpdates()
+    const all = await agentManager.checkAgentUpdates({ force: true })
     _pendingAgentUpdates = all.filter((u) => u.current && u.latest && u.current !== u.latest)
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('agent-updates-changed', _pendingAgentUpdates)
@@ -623,6 +623,10 @@ function setupIPC(): void {
   ipcMain.handle('agents:start-all', () => requireManager().startAll())
   ipcMain.handle('agents:stop-all', () => requireManager().stopAll())
   ipcMain.handle('agents:status', () => agentManager ? agentManager.getAllStatus() : {})
+  ipcMain.handle('agents:daemon-status', () => {
+    if (!agentManager) return { state: 'starting', pid: null }
+    try { return agentManager.getDaemonState() } catch { return { state: 'offline', pid: null } }
+  })
   ipcMain.handle('agents:logs', (_e, name, lines) => requireManager().getLogs(name, lines))
   ipcMain.handle('agents:tail-logs', (_e, name, lines, offset) => {
     if (!agentManager) return { lines: [], size: 0 }
@@ -633,15 +637,24 @@ function setupIPC(): void {
   ipcMain.handle('agents:install-type', (_e, agentType) => requireManager().installAgentType(agentType))
   ipcMain.handle('agents:install-type-streaming', async (_e, agentType) => {
     const verb = agentManager?.getInstalledVersion(agentType) ? 'update' : 'install'
-    return runInstallWithPhases(agentType, verb, (cb) =>
+    const result = await runInstallWithPhases(agentType, verb, (cb) =>
       requireManager().installAgentTypeStreaming(agentType, cb),
     )
+    // installAgentTypeStreaming clears the updates cache. Re-fetch now so
+    // the next `checkAgentUpdates()` call (from the post-job refresh) gets
+    // fresh data instead of an empty cache — otherwise a just-updated agent
+    // could keep showing "Update available" because the renderer overrides
+    // its store with the empty list before the hourly background refresh.
+    refreshAgentUpdates().catch(() => {})
+    return result
   })
   ipcMain.handle('agents:uninstall-type', (_e, agentType) => requireManager().uninstallAgentType(agentType))
   ipcMain.handle('agents:uninstall-type-streaming', async (_e, agentType) => {
-    return runInstallWithPhases(agentType, 'uninstall', (cb) =>
+    const result = await runInstallWithPhases(agentType, 'uninstall', (cb) =>
       requireManager().uninstallAgentTypeStreaming(agentType, cb),
     )
+    refreshAgentUpdates().catch(() => {})
+    return result
   })
 
   ipcMain.handle('agents:installed-list', () => agentManager ? agentManager.listInstalledAgents() : [])
@@ -651,9 +664,11 @@ function setupIPC(): void {
   })
   ipcMain.handle('agents:rollback', async (_e, agentType) => {
     if (!agentManager) return { success: false, error: 'Launcher initializing' }
-    return runInstallWithPhases(agentType, 'rollback', (cb) =>
+    const result = await runInstallWithPhases(agentType, 'rollback', (cb) =>
       agentManager!.rollbackAgentType(agentType, cb),
     )
+    refreshAgentUpdates().catch(() => {})
+    return result
   })
   ipcMain.handle('agents:changelog', async (_e, agentType) => {
     if (!agentManager) return { versions: [], error: 'Launcher initializing' }
@@ -667,7 +682,6 @@ function setupIPC(): void {
   ipcMain.handle('agents:catalog', async () => {
     if (!agentManager) return []
     try {
-      try { (agentManager._connector!.registry as Record<string, unknown>)._catalog = null } catch {}
       return await agentManager.getCatalog()
     } catch { return [] }
   })

@@ -25,6 +25,7 @@ interface AgentDetailProps {
 interface ChangelogState {
   versions: Array<{ version: string; date?: string }>
   homepage?: string
+  latest?: string | null
   error?: string
   loading: boolean
 }
@@ -62,7 +63,7 @@ export default function AgentDetail({
           window.api.getAgentEnv(entry.name).catch(() => ({}) as Record<string, string>),
           window.api.getInstalledAgents().catch(() => []),
           window.api.checkAgentUpdates().catch(() => []),
-          window.api.getAgentChangelog(entry.name).catch(() => ({ versions: [], homepage: undefined, error: undefined } as { versions: Array<{ version: string; date?: string }>; homepage?: string; error?: string })),
+          window.api.getAgentChangelog(entry.name).catch(() => ({ versions: [], homepage: undefined, latest: null, error: undefined } as { versions: Array<{ version: string; date?: string }>; homepage?: string; latest?: string | null; error?: string })),
           entry.installed ? window.api.healthCheck(entry.name).catch(() => null) : Promise.resolve(null),
         ])
         if (cancelled) return
@@ -71,7 +72,7 @@ export default function AgentDetail({
         setInstalled(list.find((i) => i.name === entry.name) || null)
         setUpdate(updates.find((u) => u.name === entry.name) || null)
         setHealth(healthInfo)
-        setChangelog({ versions: change.versions || [], homepage: change.homepage, error: change.error, loading: false })
+        setChangelog({ versions: change.versions || [], homepage: change.homepage, latest: change.latest ?? null, error: change.error, loading: false })
       } catch {
         if (!cancelled) setChangelog((s) => ({ ...s, loading: false }))
       }
@@ -170,9 +171,12 @@ export default function AgentDetail({
   const screenshots = (entry.screenshots || []).filter(Boolean)
   const demoUrl = entry.demo_url || entry.demo
   // Current version: tracked record → live `binary --version` from healthCheck.
-  // Latest version: tracked update info → first changelog entry from npm.
+  // Latest version: prefer the stable dist-tag (what `npm install` actually
+  // fetches) so that after a successful update the version comparison
+  // matches and the "Update to vX" banner clears. Falling back to the first
+  // changelog entry is unsafe because that list can include beta/rc.
   const currentVersion = installed?.version || health?.version || null
-  const latestVersion = update?.latest || changelog.versions[0]?.version || null
+  const latestVersion = update?.latest || changelog.latest || null
   const installedAtLabel = installed?.installedAt
     ? new Date(installed.installedAt).toLocaleString()
     : (entry.installed && !installed ? "External install" : null)

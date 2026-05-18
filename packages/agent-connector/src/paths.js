@@ -16,12 +16,25 @@ const IS_WINDOWS = process.platform === 'win32';
 const IS_MACOS = process.platform === 'darwin';
 const SEP = IS_WINDOWS ? ';' : ':';
 const HOME = process.env.HOME || process.env.USERPROFILE || '';
+const PATH_LOOKUP_CACHE_TTL_MS = 30 * 1000;
+
+let extraBinDirsCache = { value: null, at: 0, path: '' };
+const whichBinaryCache = new Map();
 
 /**
  * Get all extra binary directories that should be checked beyond process.env.PATH.
  * Returns deduplicated list of existing directories.
  */
 function getExtraBinDirs() {
+  const currentPATH = process.env.PATH || '';
+  if (
+    extraBinDirsCache.value &&
+    extraBinDirsCache.path === currentPATH &&
+    Date.now() - extraBinDirsCache.at < PATH_LOOKUP_CACHE_TTL_MS
+  ) {
+    return [...extraBinDirsCache.value];
+  }
+
   const dirs = [];
 
   if (IS_WINDOWS) {
@@ -62,8 +75,7 @@ function getExtraBinDirs() {
 
   // Filter to existing directories only, deduplicate
   const seen = new Set();
-  const currentPATH = process.env.PATH || '';
-  return dirs.filter(d => {
+  const value = dirs.filter(d => {
     if (!d || seen.has(d)) return false;
     // Skip if already in PATH (case-insensitive on Windows)
     if (IS_WINDOWS ? currentPATH.toLowerCase().includes(d.toLowerCase()) : currentPATH.includes(d)) return false;
@@ -74,6 +86,8 @@ function getExtraBinDirs() {
       return false;
     }
   });
+  extraBinDirsCache = { value, at: Date.now(), path: currentPATH };
+  return [...value];
 }
 
 /**
@@ -114,6 +128,13 @@ function getEnhancedEnv(baseEnv) {
  */
 function whichBinary(name) {
   if (!name) return null;
+  const currentPATH = process.env.PATH || '';
+  const cacheKey = `${name}\0${currentPATH}`;
+  const cached = whichBinaryCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < PATH_LOOKUP_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
   const cmd = IS_WINDOWS ? `where ${name}` : `which ${name}`;
   try {
     const result = execSync(cmd, {
@@ -121,9 +142,13 @@ function whichBinary(name) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, PATH: getEnhancedPATH() },
       timeout: 5000,
+      windowsHide: true,
     }).trim();
-    return result.split(/\r?\n/)[0] || null;
+    const value = result.split(/\r?\n/)[0] || null;
+    whichBinaryCache.set(cacheKey, { value, at: Date.now() });
+    return value;
   } catch {
+    whichBinaryCache.set(cacheKey, { value: null, at: Date.now() });
     return null;
   }
 }

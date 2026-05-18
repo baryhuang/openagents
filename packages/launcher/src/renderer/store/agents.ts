@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { useShallow } from 'zustand/react/shallow'
 import type { Agent } from '../types'
+
+export type DaemonState = 'online' | 'starting' | 'offline'
 
 interface AgentsState {
   // Agent list — replaces legacy module-level agent array
@@ -21,6 +22,12 @@ interface AgentsState {
   // Core update banner
   coreUpdateInfo: { current: string; latest: string } | null
   setCoreUpdateInfo: (info: { current: string; latest: string } | null) => void
+
+  // Daemon process liveness, polled from main via agents:daemon-status IPC.
+  // We can't derive this from the agent list — "no agents configured" must
+  // not look identical to "daemon crashed".
+  daemonState: DaemonState
+  setDaemonState: (s: DaemonState) => void
 }
 
 export const useAgentsStore = create<AgentsState>((set) => ({
@@ -44,12 +51,11 @@ export const useAgentsStore = create<AgentsState>((set) => ({
 
   coreUpdateInfo: null,
   setCoreUpdateInfo: (info) => set({ coreUpdateInfo: info }),
+
+  daemonState: 'offline',
+  setDaemonState: (s) => set({ daemonState: s }),
 }))
 
-/** Derived selector — computed from agent states, no extra polling needed */
-export function useDaemonStatus(): 'online' | 'offline' | 'starting' {
-  const agents = useAgentsStore(useShallow((s) => s.agents))
-  if (agents.some((a) => ['online', 'running', 'idle'].includes(a.state))) return 'online'
-  if (agents.some((a) => ['starting', 'reconnecting'].includes(a.state))) return 'starting'
-  return 'offline'
+export function useDaemonStatus(): DaemonState {
+  return useAgentsStore((s) => s.daemonState)
 }

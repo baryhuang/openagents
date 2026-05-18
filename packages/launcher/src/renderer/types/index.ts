@@ -139,6 +139,7 @@ declare global {
       startAll(): Promise<unknown>
       stopAll(): Promise<unknown>
       agentStatus(): Promise<Record<string, { state: AgentState; last_error?: string; restarts?: number }>>
+      daemonStatus(): Promise<{ state: 'online' | 'starting' | 'offline'; pid: number | null }>
       agentLogs(name: string, lines: number): Promise<{ lines: string[] }>
       tailAgentLogs(name: string, lines: number, offset: number): Promise<{ lines: string[]; size?: number }>
       clearLogsInRange(start: string, end: string): Promise<{ removed: number; remaining: number }>
@@ -155,7 +156,7 @@ declare global {
       getInstalledAgents(): Promise<InstalledAgentRecord[]>
       checkAgentUpdates(): Promise<AgentUpdateInfo[]>
       rollbackAgentType(type: string): Promise<{ success: boolean; version?: string | null; error?: string }>
-      getAgentChangelog(type: string): Promise<{ versions: Array<{ version: string; date?: string }>; homepage?: string; error?: string }>
+      getAgentChangelog(type: string): Promise<{ versions: Array<{ version: string; date?: string }>; homepage?: string; latest?: string | null; error?: string }>
       getEnvFields(type: string): Promise<EnvField[]>
       getAgentEnv(type: string): Promise<Record<string, string>>
       saveAgentEnv(type: string, env: Record<string, string>): Promise<unknown>

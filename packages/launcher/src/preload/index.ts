@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   startAll: () => ipcRenderer.invoke('agents:start-all'),
   stopAll: () => ipcRenderer.invoke('agents:stop-all'),
   agentStatus: () => ipcRenderer.invoke('agents:status'),
+  daemonStatus: () => ipcRenderer.invoke('agents:daemon-status'),
   agentLogs: (name: string, lines: number) => ipcRenderer.invoke('agents:logs', name, lines),
   tailAgentLogs: (name: string, lines: number, offset: number) => ipcRenderer.invoke('agents:tail-logs', name, lines, offset),
   clearLogsInRange: (start: string, end: string) => ipcRenderer.invoke('agents:clear-logs-range', start, end),

@@ -2,11 +2,16 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import https from 'https'
+import { spawnSync } from 'child_process'
 
 const CONFIG_DIR = path.join(os.homedir(), '.openagents')
 const GLOBAL_CORE = path.join(CONFIG_DIR, 'nodejs', 'node_modules', '@openagents-org', 'agent-launcher')
 const LOCAL_CORE = path.resolve(__dirname, '../../../agent-connector')
 const INSTALLED_HISTORY_FILE = path.join(CONFIG_DIR, 'installed_agents_history.json')
+const DAEMON_PID_FILE = path.join(CONFIG_DIR, 'daemon.pid')
+const DAEMON_STATUS_FILE = path.join(CONFIG_DIR, 'daemon.status.json')
+const DAEMON_CMD_FILE = path.join(CONFIG_DIR, 'daemon.cmd')
+const DAEMON_LOG_FILE = path.join(CONFIG_DIR, 'daemon.log')
 
 export interface InstalledAgentRecord {
   name: string
@@ -36,6 +41,73 @@ function loadCore(): Record<string, unknown> | null {
   return null
 }
 
+function appendDaemonLog(message: string): void {
+  try {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true })
+    fs.appendFileSync(DAEMON_LOG_FILE, `[${new Date().toISOString()}] launcher: ${message}\n`, 'utf-8')
+  } catch {}
+}
+
+function isPidAlive(pid: number | null): boolean {
+  if (!pid || !Number.isFinite(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e: unknown) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Smoke-test a node binary by running `--version`. Returns false if the
+ * binary is missing, blocked by Defender/SmartScreen, has an arch mismatch,
+ * or any other CreateProcess failure. Used to avoid spawning the daemon with
+ * a bundled node.exe that Windows refuses to load — which would otherwise
+ * leave the daemon perpetually offline.
+ */
+function canExecuteNode(binaryPath: string): boolean {
+  try {
+    const r = spawnSync(binaryPath, ['--version'], {
+      timeout: 5000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return r.status === 0 && !r.error
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve a working node binary, preferring the bundled portable runtime
+ * when it actually launches, otherwise falling back to a system `node` on
+ * PATH. Returns null if nothing works.
+ */
+function resolveWorkingNode(portableNodeDir: string, enhancedPath: string): string | null {
+  const candidates = [
+    path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : '')),
+    path.join(portableNodeDir, 'bin', 'node'),
+  ]
+  for (const c of candidates) {
+    if (fs.existsSync(c) && canExecuteNode(c)) return c
+  }
+  // Bundled node missing or won't run — try the system one.
+  try {
+    const which = process.platform === 'win32' ? 'where' : 'which'
+    const out = require('child_process').execFileSync(which, ['node'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5000,
+      windowsHide: true,
+      env: { ...process.env, PATH: enhancedPath },
+    }) as string
+    for (const line of out.split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean)) {
+      if (canExecuteNode(line)) return line
+    }
+  } catch {}
+  return null
+}
+
 let core: Record<string, unknown> | null = loadCore()
 
 export class AgentManager {
@@ -45,6 +117,21 @@ export class AgentManager {
   private _lastHealthRefreshAt = 0
   private _healthQueue: string[] = []
   private _healthProcessing = false
+  private _agentsCache: { value: unknown[]; at: number } = { value: [], at: 0 }
+  private _catalogCache: { value: unknown[] | null; at: number; inFlight: Promise<unknown[]> | null } = {
+    value: null,
+    at: 0,
+    inFlight: null,
+  }
+  private _updatesCache: {
+    value: Array<{ name: string; current: string | null; latest: string | null }>
+    at: number
+    inFlight: Promise<Array<{ name: string; current: string | null; latest: string | null }>> | null
+  } = {
+    value: [],
+    at: 0,
+    inFlight: null,
+  }
   private _statusCache: { value: unknown; at: number } = { value: {}, at: 0 }
   _connector: Record<string, unknown> | null = null
 
@@ -81,6 +168,9 @@ export class AgentManager {
       const AgentConnector = (core as Record<string, unknown>).AgentConnector as new (opts: unknown) => Record<string, unknown>
       this._connector = new AgentConnector({ configDir: CONFIG_DIR })
     }
+    this.clearCatalogCache()
+    this._agentsCache = { value: [], at: 0 }
+    this._healthByType.clear()
     return !!core
   }
 
@@ -106,6 +196,10 @@ export class AgentManager {
   }
 
   getAgents(): unknown[] {
+    const now = Date.now()
+    if (this._agentsCache.value.length > 0 && now - this._agentsCache.at < 1500) {
+      return this._agentsCache.value
+    }
     if (!this._connector) return []
     const listAgents = this._connector.listAgents as () => unknown[]
     const agents = listAgents.call(this._connector)
@@ -113,7 +207,7 @@ export class AgentManager {
     this._scheduleHealthRefresh(agents as Array<{ type?: string; name: string }>)
 
     const supportedTypes = new Set(this.getSupportedAgentTypes())
-    return (agents as Array<Record<string, unknown>>).map((a) => {
+    const value = (agents as Array<Record<string, unknown>>).map((a) => {
       const type = (a.type as string) || 'openclaw'
       const runtimeMismatch = !supportedTypes.has(type)
       const runtimeMessage = runtimeMismatch
@@ -130,6 +224,8 @@ export class AgentManager {
         runtimeMismatch,
       }
     })
+    this._agentsCache = { value, at: now }
+    return value
   }
 
   private _scheduleHealthRefresh(agents: Array<{ type?: string; name: string }>): void {
@@ -198,7 +294,35 @@ export class AgentManager {
     return { success: true }
   }
 
-  async getCatalog(): Promise<unknown[]> {
+  clearCatalogCache(): void {
+    this._catalogCache = { value: null, at: 0, inFlight: null }
+    this._updatesCache = { value: [], at: 0, inFlight: null }
+    try {
+      const clearCache = this._connector?.clearCatalogCache as (() => void) | undefined
+      clearCache?.call(this._connector)
+    } catch {}
+  }
+
+  async getCatalog(force = false): Promise<unknown[]> {
+    const now = Date.now()
+    const ttl = process.platform === 'win32' ? 60_000 : 10_000
+    if (!force && this._catalogCache.value && now - this._catalogCache.at < ttl) {
+      return this._catalogCache.value
+    }
+    if (!force && this._catalogCache.inFlight) return this._catalogCache.inFlight
+
+    const load = this._loadCatalog().then((catalog) => {
+      this._catalogCache = { value: catalog, at: Date.now(), inFlight: null }
+      return catalog
+    }).catch((err) => {
+      this._catalogCache.inFlight = null
+      throw err
+    })
+    this._catalogCache.inFlight = load
+    return load
+  }
+
+  private async _loadCatalog(): Promise<unknown[]> {
     let catalog: unknown[]
     try {
       const getCatalog = this._connector!.getCatalog as () => Promise<unknown[]>
@@ -347,25 +471,26 @@ export class AgentManager {
 
   async installAgentType(agentType: string): Promise<unknown> {
     const install = this._connector!.install as (type: string) => Promise<unknown>
-    return install.call(this._connector, agentType)
+    const result = await install.call(this._connector, agentType)
+    this._recordInstall(agentType)
+    this.clearCatalogCache()
+    return result
   }
 
   async installAgentTypeStreaming(agentType: string, onData: (data: string) => void): Promise<unknown> {
     const installer = this._connector!.installer as Record<string, unknown>
     const installStreaming = installer.installStreaming as (type: string, onData: (data: string) => void) => Promise<unknown>
     const result = await installStreaming.call(installer, agentType, onData)
-    const clearCache = this._connector!.clearCatalogCache as () => void
-    clearCache.call(this._connector)
     this._recordInstall(agentType)
+    this.clearCatalogCache()
     return result
   }
 
   async uninstallAgentType(agentType: string): Promise<unknown> {
     const uninstall = this._connector!.uninstall as (type: string) => Promise<unknown>
     const result = await uninstall.call(this._connector, agentType)
-    const clearCache = this._connector!.clearCatalogCache as () => void
-    clearCache.call(this._connector)
     this._recordUninstall(agentType)
+    this.clearCatalogCache()
     return result
   }
 
@@ -373,9 +498,8 @@ export class AgentManager {
     const installer = this._connector!.installer as Record<string, unknown>
     const uninstallStreaming = installer.uninstallStreaming as (type: string, onData: (data: string) => void) => Promise<unknown>
     const result = await uninstallStreaming.call(installer, agentType, onData)
-    const clearCache = this._connector!.clearCatalogCache as () => void
-    clearCache.call(this._connector)
     this._recordUninstall(agentType)
+    this.clearCatalogCache()
     return result
   }
 
@@ -508,6 +632,7 @@ export class AgentManager {
       proc.on('close', (code) => {
         if (code === 0) {
           this._recordInstall(agentType)
+          this.clearCatalogCache()
           if (onData) onData(`\nRolled back to ${target}.\n`)
           resolve({ success: true, version: target })
         } else {
@@ -517,7 +642,30 @@ export class AgentManager {
     })
   }
 
-  async checkAgentUpdates(): Promise<Array<{ name: string; current: string | null; latest: string | null }>> {
+  async checkAgentUpdates(options: { force?: boolean } = {}): Promise<Array<{ name: string; current: string | null; latest: string | null }>> {
+    const now = Date.now()
+    const ttl = 60 * 60 * 1000
+    if (!options.force) {
+      return this._updatesCache.value
+    }
+    if (this._updatesCache.value.length > 0 && now - this._updatesCache.at < ttl) {
+      return this._updatesCache.value
+    }
+
+    if (this._updatesCache.inFlight) return this._updatesCache.inFlight
+    this._updatesCache.inFlight = this._loadAgentUpdates()
+      .then((updates) => {
+        this._updatesCache = { value: updates, at: Date.now(), inFlight: null }
+        return updates
+      })
+      .catch((err) => {
+        this._updatesCache.inFlight = null
+        throw err
+      })
+    return this._updatesCache.inFlight
+  }
+
+  private async _loadAgentUpdates(): Promise<Array<{ name: string; current: string | null; latest: string | null }>> {
     // Use the full catalog (every entry with installed=true), not just the
     // history file — agents installed globally / pre-launcher won't be in
     // the history but are still installed and worth checking for updates.
@@ -536,33 +684,36 @@ export class AgentManager {
     return results
   }
 
-  async getAgentChangelog(agentType: string): Promise<{ versions: Array<{ version: string; date?: string }>; homepage?: string; error?: string }> {
+  async getAgentChangelog(agentType: string): Promise<{ versions: Array<{ version: string; date?: string }>; homepage?: string; latest?: string | null; error?: string }> {
     const entry = this._getRegistryEntry(agentType)
     const homepage = (entry?.homepage as string | undefined) || undefined
     const npmPkg = this._resolveNpmPackage(entry)
-    if (!npmPkg) return { versions: [], homepage, error: 'No npm package' }
+    if (!npmPkg) return { versions: [], homepage, latest: null, error: 'No npm package' }
     try {
       const info = await fetchNpmInfo(npmPkg)
       const time = info.time || {}
-      const versions = sortedPublishedVersions(info)
+      // Show pre-releases in the changelog list (useful for visibility), but
+      // return `latest` as the stable dist-tag so the detail page's
+      // "Update to vX" computation matches what `npm install` actually fetches.
+      const versions = sortedPublishedVersions(info, { includePreRelease: true })
         .slice(0, 12)
         .map((v) => ({ version: v, date: time[v] }))
-      return { versions, homepage }
+      return { versions, homepage, latest: resolveLatestVersion(info) }
     } catch (e: unknown) {
-      return { versions: [], homepage, error: (e as Error).message }
+      return { versions: [], homepage, latest: null, error: (e as Error).message }
     }
   }
 
   async startAgent(name: string): Promise<unknown> {
-    await this._ensureDaemon()
+    const ready = await this._ensureDaemon()
+    if (!ready) throw new Error('Daemon failed to start. Check the Logs page for details.')
     const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
     sendCmd.call(this._connector, `start:${name}`)
     return { success: true, message: `Start command sent for ${name}` }
   }
 
   async stopAgent(name: string): Promise<unknown> {
-    const getDaemonPid = this._connector!.getDaemonPid as () => number | null
-    const pid = getDaemonPid.call(this._connector)
+    const pid = this._getLiveDaemonPid()
     if (!pid) return { success: true, message: 'Daemon not running' }
     const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
     sendCmd.call(this._connector, `stop:${name}`)
@@ -570,7 +721,8 @@ export class AgentManager {
   }
 
   async startAll(): Promise<unknown> {
-    await this._ensureDaemon()
+    const ready = await this._ensureDaemon()
+    if (!ready) throw new Error('Daemon failed to start. Check the Logs page for details.')
     const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
     sendCmd.call(this._connector, 'reload')
     return { success: true, message: 'Start all command sent' }
@@ -582,17 +734,13 @@ export class AgentManager {
     return { success: stopped, message: stopped ? 'Daemon stopped' : 'Daemon not running' }
   }
 
-  async _ensureDaemon(): Promise<void> {
-    const getDaemonPid = this._connector!.getDaemonPid as () => number | null
-    const pid = getDaemonPid.call(this._connector)
-    if (pid) return
+  async _ensureDaemon(): Promise<boolean> {
+    const pid = this._getLiveDaemonPid()
+    if (pid) return true
 
-    const portableNodeDir = path.join(os.homedir(), '.openagents', 'nodejs')
-    const nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''))
-    const nodeBinLegacy = path.join(portableNodeDir, 'bin', 'node')
-    if (!fs.existsSync(nodeBin) && !fs.existsSync(nodeBinLegacy)) return
-
-    await this._startDaemon()
+    const result = await this._startDaemon()
+    if (!result.success) appendDaemonLog(result.message)
+    return !!(result.success && result.pid)
   }
 
   getAllStatus(): unknown {
@@ -600,9 +748,11 @@ export class AgentManager {
     if (this._statusCache.value && now - this._statusCache.at < 1000) {
       return this._statusCache.value
     }
-    const getDaemonStatus = this._connector!.getDaemonStatus as () => unknown
     let value: unknown = {}
-    try { value = getDaemonStatus.call(this._connector) } catch { value = {} }
+    if (this._getLiveDaemonPid()) {
+      const getDaemonStatus = this._connector!.getDaemonStatus as () => unknown
+      try { value = getDaemonStatus.call(this._connector) } catch { value = {} }
+    }
     this._statusCache = { value, at: now }
     return value
   }
@@ -653,6 +803,68 @@ export class AgentManager {
     return healthCheck.call(this._connector, type)
   }
 
+  /**
+   * Daemon liveness from the launcher's perspective, independent of whether
+   * any agents are configured. Used by the sidebar status dot — relying on
+   * agent state means "no agents" looks identical to "daemon dead", which
+   * makes the launcher feel broken on first run / after every install
+   * failure.
+   */
+  getDaemonState(): { state: 'online' | 'starting' | 'offline'; pid: number | null } {
+    const pid = this._getLiveDaemonPid()
+    if (pid) return { state: 'online', pid }
+
+    // Pid file present but failing the freshness checks in _getLiveDaemonPid
+    // (typically during the first few seconds after spawn) — surface as
+    // "starting" so the dot doesn't flicker between offline and online.
+    try {
+      const raw = fs.readFileSync(DAEMON_PID_FILE, 'utf-8').trim()
+      const candidatePid = parseInt(raw, 10)
+      if (Number.isFinite(candidatePid) && isPidAlive(candidatePid)) {
+        const age = Date.now() - fs.statSync(DAEMON_PID_FILE).mtimeMs
+        if (age < 15_000) return { state: 'starting', pid: candidatePid }
+      }
+    } catch {}
+    return { state: 'offline', pid: null }
+  }
+
+  private _getLiveDaemonPid(): number | null {
+    try {
+      const getDaemonPid = this._connector?.getDaemonPid as (() => number | null) | undefined
+      const pid = getDaemonPid ? getDaemonPid.call(this._connector) : null
+      if (!pid) return null
+
+      const pidFileAge = (() => {
+        try { return Date.now() - fs.statSync(DAEMON_PID_FILE).mtimeMs } catch { return Number.POSITIVE_INFINITY }
+      })()
+      const statusInfo = (() => {
+        try {
+          const stat = fs.statSync(DAEMON_STATUS_FILE)
+          const raw = JSON.parse(fs.readFileSync(DAEMON_STATUS_FILE, 'utf-8')) as { pid?: number }
+          return { pid: raw.pid || null, age: Date.now() - stat.mtimeMs }
+        } catch { return { pid: null, age: Number.POSITIVE_INFINITY } }
+      })()
+
+      // A live PID alone is not enough on Windows because stale PIDs can be
+      // reused by unrelated processes. The daemon writes status every 5s; once
+      // the pid file is older than the startup grace period, require matching
+      // fresh status as proof that this is really our daemon.
+      const startupGraceMs = 15_000
+      const statusFreshMs = 20_000
+      const hasFreshMatchingStatus = statusInfo.pid === pid && statusInfo.age < statusFreshMs
+      if (isPidAlive(pid) && (pidFileAge < startupGraceMs || hasFreshMatchingStatus)) return pid
+
+      appendDaemonLog(`removing stale daemon pid ${pid}`)
+      for (const file of [DAEMON_PID_FILE, DAEMON_STATUS_FILE, DAEMON_CMD_FILE]) {
+        try { fs.unlinkSync(file) } catch {}
+      }
+      this._statusCache = { value: {}, at: 0 }
+      return null
+    } catch {
+      return null
+    }
+  }
+
   private _startDaemon(): { success: boolean; pid?: number; message: string } {
     try {
       const stopDaemon = this._connector!.stopDaemon as () => void
@@ -696,25 +908,24 @@ export class AgentManager {
       try { if (fs.existsSync(c)) { cliPath = c; break } } catch {}
     }
     if (!cliPath) {
+      appendDaemonLog(`agent-launcher CLI not found; checked ${cliCandidates.join(', ')}`)
       return { success: false, message: 'agent-launcher CLI not found. Install an agent first via the Install tab.' }
     }
 
-    let nodeBin = path.join(portableNodeDir, 'node' + (process.platform === 'win32' ? '.exe' : ''))
-    if (!fs.existsSync(nodeBin)) {
-      try {
-        const { execSync } = require('child_process')
-        nodeBin = execSync(
-          process.platform === 'win32' ? 'where node' : 'which node',
-          { encoding: 'utf-8', timeout: 5000, env: { ...process.env, PATH: enhancedPath } }
-        ).split(/\r?\n/)[0].trim()
-      } catch { nodeBin = 'node' }
+    // Pick a node binary that actually launches. The bundled portable
+    // node.exe is preferred when usable, but on some Windows machines it's
+    // blocked by Defender / SmartScreen and CreateProcess fails — in that
+    // case fall back to system node so the daemon can still start.
+    const nodeBin = resolveWorkingNode(portableNodeDir, enhancedPath)
+    if (!nodeBin) {
+      appendDaemonLog(`cannot start daemon: no usable node binary found (portable=${portableNodeDir})`)
+      return { success: false, message: 'No usable node binary found. Reinstall Node.js or repair the bundled runtime in Settings.' }
     }
 
     try {
       fs.mkdirSync(CONFIG_DIR, { recursive: true })
-      const logFile = path.join(CONFIG_DIR, 'daemon.log')
-      const pidFile = path.join(CONFIG_DIR, 'daemon.pid')
-      const logFd = fs.openSync(logFile, 'a')
+      const logFd = fs.openSync(DAEMON_LOG_FILE, 'a')
+      appendDaemonLog(`starting daemon: node="${nodeBin}" cli="${cliPath}"`)
 
       const proc = spawn(nodeBin, [cliPath, 'up', '--foreground'], {
         detached: true,
@@ -722,8 +933,14 @@ export class AgentManager {
         env: { ...process.env, PATH: enhancedPath },
         windowsHide: true,
       })
+      proc.once('error', (err: Error) => {
+        appendDaemonLog(`daemon spawn error: ${err.message}`)
+      })
+      proc.once('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+        appendDaemonLog(`daemon process exited early: code=${code ?? 'null'} signal=${signal ?? 'null'}`)
+      })
       proc.unref()
-      fs.writeFileSync(pidFile, String(proc.pid), 'utf-8')
+      fs.writeFileSync(DAEMON_PID_FILE, String(proc.pid), 'utf-8')
       fs.closeSync(logFd)
 
       return { success: true, pid: proc.pid, message: `Daemon started (PID ${proc.pid})` }
@@ -777,17 +994,33 @@ function compareVersionsDesc(a: string, b: string): number {
   return 0
 }
 
-// Versions published to npm, sorted highest-first (includes pre-releases like
-// beta / rc — npm's dist-tags.latest excludes them, which made the marketplace
-// card miss updates that the detail page surfaced via the changelog fallback).
-function sortedPublishedVersions(info: NpmRegistryInfo | null): string[] {
+// Semver pre-release identifier — anything after a hyphen (`-beta.1`, `-rc.2`,
+// `-canary.123`). Plain releases match /^\d+\.\d+\.\d+$/ with no hyphen.
+function isPreRelease(version: string): boolean {
+  return version.includes('-')
+}
+
+// Versions published to npm, sorted highest-first. Stable-only by default —
+// previously this returned every published version including betas, which
+// made the marketplace surface a beta as "latest" even though `npm install
+// <pkg>` only fetches dist-tags.latest. After installing the actual newest
+// stable, the card would still claim an update was available because it was
+// comparing against the beta. Pass includePreRelease for the changelog
+// listing where surfacing betas is useful.
+function sortedPublishedVersions(info: NpmRegistryInfo | null, opts: { includePreRelease?: boolean } = {}): string[] {
   return Object.keys(info?.versions || {})
     .filter((v) => /^\d/.test(v))
+    .filter((v) => opts.includePreRelease ? true : !isPreRelease(v))
     .sort(compareVersionsDesc)
 }
 
 function resolveLatestVersion(info: NpmRegistryInfo | null): string | null {
-  return sortedPublishedVersions(info)[0] || info?.['dist-tags']?.latest || null
+  // dist-tags.latest is the source of truth for what `npm install <pkg>`
+  // installs. Use it whenever it's published; only fall back to scanning the
+  // versions map for packages that don't publish a `latest` tag.
+  const tagged = info?.['dist-tags']?.latest
+  if (tagged) return tagged
+  return sortedPublishedVersions(info)[0] || null
 }
 
 function normalizeTimeValue(value: string | number | Date): Date | null {
