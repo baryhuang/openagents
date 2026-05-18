@@ -67,6 +67,11 @@ struct ChatView: View {
             description: "Show agent uptime, version, and network.",
             systemImage: "info.circle",
         ),
+        SlashCommand(
+            id: "routines",
+            description: "List active recurring routines for this agent.",
+            systemImage: "calendar.badge.clock",
+        ),
     ]
 
     private var filteredSlashCommands: [SlashCommand] {
@@ -825,8 +830,17 @@ struct ChatView: View {
             draft.wrappedValue = ""
             slashSuggestionsOpen = false
             Task { await store.requestSessionStatus(sessionId: id) }
+        case "routines":
+            guard let id = store.currentSessionId else {
+                store.lastError = "/routines requires an active session."
+                return
+            }
+            logInfo("ui", "/routines invoked session=\(id)")
+            draft.wrappedValue = ""
+            slashSuggestionsOpen = false
+            Task { await store.requestSessionRoutines(sessionId: id) }
         default:
-            store.lastError = "Unknown command: /\(head). Available: /restart, /status"
+            store.lastError = "Unknown command: /\(head). Available: /restart, /status, /routines"
         }
     }
 

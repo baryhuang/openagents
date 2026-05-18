@@ -711,6 +711,52 @@ final class WorkspaceStore {
         }
     }
 
+    /// Send a `routines` control event to every agent in this session. Each
+    /// agent posts back a chat message with a markdown table of its own
+    /// active routines. Used by the `/routines` slash command. Read-only.
+    func requestSessionRoutines(sessionId: String) async {
+        guard let session = sessions.first(where: { $0.sessionId == sessionId }) else {
+            logWarn("routines", "no session for id=\(sessionId)")
+            return
+        }
+        let sessionAgents = agents.filter {
+            session.participants.isEmpty || session.participants.contains($0.agentName)
+        }
+        guard !sessionAgents.isEmpty else {
+            logWarn("routines", "no agents in session=\(sessionId)")
+            return
+        }
+
+        let optimistic = Message.localStatus(
+            channel: sessionId,
+            content: "Listing routines…",
+            idPrefix: "local-routines-",
+        )
+        var page = pagesBySession[sessionId] ?? ChannelMessages()
+        page.messages.append(optimistic)
+        pagesBySession[sessionId] = page
+        lastMessageBySession[sessionId] = optimistic
+
+        let agentNames = sessionAgents.map(\.agentName)
+        logInfo("routines", "requesting routines from \(agentNames.count) agent(s) channel=\(sessionId)")
+
+        await withTaskGroup(of: Void.self) { group in
+            for name in agentNames {
+                group.addTask { [api = self.api, sessionId] in
+                    do {
+                        _ = try await api.sendAgentControl(
+                            agentName: name,
+                            action: "routines",
+                            params: ["channel": sessionId],
+                        )
+                    } catch {
+                        logWarn("routines", "agent=\(name) failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
     /// Forward an A2UI action result upstream. Called when the user interacts
     /// with a rendered spec component; non-throwing so SwiftUI callbacks stay
     /// fire-and-forget. Failures are logged but never surface as banners —

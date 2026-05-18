@@ -210,6 +210,8 @@ class BaseAdapter {
   async _onControlAction(action, payload) {
     if (action === 'status') {
       await this._postStatusReport(payload);
+    } else if (action === 'routines') {
+      await this._postRoutinesReport(payload);
     }
   }
 
@@ -259,6 +261,69 @@ class BaseAdapter {
       });
     } catch (e) {
       this._log(`Status: failed to post: ${e && e.message ? e.message : e}`);
+    }
+  }
+
+  /**
+   * Post a markdown table of the agent's active routines back to the
+   * requesting channel. Used by the `/routines` slash command. Each agent
+   * reports only routines it owns (created_by === openagents:<agentName>)
+   * so the user sees a clear "my routines" view per agent, mirroring how
+   * /status reports per-agent uptime.
+   */
+  async _postRoutinesReport(payload) {
+    const channel = (payload && typeof payload === 'object') ? payload.channel : null;
+    if (!channel) return;
+
+    let routines = [];
+    try {
+      const data = await this.client.listRoutines(this.workspaceId, channel, this.token);
+      routines = ((data && data.routines) || []).filter(
+        (r) => r.created_by === `openagents:${this.agentName}`,
+      );
+    } catch (e) {
+      this._log(`Routines: failed to list: ${e && e.message ? e.message : e}`);
+      try {
+        await this.client.sendMessage(
+          this.workspaceId, channel, this.token,
+          `**Routines for \`${this.agentName}\`**\n\n_Failed to fetch routines._`,
+          { senderType: 'agent', senderName: this.agentName, messageType: 'chat', sessionId: this._sessionId },
+        );
+      } catch {}
+      return;
+    }
+
+    let content;
+    if (!routines.length) {
+      content = `**Routines for \`${this.agentName}\`**\n\n_No active routines._`;
+    } else {
+      const rows = routines.map((r) => {
+        const schedule = (r.schedule_interval_minutes != null)
+          ? `every ${r.schedule_interval_minutes} min`
+          : `${String(r.schedule_hour ?? 0).padStart(2, '0')}:${String(r.schedule_minute ?? 0).padStart(2, '0')} UTC` +
+            (r.schedule_days ? ` (days [${r.schedule_days.join(',')}])` : ' daily');
+        const next = r.next_fires_at || '—';
+        const name = String(r.name || '').replace(/\|/g, '\\|');
+        const id = String(r.id || '').slice(0, 8);
+        return `| \`${id}\` | ${name} | ${schedule} | ${next} |`;
+      });
+      content =
+        `**Routines for \`${this.agentName}\`** (${routines.length})\n\n` +
+        '| ID | Name | Schedule | Next fires |\n' +
+        '|---|---|---|---|\n' +
+        rows.join('\n');
+    }
+
+    try {
+      await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
+        senderType: 'agent',
+        senderName: this.agentName,
+        messageType: 'chat',
+        metadata: { agent_mode: this._mode },
+        sessionId: this._sessionId,
+      });
+    } catch (e) {
+      this._log(`Routines: failed to post: ${e && e.message ? e.message : e}`);
     }
   }
 
