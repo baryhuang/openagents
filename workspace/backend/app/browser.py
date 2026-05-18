@@ -35,6 +35,7 @@ class BrowserManager:
         self._locks: dict = {}           # tab_id -> asyncio.Lock (local mode only)
         self._global_lock = asyncio.Lock()
         self._sessions: dict = {}        # tab_id -> Browser Fabric session id
+        self._live_urls: dict = {}       # tab_id -> Browser Fabric share URL
 
     @classmethod
     def get(cls) -> "BrowserManager":
@@ -106,8 +107,11 @@ class BrowserManager:
                 args["persist"] = True
 
             result = await self._bf_call("create_session", args)
-            session_id = result["result"]["session_id"]
+            session_data = result["result"]
+            session_id = session_data["session_id"]
             self._sessions[tab_id] = session_id
+            if session_data.get("share_url"):
+                self._live_urls[tab_id] = session_data["share_url"]
 
             if url and url != "about:blank":
                 try:
@@ -259,6 +263,7 @@ class BrowserManager:
         """Close a browser tab."""
         if self.is_cloud:
             session_id = self._sessions.pop(tab_id, None) or session_id_hint
+            self._live_urls.pop(tab_id, None)
             if session_id:
                 try:
                     await self._bf_call("close_session", {}, session_id)
@@ -362,8 +367,8 @@ class BrowserManager:
         return self._locks[tab_id]
 
     def get_live_url(self, tab_id: str) -> Optional[str]:
-        """Return the live view URL if available. Not supported with Browser Fabric."""
-        return None
+        """Return the live view URL for interactive browser access."""
+        return self._live_urls.get(tab_id)
 
     def get_session_id(self, tab_id: str) -> Optional[str]:
         """Return the Browser Fabric session ID for a tab."""
