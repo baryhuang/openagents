@@ -278,8 +278,13 @@ class BaseAdapter {
     let routines = [];
     try {
       const data = await this.client.listRoutines(this.workspaceId, channel, this.token);
+      // Accept both the canonical `openagents:<name>` source and the bare
+      // `<name>` form. Agents that follow the workspace prompt verbatim
+      // produce the prefixed form, but some agents send the bare name when
+      // they construct the POST body themselves.
+      const prefixed = `openagents:${this.agentName}`;
       routines = ((data && data.routines) || []).filter(
-        (r) => r.created_by === `openagents:${this.agentName}`,
+        (r) => r.created_by === prefixed || r.created_by === this.agentName,
       );
     } catch (e) {
       this._log(`Routines: failed to list: ${e && e.message ? e.message : e}`);
