@@ -149,6 +149,20 @@ class TestCreateRoutine:
             )
             assert resp.status_code == 400, f"interval_minutes={bad} should be rejected"
 
+    def test_rejects_non_member_source(self, client, workspace):
+        """Source must be a real workspace member; rejects impersonation."""
+        resp = client.post(
+            "/v1/routines",
+            json=_create_payload(
+                workspace,
+                interval_minutes=15,
+                source="openagents:not-a-real-agent",
+            ),
+            headers=_headers(workspace),
+        )
+        assert resp.status_code == 403, resp.text
+        assert "not a member" in resp.json()["message"].lower()
+
     def test_list_includes_interval_field(self, client, workspace):
         client.post(
             "/v1/routines",

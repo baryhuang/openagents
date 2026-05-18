@@ -147,18 +147,13 @@ struct ChatView: View {
             ContentSidebar()
                 .environment(sidebar)
         }
+        #endif
+        // AvatarStack lives on the right side of the toolbar (window
+        // toolbar on macOS, nav-bar trailing on iOS) so users can tap it
+        // to open the Members sheet regardless of platform. The sidebar
+        // toggle sits beside it on macOS; iOS gets the toggle in the same
+        // toolbar slot via .primaryAction.
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                contentSidebarToggle
-            }
-        }
-        #else
-        .toolbar {
-            // AvatarStack lives on the right side of the window toolbar so
-            // the in-content header is no longer needed to surface the
-            // participating agents. ContentSidebarToggle sits to its right
-            // so the affordance stays in the same physical corner whether
-            // the avatars are visible or not.
             ToolbarItem(placement: .primaryAction) {
                 if let session = store.currentSession {
                     let sessionAgents = store.agents.filter {
@@ -180,7 +175,6 @@ struct ChatView: View {
                 contentSidebarToggle
             }
         }
-        #endif
     }
 
     private var chatColumn: some View {

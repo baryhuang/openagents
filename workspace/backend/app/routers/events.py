@@ -103,8 +103,15 @@ async def send_event(
     # Run through pipeline
     try:
         result = await pipeline.process(event, context)
-    except EventRejected:
-        return json_response(ResponseCode.UNAUTHORIZED, "Event rejected by pipeline")
+    except EventRejected as exc:
+        # Surface the reason so clients can roll back optimistic UI on
+        # specific failures (e.g. routine_channel_locked,
+        # channel_join_forbidden). 403 distinguishes "you can't do this"
+        # from generic auth failures.
+        reason = exc.reason or "rejected"
+        code = ResponseCode.FORBIDDEN if "forbidden" in reason or "locked" in reason \
+            else ResponseCode.UNAUTHORIZED
+        return json_response(code, reason)
 
     # Session revocation: another client has since joined as this agent.
     # Return a clear error so the stale client can stop its adapter.

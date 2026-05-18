@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Channel, ChannelMember, RoutineRecord, Workspace
+from app.models import Channel, ChannelMember, RoutineRecord, Workspace, WorkspaceMember
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _resolve_workspace, _verify_workspace_access
 
@@ -217,6 +217,26 @@ async def create_routine(
     target_agent = _normalize_agent_name(body.source)
     if not target_agent:
         return json_response(ResponseCode.BAD_REQUEST, "source is required")
+
+    # Identity check: `source` must reference an agent that is actually a
+    # member of this workspace. Routines fire under the source's identity
+    # and post into that agent's dedicated channel — accepting arbitrary
+    # source values would let any caller inject scheduled messages
+    # attributed to anyone they invented. Membership is the strongest
+    # identity guarantee available with the shared workspace-token auth
+    # model; per-agent auth is tracked separately.
+    is_member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == target_agent,
+        )
+    ).scalar_one_or_none()
+    if not is_member:
+        return json_response(
+            ResponseCode.FORBIDDEN,
+            f"source '{body.source}' is not a member of this workspace",
+        )
+
     routine_channel = _get_or_create_routine_channel(db, workspace, target_agent)
     next_fire = _compute_next_fires_at(body.hour, body.minute, body.days, body.interval_minutes)
 
