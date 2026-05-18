@@ -19,7 +19,6 @@ interface InstallProps {
 interface ActionBarProps {
   entry: CatalogEntry
   job: InstallJob | undefined
-  hasUpdate: boolean
   size?: "sm" | "default"
   className?: string
   onInstall: (entry: CatalogEntry, verb: "install" | "update") => void
@@ -29,7 +28,6 @@ interface ActionBarProps {
 function AgentActions({
   entry,
   job,
-  hasUpdate,
   size = "sm",
   className,
   onInstall,
@@ -50,9 +48,11 @@ function AgentActions({
     )
   }
 
-  // Globally installed (not managed by launcher) — no actions available.
-  if (isInstalled && !isManaged) return null
-
+  // Matches legacy renderer:
+  //   not installed        → [Install]
+  //   installed (managed)  → [Update] [Uninstall]
+  //   installed (global)   → [Install]  (no Uninstall — bundled npm cannot
+  //                                      remove a system-wide install)
   return (
     <div className={wrapperClass} onClick={stop}>
       {!isInstalled ? (
@@ -61,21 +61,25 @@ function AgentActions({
           variant="primary"
           onClick={(e) => { e.stopPropagation(); onInstall(entry, "install") }}
         >Install</Button>
-      ) : (
+      ) : isManaged ? (
         <>
-          {hasUpdate && (
-            <Button
-              size={size}
-              variant="primary"
-              onClick={(e) => { e.stopPropagation(); onInstall(entry, "update") }}
-            >Update</Button>
-          )}
+          <Button
+            size={size}
+            variant="primary"
+            onClick={(e) => { e.stopPropagation(); onInstall(entry, "update") }}
+          >Update</Button>
           <Button
             size={size}
             variant="destructive"
             onClick={(e) => { e.stopPropagation(); onUninstall(entry) }}
           >Uninstall</Button>
         </>
+      ) : (
+        <Button
+          size={size}
+          variant="primary"
+          onClick={(e) => { e.stopPropagation(); onInstall(entry, "install") }}
+        >Install</Button>
       )}
     </div>
   )
@@ -164,15 +168,22 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
 
   const loadAll = useCallback(async () => {
     try {
-      const [cat, inst, upd] = await Promise.all([
+      // Fast path: refresh catalog + installed records first so the list
+      // reflects new installed/uninstalled state immediately. The slow npm
+      // update check would otherwise block the entire UI refresh because of
+      // Promise.all, leaving the list showing stale "Install" buttons for the
+      // few seconds it takes to query the registry.
+      const [cat, inst] = await Promise.all([
         window.api.getCatalog(),
         window.api.getInstalledAgents().catch(() => [] as InstalledAgentRecord[]),
-        window.api.checkAgentUpdates().catch(() => [] as AgentUpdateInfo[]),
       ])
       setCatalog(cat)
       setInstalled(inst)
-      setUpdates(upd)
       setLoading(false)
+      // Slow path: hit npm in the background; do not block the visible UI.
+      window.api.checkAgentUpdates()
+        .then((upd) => setUpdates(upd))
+        .catch(() => { /* updates check failure is non-fatal */ })
     } catch {
       setLoading(false)
     }
@@ -272,6 +283,16 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
           entry={selected}
           onBack={() => setSelectedName(null)}
           onAfterInstall={(e) => {
+            // Optimistically mirror the just-finished job into local catalog
+            // state so that pressing "Back" immediately after success shows
+            // the correct Installed / Not installed pill, even before the
+            // backend refresh resolves.
+            const job = useInstallStore.getState().jobs[e.name]
+            if (job?.verb === "install" || job?.verb === "update" || job?.verb === "rollback") {
+              setCatalog((prev) => prev.map((c) => c.name === e.name ? { ...c, installed: true } : c))
+            } else if (job?.verb === "uninstall") {
+              setCatalog((prev) => prev.map((c) => c.name === e.name ? { ...c, installed: false } : c))
+            }
             loadAll()
             if (!installedList.find((r) => r.name === e.name)) {
               // Newly installed — open the wizard
@@ -392,7 +413,7 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
                   <div className="flex items-center gap-1.5">
                     {c.installed ? (
                       c.managed === false
-                        ? <Badge variant="info">Global</Badge>
+                        ? <Badge variant="info" title="Installed outside OpenAgents (system/global)">Global</Badge>
                         : <Badge variant="success">Installed</Badge>
                     ) : (
                       <span className="text-(--text-tertiary)">Not installed</span>
@@ -403,7 +424,6 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
                 <AgentActions
                   entry={c}
                   job={job}
-                  hasUpdate={hasUpdate}
                   size="sm"
                   className="flex-wrap border-t border-(--border) pt-2.5 mt-0.5 [&>button]:flex-1 [&>button]:min-w-0"
                   onInstall={handleInlineInstall}
@@ -445,7 +465,7 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
                 <div className="shrink-0">
                   {c.installed ? (
                     c.managed === false
-                      ? <Badge variant="info">Global</Badge>
+                      ? <Badge variant="info" title="Installed outside OpenAgents (system/global)">Global</Badge>
                       : <Badge variant="success">Installed</Badge>
                   ) : (
                     <Badge variant="warning">Not installed</Badge>
@@ -455,7 +475,6 @@ export default function Install({ showToast }: InstallProps): React.JSX.Element 
                 <AgentActions
                   entry={c}
                   job={job}
-                  hasUpdate={hasUpdate}
                   size="sm"
                   onInstall={handleInlineInstall}
                   onUninstall={handleInlineUninstall}

@@ -88,6 +88,14 @@ export default function AgentDetail({
   const isManaged = entry.managed !== false
   const isInstalling = !!job && job.phase !== "done" && job.phase !== "error"
 
+  // Keep the progress card visible until the user leaves the detail page.
+  // We "stick" once we've observed an active job during this mount, so
+  // revisiting a page whose job already finished does not flash the card.
+  const [progressSticky, setProgressSticky] = useState(false)
+  useEffect(() => { setProgressSticky(false) }, [entry.name])
+  useEffect(() => { if (isInstalling) setProgressSticky(true) }, [isInstalling])
+  const showProgress = !!job && job.verb !== "uninstall" && job.verb !== "rollback" && (isInstalling || progressSticky)
+
   async function saveEnv(): Promise<void> {
     setSavingEnv(true)
     try {
@@ -197,7 +205,7 @@ export default function AgentDetail({
             {isInstalled ? (
               isManaged
                 ? <Badge variant="success">Installed</Badge>
-                : <Badge variant="info">Global</Badge>
+                : <Badge variant="info" title="Installed outside OpenAgents (system/global)">Global</Badge>
             ) : (
               <Badge variant="warning">Not installed</Badge>
             )}
@@ -240,10 +248,27 @@ export default function AgentDetail({
               </Button>
             </>
           )}
+          {/* Global install (binary on PATH outside ~/.openagents/). Matches
+              the legacy renderer: a single Install button installs the
+              launcher-managed copy. Uninstall is intentionally omitted —
+              the bundled npm can only remove the launcher's own prefix
+              and would not touch the user's system-wide install. */}
+          {isInstalled && !isManaged && (
+            <>
+              <Button size="sm" variant="primary" onClick={startInstall} disabled={isInstalling}>
+                {isInstalling ? "Installing…" : "Install"}
+              </Button>
+              {onOpenWizard && (
+                <Button size="sm" onClick={() => onOpenWizard(entry)} disabled={isInstalling}>
+                  Setup wizard
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      {job && job.verb !== "uninstall" && job.verb !== "rollback" && isInstalling && (
+      {showProgress && job && (
         <div className={SECTION}>
           <h4 className={SECTION_H4}>{job.verb === "update" ? "Update progress" : "Install progress"}</h4>
           <PhaseBar phase={job.phase} detail={job.detail} errored={job.phase === "error"} />
