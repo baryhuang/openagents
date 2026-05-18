@@ -9,17 +9,26 @@
     Your apps → iOS app (bundle id: com.openagents.go) →
     "GoogleService-Info.plist" → Download
 
-  Without the real values, FirebaseApp.configure() will log a fatal error
-  on iOS launch. The placeholder is committed so xcodegen can wire the
-  resource path; the actual values are owned by the Firebase project and
-  should not live in the repo until the iOS app is added there.
+  The values here are format-valid placeholders — they pass Firebase
+  Installations' validation (39-char `AIza…` API key, well-formed
+  GOOGLE_APP_ID) so the framework can auto-init on every platform without
+  raising NSException at launch. They are NOT real credentials; any actual
+  Firebase network call (sign-in, FCM token, Installations register) will
+  fail. Replace with a real plist before shipping iOS auth/push features.
+
+  The plist is bundled into both platforms because xcodegen's
+  `platforms: [iOS]` filter on the FirebaseCore/FirebaseMessaging
+  dependencies doesn't reach the linked frameworks — they end up in the
+  macOS bundle too, and Firebase auto-configures from the plist on launch.
+  Proper fix is a build-phase platformFilter; this placeholder is the
+  bandaid that keeps macOS launchable until that lands.
 -->
 <plist version="1.0">
 <dict>
     <key>API_KEY</key>
-    <string>PLACEHOLDER_REPLACE_WITH_REAL_PLIST</string>
+    <string>AIzaPLACEHOLDERPLACEHOLDERPLACEHOLDER01</string>
     <key>GCM_SENDER_ID</key>
-    <string>0</string>
+    <string>000000000000</string>
     <key>PLIST_VERSION</key>
     <string>1</string>
     <key>BUNDLE_ID</key>
@@ -39,6 +48,6 @@
     <key>IS_SIGNIN_ENABLED</key>
     <true/>
     <key>GOOGLE_APP_ID</key>
-    <string>1:0:ios:0</string>
+    <string>1:000000000000:ios:0000000000000000000000</string>
 </dict>
 </plist>

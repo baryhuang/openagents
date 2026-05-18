@@ -48,6 +48,7 @@ struct ChatView: View {
     /// `consumeSlashKey(_:)` instead of letting them produce normal text.
     @State private var slashSuggestionsOpen: Bool = false
     @State private var slashSuggestionIndex: Int = 0
+    @State private var membersSheetOpen: Bool = false
 
     private struct SlashCommand: Identifiable {
         let id: String           // also used as the `name` ("restart")
@@ -66,6 +67,11 @@ struct ChatView: View {
             id: "status",
             description: "Show agent uptime, version, and network.",
             systemImage: "info.circle",
+        ),
+        SlashCommand(
+            id: "routines",
+            description: "List active recurring routines for this agent.",
+            systemImage: "calendar.badge.clock",
         ),
     ]
 
@@ -141,26 +147,27 @@ struct ChatView: View {
             ContentSidebar()
                 .environment(sidebar)
         }
+        #endif
+        // AvatarStack lives on the right side of the toolbar (window
+        // toolbar on macOS, nav-bar trailing on iOS) so users can tap it
+        // to open the Members sheet regardless of platform. The sidebar
+        // toggle sits beside it on macOS; iOS gets the toggle in the same
+        // toolbar slot via .primaryAction.
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                contentSidebarToggle
-            }
-        }
-        #else
-        .toolbar {
-            // AvatarStack lives on the right side of the window toolbar so
-            // the in-content header is no longer needed to surface the
-            // participating agents. ContentSidebarToggle sits to its right
-            // so the affordance stays in the same physical corner whether
-            // the avatars are visible or not.
             ToolbarItem(placement: .primaryAction) {
                 if let session = store.currentSession {
                     let sessionAgents = store.agents.filter {
                         session.participants.isEmpty || session.participants.contains($0.agentName)
                     }
                     if !sessionAgents.isEmpty {
-                        AvatarStack(agents: sessionAgents)
-                            .frame(width: 28, height: 28)
+                        Button {
+                            membersSheetOpen.toggle()
+                        } label: {
+                            AvatarStack(agents: sessionAgents)
+                                .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Manage channel members")
                     }
                 }
             }
@@ -168,7 +175,6 @@ struct ChatView: View {
                 contentSidebarToggle
             }
         }
-        #endif
     }
 
     private var chatColumn: some View {
@@ -215,6 +221,12 @@ struct ChatView: View {
             // Catches the cold-launch case: app opened via "Open in…", router
             // received URL, then chat view mounted with attachments waiting.
             drainExternalAttachments()
+        }
+        .sheet(isPresented: $membersSheetOpen) {
+            if let session = store.currentSession {
+                MembersSheet(session: session, isPresented: $membersSheetOpen)
+                    .environment(store)
+            }
         }
         #if os(macOS)
         .background(Color(.controlBackgroundColor))
@@ -825,8 +837,17 @@ struct ChatView: View {
             draft.wrappedValue = ""
             slashSuggestionsOpen = false
             Task { await store.requestSessionStatus(sessionId: id) }
+        case "routines":
+            guard let id = store.currentSessionId else {
+                store.lastError = "/routines requires an active session."
+                return
+            }
+            logInfo("ui", "/routines invoked session=\(id)")
+            draft.wrappedValue = ""
+            slashSuggestionsOpen = false
+            Task { await store.requestSessionRoutines(sessionId: id) }
         default:
-            store.lastError = "Unknown command: /\(head). Available: /restart, /status"
+            store.lastError = "Unknown command: /\(head). Available: /restart, /status, /routines"
         }
     }
 
@@ -1441,6 +1462,170 @@ private struct BubbleFillModifier: ViewModifier {
             content.frame(maxWidth: .infinity, alignment: alignment)
         } else {
             content
+        }
+    }
+}
+
+/// iMessage-style channel member sheet: a list of current channel members
+/// up top with per-row Remove (gated by an alert), and below it a search +
+/// list of online workspace agents not yet in the channel, each with Add.
+/// Routine channels (`routines:<agent>`) are membership-locked — the sheet
+/// shows a notice and hides the edit controls entirely.
+private struct MembersSheet: View {
+    let session: Session
+    @Binding var isPresented: Bool
+    @Environment(WorkspaceStore.self) private var store
+
+    @State private var searchText: String = ""
+    @State private var pendingRemove: Agent?
+
+    private var members: [Agent] {
+        store.agents.filter { session.participants.contains($0.agentName) }
+    }
+
+    private var addableAgents: [Agent] {
+        let inChannel = Set(session.participants)
+        let online = store.agents.filter { $0.isOnline && !inChannel.contains($0.agentName) }
+        let q = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return online }
+        return online.filter { $0.agentName.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if session.isRoutineChannel {
+                    routineLockedView
+                } else {
+                    editableList
+                }
+            }
+            .navigationTitle("Channel Members")
+            #if os(macOS)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isPresented = false }
+                }
+            }
+            #else
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isPresented = false }
+                }
+            }
+            #endif
+            .alert(
+                "Remove \(pendingRemove?.agentName ?? "agent")?",
+                isPresented: Binding(
+                    get: { pendingRemove != nil },
+                    set: { if !$0 { pendingRemove = nil } },
+                ),
+                presenting: pendingRemove,
+            ) { agent in
+                Button("Remove", role: .destructive) {
+                    Task {
+                        await store.removeAgentFromSession(
+                            sessionId: session.sessionId,
+                            agentName: agent.agentName,
+                        )
+                        pendingRemove = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingRemove = nil }
+            } message: { agent in
+                Text("\(agent.agentName) will stop receiving messages on this channel.")
+            }
+        }
+        .frame(minWidth: 380, minHeight: 460)
+    }
+
+    private var routineLockedView: some View {
+        List {
+            Section {
+                ForEach(members) { agent in
+                    memberRow(agent, removable: false)
+                }
+            } header: {
+                Text("OWNER")
+            } footer: {
+                Text("This channel is a routine queue — membership is managed by the system.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var editableList: some View {
+        List {
+            Section("IN THIS CHANNEL (\(members.count))") {
+                if members.isEmpty {
+                    Text("No agents yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(members) { agent in
+                        memberRow(agent, removable: true)
+                    }
+                }
+            }
+
+            Section("ADD AGENTS") {
+                #if os(iOS)
+                TextField("Search online agents", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                #else
+                TextField("Search online agents", text: $searchText)
+                #endif
+
+                if addableAgents.isEmpty {
+                    Text(searchText.isEmpty ? "No online agents available." : "No matches.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                } else {
+                    ForEach(addableAgents) { agent in
+                        HStack(spacing: 10) {
+                            AvatarStack(agents: [agent])
+                                .frame(width: 28, height: 28)
+                            Text(agent.agentName)
+                            Spacer()
+                            Button("Add") {
+                                Task {
+                                    await store.addAgentToSession(
+                                        sessionId: session.sessionId,
+                                        agentName: agent.agentName,
+                                    )
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func memberRow(_ agent: Agent, removable: Bool) -> some View {
+        HStack(spacing: 10) {
+            AvatarStack(agents: [agent])
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(agent.agentName)
+                if session.master == agent.agentName {
+                    Text("master")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if removable {
+                Button("Remove", role: .destructive) {
+                    pendingRemove = agent
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
     }
 }

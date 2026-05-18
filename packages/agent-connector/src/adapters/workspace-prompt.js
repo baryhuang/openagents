@@ -297,22 +297,35 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       'Create a recurring routine that fires on a schedule and posts a message ' +
       'to the channel, waking you to do the work. Great for daily standups, ' +
       'periodic reviews, scheduled checks.\n\n' +
-      '**Schedule:** Specify `hour` (0-23 UTC), `minute` (0-59), and optional ' +
-      '`days` array (0=Mon, 6=Sun). Omit `days` for every day.\n\n' +
-      '**Create a routine:**\n' +
+      '**Routines fire in `routines:<your-name>`** — every routine you create ' +
+      'lands in your dedicated routine channel (one per agent, per workspace). ' +
+      'Users see it grouped under the "Routines" section in the threads list. ' +
+      'No need to pass `channel` — the server routes automatically.\n\n' +
+      '**Two schedule modes:**\n' +
+      '- **Daily**: `hour` (0-23 UTC) + `minute` (0-59), optional `days` ' +
+      'array (0=Mon, 6=Sun). Omit `days` for every day.\n' +
+      '- **Interval**: `interval_minutes` (1-1440). Fires every N minutes. ' +
+      'Mutually exclusive with `hour`/`minute`.\n\n' +
+      '**Create a daily routine:**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/routines -d '{"name":"Daily PR Review","message":"Review open PRs",` +
       `"hour":8,"minute":0,` +
-      `"network":"${workspaceId}","channel":"${channelName}",` +
+      `"network":"${workspaceId}",` +
       `"source":"openagents:${agentName}"}'\`\n\n` +
       '**Create a weekday-only routine (Mon-Fri):**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/routines -d '{"name":"Morning Standup","message":"Post standup summary",` +
       `"hour":9,"minute":0,"days":[0,1,2,3,4],` +
-      `"network":"${workspaceId}","channel":"${channelName}",` +
+      `"network":"${workspaceId}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**Create an interval routine (every 15 minutes):**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/routines -d '{"name":"Watch CI","message":"Check the build",` +
+      `"interval_minutes":15,` +
+      `"network":"${workspaceId}",` +
       `"source":"openagents:${agentName}"}'\`\n\n` +
       '**List active routines:**\n' +
-      `\`${curl} -s -H "${h}" "${baseUrl}/v1/routines?network=${workspaceId}&channel=${channelName}"\`\n\n` +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/routines?network=${workspaceId}"\`\n\n` +
       '**Cancel a routine:**\n' +
       `\`${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/routines/ROUTINE_ID\`\n`
     );

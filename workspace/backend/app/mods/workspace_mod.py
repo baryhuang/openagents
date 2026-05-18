@@ -21,7 +21,7 @@ from typing import List, Optional
 from sqlalchemy import select
 
 from openagents.core.onm_events import Event, WorkspaceEventTypes
-from openagents.core.onm_mods import PipelineContext, TransformMod
+from openagents.core.onm_mods import EventRejected, PipelineContext, TransformMod
 
 logger = logging.getLogger(__name__)
 
@@ -311,8 +311,36 @@ async def _handle_channel_create(event: Event, ctx: PipelineContext) -> Optional
     return event
 
 
+def _is_channel_admin(event_source: str, channel, agent_name: str) -> bool:
+    """Who is allowed to manage channel membership.
+
+    Three sources are accepted:
+      • a human user (`human:<name>`) — workspace clients act on behalf
+        of the logged-in human
+      • the channel's master agent (`openagents:<master>`) — owner can
+        manage their own thread
+      • the agent being added/removed itself (`openagents:<agent_name>`) —
+        agents can join channels they've been invited to and leave on
+        their own initiative
+    """
+    src = event_source or ""
+    if src.startswith("human:"):
+        return True
+    if channel.master_agent and src == f"openagents:{channel.master_agent}":
+        return True
+    if src == f"openagents:{agent_name}":
+        return True
+    return False
+
+
 async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[Event]:
-    """network.channel.join → add ChannelMember."""
+    """network.channel.join → add ChannelMember.
+
+    Routine channels (`routines:<agent>`) are locked single-agent queues —
+    we raise EventRejected so clients can roll back any optimistic UI.
+    The owner is added in-line when the channel is first created (see
+    app/routers/routines.py).
+    """
     from app.models import Channel, ChannelMember
 
     db = ctx.extra["db"]
@@ -323,6 +351,12 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
     if not channel_name or not agent_name:
         return None
 
+    if channel_name.startswith("routines:"):
+        raise EventRejected(
+            "workspace_mod",
+            "routine_channel_locked: membership of routines:* is managed by the system",
+        )
+
     channel = db.execute(
         select(Channel).where(
             Channel.workspace_id == workspace.id,
@@ -330,7 +364,14 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
         )
     ).scalar_one_or_none()
     if not channel:
-        return None
+        raise EventRejected("workspace_mod", "channel_not_found")
+
+    if not _is_channel_admin(event.source or "", channel, agent_name):
+        raise EventRejected(
+            "workspace_mod",
+            "channel_join_forbidden: only humans, the channel master, or "
+            "the agent being added may invite",
+        )
 
     # Check if already a member
     existing = db.execute(
@@ -351,7 +392,12 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
 
 
 async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[Event]:
-    """network.channel.leave → remove ChannelMember."""
+    """network.channel.leave → remove ChannelMember.
+
+    Routine channels are locked — removing the owner is rejected so the
+    queue keeps its single-agent invariant. Returns EventRejected so
+    clients can roll back optimistic UI.
+    """
     from app.models import Channel, ChannelMember
 
     db = ctx.extra["db"]
@@ -362,6 +408,12 @@ async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[
     if not channel_name or not agent_name:
         return None
 
+    if channel_name.startswith("routines:"):
+        raise EventRejected(
+            "workspace_mod",
+            "routine_channel_locked: membership of routines:* is managed by the system",
+        )
+
     channel = db.execute(
         select(Channel).where(
             Channel.workspace_id == workspace.id,
@@ -369,7 +421,14 @@ async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[
         )
     ).scalar_one_or_none()
     if not channel:
-        return None
+        raise EventRejected("workspace_mod", "channel_not_found")
+
+    if not _is_channel_admin(event.source or "", channel, agent_name):
+        raise EventRejected(
+            "workspace_mod",
+            "channel_leave_forbidden: only humans, the channel master, or "
+            "the agent being removed may leave",
+        )
 
     member = db.execute(
         select(ChannelMember).where(
@@ -821,14 +880,25 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     event.metadata["target_agents"] = targets if targets else ["__no_response__"]
 
     # Auto-add targeted agents as channel participants so they can poll
-    # for messages on this channel.
-    from app.models import ChannelMember
-    existing = {p.agent_name for p in (channel.participants or [])}
-    for agent_name in event.metadata.get("target_agents", []):
-        if agent_name not in existing:
-            db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
-            existing.add(agent_name)
-    db.flush()
+    # for messages on this channel. Three guards:
+    #   1. Never add the `__no_response__` sentinel — it's a routing
+    #      signal, not a real agent.
+    #   2. Only auto-add when the sender is a human. Agent→agent routing
+    #      decisions (from the LLM router or master-fallback) used to
+    #      drag bystander agents into channels they didn't belong in.
+    #   3. Routine channels (`routines:<agent>`) are locked single-agent
+    #      job queues — never add anyone but the owner.
+    if event.source and event.source.startswith("human:") and \
+            not channel.name.startswith("routines:"):
+        from app.models import ChannelMember
+        existing = {p.agent_name for p in (channel.participants or [])}
+        for agent_name in event.metadata.get("target_agents", []):
+            if agent_name == "__no_response__":
+                continue
+            if agent_name not in existing:
+                db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
+                existing.add(agent_name)
+        db.flush()
 
     return event
 

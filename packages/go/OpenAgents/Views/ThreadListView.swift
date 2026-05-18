@@ -5,6 +5,21 @@ import AppKit
 import UIKit
 #endif
 
+/// Channels whose name starts with this prefix are per-agent routine
+/// queues — each agent gets one routine channel per workspace, and every
+/// routine the agent owns fires into it. We group these into a separate
+/// collapsible "Routines" section at the bottom of the thread list so they
+/// don't clutter regular conversations.
+private let routineChannelPrefix = "routines:"
+
+extension Session {
+    var isRoutineChannel: Bool { sessionId.hasPrefix(routineChannelPrefix) }
+    var routineAgentName: String? {
+        guard isRoutineChannel else { return nil }
+        return String(sessionId.dropFirst(routineChannelPrefix.count))
+    }
+}
+
 struct ThreadListView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -13,12 +28,21 @@ struct ThreadListView: View {
     @State private var newThreadOpen: Bool = false
     @State private var renamingSession: Session?
     @State private var renameDraft: String = ""
+    @State private var routinesExpanded: Bool = false
 
     private var filteredSessions: [Session] {
         let sessions = store.activeSessions
         let q = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         if q.isEmpty { return sessions }
         return sessions.filter { $0.title.lowercased().contains(q) }
+    }
+
+    private var regularSessions: [Session] {
+        filteredSessions.filter { !$0.isRoutineChannel }
+    }
+
+    private var routineSessions: [Session] {
+        filteredSessions.filter { $0.isRoutineChannel }
     }
 
     var body: some View {
@@ -154,7 +178,7 @@ struct ThreadListView: View {
                 get: { store.currentSessionId },
                 set: { id in store.selectSession(id) },
             )) {
-                ForEach(filteredSessions) { session in
+                ForEach(regularSessions) { session in
                     ThreadRow(
                         session: session,
                         agents: store.agents,
@@ -210,6 +234,30 @@ struct ThreadListView: View {
                             Task { await store.setStatus(sessionId: session.sessionId, status: "deleted") }
                         } label: {
                             Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+
+                if !routineSessions.isEmpty {
+                    DisclosureGroup(isExpanded: $routinesExpanded) {
+                        ForEach(routineSessions) { session in
+                            RoutineThreadRow(
+                                session: session,
+                                lastMessage: store.lastMessageBySession[session.sessionId],
+                            )
+                            .tag(session.sessionId)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar.badge.clock")
+                                .foregroundStyle(.secondary)
+                            Text("Routines")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("(\(routineSessions.count))")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Spacer()
                         }
                     }
                 }
@@ -288,6 +336,61 @@ private struct ThreadRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .italic(lastMessage?.isStatus == true)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Row variant used inside the "Routines" disclosure group. Shows the
+/// agent name (the bit after `routines:`) with a calendar icon, plus the
+/// last activity time and the most recent fire's preview line.
+private struct RoutineThreadRow: View {
+    let session: Session
+    let lastMessage: Message?
+
+    private var agentName: String { session.routineAgentName ?? session.title }
+
+    private var lastActivityLabel: String {
+        if let ms = session.lastEventAt {
+            return RelativeTime.format(Date(timeIntervalSince1970: TimeInterval(ms) / 1000.0))
+        }
+        return ""
+    }
+
+    private var previewLine: String {
+        guard let message = lastMessage else { return "" }
+        let sender = message.isFromUser ? "You" : message.senderName
+        let trimmed = message.content
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return sender }
+        return "\(sender): \(trimmed)"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 18))
+                .foregroundStyle(.secondary)
+                .frame(width: 36, height: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(agentName)
+                        .font(.body)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(lastActivityLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !previewLine.isEmpty {
+                    Text(previewLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
         .padding(.vertical, 4)

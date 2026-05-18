@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import RoutineRecord, Workspace
+from app.models import Channel, ChannelMember, RoutineRecord, Workspace, WorkspaceMember
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _resolve_workspace, _verify_workspace_access
 
@@ -33,31 +33,98 @@ router = APIRouter(prefix="/v1", tags=["Routines"])
 class CreateRoutineRequest(BaseModel):
     name: str
     message: str
-    hour: int
-    minute: int
+    # Daily mode (hour + minute, optional days). interval_minutes is the other mode.
+    hour: Optional[int] = None
+    minute: Optional[int] = None
     days: Optional[List[int]] = None
+    interval_minutes: Optional[int] = None
     network: str
     source: str
     channel: Optional[str] = None
     thread_id: Optional[str] = None
 
 
+# Minute-interval mode bounds (1 minute floor matches scheduler tick;
+# 1-day ceiling — for anything longer, use daily hour/minute mode).
+MIN_INTERVAL_MINUTES = 1
+MAX_INTERVAL_MINUTES = 1440
+
+
+# ---------------------------------------------------------------------------
+# Routine channel — one per agent, per workspace.
+# Routines from any thread always fire into the agent's routine channel.
+# ---------------------------------------------------------------------------
+
+ROUTINE_CHANNEL_PREFIX = "routines:"
+
+
+def _normalize_agent_name(source: str) -> str:
+    """Strip the `openagents:` prefix if present; routines store the bare name."""
+    if source and source.startswith("openagents:"):
+        return source[len("openagents:"):]
+    return source or ""
+
+
+def _routine_channel_name(agent: str) -> str:
+    return f"{ROUTINE_CHANNEL_PREFIX}{agent}"
+
+
+def _get_or_create_routine_channel(db: Session, workspace: Workspace, agent: str) -> Channel:
+    """Find-or-create the per-agent routine channel for this workspace.
+
+    The channel functions as a per-agent job queue: every routine for this
+    agent fires into it. master_agent is set so the existing routing /
+    discovery code treats this as the agent's own thread.
+    """
+    name = _routine_channel_name(agent)
+    existing = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == str(workspace.id),
+            Channel.name == name,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    channel = Channel(
+        workspace_id=str(workspace.id),
+        name=name,
+        title=agent,
+        master_agent=agent,
+        created_by=f"system:routine",
+        status="active",
+    )
+    db.add(channel)
+    db.flush()  # so channel.id is available for the membership row
+    db.add(ChannelMember(channel_id=channel.id, agent_name=agent))
+    return channel
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _compute_next_fires_at(hour: int, minute: int, days: Optional[List[int]]) -> datetime:
+def _compute_next_fires_at(
+    hour: Optional[int],
+    minute: Optional[int],
+    days: Optional[List[int]],
+    interval_minutes: Optional[int] = None,
+) -> datetime:
     """Compute the next UTC datetime that matches the given schedule."""
+    from datetime import timedelta
+
     now = datetime.now(timezone.utc)
+
+    if interval_minutes is not None:
+        return now + timedelta(minutes=interval_minutes)
+
     today = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
     if days is None:
         if today > now:
             return today
-        from datetime import timedelta
         return today + timedelta(days=1)
 
-    from datetime import timedelta
     current_weekday = now.weekday()  # 0=Mon
     for offset in range(8):
         candidate = today + timedelta(days=offset)
@@ -78,6 +145,7 @@ def _serialize_routine(r: RoutineRecord) -> dict:
         "schedule_hour": r.schedule_hour,
         "schedule_minute": r.schedule_minute,
         "schedule_days": r.schedule_days,
+        "schedule_interval_minutes": r.schedule_interval_minutes,
         "timezone": r.timezone,
         "next_fires_at": r.next_fires_at.isoformat() if r.next_fires_at else None,
         "last_fired_at": r.last_fired_at.isoformat() if r.last_fired_at else None,
@@ -107,27 +175,82 @@ async def create_routine(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
 
-    if not (0 <= body.hour <= 23):
-        return json_response(ResponseCode.BAD_REQUEST, "hour must be 0-23")
-    if not (0 <= body.minute <= 59):
-        return json_response(ResponseCode.BAD_REQUEST, "minute must be 0-59")
-    if body.days is not None:
-        if not body.days or not all(0 <= d <= 6 for d in body.days):
-            return json_response(ResponseCode.BAD_REQUEST, "days must be array of 0-6 (Mon=0, Sun=6)")
+    is_interval = body.interval_minutes is not None
+    is_daily = body.hour is not None or body.minute is not None
+    if is_interval and is_daily:
+        return json_response(
+            ResponseCode.BAD_REQUEST,
+            "Specify either interval_minutes OR hour/minute, not both",
+        )
+    if not is_interval and not is_daily:
+        return json_response(
+            ResponseCode.BAD_REQUEST,
+            "Specify either interval_minutes OR hour/minute",
+        )
 
-    channel_name = body.channel or "default"
-    next_fire = _compute_next_fires_at(body.hour, body.minute, body.days)
+    if is_interval:
+        if not (MIN_INTERVAL_MINUTES <= body.interval_minutes <= MAX_INTERVAL_MINUTES):
+            return json_response(
+                ResponseCode.BAD_REQUEST,
+                f"interval_minutes must be {MIN_INTERVAL_MINUTES}-{MAX_INTERVAL_MINUTES}",
+            )
+        if body.days is not None:
+            return json_response(
+                ResponseCode.BAD_REQUEST,
+                "days is not allowed in interval mode",
+            )
+    else:
+        if body.hour is None or body.minute is None:
+            return json_response(ResponseCode.BAD_REQUEST, "hour and minute are both required in daily mode")
+        if not (0 <= body.hour <= 23):
+            return json_response(ResponseCode.BAD_REQUEST, "hour must be 0-23")
+        if not (0 <= body.minute <= 59):
+            return json_response(ResponseCode.BAD_REQUEST, "minute must be 0-59")
+        if body.days is not None:
+            if not body.days or not all(0 <= d <= 6 for d in body.days):
+                return json_response(ResponseCode.BAD_REQUEST, "days must be array of 0-6 (Mon=0, Sun=6)")
+
+    # The caller's `channel` is intentionally ignored — every routine lives
+    # in the target agent's dedicated routine channel. This gives each
+    # (workspace, agent) pair a single canonical job queue and keeps regular
+    # conversation threads from being spammed by scheduled output.
+    target_agent = _normalize_agent_name(body.source)
+    if not target_agent:
+        return json_response(ResponseCode.BAD_REQUEST, "source is required")
+
+    # Identity check: `source` must reference an agent that is actually a
+    # member of this workspace. Routines fire under the source's identity
+    # and post into that agent's dedicated channel — accepting arbitrary
+    # source values would let any caller inject scheduled messages
+    # attributed to anyone they invented. Membership is the strongest
+    # identity guarantee available with the shared workspace-token auth
+    # model; per-agent auth is tracked separately.
+    is_member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == target_agent,
+        )
+    ).scalar_one_or_none()
+    if not is_member:
+        return json_response(
+            ResponseCode.FORBIDDEN,
+            f"source '{body.source}' is not a member of this workspace",
+        )
+
+    routine_channel = _get_or_create_routine_channel(db, workspace, target_agent)
+    next_fire = _compute_next_fires_at(body.hour, body.minute, body.days, body.interval_minutes)
 
     routine = RoutineRecord(
         workspace_id=str(workspace.id),
-        channel_name=channel_name,
+        channel_name=routine_channel.name,
         thread_id=body.thread_id,
-        created_by=body.source,
+        created_by=target_agent,
         name=body.name,
         message=body.message,
         schedule_hour=body.hour,
         schedule_minute=body.minute,
         schedule_days=body.days,
+        schedule_interval_minutes=body.interval_minutes,
         next_fires_at=next_fire,
     )
     db.add(routine)

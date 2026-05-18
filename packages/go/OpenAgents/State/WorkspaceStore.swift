@@ -711,6 +711,127 @@ final class WorkspaceStore {
         }
     }
 
+    /// Remove an agent from a channel. Optimistically drops the agent from
+    /// the local `Session.participants` so the avatar disappears immediately;
+    /// the next discovery refresh confirms the canonical state.
+    func removeAgentFromSession(sessionId: String, agentName: String) async {
+        logInfo("members", "removing \(agentName) from channel=\(sessionId)")
+        if let idx = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
+            let s = sessions[idx]
+            let updated = s.participants.filter { $0 != agentName }
+            sessions[idx] = Session(
+                sessionId: s.sessionId,
+                workspaceId: s.workspaceId,
+                createdBy: s.createdBy,
+                title: s.title,
+                status: s.status,
+                starred: s.starred,
+                participants: updated,
+                master: s.master,
+                createdAt: s.createdAt,
+                lastEventAt: s.lastEventAt,
+            )
+        }
+        do {
+            _ = try await api.removeAgentFromChannel(channelName: sessionId, agentName: agentName)
+        } catch {
+            logWarn("members", "remove failed: \(error.localizedDescription)")
+            lastError = "Failed to remove \(agentName): \(error.localizedDescription)"
+            await refreshDiscovery()
+        }
+    }
+
+    /// Add an agent to a channel. Optimistic local update; reverts on failure.
+    func addAgentToSession(sessionId: String, agentName: String) async {
+        logInfo("members", "adding \(agentName) to channel=\(sessionId)")
+        if let idx = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
+            let s = sessions[idx]
+            if !s.participants.contains(agentName) {
+                sessions[idx] = Session(
+                    sessionId: s.sessionId,
+                    workspaceId: s.workspaceId,
+                    createdBy: s.createdBy,
+                    title: s.title,
+                    status: s.status,
+                    starred: s.starred,
+                    participants: s.participants + [agentName],
+                    master: s.master,
+                    createdAt: s.createdAt,
+                    lastEventAt: s.lastEventAt,
+                )
+            }
+        }
+        do {
+            _ = try await api.addAgentToChannel(channelName: sessionId, agentName: agentName)
+        } catch {
+            logWarn("members", "add failed: \(error.localizedDescription)")
+            lastError = "Failed to add \(agentName): \(error.localizedDescription)"
+            await refreshDiscovery()
+        }
+    }
+
+    /// Send a `routines` control event to every agent in this session. Each
+    /// agent posts back a chat message with a markdown table of its own
+    /// active routines. Used by the `/routines` slash command. Read-only.
+    ///
+    /// For routine channels (`routines:<agent>`) we target only the owner,
+    /// regardless of what the cached `session.participants` says — the
+    /// channel is a single-agent job queue by design, and falling back to
+    /// "all agents" on an empty cached participant list would invite every
+    /// other agent in the workspace to chime in.
+    func requestSessionRoutines(sessionId: String) async {
+        guard let session = sessions.first(where: { $0.sessionId == sessionId }) else {
+            logWarn("routines", "no session for id=\(sessionId)")
+            return
+        }
+        let routinePrefix = "routines:"
+        let sessionAgents: [Agent]
+        if let owner = session.routineAgentName,
+           let ownerAgent = agents.first(where: { $0.agentName == owner }) {
+            sessionAgents = [ownerAgent]
+        } else if session.sessionId.hasPrefix(routinePrefix) {
+            logWarn("routines", "owner agent not online for \(sessionId)")
+            return
+        } else {
+            sessionAgents = agents.filter {
+                session.participants.isEmpty || session.participants.contains($0.agentName)
+            }
+        }
+        guard !sessionAgents.isEmpty else {
+            logWarn("routines", "no agents in session=\(sessionId)")
+            return
+        }
+
+        let optimistic = Message.localStatus(
+            channel: sessionId,
+            content: "Listing routines…",
+            idPrefix: "local-routines-",
+        )
+        var page = pagesBySession[sessionId] ?? ChannelMessages()
+        page.messages.append(optimistic)
+        pagesBySession[sessionId] = page
+        lastMessageBySession[sessionId] = optimistic
+
+        let agentNames = sessionAgents.map(\.agentName)
+        logInfo("routines", "requesting routines from \(agentNames.count) agent(s) channel=\(sessionId)")
+
+        await withTaskGroup(of: Void.self) { group in
+            for name in agentNames {
+                group.addTask { [api = self.api, sessionId] in
+                    do {
+                        _ = try await api.sendAgentControl(
+                            agentName: name,
+                            action: "routines",
+                            params: ["channel": sessionId],
+                        )
+                    } catch {
+                        logWarn("routines", "agent=\(name) failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
     /// Forward an A2UI action result upstream. Called when the user interacts
     /// with a rendered spec component; non-throwing so SwiftUI callbacks stay
     /// fire-and-forget. Failures are logged but never surface as banners —

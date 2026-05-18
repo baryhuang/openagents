@@ -389,9 +389,13 @@ class RoutineRecord(Base):
     created_by = Column(Text, nullable=False)              # "openagents:agent-name"
     name = Column(Text, nullable=False)                     # human-readable label
     message = Column(Text, nullable=False)                  # message posted when routine fires
-    schedule_hour = Column(Integer, nullable=False)         # 0-23 UTC
-    schedule_minute = Column(Integer, nullable=False)       # 0-59
+    # Daily schedule mode: hour + minute (+ optional days). One of the two
+    # modes must be set when the row is created (enforced in the router).
+    schedule_hour = Column(Integer, nullable=True)          # 0-23 UTC
+    schedule_minute = Column(Integer, nullable=True)        # 0-59
     schedule_days = Column(JSONB, nullable=True)            # null=every day, or [0..6] (0=Mon)
+    # Interval mode: fire every N minutes. Mutually exclusive with hour/minute.
+    schedule_interval_minutes = Column(Integer, nullable=True)
     timezone = Column(Text, default="UTC")
     next_fires_at = Column(DateTime(timezone=True), nullable=False)
     last_fired_at = Column(DateTime(timezone=True), nullable=True)
