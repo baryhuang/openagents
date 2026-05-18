@@ -812,23 +812,21 @@ async def persist_tab(
     except Exception:
         pass
 
-    # Create BrowserBase context (cloud mode)
+    # Save current session state and create persistent context
     manager = BrowserManager.get()
     bb_context_id = None
     if manager.is_cloud:
         try:
-            bb_context_id = manager.create_bb_context()
+            await _ensure_connected(tab, db)
+            bb_context_id = await manager.create_bb_context(session_id=tab.session_id)
         except Exception as e:
-            logger.error("Failed to create BB context: %s", e)
+            logger.error("Failed to create persistent context: %s", e)
             return json_response(ResponseCode.INTERNAL_ERROR, "Failed to create persistent context")
 
-    # Try to close the current session and reopen with the context so that
-    # cookies are saved on next close. On serverless (Vercel), the in-memory
-    # browser state may be gone — if reconnection fails, we just create the
-    # context record anyway. The context will activate on next tab open.
+    # Close the current session and reopen with the context so that
+    # future sessions restore cookies/localStorage from the saved state.
     if manager.is_cloud and tab.session_id:
         try:
-            await _ensure_connected(tab, db)
             current_url = tab.url
             await manager.close_tab(tab_id, session_id_hint=tab.session_id)
             result = await manager.open_tab(tab_id, current_url, bb_context_id=bb_context_id)

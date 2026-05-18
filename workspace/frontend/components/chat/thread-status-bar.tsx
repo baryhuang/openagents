@@ -58,6 +58,16 @@ export function ThreadStatusBar({ channelName, messages = [] }: { channelName: s
 
   // Extract queued messages from status messages with queue metadata
   const queuedMessages = useMemo(() => {
+    // First pass: collect queue IDs that have been processed
+    const processedIds = new Set<string>();
+    for (const msg of messages) {
+      if (msg.messageType !== 'status') continue;
+      const meta = msg.metadata as Record<string, unknown> | undefined;
+      if (meta?.queue_id && meta?.queue_status === 'processed') {
+        processedIds.add(meta.queue_id as string);
+      }
+    }
+
     const queued: QueuedMessage[] = [];
     const seen = new Set<string>();
     // Walk messages in reverse to get latest state per queue_id
@@ -67,7 +77,7 @@ export function ThreadStatusBar({ channelName, messages = [] }: { channelName: s
       const meta = msg.metadata as Record<string, unknown> | undefined;
       if (!meta?.queue_id || !meta?.queued_message) continue;
       const qid = meta.queue_id as string;
-      if (seen.has(qid) || cancelledQueueIds.has(qid)) continue;
+      if (seen.has(qid) || cancelledQueueIds.has(qid) || processedIds.has(qid)) continue;
       seen.add(qid);
       queued.push({ queueId: qid, content: meta.queued_message as string });
     }
