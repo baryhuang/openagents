@@ -17,7 +17,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-MAX_BROWSER_TABS = int(os.environ.get("MAX_BROWSER_TABS", "10"))
+MAX_BROWSER_TABS = int(os.environ.get("MAX_BROWSER_TABS", "20"))
 
 BROWSERFABRIC_API_KEY = os.environ.get("BROWSERFABRIC_API_KEY", "")
 BROWSERFABRIC_URL = os.environ.get("BROWSERFABRIC_URL", "https://api.browserfabric.com")
@@ -93,12 +93,32 @@ class BrowserManager:
     # Public API
     # ------------------------------------------------------------------
 
+    async def _prune_dead_sessions(self) -> int:
+        """Remove BF sessions that are no longer alive. Returns number pruned."""
+        if not self.is_cloud or not self._sessions:
+            return 0
+        dead: list[str] = []
+        for tab_id, session_id in list(self._sessions.items()):
+            try:
+                await self._bf_call("get_page_info", {}, session_id)
+            except Exception:
+                dead.append(tab_id)
+        for tab_id in dead:
+            self._sessions.pop(tab_id, None)
+            self._live_urls.pop(tab_id, None)
+            logger.info("Pruned dead BF session for tab %s", tab_id)
+        return len(dead)
+
     async def open_tab(self, tab_id: str, url: str = "about:blank", bb_context_id: str = None) -> dict:
         """Create a new browser tab. Returns {url, title}."""
         async with self._global_lock:
             active_count = len(self._sessions) if self.is_cloud else len(self._pages)
             if active_count >= MAX_BROWSER_TABS:
-                raise RuntimeError(f"Maximum browser tabs ({MAX_BROWSER_TABS}) reached")
+                if self.is_cloud:
+                    await self._prune_dead_sessions()
+                    active_count = len(self._sessions)
+                if active_count >= MAX_BROWSER_TABS:
+                    raise RuntimeError(f"Maximum browser tabs ({MAX_BROWSER_TABS}) reached")
 
         if self.is_cloud:
             args: dict = {"headless": True}
