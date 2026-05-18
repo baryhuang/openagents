@@ -606,17 +606,21 @@ class WorkspaceClient {
 
   // ── Routines ──
 
-  async createRoutine(workspaceId, channelName, token, { name, message, hour, minute, days, source } = {}) {
+  async createRoutine(workspaceId, channelName, token, { name, message, hour, minute, days, interval_minutes, source } = {}) {
     const body = {
       name,
       message,
-      hour,
-      minute,
       network: workspaceId,
       channel: channelName,
       source: source || 'openagents:unknown',
     };
-    if (days) body.days = days;
+    if (interval_minutes != null) {
+      body.interval_minutes = interval_minutes;
+    } else {
+      body.hour = hour;
+      body.minute = minute;
+      if (days) body.days = days;
+    }
     const data = await this._post('/v1/routines', body, this._wsHeaders(token));
     return data.data || data;
   }

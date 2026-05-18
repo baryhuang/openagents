@@ -301,21 +301,25 @@ function buildToolDefs(disabledModules) {
     },
     {
       name: 'workspace_create_routine',
-      description: 'Create a recurring scheduled routine that posts a message on a repeating schedule.',
+      description: 'Create a recurring scheduled routine that posts a message on a repeating schedule. Two modes: daily (hour+minute, optional days) or interval (every N minutes).',
       inputSchema: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Human-readable label for the routine (e.g. "Daily PR Review")' },
           message: { type: 'string', description: 'Message to post each time the routine fires' },
-          hour: { type: 'integer', description: 'Hour in UTC (0-23)' },
-          minute: { type: 'integer', description: 'Minute (0-59)' },
+          hour: { type: 'integer', description: 'Daily mode: hour in UTC (0-23). Omit if using interval_minutes.' },
+          minute: { type: 'integer', description: 'Daily mode: minute (0-59). Omit if using interval_minutes.' },
           days: {
             type: 'array',
             items: { type: 'integer' },
-            description: 'Days of week to fire (0=Mon, 6=Sun). Omit for every day.',
+            description: 'Daily mode: days of week to fire (0=Mon, 6=Sun). Omit for every day. Not allowed in interval mode.',
+          },
+          interval_minutes: {
+            type: 'integer',
+            description: 'Interval mode: fire every N minutes (1-1440). Mutually exclusive with hour/minute.',
           },
         },
-        required: ['name', 'message', 'hour', 'minute'],
+        required: ['name', 'message'],
       },
     },
     {
@@ -756,22 +760,34 @@ class McpServer {
             hour: args.hour,
             minute: args.minute,
             days: args.days,
+            interval_minutes: args.interval_minutes,
             source: `openagents:${this.agentName}`,
           },
         );
-        const daysStr = args.days ? `days [${args.days.join(',')}]` : 'every day';
-        return text(`Routine created: "${args.name}" at ${String(args.hour).padStart(2,'0')}:${String(args.minute).padStart(2,'0')} UTC, ${daysStr} (id: ${result.id})`);
+        let scheduleStr;
+        if (args.interval_minutes != null) {
+          scheduleStr = `every ${args.interval_minutes} min`;
+        } else {
+          const daysStr = args.days ? `days [${args.days.join(',')}]` : 'every day';
+          scheduleStr = `at ${String(args.hour).padStart(2,'0')}:${String(args.minute).padStart(2,'0')} UTC, ${daysStr}`;
+        }
+        return text(`Routine created: "${args.name}" ${scheduleStr} (id: ${result.id})`);
       }
 
       case 'workspace_list_routines': {
         const data = await this.ws.listRoutines(this.workspaceId, this.channelName, this.token);
         const routines = (data && data.routines) || [];
         if (!routines.length) return text('No active routines.');
-        const lines = routines.map((r) =>
-          `- ${r.id}: "${r.name}" at ${String(r.schedule_hour).padStart(2,'0')}:${String(r.schedule_minute).padStart(2,'0')} UTC` +
-          (r.schedule_days ? ` [days: ${r.schedule_days.join(',')}]` : ' (daily)') +
-          ` — next: ${r.next_fires_at} (by ${r.created_by})`
-        );
+        const lines = routines.map((r) => {
+          let when;
+          if (r.schedule_interval_minutes != null) {
+            when = `every ${r.schedule_interval_minutes} min`;
+          } else {
+            when = `at ${String(r.schedule_hour).padStart(2,'0')}:${String(r.schedule_minute).padStart(2,'0')} UTC` +
+              (r.schedule_days ? ` [days: ${r.schedule_days.join(',')}]` : ' (daily)');
+          }
+          return `- ${r.id}: "${r.name}" ${when} — next: ${r.next_fires_at} (by ${r.created_by})`;
+        });
         return text(lines.join('\n'));
       }
 

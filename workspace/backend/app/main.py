@@ -131,7 +131,10 @@ async def _timer_loop():
                     routine.last_fired_at = now
                     from app.routers.routines import _compute_next_fires_at
                     routine.next_fires_at = _compute_next_fires_at(
-                        routine.schedule_hour, routine.schedule_minute, routine.schedule_days
+                        routine.schedule_hour,
+                        routine.schedule_minute,
+                        routine.schedule_days,
+                        routine.schedule_interval_minutes,
                     )
 
                 db.commit()

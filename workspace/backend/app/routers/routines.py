@@ -33,31 +33,48 @@ router = APIRouter(prefix="/v1", tags=["Routines"])
 class CreateRoutineRequest(BaseModel):
     name: str
     message: str
-    hour: int
-    minute: int
+    # Daily mode (hour + minute, optional days). interval_minutes is the other mode.
+    hour: Optional[int] = None
+    minute: Optional[int] = None
     days: Optional[List[int]] = None
+    interval_minutes: Optional[int] = None
     network: str
     source: str
     channel: Optional[str] = None
     thread_id: Optional[str] = None
 
 
+# Minute-interval mode bounds (1 minute floor matches scheduler tick;
+# 1-day ceiling — for anything longer, use daily hour/minute mode).
+MIN_INTERVAL_MINUTES = 1
+MAX_INTERVAL_MINUTES = 1440
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _compute_next_fires_at(hour: int, minute: int, days: Optional[List[int]]) -> datetime:
+def _compute_next_fires_at(
+    hour: Optional[int],
+    minute: Optional[int],
+    days: Optional[List[int]],
+    interval_minutes: Optional[int] = None,
+) -> datetime:
     """Compute the next UTC datetime that matches the given schedule."""
+    from datetime import timedelta
+
     now = datetime.now(timezone.utc)
+
+    if interval_minutes is not None:
+        return now + timedelta(minutes=interval_minutes)
+
     today = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
     if days is None:
         if today > now:
             return today
-        from datetime import timedelta
         return today + timedelta(days=1)
 
-    from datetime import timedelta
     current_weekday = now.weekday()  # 0=Mon
     for offset in range(8):
         candidate = today + timedelta(days=offset)
@@ -78,6 +95,7 @@ def _serialize_routine(r: RoutineRecord) -> dict:
         "schedule_hour": r.schedule_hour,
         "schedule_minute": r.schedule_minute,
         "schedule_days": r.schedule_days,
+        "schedule_interval_minutes": r.schedule_interval_minutes,
         "timezone": r.timezone,
         "next_fires_at": r.next_fires_at.isoformat() if r.next_fires_at else None,
         "last_fired_at": r.last_fired_at.isoformat() if r.last_fired_at else None,
@@ -107,16 +125,43 @@ async def create_routine(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
 
-    if not (0 <= body.hour <= 23):
-        return json_response(ResponseCode.BAD_REQUEST, "hour must be 0-23")
-    if not (0 <= body.minute <= 59):
-        return json_response(ResponseCode.BAD_REQUEST, "minute must be 0-59")
-    if body.days is not None:
-        if not body.days or not all(0 <= d <= 6 for d in body.days):
-            return json_response(ResponseCode.BAD_REQUEST, "days must be array of 0-6 (Mon=0, Sun=6)")
+    is_interval = body.interval_minutes is not None
+    is_daily = body.hour is not None or body.minute is not None
+    if is_interval and is_daily:
+        return json_response(
+            ResponseCode.BAD_REQUEST,
+            "Specify either interval_minutes OR hour/minute, not both",
+        )
+    if not is_interval and not is_daily:
+        return json_response(
+            ResponseCode.BAD_REQUEST,
+            "Specify either interval_minutes OR hour/minute",
+        )
+
+    if is_interval:
+        if not (MIN_INTERVAL_MINUTES <= body.interval_minutes <= MAX_INTERVAL_MINUTES):
+            return json_response(
+                ResponseCode.BAD_REQUEST,
+                f"interval_minutes must be {MIN_INTERVAL_MINUTES}-{MAX_INTERVAL_MINUTES}",
+            )
+        if body.days is not None:
+            return json_response(
+                ResponseCode.BAD_REQUEST,
+                "days is not allowed in interval mode",
+            )
+    else:
+        if body.hour is None or body.minute is None:
+            return json_response(ResponseCode.BAD_REQUEST, "hour and minute are both required in daily mode")
+        if not (0 <= body.hour <= 23):
+            return json_response(ResponseCode.BAD_REQUEST, "hour must be 0-23")
+        if not (0 <= body.minute <= 59):
+            return json_response(ResponseCode.BAD_REQUEST, "minute must be 0-59")
+        if body.days is not None:
+            if not body.days or not all(0 <= d <= 6 for d in body.days):
+                return json_response(ResponseCode.BAD_REQUEST, "days must be array of 0-6 (Mon=0, Sun=6)")
 
     channel_name = body.channel or "default"
-    next_fire = _compute_next_fires_at(body.hour, body.minute, body.days)
+    next_fire = _compute_next_fires_at(body.hour, body.minute, body.days, body.interval_minutes)
 
     routine = RoutineRecord(
         workspace_id=str(workspace.id),
@@ -128,6 +173,7 @@ async def create_routine(
         schedule_hour=body.hour,
         schedule_minute=body.minute,
         schedule_days=body.days,
+        schedule_interval_minutes=body.interval_minutes,
         next_fires_at=next_fire,
     )
     db.add(routine)
