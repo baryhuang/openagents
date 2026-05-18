@@ -713,7 +713,18 @@ class LiteLLMProvider(BaseModelProvider):
             call_kwargs["tools"] = [{"type": "function", "function": tool} for tool in tools]
             call_kwargs["tool_choice"] = "auto"
 
-        response = await litellm.acompletion(**call_kwargs)
+        try:
+            response = await litellm.acompletion(**call_kwargs)
+        except litellm.AuthenticationError:
+            raise
+        except litellm.BadRequestError:
+            raise
+        except litellm.RateLimitError as e:
+            logger.warning(f"LiteLLM rate limited: {e}")
+            raise
+        except (litellm.APIConnectionError, litellm.Timeout) as e:
+            logger.error(f"LiteLLM connection error: {e}")
+            raise
 
         # Standardize response format
         message = response.choices[0].message
