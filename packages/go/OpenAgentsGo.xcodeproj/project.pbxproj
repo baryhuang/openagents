@@ -25,6 +25,7 @@
 		326A4AF14666AAAAA1533C67 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C267C1A37576B7294C15292F /* WorkspaceStore.swift */; };
 		3438A1292EF5C935144C700F /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C0F9FAA008A4C5DDB894DA /* AppRouter.swift */; };
 		34461487C88796E6D66D783E /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA3085A25ECB8AF0A98D6F47 /* Attachment.swift */; };
+		351976AD2D70542C03AA346F /* DataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = D770ED21F7207F58AA5E49FA /* DataDocument.swift */; };
 		35764C58AC68CE735195F1CE /* WorkspaceSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EFFC2C331F1ED7BA618194 /* WorkspaceSelectorView.swift */; };
 		383094D64CFB715CAC402865 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06F3953DCD2E5775B31C111D /* Session.swift */; };
 		3A14F9265E6983682208C4C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91B2C08AA423DF283FD25539 /* Assets.xcassets */; };
@@ -52,6 +53,7 @@
 		796E034098D65B920232106D /* Agent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA75C05C810E421587E53523 /* Agent.swift */; };
 		7E497A494723F3C79B69EE47 /* OpenAgentsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3A7C86384A4BFBF462241C /* OpenAgentsApp.swift */; };
 		7E703418D00E5A308C587C46 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2D1A314CF8BC692761F6F63 /* ChatView.swift */; };
+		80304DE01AC1C95B0BF01885 /* DataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = D770ED21F7207F58AA5E49FA /* DataDocument.swift */; };
 		81EC3D12D7538934EF123417 /* A2UISpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913BDDD175A7D65A9A6BCDC7 /* A2UISpec.swift */; };
 		8503302A20C920B299CEDA87 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86415FE67D6C1C2F1DDBA257 /* Message.swift */; };
 		8621786ABFF955DFC5703895 /* AuthorizedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C106C643D23BFCF5DF3B1349 /* AuthorizedAsyncImage.swift */; };
@@ -144,6 +146,7 @@
 		CA3085A25ECB8AF0A98D6F47 /* Attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attachment.swift; sourceTree = "<group>"; };
 		CDD76787C0D9749219DA3AAC /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
 		D1F64D81367061DABBA5EC83 /* FileChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileChipView.swift; sourceTree = "<group>"; };
+		D770ED21F7207F58AA5E49FA /* DataDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataDocument.swift; sourceTree = "<group>"; };
 		D7E1E2B60417F9A251427176 /* ComposerTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextView.swift; sourceTree = "<group>"; };
 		ED3A7C86384A4BFBF462241C /* OpenAgentsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAgentsApp.swift; sourceTree = "<group>"; };
 		EF4309C1958ECD63080F3246 /* DateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormatting.swift; sourceTree = "<group>"; };
@@ -179,6 +182,7 @@
 			children = (
 				8FD5F352606D678F99957E2F /* AgentColor.swift */,
 				C106C643D23BFCF5DF3B1349 /* AuthorizedAsyncImage.swift */,
+				D770ED21F7207F58AA5E49FA /* DataDocument.swift */,
 				EF4309C1958ECD63080F3246 /* DateFormatting.swift */,
 				CDD76787C0D9749219DA3AAC /* DebugLog.swift */,
 				3D52064E94D462C6F465928F /* ImageDownsampler.swift */,
@@ -434,6 +438,7 @@
 				4AD0E8D3B5DE5C67B82B2156 /* ComposerTextView.swift in Sources */,
 				E1878144B53A9FA6E121E76B /* ContentSidebar.swift in Sources */,
 				523F316A244E7D2CC03FC1F1 /* ContentSidebarController.swift in Sources */,
+				80304DE01AC1C95B0BF01885 /* DataDocument.swift in Sources */,
 				E1FC38978E599553F5B71510 /* DateFormatting.swift in Sources */,
 				C55460CE8C25C6E779D4A2F8 /* DebugLog.swift in Sources */,
 				D207AB0F972D408B4E28B7EE /* DebugLogSheet.swift in Sources */,
@@ -483,6 +488,7 @@
 				C0D9887C30A7EFC26834E6CB /* ComposerTextView.swift in Sources */,
 				9093372B766D9F35E4552730 /* ContentSidebar.swift in Sources */,
 				97D555D7DF9512094DA6E87E /* ContentSidebarController.swift in Sources */,
+				351976AD2D70542C03AA346F /* DataDocument.swift in Sources */,
 				A8866B86D85D3C7A631EB1EA /* DateFormatting.swift in Sources */,
 				EC819B8D02F96F662B3E528A /* DebugLog.swift in Sources */,
 				09D41C6E862A35FF92FD186D /* DebugLogSheet.swift in Sources */,

@@ -1,10 +1,12 @@
 import SwiftUI
+import PDFKit
 
 /// Single-file detail panel that lives inside `ContentSidebar` when the user
 /// taps a file in the list or a file chip in a chat message. Renders the
 /// file's content according to its declared type:
 ///   - image: scaled-to-fit thumbnail via `AuthorizedAsyncImage`
 ///   - text/code: UTF-8 decoded body in a scrollable monospace block
+///   - pdf: PDFKit viewer with native paging + zoom
 ///   - html: sandboxed `WebView`
 ///   - other: a stub card with filename + size
 ///
@@ -77,7 +79,7 @@ struct FileDetailView: View {
             case .text, .code:
                 TextFileContent(fileId: fileId)
             case .pdf:
-                fallbackContent(message: "PDF preview is coming soon.", systemImage: "doc.richtext")
+                PDFFileContent(fileId: fileId)
             default:
                 fallbackContent(message: "Preview not available for this file type.", systemImage: info.kind.systemImage)
             }
@@ -236,6 +238,113 @@ private struct TextFileContent: View {
         }
     }
 }
+
+// MARK: - PDF content
+
+/// Fetches PDF bytes via the authorized request, then renders them in a
+/// PDFKit-backed view that supports paging, pinch-to-zoom on iOS, and
+/// scroll-wheel zoom on macOS.
+private struct PDFFileContent: View {
+    let fileId: String
+
+    @Environment(WorkspaceStore.self) private var store
+
+    @State private var phase: Phase = .loading
+
+    private enum Phase {
+        case loading
+        case loaded(PDFDocument)
+        case failed(String)
+    }
+
+    var body: some View {
+        ZStack {
+            switch phase {
+            case .loading:
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .loaded(let doc):
+                PDFKitView(document: doc)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .failed(let message):
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: fileId) {
+            await load()
+        }
+    }
+
+    private func load() async {
+        do {
+            let request = await store.authorizedFileDownloadRequest(fileId: fileId)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                phase = .failed("Failed to load PDF (HTTP \(http.statusCode))")
+                return
+            }
+            if let doc = PDFDocument(data: data) {
+                phase = .loaded(doc)
+            } else {
+                phase = .failed("Could not decode PDF")
+            }
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+}
+
+/// `PDFView` wrapper. Single-page-up scroll layout on both platforms so a
+/// long PDF feels like the rest of the detail-panel scrollers; auto-scale
+/// keeps the page width-fit on first display.
+private struct PDFKitView {
+    let document: PDFDocument
+
+    private static func configure(_ view: PDFView) {
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.autoScales = true
+        view.backgroundColor = .clear
+    }
+}
+
+#if os(macOS)
+extension PDFKitView: NSViewRepresentable {
+    func makeNSView(context: Context) -> PDFView {
+        let view = PDFView()
+        Self.configure(view)
+        view.document = document
+        return view
+    }
+    func updateNSView(_ nsView: PDFView, context: Context) {
+        if nsView.document !== document {
+            nsView.document = document
+        }
+    }
+}
+#else
+extension PDFKitView: UIViewRepresentable {
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        Self.configure(view)
+        view.document = document
+        return view
+    }
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document !== document {
+            uiView.document = document
+        }
+    }
+}
+#endif
 
 /// Sandboxed `WebView` wrapper for HTML files in the detail panel. Caps
 /// rendered height generously so HTML artifacts don't get cut off.

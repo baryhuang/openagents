@@ -83,14 +83,14 @@ struct ThreadListView: View {
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
-                .help("New thread")
+                .help("New chat")
                 .keyboardShortcut("n", modifiers: .command)
             }
         }
         .sheet(isPresented: $newThreadOpen) {
             NewThreadSheet(isPresented: $newThreadOpen)
         }
-        .alert("Rename thread", isPresented: Binding(
+        .alert("Rename chat", isPresented: Binding(
             get: { renamingSession != nil },
             set: { if !$0 { renamingSession = nil } },
         )) {
@@ -159,7 +159,7 @@ struct ThreadListView: View {
                 Image(systemName: searchText.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
                     .font(.system(size: 40))
                     .foregroundStyle(.tertiary)
-                Text(searchText.isEmpty ? "No threads yet" : "No matches")
+                Text(searchText.isEmpty ? "No chats yet" : "No matches")
                     .font(.headline)
                     .foregroundStyle(.secondary)
                 if searchText.isEmpty {

@@ -17,6 +17,11 @@ struct ContentSidebar: View {
     @State private var loading: Bool = false
     @State private var loadError: String?
 
+    @State private var pendingDownload: DataDocument?
+    @State private var pendingDownloadName: String = "file"
+    @State private var isDownloading: Bool = false
+    @State private var showExporter: Bool = false
+
     var body: some View {
         VStack(spacing: 0) {
             if let fileId = controller.selectedFileId {
@@ -35,6 +40,17 @@ struct ContentSidebar: View {
         .background(sidebarBackground)
         .task(id: store.workspaceId) {
             await refresh()
+        }
+        .fileExporter(
+            isPresented: $showExporter,
+            document: pendingDownload ?? DataDocument(data: Data()),
+            contentType: .data,
+            defaultFilename: pendingDownloadName,
+        ) { result in
+            if case .failure(let err) = result {
+                logError("ui", "fileExporter failed: \(err.localizedDescription)")
+            }
+            pendingDownload = nil
         }
     }
 
@@ -96,6 +112,27 @@ struct ContentSidebar: View {
             Spacer()
 
             Button {
+                Task { await downloadCurrentFile() }
+            } label: {
+                ZStack {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .opacity(isDownloading ? 0 : 1)
+                    if isDownloading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isDownloading || controller.selectedFileId == nil)
+            .accessibilityLabel("Download file")
+            #if os(macOS)
+            .help("Download")
+            #endif
+
+            Button {
                 controller.close()
             } label: {
                 Image(systemName: "xmark")
@@ -110,6 +147,46 @@ struct ContentSidebar: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+    }
+
+    private func downloadCurrentFile() async {
+        guard let fileId = controller.selectedFileId else { return }
+        isDownloading = true
+        defer { isDownloading = false }
+        do {
+            let request = await store.authorizedFileDownloadRequest(fileId: fileId)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                logError("ui", "download failed: HTTP \(http.statusCode)")
+                return
+            }
+            let suggested = suggestedFilename(from: response) ?? controller.selectedFileLabelHint ?? "file"
+            pendingDownload = DataDocument(data: data)
+            pendingDownloadName = suggested
+            showExporter = true
+        } catch {
+            logError("ui", "download failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Pulls `filename=...` out of a `Content-Disposition` header when the
+    /// server provides one. Falls back to nil so the caller can use its own
+    /// hint. Handles plain (`filename="foo.pdf"`) and RFC 5987 (`filename*=UTF-8''foo.pdf`)
+    /// forms; doesn't bother with full quote-escape handling because the
+    /// backend only emits ASCII-safe names today.
+    private func suggestedFilename(from response: URLResponse) -> String? {
+        guard let http = response as? HTTPURLResponse,
+              let disp = http.value(forHTTPHeaderField: "Content-Disposition") else { return nil }
+        if let range = disp.range(of: #"filename\*=UTF-8''([^;]+)"#, options: .regularExpression) {
+            let raw = String(disp[range]).replacingOccurrences(of: "filename*=UTF-8''", with: "")
+            return raw.removingPercentEncoding ?? raw
+        }
+        if let range = disp.range(of: #"filename=\"?([^\";]+)\"?"#, options: .regularExpression) {
+            return String(disp[range])
+                .replacingOccurrences(of: "filename=", with: "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        }
+        return nil
     }
 
     @ViewBuilder
