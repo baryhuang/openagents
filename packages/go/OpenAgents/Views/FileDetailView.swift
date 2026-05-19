@@ -77,7 +77,7 @@ struct FileDetailView: View {
             case .image:
                 imageContent
             case .text, .code:
-                TextFileContent(fileId: fileId)
+                TextFileContent(fileId: fileId, title: info.basename)
             case .pdf:
                 PDFFileContent(fileId: fileId)
             default:
@@ -152,6 +152,10 @@ struct FileDetailView: View {
 /// we don't pin huge buffers in memory just to scroll through a log dump.
 private struct TextFileContent: View {
     let fileId: String
+    /// Surfaced into the fullscreen viewer when this file turns out to be
+    /// HTML. Routed in from `FileDetailView`, which already loaded the
+    /// `WorkspaceFile` and has the basename handy.
+    var title: String = "HTML"
 
     @Environment(WorkspaceStore.self) private var store
 
@@ -191,7 +195,7 @@ private struct TextFileContent: View {
                     .padding(8)
                 }
             case .htmlLoaded(let html):
-                HTMLFileBody(html: html)
+                HTMLFileBody(html: html, title: title)
             case .failed(let message):
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -346,18 +350,57 @@ extension PDFKitView: UIViewRepresentable {
 }
 #endif
 
-/// Sandboxed `WebView` wrapper for HTML files in the detail panel. Caps
-/// rendered height generously so HTML artifacts don't get cut off.
+/// Sandboxed `WebView` wrapper for HTML files in the detail panel. Lets the
+/// WKWebView own the scroll (`ownsScroll: true`) so long pages keep working
+/// past the early `body.scrollHeight` reading — when we wrapped it in a
+/// SwiftUI ScrollView, late image / font loads would grow the document past
+/// the measured frame and the outer scroller would refuse to follow.
 private struct HTMLFileBody: View {
     let html: String
+    let title: String
 
-    @State private var measuredHeight: CGFloat = 200
+    @Environment(WorkspaceStore.self) private var store
+
+    @State private var measuredHeight: CGFloat = 0
+    @State private var fullscreenOpen: Bool = false
 
     var body: some View {
-        ScrollView {
-            WebView(html: html, measuredHeight: $measuredHeight)
-                .frame(height: max(measuredHeight, 200))
-                .frame(maxWidth: .infinity)
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                Button {
+                    fullscreenOpen = true
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open HTML in fullscreen")
+                #if os(macOS)
+                .help("Fullscreen")
+                #endif
+            }
+            .padding(.bottom, 4)
+
+            WebView(
+                html: html,
+                measuredHeight: $measuredHeight,
+                fileRequestProvider: store.fileRequestProvider,
+                ownsScroll: true,
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .sheet(isPresented: $fullscreenOpen) {
+            FullscreenHTMLSheet(
+                html: html,
+                title: title,
+                fileRequestProvider: store.fileRequestProvider,
+                isPresented: $fullscreenOpen,
+            )
         }
     }
 }

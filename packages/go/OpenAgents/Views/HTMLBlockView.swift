@@ -21,6 +21,10 @@ struct HTMLBlockView: View {
     /// doesn't reserve a giant slot during the first paint.
     @State private var measuredHeight: CGFloat = 80
 
+    @State private var fullscreenOpen: Bool = false
+
+    @Environment(WorkspaceStore.self) private var store
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
@@ -28,19 +32,46 @@ struct HTMLBlockView: View {
                     .font(.system(size: 9))
                 Text("html")
                     .font(.caption2.monospaced())
+                Spacer(minLength: 0)
+                Button {
+                    fullscreenOpen = true
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open HTML in fullscreen")
+                #if os(macOS)
+                .help("Fullscreen")
+                #endif
             }
             .foregroundStyle(.secondary)
             .padding(.bottom, 4)
 
-            WebView(html: html, measuredHeight: $measuredHeight)
-                .frame(height: min(measuredHeight, Self.maxRenderedHeight))
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            WebView(
+                html: html,
+                measuredHeight: $measuredHeight,
+                fileRequestProvider: store.fileRequestProvider,
+            )
+            .frame(height: min(measuredHeight, Self.maxRenderedHeight))
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .padding(8)
         .background(
             (onLightBubble ? Color.black.opacity(0.06) : Color.white.opacity(0.18)),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous),
         )
+        .sheet(isPresented: $fullscreenOpen) {
+            FullscreenHTMLSheet(
+                html: html,
+                title: "Inline HTML",
+                fileRequestProvider: store.fileRequestProvider,
+                isPresented: $fullscreenOpen,
+            )
+        }
     }
 }
