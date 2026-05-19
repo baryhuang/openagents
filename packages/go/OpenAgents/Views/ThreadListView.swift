@@ -56,9 +56,15 @@ struct ThreadListView: View {
             #endif
             list
         }
-        .navigationTitle(store.workspace?.name ?? "Workspace")
         #if os(macOS)
+        .navigationTitle(store.workspace?.name ?? "Workspace")
         .navigationSubtitle(store.workspace?.slug ?? store.workspaceId)
+        #else
+        // iPhone shows the workspace name inline with the switch-workspace
+        // button (see .topBarLeading toolbar item) so leave the navbar title
+        // empty — otherwise it'd duplicate the name above the row.
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         #endif
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar {
@@ -66,13 +72,21 @@ struct ThreadListView: View {
             // iPhone has no in-content workspace header (that's macOS-only),
             // and CommandMenu / keyboard shortcuts don't surface on touch, so
             // without this toolbar item there's no way to leave the current
-            // workspace from the chat list. Same icon and label as the macOS
-            // header button so muscle memory carries over.
+            // workspace from the chat list. The workspace name lives in the
+            // same button so the whole pill is the switch affordance — same
+            // pattern Slack / Discord use on iOS.
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     router.switchWorkspace()
                 } label: {
-                    Image(systemName: "rectangle.stack")
+                    HStack(spacing: 6) {
+                        Image(systemName: "rectangle.stack")
+                            .font(.system(size: 14, weight: .medium))
+                        Text(store.workspace?.name ?? "Workspace")
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
                 .accessibilityLabel("Switch workspace")
             }
