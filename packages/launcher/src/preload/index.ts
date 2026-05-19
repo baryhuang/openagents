@@ -72,4 +72,38 @@ contextBridge.exposeInMainWorld('api', {
   getIconsDir: () => ipcRenderer.invoke('icons:get-dir'),
 
   debugEnv: () => ipcRenderer.invoke('debug:env'),
+
+  // ── Chat ──
+  chatSendMessage: (input: unknown) => ipcRenderer.invoke('workspace:send-message', input),
+  chatGetMessages: (workspaceId: string, channelName?: string, limit?: number) =>
+    ipcRenderer.invoke('workspace:get-messages', workspaceId, channelName, limit),
+  chatStartPolling: (workspaceId: string, channelName?: string) =>
+    ipcRenderer.invoke('workspace:start-polling', workspaceId, channelName),
+  chatStopPolling: (workspaceId: string, channelName?: string) =>
+    ipcRenderer.invoke('workspace:stop-polling', workspaceId, channelName),
+  chatListParticipants: (workspaceId: string) =>
+    ipcRenderer.invoke('workspace:list-participants', workspaceId),
+  onChatEvent: (cb: (event: unknown) => void) => {
+    const handler = (_e: unknown, ev: unknown): void => cb(ev)
+    ipcRenderer.on('chat:event', handler)
+    return () => ipcRenderer.removeListener('chat:event', handler)
+  },
+
+  // ── Files ──
+  chatUploadFile: (workspaceId: string, filename: string, contentBase64: string, opts?: unknown) =>
+    ipcRenderer.invoke('workspace:upload-file', workspaceId, filename, contentBase64, opts),
+  chatListFiles: (workspaceId: string, opts?: unknown) =>
+    ipcRenderer.invoke('workspace:list-files', workspaceId, opts),
+  chatReadFile: (workspaceId: string, fileId: string) =>
+    ipcRenderer.invoke('workspace:read-file', workspaceId, fileId),
+  chatDeleteFile: (workspaceId: string, fileId: string) =>
+    ipcRenderer.invoke('workspace:delete-file', workspaceId, fileId),
+
+  // ── Sessions ──
+  sessionList: (workspaceId?: string) => ipcRenderer.invoke('session:list', workspaceId),
+  sessionLoad: (workspaceId: string, channelName: string) =>
+    ipcRenderer.invoke('session:load', workspaceId, channelName),
+  sessionDelete: (workspaceId: string, channelName: string) =>
+    ipcRenderer.invoke('session:delete', workspaceId, channelName),
+  sessionClear: (workspaceId?: string) => ipcRenderer.invoke('session:clear', workspaceId),
 })

@@ -7,12 +7,14 @@ import Sidebar from "./components/Sidebar"
 import { ToastContainer } from "./components/ui/Toast"
 import Dashboard from "./pages/dashboard"
 import Agents from "./pages/agents"
+import Chat from "./pages/chat"
 import Install from "./pages/install"
 import Logs from "./pages/logs"
 import Settings from "./pages/settings"
 import { InstallMiniBanner } from "./components/install-progress/StagedProgress"
 import { useToasts } from "./hooks/useToast"
 import { useInstallProgress } from "./hooks/useInstallProgress"
+import { cn } from "./lib/utils"
 
 export default function App(): React.JSX.Element {
   const currentTab = useUiStore((s) => s.currentTab)
@@ -27,7 +29,9 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     window.api.onCoreUpdate((info) => setCoreUpdateInfo(info))
-    window.api.onAgentUpdatesChanged((updates) => useInstallStore.getState().setUpdates(updates))
+    window.api.onAgentUpdatesChanged((updates) =>
+      useInstallStore.getState().setUpdates(updates),
+    )
     window.api.onNavigateToInstall((name?: string) => {
       setCurrentTab("install")
       if (name) useUiStore.getState().setInstallFocusAgent(name)
@@ -35,9 +39,9 @@ export default function App(): React.JSX.Element {
   }, [setCoreUpdateInfo, setCurrentTab])
 
   useEffect(() => {
-    const tabs = ["dashboard", "agents", "install", "logs", "settings"]
+    const tabs = ["dashboard", "chat", "agents", "install", "logs", "settings"]
     const handler = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && e.key >= "1" && e.key <= "5") {
+      if (e.ctrlKey && e.key >= "1" && e.key <= "6") {
         e.preventDefault()
         useUiStore.getState().setCurrentTab(tabs[parseInt(e.key) - 1])
       }
@@ -54,7 +58,14 @@ export default function App(): React.JSX.Element {
     <div className="flex h-screen overflow-hidden bg-[var(--bg-primary)]">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto bg-[var(--bg-primary)] px-9 py-8">
+      <main
+        className={cn(
+          "flex-1 min-w-0 bg-(--bg-primary)",
+          currentTab === "chat"
+            ? "overflow-hidden flex flex-col"
+            : "overflow-y-auto px-9 py-8",
+        )}
+      >
         {currentTab === "dashboard" && (
           <Dashboard
             showToast={showToast}
@@ -62,6 +73,7 @@ export default function App(): React.JSX.Element {
             onOpenConnectWorkspace={() => {}}
           />
         )}
+        {currentTab === "chat" && <Chat showToast={showToast} />}
         {currentTab === "agents" && <Agents showToast={showToast} />}
         {currentTab === "install" && <Install showToast={showToast} />}
         {currentTab === "logs" && <Logs showToast={showToast} />}
@@ -69,7 +81,10 @@ export default function App(): React.JSX.Element {
       </main>
 
       {activeJob && currentTab !== "install" && (
-        <InstallMiniBanner job={activeJob} onOpen={() => setCurrentTab("install")} />
+        <InstallMiniBanner
+          job={activeJob}
+          onOpen={() => setCurrentTab("install")}
+        />
       )}
 
       <ToastContainer />

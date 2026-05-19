@@ -120,6 +120,88 @@ export interface RuntimeInfo {
   latestVersion: string | null
 }
 
+// ── Chat ──
+
+export interface Attachment {
+  fileId?: string
+  filename?: string
+  contentType?: string
+  size?: number
+  url?: string
+}
+
+export interface ToolCall {
+  id: string
+  name: string
+  category?: 'workspace' | 'files' | 'browser' | 'tunnel' | 'todos' | 'timers' | 'terminal' | 'other'
+  status: 'pending' | 'success' | 'error'
+  args?: unknown
+  result?: unknown
+  durationMs?: number
+}
+
+export interface ChatMessage {
+  messageId: string
+  sessionId: string
+  senderType: 'human' | 'agent' | 'system'
+  senderName: string
+  content: string
+  mentions?: string[]
+  messageType?: string
+  metadata?: Record<string, unknown>
+  attachments?: Attachment[]
+  createdAt?: string
+  toolCalls?: ToolCall[]
+}
+
+export interface SendMessageInput {
+  workspaceId: string
+  channelName?: string
+  agentId?: string
+  content: string
+  mentions?: string[]
+  attachments?: Attachment[]
+}
+
+export interface SendMessageResult {
+  success: boolean
+  messageId: string
+  error?: string
+}
+
+export interface ChatSessionMeta {
+  id: string
+  workspaceId: string
+  workspaceSlug?: string
+  workspaceName?: string
+  channelName: string
+  title: string
+  lastMessageAt: string | null
+  lastMessagePreview: string | null
+  messageCount: number
+  participants: string[]
+  createdAt: string
+}
+
+export type ChatStreamEvent =
+  | { type: 'message'; channel: string; workspaceId: string; message: ChatMessage }
+  | { type: 'agent-status'; channel: string; workspaceId: string; agentName: string; status: 'thinking' | 'idle' | 'error'; detail?: string }
+  | { type: 'error'; channel: string; workspaceId: string; error: string }
+
+export interface WorkspaceParticipant {
+  agentName: string
+  role: string
+  status: string
+}
+
+export interface FileListEntry {
+  id: string
+  filename: string
+  content_type?: string
+  size?: number
+  created_at?: string
+}
+
 export interface PythonStatus {
   pythonPath: string | null
   pythonFound: boolean
@@ -192,6 +274,26 @@ declare global {
       getIconPath(name: string): Promise<string | null>
       getIconsDir(): Promise<string | null>
       debugEnv(): Promise<Record<string, string>>
+
+      // ── Chat ──
+      chatSendMessage(input: SendMessageInput): Promise<SendMessageResult>
+      chatGetMessages(workspaceId: string, channelName?: string, limit?: number): Promise<ChatMessage[]>
+      chatStartPolling(workspaceId: string, channelName?: string): Promise<{ success: boolean; key?: string }>
+      chatStopPolling(workspaceId: string, channelName?: string): Promise<{ success: boolean }>
+      chatListParticipants(workspaceId: string): Promise<WorkspaceParticipant[]>
+      onChatEvent(cb: (ev: ChatStreamEvent) => void): () => void
+
+      // ── Files ──
+      chatUploadFile(workspaceId: string, filename: string, contentBase64: string, opts?: { contentType?: string; channelName?: string }): Promise<{ success: boolean; fileId?: string; url?: string; filename?: string; error?: string }>
+      chatListFiles(workspaceId: string, opts?: { limit?: number; offset?: number }): Promise<{ files?: FileListEntry[] } | unknown>
+      chatReadFile(workspaceId: string, fileId: string): Promise<{ success: boolean; contentBase64?: string; error?: string }>
+      chatDeleteFile(workspaceId: string, fileId: string): Promise<{ success: boolean; error?: string }>
+
+      // ── Sessions ──
+      sessionList(workspaceId?: string): Promise<ChatSessionMeta[]>
+      sessionLoad(workspaceId: string, channelName: string): Promise<ChatSessionMeta | null>
+      sessionDelete(workspaceId: string, channelName: string): Promise<boolean>
+      sessionClear(workspaceId?: string): Promise<number>
     }
   }
 }

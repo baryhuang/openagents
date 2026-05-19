@@ -1,0 +1,87 @@
+import React, { useState } from 'react'
+import { cn } from '../../lib/utils'
+import type { ToolCall } from '../../types'
+
+const CATEGORY_ICONS: Record<NonNullable<ToolCall['category']>, string> = {
+  workspace: '🏢',
+  files:     '📁',
+  browser:   '🌐',
+  tunnel:    '🔌',
+  todos:     '✅',
+  timers:    '⏱',
+  terminal:  '⌨',
+  other:     '🛠',
+}
+
+const STATUS_STYLE: Record<ToolCall['status'], string> = {
+  pending: 'border-(--warning) bg-[rgba(255,159,10,0.06)]',
+  success: 'border-(--success) bg-[rgba(48,209,88,0.06)]',
+  error:   'border-(--danger-text) bg-[rgba(255,59,48,0.06)]',
+}
+
+const STATUS_LABEL: Record<ToolCall['status'], string> = {
+  pending: 'Running…',
+  success: 'Success',
+  error:   'Error',
+}
+
+function formatJson(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'string') return value
+  try { return JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+export default function ToolCallCard({ call }: { call: ToolCall }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const icon = CATEGORY_ICONS[call.category || 'other']
+  const argsStr = formatJson(call.args)
+  const resultStr = formatJson(call.result)
+
+  return (
+    <div className={cn('my-2 rounded-(--radius) border text-[12px]', STATUS_STYLE[call.status])}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left cursor-pointer"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <span className="text-[14px] shrink-0">{icon}</span>
+          <span className="font-mono font-medium truncate">{call.name}</span>
+          <span className="text-[10px] text-(--text-tertiary) shrink-0">[{call.category || 'tool'}]</span>
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          {typeof call.durationMs === 'number' && (
+            <span className="text-[10px] text-(--text-tertiary)">{call.durationMs}ms</span>
+          )}
+          <span
+            className={cn(
+              'text-[10px] font-semibold px-1.5 py-0.5 rounded',
+              call.status === 'success' ? 'bg-(--success) text-white' :
+              call.status === 'error' ? 'bg-(--danger-text) text-white' :
+              'bg-(--warning) text-white animate-pulse',
+            )}
+          >
+            {STATUS_LABEL[call.status]}
+          </span>
+          <span className="text-[10px] text-(--text-tertiary)">{open ? '▾' : '▸'}</span>
+        </span>
+      </button>
+      {open && (argsStr || resultStr) && (
+        <div className="px-3 pb-2 space-y-2 text-[11px]">
+          {argsStr && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-(--text-tertiary) mb-1">Args</div>
+              <pre className="font-mono whitespace-pre-wrap break-words bg-(--bg-input) rounded px-2 py-1.5 max-h-[200px] overflow-y-auto">{argsStr}</pre>
+            </div>
+          )}
+          {resultStr && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-(--text-tertiary) mb-1">Result</div>
+              <pre className="font-mono whitespace-pre-wrap break-words bg-(--bg-input) rounded px-2 py-1.5 max-h-[300px] overflow-y-auto">{resultStr}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
