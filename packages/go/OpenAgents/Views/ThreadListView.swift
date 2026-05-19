@@ -62,6 +62,21 @@ struct ThreadListView: View {
         #endif
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar {
+            #if os(iOS)
+            // iPhone has no in-content workspace header (that's macOS-only),
+            // and CommandMenu / keyboard shortcuts don't surface on touch, so
+            // without this toolbar item there's no way to leave the current
+            // workspace from the chat list. Same icon and label as the macOS
+            // header button so muscle memory carries over.
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    router.switchWorkspace()
+                } label: {
+                    Image(systemName: "rectangle.stack")
+                }
+                .accessibilityLabel("Switch workspace")
+            }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task {
