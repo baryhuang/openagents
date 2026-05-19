@@ -885,6 +885,17 @@ final class WorkspaceStore {
         await api.authorizedDownloadRequest(fileId: fileId)
     }
 
+    /// Sendable closure for the WKWebView `oafile:` scheme handler. Captures
+    /// the actor (not `self`) so the closure can safely cross to background
+    /// queues. Lets HTML in chat bubbles or workspace .html files resolve
+    /// `<img src="…/v1/files/<id>">` against the authorized request path.
+    var fileRequestProvider: @Sendable (String) async -> URLRequest {
+        let api = self.api
+        return { @Sendable fileId in
+            await api.authorizedDownloadRequest(fileId: fileId)
+        }
+    }
+
     /// Look up a single file's metadata. Used by the sidebar detail view when
     /// the user lands on a file via a chat chip — we don't always have the
     /// full file row cached client-side.

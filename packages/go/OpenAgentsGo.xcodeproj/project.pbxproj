@@ -27,7 +27,9 @@
 		34461487C88796E6D66D783E /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA3085A25ECB8AF0A98D6F47 /* Attachment.swift */; };
 		351976AD2D70542C03AA346F /* DataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = D770ED21F7207F58AA5E49FA /* DataDocument.swift */; };
 		35764C58AC68CE735195F1CE /* WorkspaceSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EFFC2C331F1ED7BA618194 /* WorkspaceSelectorView.swift */; };
+		37D6C5FA29BADF2012E57B38 /* WorkspaceFileSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8ED96CB8CA63E6AAD8115C /* WorkspaceFileSchemeHandler.swift */; };
 		383094D64CFB715CAC402865 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06F3953DCD2E5775B31C111D /* Session.swift */; };
+		39277ABFF564727DB3054B77 /* WorkspaceFileSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8ED96CB8CA63E6AAD8115C /* WorkspaceFileSchemeHandler.swift */; };
 		3A14F9265E6983682208C4C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91B2C08AA423DF283FD25539 /* Assets.xcassets */; };
 		42C1CEF4A0A76D3A9F6BE8BB /* NewThreadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48682F70E0BBB65BE50CF69 /* NewThreadSheet.swift */; };
 		43B89996E8ACA9EA853B1C2D /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77786041AC1E5D020AFE9315 /* WorkspaceView.swift */; };
@@ -39,6 +41,7 @@
 		4AD0E8D3B5DE5C67B82B2156 /* ComposerTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E1E2B60417F9A251427176 /* ComposerTextView.swift */; };
 		4C67B9550721C3DDFF650F32 /* WorkspaceSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EFFC2C331F1ED7BA618194 /* WorkspaceSelectorView.swift */; };
 		523F316A244E7D2CC03FC1F1 /* ContentSidebarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA032E023FE142F032BD6BC /* ContentSidebarController.swift */; };
+		5478BA074414E82A75C8C0D8 /* FullscreenHTMLSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A271EBE7C65A7FB702EAB8A /* FullscreenHTMLSheet.swift */; };
 		549C0C84E0B931B368A83379 /* OpenAgentsGoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B9D34096F6754E61758DDA7 /* OpenAgentsGoTheme.swift */; };
 		5D56E1B94AE40201B9BC3727 /* SettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BEFDB8EAD399989E7939F2 /* SettingsSheet.swift */; };
 		61A55CCA5488FC6090B6B29C /* ImageDownsampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D52064E94D462C6F465928F /* ImageDownsampler.swift */; };
@@ -91,6 +94,7 @@
 		DFFF5BEDDF0FE10395C7861B /* AgentColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD5F352606D678F99957E2F /* AgentColor.swift */; };
 		E1878144B53A9FA6E121E76B /* ContentSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9FA26EFFAD4DCF035A141B3 /* ContentSidebar.swift */; };
 		E1FC38978E599553F5B71510 /* DateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4309C1958ECD63080F3246 /* DateFormatting.swift */; };
+		E892A8FB20435D87C2385156 /* FullscreenHTMLSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A271EBE7C65A7FB702EAB8A /* FullscreenHTMLSheet.swift */; };
 		EB4E8661A4DA95F6A1B2738C /* ONMEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818A4CEAED3B6B2F27409E36 /* ONMEvent.swift */; };
 		EC819B8D02F96F662B3E528A /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDD76787C0D9749219DA3AAC /* DebugLog.swift */; };
 		F1E0953AB01A250338EA07EE /* ONMEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818A4CEAED3B6B2F27409E36 /* ONMEvent.swift */; };
@@ -111,6 +115,7 @@
 		0F9C2588A4A9C0C5E36DA1C5 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
 		2B8E461D6AC4E8EA6FB20B1D /* HTMLBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLBlockView.swift; sourceTree = "<group>"; };
 		2B9D34096F6754E61758DDA7 /* OpenAgentsGoTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAgentsGoTheme.swift; sourceTree = "<group>"; };
+		2C8ED96CB8CA63E6AAD8115C /* WorkspaceFileSchemeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceFileSchemeHandler.swift; sourceTree = "<group>"; };
 		31485CDEBC641234F7197935 /* PushSink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushSink.swift; sourceTree = "<group>"; };
 		31EBC1F1766D711824BD98EA /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
 		3D1186F6668EBB7CADC2F719 /* IntermediateStepsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntermediateStepsView.swift; sourceTree = "<group>"; };
@@ -123,16 +128,17 @@
 		6038CD9938CBF86839702842 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		60D250D0F8C1A2E0F9CD2AB0 /* MarkdownSegments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownSegments.swift; sourceTree = "<group>"; };
 		62BEFDB8EAD399989E7939F2 /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
-		657BCC02FD23538732562FEA /* OpenAgentsGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = OpenAgentsGo.app; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		657BCC02FD23538732562FEA /* OpenAgentsGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenAgentsGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BFC6779CA9AEA7008F8E130 /* DebugLogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogSheet.swift; sourceTree = "<group>"; };
 		71C0F9FAA008A4C5DDB894DA /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
-		740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenAgentsGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		77786041AC1E5D020AFE9315 /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		818A4CEAED3B6B2F27409E36 /* ONMEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ONMEvent.swift; sourceTree = "<group>"; };
 		86415FE67D6C1C2F1DDBA257 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		8FD5F352606D678F99957E2F /* AgentColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentColor.swift; sourceTree = "<group>"; };
 		913BDDD175A7D65A9A6BCDC7 /* A2UISpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A2UISpec.swift; sourceTree = "<group>"; };
 		91B2C08AA423DF283FD25539 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9A271EBE7C65A7FB702EAB8A /* FullscreenHTMLSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenHTMLSheet.swift; sourceTree = "<group>"; };
 		9C711AA33A030CA030F2B428 /* A2UIRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A2UIRendererView.swift; sourceTree = "<group>"; };
 		B12A6515B7075FE8EAE5A481 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		B2D1A314CF8BC692761F6F63 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
@@ -189,6 +195,7 @@
 				60D250D0F8C1A2E0F9CD2AB0 /* MarkdownSegments.swift */,
 				B8BEF28DD556E8D6004C2BC2 /* StepParser.swift */,
 				31EBC1F1766D711824BD98EA /* WebView.swift */,
+				2C8ED96CB8CA63E6AAD8115C /* WorkspaceFileSchemeHandler.swift */,
 			);
 			path = Helpers;
 			sourceTree = "<group>";
@@ -282,6 +289,7 @@
 				6BFC6779CA9AEA7008F8E130 /* DebugLogSheet.swift */,
 				D1F64D81367061DABBA5EC83 /* FileChipView.swift */,
 				BD72E57A63E8F9DFBF6B6FC3 /* FileDetailView.swift */,
+				9A271EBE7C65A7FB702EAB8A /* FullscreenHTMLSheet.swift */,
 				2B8E461D6AC4E8EA6FB20B1D /* HTMLBlockView.swift */,
 				3D1186F6668EBB7CADC2F719 /* IntermediateStepsView.swift */,
 				F48682F70E0BBB65BE50CF69 /* NewThreadSheet.swift */,
@@ -297,7 +305,7 @@
 		D476D796F5F151440069AC0A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */,
+				740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */,
 				657BCC02FD23538732562FEA /* OpenAgentsGo.app */,
 			);
 			name = Products;
@@ -354,7 +362,7 @@
 				A7CB0643B35BD65B65983D5D /* SwiftUIJSONRender */,
 			);
 			productName = OpenAgentsGo_iOS;
-			productReference = 740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */;
+			productReference = 740731F27EF4E5B87EBC8214 /* OpenAgentsGo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -444,6 +452,7 @@
 				D207AB0F972D408B4E28B7EE /* DebugLogSheet.swift in Sources */,
 				22346DF03BD939DB25E90183 /* FileChipView.swift in Sources */,
 				28372656D9D547CA11989334 /* FileDetailView.swift in Sources */,
+				5478BA074414E82A75C8C0D8 /* FullscreenHTMLSheet.swift in Sources */,
 				FE51D3BDF4335B083EC9DD12 /* HTMLBlockView.swift in Sources */,
 				780890658985AE8370F3EF0E /* ImageDownsampler.swift in Sources */,
 				D337BC86D1E6A2F4FC470B7C /* IntermediateStepsView.swift in Sources */,
@@ -463,6 +472,7 @@
 				A2CD5A2CB225F7792DC53C66 /* Workspace.swift in Sources */,
 				6360319D9AE46885DB83FA03 /* WorkspaceAPI.swift in Sources */,
 				B42EC88CEDCBCD4D7526967D /* WorkspaceFile.swift in Sources */,
+				39277ABFF564727DB3054B77 /* WorkspaceFileSchemeHandler.swift in Sources */,
 				31FD32757E2BF6DD8B75E1A9 /* WorkspaceHistory.swift in Sources */,
 				35764C58AC68CE735195F1CE /* WorkspaceSelectorView.swift in Sources */,
 				6703D64150505304A4C352C3 /* WorkspaceStore.swift in Sources */,
@@ -494,6 +504,7 @@
 				09D41C6E862A35FF92FD186D /* DebugLogSheet.swift in Sources */,
 				FA11CAB36EF0F2227BFFCF11 /* FileChipView.swift in Sources */,
 				4A17D3C0BCBC37AE0CA647E1 /* FileDetailView.swift in Sources */,
+				E892A8FB20435D87C2385156 /* FullscreenHTMLSheet.swift in Sources */,
 				AE0CF5963AD17561FDEBE873 /* HTMLBlockView.swift in Sources */,
 				61A55CCA5488FC6090B6B29C /* ImageDownsampler.swift in Sources */,
 				69633D697FB506EF464AF84A /* IntermediateStepsView.swift in Sources */,
@@ -513,6 +524,7 @@
 				483C8AE5A67BFDA9558041D4 /* Workspace.swift in Sources */,
 				21B8A36DF9F40292036E1855 /* WorkspaceAPI.swift in Sources */,
 				099E9B968143C4CA1D6709D9 /* WorkspaceFile.swift in Sources */,
+				37D6C5FA29BADF2012E57B38 /* WorkspaceFileSchemeHandler.swift in Sources */,
 				BE21EF473A72D777C5840A0A /* WorkspaceHistory.swift in Sources */,
 				4C67B9550721C3DDFF650F32 /* WorkspaceSelectorView.swift in Sources */,
 				326A4AF14666AAAAA1533C67 /* WorkspaceStore.swift in Sources */,
@@ -655,7 +667,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.7;
+				MARKETING_VERSION = 0.2.8;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -743,7 +755,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.7;
+				MARKETING_VERSION = 0.2.8;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "OpenAgents Go";
