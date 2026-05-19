@@ -16,7 +16,7 @@ struct NewThreadSheet: View {
             // Header
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("New Thread")
+                    Text("New Chat")
                         .font(.headline)
                     Text(onlineAgents.count > 1
                          ? "Pick which agents join this conversation."
@@ -63,7 +63,7 @@ struct NewThreadSheet: View {
                 Spacer()
                 Button("Cancel") { isPresented = false }
                     .keyboardShortcut(.cancelAction)
-                Button("Start Thread") { createThread() }
+                Button("Start Chat") { createThread() }
                     .buttonStyle(.borderedProminent)
                     .disabled(selected.isEmpty)
                     .keyboardShortcut(.defaultAction)

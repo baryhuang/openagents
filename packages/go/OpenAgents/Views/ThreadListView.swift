@@ -56,12 +56,41 @@ struct ThreadListView: View {
             #endif
             list
         }
-        .navigationTitle(store.workspace?.name ?? "Workspace")
         #if os(macOS)
+        .navigationTitle(store.workspace?.name ?? "Workspace")
         .navigationSubtitle(store.workspace?.slug ?? store.workspaceId)
+        #else
+        // iPhone shows the workspace name inline with the switch-workspace
+        // button (see .topBarLeading toolbar item) so leave the navbar title
+        // empty — otherwise it'd duplicate the name above the row.
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         #endif
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar {
+            #if os(iOS)
+            // iPhone has no in-content workspace header (that's macOS-only),
+            // and CommandMenu / keyboard shortcuts don't surface on touch, so
+            // without this toolbar item there's no way to leave the current
+            // workspace from the chat list. The workspace name lives in the
+            // same button so the whole pill is the switch affordance — same
+            // pattern Slack / Discord use on iOS.
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    router.switchWorkspace()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "rectangle.stack")
+                            .font(.system(size: 14, weight: .medium))
+                        Text(store.workspace?.name ?? "Workspace")
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .accessibilityLabel("Switch workspace")
+            }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task {
@@ -83,14 +112,14 @@ struct ThreadListView: View {
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
-                .help("New thread")
+                .help("New chat")
                 .keyboardShortcut("n", modifiers: .command)
             }
         }
         .sheet(isPresented: $newThreadOpen) {
             NewThreadSheet(isPresented: $newThreadOpen)
         }
-        .alert("Rename thread", isPresented: Binding(
+        .alert("Rename chat", isPresented: Binding(
             get: { renamingSession != nil },
             set: { if !$0 { renamingSession = nil } },
         )) {
@@ -159,7 +188,7 @@ struct ThreadListView: View {
                 Image(systemName: searchText.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
                     .font(.system(size: 40))
                     .foregroundStyle(.tertiary)
-                Text(searchText.isEmpty ? "No threads yet" : "No matches")
+                Text(searchText.isEmpty ? "No chats yet" : "No matches")
                     .font(.headline)
                     .foregroundStyle(.secondary)
                 if searchText.isEmpty {

@@ -512,7 +512,7 @@ actor WorkspaceAPI {
             sessionId: channelName,
             workspaceId: workspaceId,
             createdBy: "human:user",
-            title: title ?? "New Thread",
+            title: title ?? "New Chat",
             status: "active",
             starred: false,
             participants: participants,

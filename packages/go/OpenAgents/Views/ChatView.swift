@@ -14,6 +14,11 @@ struct ChatView: View {
     @State private var pendingAttachments: [PendingAttachment] = []
     @FocusState private var inputFocused: Bool
 
+    /// True while a drag-from-Finder (or browser image-drag) is hovering over
+    /// the chat column. Drives the dashed accent-color overlay so the user
+    /// gets the same drop affordance as Mail / Messages.
+    @State private var isDropTargeted: Bool = false
+
     /// Manual override for input-bar height (in points). Drag handle adjusts this.
     /// Default starts at the single-line height; user can drag up to ~half of the
     /// chat view height (see `maxInputHeight`).
@@ -222,6 +227,35 @@ struct ChatView: View {
             // received URL, then chat view mounted with attachments waiting.
             drainExternalAttachments()
         }
+        .onDrop(
+            of: [.fileURL, .image],
+            isTargeted: $isDropTargeted,
+        ) { providers in
+            handleDrop(providers)
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.06)),
+                    )
+                    .overlay(
+                        VStack(spacing: 6) {
+                            Image(systemName: "tray.and.arrow.down")
+                                .font(.system(size: 28, weight: .medium))
+                            Text("Drop to attach")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.accentColor),
+                    )
+                    .padding(8)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: isDropTargeted)
         .sheet(isPresented: $membersSheetOpen) {
             if let session = store.currentSession {
                 MembersSheet(session: session, isPresented: $membersSheetOpen)
@@ -763,10 +797,10 @@ struct ChatView: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
-            Text("Select a thread")
+            Text("Select a chat")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            Text("Choose a thread from the list or create a new one.")
+            Text("Choose a chat from the list or create a new one.")
                 .font(.subheadline)
                 .foregroundStyle(.tertiary)
         }
@@ -905,6 +939,77 @@ struct ChatView: View {
     }
     #endif
 
+
+    /// Accept dropped items into `pendingAttachments`. Handles two shapes:
+    /// - File URL providers (Finder / Files / most desktop drags) → read the
+    ///   bytes inside the load callback before the OS-staged temp file is
+    ///   reclaimed, then route through the same ingest path as the paperclip.
+    /// - In-memory image providers (browsers, screenshot tools) → load as Data
+    ///   and synthesize a filename so the upload still has a basename.
+    /// Returns true so SwiftUI animates the drop landing even if individual
+    /// providers fail asynchronously — we surface failures via the debug log.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        let fileType = UTType.fileURL.identifier
+        let imageType = UTType.image.identifier
+        var accepted = false
+
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(fileType) {
+                accepted = true
+                provider.loadFileRepresentation(forTypeIdentifier: fileType) { url, error in
+                    guard let url else {
+                        logError("ui", "drop: loadFileRepresentation failed — \(error?.localizedDescription ?? "unknown")")
+                        return
+                    }
+                    // The OS deletes the staged file when this closure returns,
+                    // so read into memory here, then hand the bytes to the
+                    // main-actor ingest function.
+                    guard let data = try? Data(contentsOf: url) else {
+                        logError("ui", "drop: could not read \(url.lastPathComponent)")
+                        return
+                    }
+                    let name = url.lastPathComponent
+                    let mime = (UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
+                        ?? "application/octet-stream"
+                    Task { @MainActor in
+                        ingestDroppedData(data, filename: name, contentType: mime)
+                    }
+                }
+                continue
+            }
+            if provider.hasItemConformingToTypeIdentifier(imageType) {
+                accepted = true
+                provider.loadDataRepresentation(forTypeIdentifier: imageType) { data, error in
+                    guard let data else {
+                        logError("ui", "drop: image loadData failed — \(error?.localizedDescription ?? "unknown")")
+                        return
+                    }
+                    let stamp = Int(Date().timeIntervalSince1970)
+                    Task { @MainActor in
+                        ingestDroppedData(data, filename: "DroppedImage-\(stamp).png", contentType: "image/png")
+                    }
+                }
+            }
+        }
+        return accepted
+    }
+
+    /// Shared tail for dropped data — runs `ImageDownsampler.ensureFits`
+    /// (matches the paste / picker pipelines) and appends a chip.
+    @MainActor
+    private func ingestDroppedData(_ data: Data, filename: String, contentType: String) {
+        let (finalData, finalType, finalName) = ImageDownsampler.ensureFits(
+            data: data,
+            contentType: contentType,
+            filename: filename,
+        )
+        pendingAttachments.append(PendingAttachment(
+            filename: finalName,
+            contentType: finalType,
+            data: finalData,
+        ))
+        logInfo("ui", "drop accepted name=\(finalName) bytes=\(finalData.count)")
+    }
 
     @MainActor
     private func ingestFileURL(_ url: URL) {

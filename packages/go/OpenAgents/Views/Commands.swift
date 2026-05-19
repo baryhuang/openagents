@@ -33,7 +33,7 @@ struct OpenAgentsCommands: Commands {
             .keyboardShortcut(",", modifiers: .command)
         }
         CommandGroup(replacing: .newItem) {
-            Button("New Thread") {
+            Button("New Chat") {
                 NotificationCenter.default.post(name: AppCommand.newThread.notification, object: nil)
             }
             .keyboardShortcut("n", modifiers: .command)
