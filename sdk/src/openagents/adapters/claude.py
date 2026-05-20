@@ -219,8 +219,15 @@ class ClaudeAdapter(BaseAdapter):
         except Exception as e:
             logger.debug(f"Failed to collect uploaded files for channel {channel}: {e}")
 
-    def _build_claude_cmd(self, prompt: str, channel_name: str) -> list[str]:
-        """Build the claude CLI command for a specific channel."""
+    def _build_claude_cmd(self, prompt: str, channel_name: str, browser_enabled: bool = False) -> list[str]:
+        """Build the claude CLI command for a specific channel.
+
+        `browser_enabled` flows from `WorkspaceStore.browserEnabled` (resolved
+        by `_handle_message` via the cached `get_browser_enabled()` helper);
+        when True the system prompt gets a strong directive forcing the agent
+        toward `workspace_browser_*` MCP tools and away from any local
+        `mcp__browsermcp__*` server it may also have wired.
+        """
         # On Windows, prefer .cmd/.exe wrappers over bare npm bash shims
         if platform.system() == "Windows":
             claude_bin = shutil.which("claude.cmd") or shutil.which("claude.exe") or shutil.which("claude")
@@ -236,6 +243,7 @@ class ClaudeAdapter(BaseAdapter):
             workspace_id=self.workspace_id,
             channel_name=channel_name,
             mode=self._mode,
+            browser_enabled=browser_enabled,
         )
 
         cmd = [
@@ -438,7 +446,8 @@ class ClaudeAdapter(BaseAdapter):
 
         mcp_config_file = None
         try:
-            cmd = self._build_claude_cmd(content, msg_channel)
+            browser_enabled = await self.get_browser_enabled()
+            cmd = self._build_claude_cmd(content, msg_channel, browser_enabled=browser_enabled)
             # Track the temp MCP config file for cleanup
             try:
                 idx = cmd.index("--mcp-config")

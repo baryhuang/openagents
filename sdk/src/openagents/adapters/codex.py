@@ -76,7 +76,7 @@ class CodexAdapter(BaseAdapter):
         # Conversation history for multi-turn context
         self._conversation_history: list[dict] = []
 
-    def _build_system_context(self, channel_name: str) -> str:
+    def _build_system_context(self, channel_name: str, browser_enabled: bool = False) -> str:
         """Build workspace context to prepend to prompts."""
         return build_openclaw_system_prompt(
             agent_name=self.agent_name,
@@ -86,6 +86,7 @@ class CodexAdapter(BaseAdapter):
             token=self.token,
             mode=self._mode,
             disabled_modules=self.disabled_modules,
+            browser_enabled=browser_enabled,
         )
 
     # ------------------------------------------------------------------
@@ -144,7 +145,8 @@ class CodexAdapter(BaseAdapter):
         Used when OPENAI_API_KEY and OPENAI_BASE_URL are set.
         Streams the response and returns the full text.
         """
-        system_prompt = self._build_system_context(channel)
+        browser_enabled = await self.get_browser_enabled()
+        system_prompt = self._build_system_context(channel, browser_enabled=browser_enabled)
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(self._conversation_history)
@@ -205,7 +207,7 @@ class CodexAdapter(BaseAdapter):
     # Subprocess mode (codex exec --json --full-auto)
     # ------------------------------------------------------------------
 
-    def _build_codex_cmd(self, prompt: str, channel_name: str) -> list[str]:
+    def _build_codex_cmd(self, prompt: str, channel_name: str, browser_enabled: bool = False) -> list[str]:
         """Build the codex CLI command."""
         # On Windows, prefer .cmd/.exe wrappers over bare npm bash shims
         if platform.system() == "Windows":
@@ -246,7 +248,7 @@ class CodexAdapter(BaseAdapter):
 
         # Prepend workspace context to the prompt so Codex knows
         # about shared resources and how to collaborate
-        context = self._build_system_context(channel_name)
+        context = self._build_system_context(channel_name, browser_enabled=browser_enabled)
         full_prompt = f"{context}\n\n---\n\n{prompt}"
         cmd.append(full_prompt)
         return cmd
@@ -290,7 +292,8 @@ class CodexAdapter(BaseAdapter):
     async def _run_codex_subprocess(self, content: str, msg_channel: str) -> str:
         """Run a Codex CLI subprocess and collect the response."""
         try:
-            cmd = self._build_codex_cmd(content, msg_channel)
+            browser_enabled = await self.get_browser_enabled()
+            cmd = self._build_codex_cmd(content, msg_channel, browser_enabled=browser_enabled)
         except FileNotFoundError as e:
             await self._send_error(msg_channel, str(e))
             return ""

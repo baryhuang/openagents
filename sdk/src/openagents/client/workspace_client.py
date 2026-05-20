@@ -416,6 +416,30 @@ class WorkspaceClient:
                     "status": result.get("status", "active"),
                 }
 
+    async def get_workspace_metadata(
+        self,
+        workspace_id: str,
+        token: str,
+    ) -> dict:
+        """Get the workspace's top-level metadata via GET /v1/workspaces/{id}.
+
+        Returns the full data block from the backend — adapters care about
+        `browserEnabled` today, but more keys may be surfaced over time.
+        On error, returns an empty dict so callers can fall back to defaults
+        rather than crashing.
+        """
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.endpoint}/v1/workspaces/{workspace_id}",
+                headers=self._ws_headers(token),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    return {}
+                data = await resp.json()
+                return data.get("data", {}) or {}
+
     async def update_session(
         self,
         workspace_id: str,

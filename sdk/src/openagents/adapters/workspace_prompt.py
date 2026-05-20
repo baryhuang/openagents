@@ -14,6 +14,50 @@ instructions they can call via curl/requests/fetch.
 from typing import Optional
 
 
+def build_browser_directive(browser_enabled: bool) -> str:
+    """Strong directive forcing agents to use the workspace browser when the
+    workspace has Browser Fabric enabled.
+
+    Emitted high in the system prompt so it wins against any earlier guidance
+    that suggests local browsing tools. Empty string when the workspace toggle
+    is off so older agents continue to behave as before.
+
+    Returns "" when the toggle is off; the caller can unconditionally
+    concatenate the result.
+    """
+    if not browser_enabled:
+        return ""
+    return (
+        "\n## Browser Use (MANDATORY)\n"
+        "This workspace has the **shared Browser Fabric session** enabled. "
+        "All web browsing MUST go through it so the user can watch the "
+        "session live in their right-side panel and so cookies / state "
+        "persist across agents.\n\n"
+        "**Use ONLY these tools for any web browsing:**\n"
+        "- `mcp__openagents-workspace__workspace_browser_open`\n"
+        "- `mcp__openagents-workspace__workspace_browser_navigate`\n"
+        "- `mcp__openagents-workspace__workspace_browser_click`\n"
+        "- `mcp__openagents-workspace__workspace_browser_type`\n"
+        "- `mcp__openagents-workspace__workspace_browser_snapshot`\n"
+        "- `mcp__openagents-workspace__workspace_browser_screenshot`\n"
+        "- `mcp__openagents-workspace__workspace_browser_list_tabs`\n"
+        "- `mcp__openagents-workspace__workspace_browser_close`\n"
+        "\n"
+        "If you don't have these MCP tools, use `Bash` + `curl` against "
+        "`/v1/browser/tabs` (documented below in Shared Browser).\n\n"
+        "**FORBIDDEN — do NOT call any of these:**\n"
+        "- `mcp__browsermcp__*` (any local Browser MCP extension tool)\n"
+        "- `mcp__playwright__*`, `mcp__puppeteer__*`, `mcp__chrome-devtools__*`, or any other local-browser MCP\n"
+        "- `WebFetch`, `WebSearch`, `web_fetch`, `web_search`, or any built-in network/browser tool\n"
+        "\n"
+        "If a local browser tool errors with \"extension isn't connected\" or "
+        "\"connect your browser\", do NOT ask the user to connect anything — "
+        "the local extension is irrelevant here. Immediately switch to the "
+        "workspace browser tools above. The Browser Fabric session is already "
+        "running on the backend.\n"
+    )
+
+
 def build_workspace_identity(
     agent_name: str,
     workspace_id: str,
@@ -219,11 +263,15 @@ def build_claude_system_prompt(
     workspace_id: str,
     channel_name: str,
     mode: str = "execute",
+    browser_enabled: bool = False,
 ) -> str:
     """Build the system prompt for Claude adapter (MCP-based).
 
-    Claude gets identity + collaboration instructions but NOT API skills,
-    because it uses MCP tools instead.
+    Claude gets identity + collaboration instructions but NOT the full API
+    skills section — it uses MCP tools instead. When `browser_enabled` is
+    True we still inject the browser directive so the agent knows to prefer
+    `workspace_browser_*` over `mcp__browsermcp__*` and other local-browser
+    MCPs that might also be installed.
     """
     parts = []
     parts.append(build_workspace_identity(agent_name, workspace_id, channel_name, mode))
@@ -231,6 +279,7 @@ def build_claude_system_prompt(
         "Use workspace_get_history to read previous messages.\n"
         "Use workspace_get_agents to see other agents.\n"
     )
+    parts.append(build_browser_directive(browser_enabled))
     parts.append(build_collaboration_prompt())
 
     if mode == "plan":
@@ -257,14 +306,19 @@ def build_openclaw_system_prompt(
     token: str,
     mode: str = "execute",
     disabled_modules: Optional[set] = None,
+    browser_enabled: bool = False,
 ) -> str:
     """Build the full system prompt for OpenClaw/non-MCP agents.
 
-    Includes identity, collaboration, mode instructions, and
-    REST API skills for workspace resources.
+    Includes identity, collaboration, mode instructions, and REST API skills
+    for workspace resources. When `browser_enabled` is True, prepends the
+    strong directive that forbids local browser MCP tools (e.g. browsermcp,
+    playwright) — these agents typically have multiple MCP servers wired and
+    pick the wrong one without an explicit prohibition.
     """
     parts = []
     parts.append(build_workspace_identity(agent_name, workspace_id, channel_name, mode))
+    parts.append(build_browser_directive(browser_enabled))
     parts.append(build_collaboration_prompt())
     parts.append(build_mode_prompt(mode))
     parts.append(build_api_skills_prompt(
@@ -286,6 +340,7 @@ def build_openclaw_skill_md(
     agent_name: str,
     channel_name: str,
     disabled_modules: Optional[set] = None,
+    browser_enabled: bool = False,
 ) -> str:
     """Build a SKILL.md file for OpenClaw's skill auto-discovery.
 
@@ -307,6 +362,7 @@ def build_openclaw_skill_md(
     identity = build_workspace_identity(
         agent_name, workspace_id, channel_name, "execute"
     )
+    directive = build_browser_directive(browser_enabled)
     collab = build_collaboration_prompt()
 
     frontmatter = (
@@ -323,7 +379,7 @@ def build_openclaw_skill_md(
         "---\n\n"
     )
 
-    return frontmatter + identity + "\n" + collab + "\n" + body
+    return frontmatter + identity + directive + "\n" + collab + "\n" + body
 
 
 def _build_opencode_api_skills_prompt(
@@ -472,6 +528,7 @@ def build_opencode_system_prompt(
     token: str,
     mode: str = "execute",
     disabled_modules: Optional[set] = None,
+    browser_enabled: bool = False,
 ) -> str:
     parts = []
     parts.append(build_workspace_identity(agent_name, workspace_id, channel_name, mode))
@@ -486,6 +543,7 @@ def build_opencode_system_prompt(
         "for sharing files, browsing the web collaboratively, and discovering other agents.\n"
     )
 
+    parts.append(build_browser_directive(browser_enabled))
     parts.append(build_collaboration_prompt())
     parts.append(build_mode_prompt(mode))
     parts.append(

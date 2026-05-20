@@ -55,6 +55,11 @@ class BaseAdapter(ABC):
         # Per-channel uploaded file tracking — files uploaded during message
         # handling are attached to the final response message.
         self._channel_uploaded_files: dict[str, list[dict]] = {}
+        # Cached workspace.browser_enabled. Populated lazily on first read so
+        # we don't pay the HTTP roundtrip until an adapter actually needs the
+        # value for prompt construction. The adapter pays it once per session
+        # — flipping the workspace toggle requires the agent to reconnect.
+        self._browser_enabled_cache: Optional[bool] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -358,6 +363,32 @@ class BaseAdapter(ABC):
             )
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Workspace flags (cached)
+    # ------------------------------------------------------------------
+
+    async def get_browser_enabled(self) -> bool:
+        """Return whether the workspace has the Browser Fabric viewer toggle on.
+
+        Result is cached for the lifetime of the adapter to avoid hitting
+        `/v1/workspaces/{id}` on every message — agents that watch this value
+        must reconnect to pick up a flip. The backend already surfaces the
+        flag at the top level (`browserEnabled` on the GET response). Falls
+        back to False when the backend is older or the request fails so the
+        prompt builders don't accidentally inject the strong directive
+        against a backend that can't actually route to Fabric.
+        """
+        if self._browser_enabled_cache is None:
+            try:
+                meta = await self.client.get_workspace_metadata(
+                    self.workspace_id, self.token,
+                )
+                self._browser_enabled_cache = bool(meta.get("browserEnabled", False))
+            except Exception as e:
+                logger.debug(f"browser_enabled fetch failed: {e}")
+                self._browser_enabled_cache = False
+        return self._browser_enabled_cache
 
     # ------------------------------------------------------------------
     # Abstract

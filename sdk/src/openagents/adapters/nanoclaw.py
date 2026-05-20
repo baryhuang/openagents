@@ -68,7 +68,7 @@ class NanoClawAdapter(BaseAdapter):
         # Conversation history for multi-turn context
         self._conversation_history: list[dict] = []
 
-    def _build_system_prompt(self, channel_name: str) -> str:
+    def _build_system_prompt(self, channel_name: str, browser_enabled: bool = False) -> str:
         """Build workspace context system prompt."""
         return build_openclaw_system_prompt(
             agent_name=self.agent_name,
@@ -78,6 +78,7 @@ class NanoClawAdapter(BaseAdapter):
             token=self.token,
             mode=self._mode,
             disabled_modules=self.disabled_modules,
+            browser_enabled=browser_enabled,
         )
 
     async def _handle_message(self, msg: dict):
@@ -138,7 +139,8 @@ class NanoClawAdapter(BaseAdapter):
         self, user_message: str, channel: str
     ) -> str:
         """Call OpenAI-compatible chat completions API directly."""
-        system_prompt = self._build_system_prompt(channel)
+        browser_enabled = await self.get_browser_enabled()
+        system_prompt = self._build_system_prompt(channel, browser_enabled=browser_enabled)
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(self._conversation_history)
