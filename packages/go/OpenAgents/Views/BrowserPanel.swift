@@ -203,18 +203,60 @@ struct BrowserPanel: View {
 
 // MARK: - Web view bridge
 
-/// Minimal WKWebView wrapper that loads a remote URL and lets WKWebView own
-/// scrolling. Distinct from `WebView` (which loads raw HTML strings); we
-/// don't reuse that one because we want a remote URL load, no measured
-/// height, no oafile scheme handler.
+/// WKWebView wrapper for the in-panel browser. Browser Fabric's hosted
+/// viewer renders wider than our right-side panel on default sidebar
+/// widths, so without intervention WKWebView lets users pan content
+/// horizontally and the iframe visually bleeds outside the panel frame —
+/// pushing adjacent UI sideways. We fix that two ways:
+///
+///   1. WKUserScript injects `overflow-x: hidden` + viewport meta on the
+///      page (top frame + sub-frames) at document-end, clamping the
+///      content to the viewport width.
+///   2. On iOS we also turn off horizontal pan/bounce on the underlying
+///      scroll view and set `clipsToBounds = true`. macOS WKWebView
+///      already clips by default.
+///
+/// Users who need to see the full content can use the fullscreen button.
 private struct BrowserWebView {
     let url: URL
+
+    fileprivate static let clampHorizontalOverflowScript = """
+    (function () {
+      try {
+        var style = document.createElement('style');
+        style.textContent = 'html, body { max-width: 100vw !important; overflow-x: hidden !important; }';
+        (document.head || document.documentElement).appendChild(style);
+        var vp = document.querySelector('meta[name="viewport"]');
+        if (!vp) {
+          vp = document.createElement('meta');
+          vp.name = 'viewport';
+          vp.content = 'width=device-width, initial-scale=1';
+          (document.head || document.documentElement).appendChild(vp);
+        }
+      } catch (e) {}
+    })();
+    """
+
+    fileprivate static func makeConfiguration() -> WKWebViewConfiguration {
+        let cfg = WKWebViewConfiguration()
+        let script = WKUserScript(
+            source: clampHorizontalOverflowScript,
+            injectionTime: .atDocumentEnd,
+            // forMainFrameOnly: false → also runs inside Browser Fabric's
+            // inner iframe (the actual website being viewed). That's where
+            // most horizontal overflow comes from when sites measure
+            // themselves wider than the viewport.
+            forMainFrameOnly: false,
+        )
+        cfg.userContentController.addUserScript(script)
+        return cfg
+    }
 }
 
 #if os(macOS)
 extension BrowserWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
-        let view = WKWebView()
+        let view = WKWebView(frame: .zero, configuration: Self.makeConfiguration())
         view.load(URLRequest(url: url))
         return view
     }
@@ -227,7 +269,13 @@ extension BrowserWebView: NSViewRepresentable {
 #else
 extension BrowserWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
-        let view = WKWebView()
+        let view = WKWebView(frame: .zero, configuration: Self.makeConfiguration())
+        // Belt-and-suspenders against any first-paint frame where the
+        // page is measured wider than the viewport before our CSS runs.
+        view.scrollView.alwaysBounceHorizontal = false
+        view.scrollView.bounces = false
+        view.scrollView.showsHorizontalScrollIndicator = false
+        view.clipsToBounds = true
         view.load(URLRequest(url: url))
         return view
     }
