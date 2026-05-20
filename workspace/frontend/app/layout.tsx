@@ -51,9 +51,6 @@ export default function RootLayout({
         `}</Script>
       </head>
       <body className={`${inter.className} bg-zinc-100 dark:bg-zinc-900`}>
-        <div className="w-full bg-amber-500 text-black px-4 py-2 text-center text-sm font-medium z-[9999] relative">
-          Our backend provider is currently experiencing a critical issue. Some features may be unavailable. Service will recover automatically once the upstream issue is resolved.
-        </div>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <OpenAgentsAuthProvider>
