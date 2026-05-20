@@ -12,6 +12,13 @@ import Observation
 ///     `selectedFileId == nil`             → file list
 ///   - `isPresented == true` &&
 ///     `selectedFileId != nil`             → file detail
+/// The two view modes the right panel can show. Content is the original
+/// file list / detail behavior; Browser is the v0.3 Browser Fabric viewer.
+enum ContentSidebarTab: String, Sendable {
+    case content
+    case browser
+}
+
 @MainActor
 @Observable
 final class ContentSidebarController {
@@ -22,6 +29,18 @@ final class ContentSidebarController {
     /// markdown link text. The detail view uses it as a placeholder title
     /// while it fetches authoritative metadata.
     var selectedFileLabelHint: String? = nil
+
+    /// Which tab the panel is currently showing. Defaults to Content; the
+    /// chat view auto-switches this to Browser the first time a live session
+    /// appears (driven by `WorkspaceStore.browserAutoFocusToken`).
+    var selectedTab: ContentSidebarTab = .content
+
+    /// Open the sidebar focused on the Browser tab. Used by the auto-focus
+    /// trigger when a workspace session newly goes live with the toggle on.
+    func showBrowser() {
+        selectedTab = .browser
+        isPresented = true
+    }
 
     /// Toggle the sidebar without changing what it's pointing at — used by the
     /// chat header / toolbar buttons. Closing keeps the previously-selected

@@ -95,6 +95,59 @@ actor WorkspaceAPI {
         return try await send(request, as: Workspace.self)
     }
 
+    /// Flip the workspace-level Browser Fabric viewer toggle. The backend
+    /// accepts a typed top-level `browser_enabled` on `PATCH /v1/workspaces/{id}`
+    /// (added in this release) and merges it into the `settings` JSONB
+    /// without trampling other keys.
+    func updateWorkspaceBrowserEnabled(_ enabled: Bool) async throws -> Workspace {
+        struct Body: Encodable { let browser_enabled: Bool }
+        let bodyData = try JSONEncoder().encode(Body(browser_enabled: enabled))
+        let request = try makeRequest(
+            path: "/v1/workspaces/\(workspaceId)",
+            method: "PATCH",
+            body: bodyData,
+        )
+        return try await send(request, as: Workspace.self)
+    }
+
+    // MARK: - Browser Fabric tabs
+
+    /// List the workspace's current browser tabs. v1 of the Go app treats the
+    /// workspace as having at most one "live" browser at a time — the caller
+    /// picks the most-recent tab with a `liveUrl`.
+    func listBrowserTabs() async throws -> [BrowserTab] {
+        struct Response: Decodable, Sendable { let tabs: [BrowserTab] }
+        let request = try makeRequest(
+            path: "/v1/browser/tabs",
+            query: [("network", workspaceId)],
+        )
+        let resp = try await send(request, as: Response.self)
+        return resp.tabs
+    }
+
+    /// Fetch a single tab. `validate=true` asks the backend to confirm the
+    /// underlying Browser Fabric session is still alive and reconnect if not —
+    /// matches the React app's behavior on page load.
+    func getBrowserTab(tabId: String, validate: Bool = false) async throws -> BrowserTab {
+        var query: [(String, String)] = []
+        if validate { query.append(("validate", "true")) }
+        let request = try makeRequest(
+            path: "/v1/browser/tabs/\(tabId)",
+            query: query,
+        )
+        return try await send(request, as: BrowserTab.self)
+    }
+
+    /// Restart a tab's Browser Fabric session. Used by the panel's reload
+    /// button when the live view is stale or has failed.
+    func reconnectBrowserTab(tabId: String) async throws -> BrowserTab {
+        let request = try makeRequest(
+            path: "/v1/browser/tabs/\(tabId)/reconnect",
+            method: "POST",
+        )
+        return try await send(request, as: BrowserTab.self)
+    }
+
     // MARK: - Discovery
 
     struct Discovery: Decodable, Sendable {

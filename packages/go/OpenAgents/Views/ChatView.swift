@@ -227,6 +227,13 @@ struct ChatView: View {
             // received URL, then chat view mounted with attachments waiting.
             drainExternalAttachments()
         }
+        .onChange(of: store.browserAutoFocusToken) { _, _ in
+            // A browser session just appeared while the workspace toggle is
+            // on. Open the right panel and focus Browser — but only once per
+            // appearance; the store increments the token so further focus
+            // doesn't fire until a new session shows up.
+            sidebar.showBrowser()
+        }
         .onDrop(
             of: [.fileURL, .image],
             isTargeted: $isDropTargeted,

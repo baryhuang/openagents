@@ -90,6 +90,12 @@ struct ThreadListView: View {
                 }
                 .accessibilityLabel("Switch workspace")
             }
+            // iOS gets the browser toggle on the trailing principal slot so
+            // it sits in the same row as the workspace name pill but doesn't
+            // shove the refresh / new-chat buttons over.
+            ToolbarItem(placement: .topBarTrailing) {
+                browserToggleButton
+            }
             #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -162,6 +168,7 @@ struct ThreadListView: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 0)
+            browserToggleButton
             Button {
                 router.switchWorkspace()
             } label: {
@@ -177,6 +184,27 @@ struct ThreadListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     #endif
+
+    /// Icon-only toggle for the workspace-scoped Browser Fabric viewer. Lives
+    /// next to the switch-workspace button on macOS and in the trailing
+    /// toolbar slot on iOS — both sit on the same row as the workspace name
+    /// so the toggle reads as a workspace-level setting, not per-thread.
+    private var browserToggleButton: some View {
+        let enabled = store.workspace?.browserEnabled ?? false
+        return Button {
+            Task { await store.setBrowserEnabled(!enabled) }
+        } label: {
+            Image(systemName: enabled ? "safari.fill" : "safari")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(enabled ? "Disable browser panel" : "Enable browser panel")
+        #if os(macOS)
+        .help(enabled ? "Hide browser panel" : "Show browser panel when a session is live")
+        #endif
+        .disabled(store.workspace == nil)
+    }
 
     @ViewBuilder
     private var list: some View {
