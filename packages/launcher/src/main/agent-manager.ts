@@ -800,6 +800,51 @@ export class AgentManager extends EventEmitter {
     })
   }
 
+  async registerWorkspaceFromToken(input: {
+    url?: string
+    token?: string
+    slug?: string
+  }): Promise<{
+    id?: string
+    slug?: string
+    name?: string
+    endpoint?: string
+    token?: string
+  }> {
+    const tokenOrSlug = (input.token || input.slug || input.url || "").trim()
+    if (!tokenOrSlug) throw new Error("Missing workspace URL or token")
+
+    const resolveToken = this._connector!.resolveToken as (
+      token: string,
+    ) => Promise<{
+      slug?: string
+      workspace_id?: string
+      name?: string
+      endpoint?: string
+    }>
+    const info = await resolveToken.call(this._connector, tokenOrSlug)
+    const slug = info.slug || info.workspace_id || input.slug
+    if (!slug) throw new Error("Could not resolve workspace from input")
+
+    const config = this._connector!.config as Record<string, unknown>
+    const addNetwork = config.addNetwork as (opts: unknown) => unknown
+    addNetwork.call(config, {
+      id: info.workspace_id,
+      slug,
+      name: info.name || slug,
+      endpoint: info.endpoint,
+      token: input.token || tokenOrSlug,
+    })
+    this.signalReload()
+    return {
+      id: info.workspace_id,
+      slug,
+      name: info.name || slug,
+      endpoint: info.endpoint,
+      token: input.token || tokenOrSlug,
+    }
+  }
+
   async connectWorkspace(
     agentName: string,
     tokenOrSlug: string,

@@ -8,6 +8,10 @@ import { ToastContainer } from "./components/ui/Toast"
 import Dashboard from "./pages/dashboard"
 import Agents from "./pages/agents"
 import Chat from "./pages/chat"
+import Workspaces from "./pages/workspaces"
+import Connections from "./pages/connections"
+import Credentials from "./pages/credentials"
+import GitHubPage from "./pages/github"
 import Install from "./pages/install"
 import Logs from "./pages/logs"
 import Settings from "./pages/settings"
@@ -39,11 +43,24 @@ export default function App(): React.JSX.Element {
   }, [setCoreUpdateInfo, setCurrentTab])
 
   useEffect(() => {
-    const tabs = ["dashboard", "chat", "agents", "install", "logs", "settings"]
+    const tabs = [
+      "dashboard",
+      "agents",
+      "workspaces",
+      "connections",
+      "credentials",
+      "github",
+      "install",
+      "logs",
+      "settings",
+    ]
     const handler = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && e.key >= "1" && e.key <= "6") {
-        e.preventDefault()
-        useUiStore.getState().setCurrentTab(tabs[parseInt(e.key) - 1])
+      if (e.ctrlKey && e.key >= "1" && e.key <= "9") {
+        const idx = parseInt(e.key) - 1
+        if (idx < tabs.length) {
+          e.preventDefault()
+          useUiStore.getState().setCurrentTab(tabs[idx])
+        }
       }
     }
     document.addEventListener("keydown", handler)
@@ -75,6 +92,10 @@ export default function App(): React.JSX.Element {
         )}
         {currentTab === "chat" && <Chat showToast={showToast} />}
         {currentTab === "agents" && <Agents showToast={showToast} />}
+        {currentTab === "workspaces" && <Workspaces showToast={showToast} />}
+        {currentTab === "connections" && <Connections showToast={showToast} />}
+        {currentTab === "credentials" && <Credentials showToast={showToast} />}
+        {currentTab === "github" && <GitHubPage showToast={showToast} />}
         {currentTab === "install" && <Install showToast={showToast} />}
         {currentTab === "logs" && <Logs showToast={showToast} />}
         {currentTab === "settings" && <Settings showToast={showToast} />}

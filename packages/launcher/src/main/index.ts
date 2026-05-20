@@ -17,6 +17,14 @@ import { execSync, execFile, spawnSync } from "child_process"
 import { Store } from "./store"
 import { readPathEnv, writePathEnv, withPathEnv } from "./env"
 import { AgentManager, type ChatStreamEvent } from "./agent-manager"
+import {
+  ConnectionsStore,
+  CredentialsStore,
+  type ConnectionRecord,
+} from "./connections-store"
+import { probe as probeConnection } from "./connection-tester"
+import { getGitHubClient, parseGitHubRepo } from "./github-bridge"
+import { GitHubBindingsStore } from "./github-bindings-store"
 
 function execFileAsync(
   file: string,
@@ -99,6 +107,9 @@ if (
 }
 
 const store = new Store()
+const connectionsStore = new ConnectionsStore()
+const credentialsStore = new CredentialsStore()
+const githubBindingsStore = new GitHubBindingsStore()
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let agentManager: AgentManager | null = null
@@ -1362,9 +1373,259 @@ function setupIPC(): void {
   ipcMain.handle("workspace:create", (_e, name) =>
     requireManager().createWorkspace(name),
   )
+  ipcMain.handle("workspace:register-from-token", (_e, input) =>
+    requireManager().registerWorkspaceFromToken(input),
+  )
 
   ipcMain.handle("settings:get", (_e, key) => store.get(key))
   ipcMain.handle("settings:set", (_e, key, value) => store.set(key, value))
+
+  // ── Connections ──
+  ipcMain.handle("connections:list", () => connectionsStore.list())
+  ipcMain.handle("connections:upsert", (_e, record) => connectionsStore.upsert(record))
+  ipcMain.handle("connections:remove", (_e, id) => connectionsStore.remove(id))
+  ipcMain.handle("connections:set-status", (_e, id, status, lastError) =>
+    connectionsStore.setStatus(id, status, lastError),
+  )
+  ipcMain.handle("connections:test", async (_e, id) => {
+    const conn = connectionsStore.get(id)
+    if (!conn) return { ok: false, status: "error", detail: "Connection not found" }
+    if (!conn.credentialId) {
+      connectionsStore.setStatus(id, "unauthorized", "No credential linked")
+      return { ok: false, status: "unauthorized", detail: "No credential linked" }
+    }
+    const secret = credentialsStore.getSecret(conn.credentialId)
+    if (!secret) {
+      connectionsStore.setStatus(id, "unauthorized", "Credential missing")
+      return { ok: false, status: "unauthorized", detail: "Credential missing" }
+    }
+    const result = await probeConnection(conn.platform, secret)
+    connectionsStore.setStatus(
+      id,
+      result.status as ConnectionRecord["status"],
+      result.detail,
+    )
+    if (result.account) {
+      connectionsStore.upsert({ id, platform: conn.platform, account: result.account })
+    }
+    credentialsStore.recordTest(conn.credentialId, result.ok, result.detail)
+    return result
+  })
+
+  // ── Credentials ──
+  ipcMain.handle("credentials:list", () => credentialsStore.list())
+  ipcMain.handle("credentials:upsert", (_e, input) => credentialsStore.upsert(input))
+  ipcMain.handle("credentials:remove", (_e, id) => {
+    const removed = credentialsStore.remove(id)
+    if (removed) {
+      connectionsStore.unlinkCredential(id)
+      githubBindingsStore.unlinkCredential(id)
+    }
+    return removed
+  })
+  ipcMain.handle("credentials:reveal", (_e, id) => credentialsStore.reveal(id))
+  ipcMain.handle("credentials:test", async (_e, payload: {
+    id?: string
+    provider: string
+    secret?: string
+  }) => {
+    let secret = payload.secret
+    if (!secret && payload.id) secret = credentialsStore.getSecret(payload.id) || undefined
+    if (!secret) return { ok: false, status: "error", detail: "No secret provided" }
+    const result = await probeConnection(payload.provider, secret)
+    if (payload.id) credentialsStore.recordTest(payload.id, result.ok, result.detail)
+    return result
+  })
+
+  /**
+   * Apply a credential to one or more agent types' .env files. Bridges the new
+   * encrypted Credentials store to the legacy ~/.openagents/env/<type>.env
+   * system that resolve_env already understands (stage.md §4.4 — image:
+   * "src/env.js 增强"). Existing keys in the file are preserved; only the
+   * requested envKey is overwritten.
+   */
+  ipcMain.handle(
+    "credentials:apply-to-agents",
+    async (_e, payload: { credentialId: string; envKey: string; agentTypes: string[] }) => {
+      const { credentialId, envKey, agentTypes } = payload
+      if (!credentialId || !envKey || !Array.isArray(agentTypes) || agentTypes.length === 0) {
+        return { ok: false, error: "Missing credentialId / envKey / agentTypes" }
+      }
+      const secret = credentialsStore.getSecret(credentialId)
+      if (!secret) return { ok: false, error: "Credential not found" }
+      if (!agentManager) return { ok: false, error: "Agent manager not ready" }
+      const written: string[] = []
+      const errors: string[] = []
+      for (const type of agentTypes) {
+        try {
+          const existing = (agentManager.getAgentEnv(type) as Record<string, string>) || {}
+          const next = { ...existing, [envKey]: secret }
+          agentManager.saveAgentEnv(type, next)
+          written.push(type)
+        } catch (e) {
+          errors.push(`${type}: ${(e as Error).message}`)
+        }
+      }
+      // Track the linkage in the credential's usedByAgents.
+      try {
+        const all = credentialsStore.list().find((c) => c.id === credentialId)
+        const next = new Set([...(all?.usedByAgents || []), ...written])
+        credentialsStore.upsert({
+          id: credentialId,
+          provider: all!.provider,
+          kind: all!.kind,
+          label: all!.label,
+          shared: all!.shared,
+          scopes: all!.scopes,
+          usedByAgents: Array.from(next),
+        })
+      } catch {}
+      return { ok: errors.length === 0, written, errors }
+    },
+  )
+
+  // ── GitHub Integration (4.3) ──
+  //
+  // Per-agent repo bindings stored in <userData>/github-bindings.json.
+  // Tokens are never stored here — they're resolved at request time from the
+  // encrypted Credentials store using the binding's credentialId.
+
+  const resolveGitHubToken = (credentialId: string): string | null =>
+    credentialsStore.getSecret(credentialId)
+
+  ipcMain.handle(
+    "github:probe",
+    async (_e, payload: { credentialId?: string; secret?: string }) => {
+      const token = payload.secret
+        || (payload.credentialId ? resolveGitHubToken(payload.credentialId) : null)
+      if (!token) return { ok: false, error: "Missing GitHub token" }
+      try {
+        const r = await getGitHubClient().probe(token)
+        return { ...r, ok: true }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "github:parse-repo",
+    (_e, input: string) => parseGitHubRepo(input),
+  )
+
+  ipcMain.handle("github:list-bindings", () => githubBindingsStore.list())
+
+  ipcMain.handle(
+    "github:bind-repo",
+    async (_e, payload: { agentName: string; repo: string; credentialId: string }) => {
+      const parsed = parseGitHubRepo(payload.repo)
+      if (!parsed) return { ok: false, error: "Could not parse repo (use owner/name or URL)" }
+      const token = resolveGitHubToken(payload.credentialId)
+      if (!token) return { ok: false, error: "Credential not found" }
+      try {
+        await getGitHubClient().getRepo(parsed.owner, parsed.name, token)
+      } catch (e) {
+        return { ok: false, error: `Cannot access ${parsed.owner}/${parsed.name}: ${(e as Error).message}` }
+      }
+      const binding = githubBindingsStore.upsert({
+        agentName: payload.agentName,
+        owner: parsed.owner,
+        repo: parsed.name,
+        credentialId: payload.credentialId,
+      })
+      return { ok: true, binding }
+    },
+  )
+
+  ipcMain.handle("github:unbind-repo", (_e, agentName: string) =>
+    githubBindingsStore.remove(agentName),
+  )
+
+  ipcMain.handle(
+    "github:list-issues",
+    async (
+      _e,
+      payload: {
+        agentName: string
+        state?: "open" | "closed" | "all"
+        perPage?: number
+        page?: number
+      },
+    ) => {
+      const binding = githubBindingsStore.get(payload.agentName)
+      if (!binding) return { ok: false, error: "Agent is not bound to a repo" }
+      const token = resolveGitHubToken(binding.credentialId)
+      if (!token) return { ok: false, error: "Credential missing for this binding" }
+      try {
+        const items = await getGitHubClient().listIssues(
+          binding.owner,
+          binding.repo,
+          { state: payload.state, perPage: payload.perPage, page: payload.page },
+          token,
+        )
+        return { ok: true, items }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "github:list-pull-requests",
+    async (
+      _e,
+      payload: {
+        agentName: string
+        state?: "open" | "closed" | "all"
+        perPage?: number
+        page?: number
+      },
+    ) => {
+      const binding = githubBindingsStore.get(payload.agentName)
+      if (!binding) return { ok: false, error: "Agent is not bound to a repo" }
+      const token = resolveGitHubToken(binding.credentialId)
+      if (!token) return { ok: false, error: "Credential missing for this binding" }
+      try {
+        const items = await getGitHubClient().listPullRequests(
+          binding.owner,
+          binding.repo,
+          { state: payload.state, perPage: payload.perPage, page: payload.page },
+          token,
+        )
+        return { ok: true, items }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "github:comment",
+    async (
+      _e,
+      payload: { agentName: string; issueNumber: number; body: string },
+    ) => {
+      const binding = githubBindingsStore.get(payload.agentName)
+      if (!binding) return { ok: false, error: "Agent is not bound to a repo" }
+      const token = resolveGitHubToken(binding.credentialId)
+      if (!token) return { ok: false, error: "Credential missing for this binding" }
+      if (!payload.body || !payload.body.trim()) {
+        return { ok: false, error: "Comment body is empty" }
+      }
+      try {
+        const result = await getGitHubClient().createIssueComment(
+          binding.owner,
+          binding.repo,
+          payload.issueNumber,
+          payload.body,
+          token,
+        )
+        return { ok: true, result }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle("agents:health-check", (_e, type) => {
     if (!agentManager) return null

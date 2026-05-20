@@ -6,8 +6,12 @@ import { useShallow } from "zustand/react/shallow"
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "●" },
-  // { id: "chat",      label: "Chat",      icon: "💬" },
+  { id: "chat", label: "Chat", icon: "💬" },
   { id: "agents", label: "Agents", icon: "⚙" },
+  { id: "workspaces", label: "Workspaces", icon: "▦" },
+  { id: "connections", label: "Connections", icon: "⇄" },
+  { id: "credentials", label: "Credentials", icon: "⚿" },
+  { id: "github", label: "GitHub", icon: "⎇" },
   { id: "install", label: "Install", icon: "↓" },
   { id: "logs", label: "Logs", icon: "☰" },
   { id: "settings", label: "Settings", icon: "⚙" },

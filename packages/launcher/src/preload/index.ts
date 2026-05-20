@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('api', {
   removeWorkspace: (slug: string) => ipcRenderer.invoke('workspace:remove', slug),
   listWorkspaces: () => ipcRenderer.invoke('workspace:list'),
   createWorkspace: (name: string) => ipcRenderer.invoke('workspace:create', name),
+  registerWorkspaceFromToken: (input: { url?: string; token?: string; slug?: string }) =>
+    ipcRenderer.invoke('workspace:register-from-token', input),
 
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
@@ -106,4 +108,45 @@ contextBridge.exposeInMainWorld('api', {
   sessionDelete: (workspaceId: string, channelName: string) =>
     ipcRenderer.invoke('session:delete', workspaceId, channelName),
   sessionClear: (workspaceId?: string) => ipcRenderer.invoke('session:clear', workspaceId),
+
+  // ── Connections ──
+  listConnections: () => ipcRenderer.invoke('connections:list'),
+  upsertConnection: (record: unknown) => ipcRenderer.invoke('connections:upsert', record),
+  removeConnection: (id: string) => ipcRenderer.invoke('connections:remove', id),
+  setConnectionStatus: (id: string, status: string, lastError?: string) =>
+    ipcRenderer.invoke('connections:set-status', id, status, lastError),
+  testConnection: (id: string) => ipcRenderer.invoke('connections:test', id),
+
+  // ── GitHub Integration (4.3) ──
+  githubProbe: (payload: { credentialId?: string; secret?: string }) =>
+    ipcRenderer.invoke('github:probe', payload),
+  githubParseRepo: (input: string) => ipcRenderer.invoke('github:parse-repo', input),
+  githubListBindings: () => ipcRenderer.invoke('github:list-bindings'),
+  githubBindRepo: (payload: { agentName: string; repo: string; credentialId: string }) =>
+    ipcRenderer.invoke('github:bind-repo', payload),
+  githubUnbindRepo: (agentName: string) => ipcRenderer.invoke('github:unbind-repo', agentName),
+  githubListIssues: (payload: {
+    agentName: string
+    state?: 'open' | 'closed' | 'all'
+    perPage?: number
+    page?: number
+  }) => ipcRenderer.invoke('github:list-issues', payload),
+  githubListPullRequests: (payload: {
+    agentName: string
+    state?: 'open' | 'closed' | 'all'
+    perPage?: number
+    page?: number
+  }) => ipcRenderer.invoke('github:list-pull-requests', payload),
+  githubComment: (payload: { agentName: string; issueNumber: number; body: string }) =>
+    ipcRenderer.invoke('github:comment', payload),
+
+  // ── Credentials ──
+  listCredentials: () => ipcRenderer.invoke('credentials:list'),
+  upsertCredential: (input: unknown) => ipcRenderer.invoke('credentials:upsert', input),
+  removeCredential: (id: string) => ipcRenderer.invoke('credentials:remove', id),
+  revealCredential: (id: string) => ipcRenderer.invoke('credentials:reveal', id),
+  testCredential: (input: { id?: string; provider: string; secret?: string }) =>
+    ipcRenderer.invoke('credentials:test', input),
+  applyCredentialToAgents: (input: { credentialId: string; envKey: string; agentTypes: string[] }) =>
+    ipcRenderer.invoke('credentials:apply-to-agents', input),
 })
