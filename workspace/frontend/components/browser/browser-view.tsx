@@ -22,6 +22,44 @@ export function BrowserView() {
   const failCountRef = useRef(0);
 
   const tab = browserTabs.find((t) => t.id === selectedBrowserTabId);
+  const autoReconnectingRef = useRef(false);
+
+  // Validate live session on mount / tab switch. If the BF session is dead
+  // (share link expired), automatically reconnect to get a fresh session.
+  useEffect(() => {
+    if (!selectedBrowserTabId || !tab?.liveUrl) return;
+    let cancelled = false;
+
+    const validate = async () => {
+      try {
+        const url = workspaceApi.getBrowserScreenshotUrl(selectedBrowserTabId);
+        const headers: Record<string, string> = {};
+        const token = (workspaceApi as unknown as { token: string }).token;
+        if (token) headers['X-Workspace-Token'] = token;
+        const bearerToken = (workspaceApi as unknown as { bearerToken: string }).bearerToken;
+        if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
+
+        const res = await fetch(url, { headers });
+        if (cancelled || res.ok) return;
+
+        if (!autoReconnectingRef.current) {
+          autoReconnectingRef.current = true;
+          setReconnecting(true);
+          try {
+            await reconnectBrowserTab(selectedBrowserTabId);
+          } catch {
+            setSessionDead(true);
+          } finally {
+            setReconnecting(false);
+            autoReconnectingRef.current = false;
+          }
+        }
+      } catch {}
+    };
+
+    validate();
+    return () => { cancelled = true; };
+  }, [selectedBrowserTabId, tab?.liveUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll screenshot every 2 seconds (only when no live URL)
   useEffect(() => {
@@ -240,7 +278,7 @@ export function BrowserView() {
 
       {/* Browser view area */}
       <div className="flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-900 flex items-start justify-center">
-        {tab.liveUrl ? (
+        {tab.liveUrl && !reconnecting ? (
           <iframe
             src={tab.liveUrl}
             className="w-full h-full border-0"
