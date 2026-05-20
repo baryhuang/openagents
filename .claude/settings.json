@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tee /tmp/launcher-dev.log)",
+      "Bash(pkill -f \"tsc -p tsconfig\")",
+      "Bash(pkill -f \"node scripts/dev\")",
+      "Bash(pkill -f vite)",
+      "Bash(node -e \"console.log\\(require\\('electron'\\)\\)\")",
+      "Bash(/home/xiang/openagents/packages/launcher/node_modules/electron/dist/electron --version)",
+      "Bash(unset ELECTRON_RUN_AS_NODE)",
+      "Bash(/home/xiang/openagents/packages/launcher/node_modules/electron/dist/electron --version --no-sandbox)",
+      "Bash(HEADLESS=1 npm run dev)",
+      "Bash(npm show *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npx electron-vite *)",
+      "Bash(sed -i '' -e 's|\"./pages/Dashboard\"|\"./pages/dashboard\"|' -e 's|\"./pages/Agents\"|\"./pages/agents\"|' -e 's|\"./pages/Install\"|\"./pages/install\"|' -e 's|\"./pages/Logs\"|\"./pages/logs\"|' -e 's|\"./pages/Settings\"|\"./pages/settings\"|' /Users/ashin/Documents/Projects/openagents/packages/launcher/src/renderer/App.tsx)",
+      "Bash(sed -i '' -e 's|\"../Agents/AgentDetail\"|\"../agents/AgentDetail\"|' /Users/ashin/Documents/Projects/openagents/packages/launcher/src/renderer/pages/install/index.tsx)"
+    ]
+  }
+}

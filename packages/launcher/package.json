@@ -1,49 +1,82 @@
 {
-  "name": "openagents-launcher",
+  "name": "launcher",
   "version": "0.7.1",
-  "description": "OpenAgents Launcher — install, configure, and manage your AI agents",
-  "main": "src/main/main.js",
+  "description": "OpenAgents Launcher",
+  "main": "out/main/index.js",
   "scripts": {
-    "start": "electron .",
-    "start:headless": "electron . --headless",
-    "dev": "electron . --remote-debugging-port=9223 --remote-allow-origins=*",
-    "dev:nogpu": "electron . --remote-debugging-port=9223 --remote-allow-origins=* --disable-gpu",
-    "dev:headless": "electron . --remote-debugging-port=9223 --remote-allow-origins=* --headless",
-    "build:win": "electron-builder --win --publish never",
-    "build:mac": "electron-builder --mac --x64 --arm64 --publish never",
-    "build:mac:x64": "electron-builder --mac --x64 --publish never",
-    "build:mac:arm64": "electron-builder --mac --arm64 --publish never",
-    "build:linux": "electron-builder --linux --publish never",
-    "build:all": "electron-builder --win --mac --linux --publish never",
-    "dist": "electron-builder --publish always"
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
+    "build:mac:x64": "npm run build && electron-builder --mac --x64 --publish never",
+    "build:mac:arm64": "npm run build && electron-builder --mac --arm64 --publish never",
+    "build:win": "npm run build && electron-builder --win --publish never",
+    "build:linux": "npm run build && electron-builder --linux --publish never",
+    "build:all": "npm run build && electron-builder --win --mac --linux --publish never",
+    "dist": "npm run build && electron-builder --publish always"
   },
-  "author": {
-    "name": "OpenAgents",
-    "email": "team@openagents.org"
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/openagents-org/openagents.git",
-    "directory": "packages/launcher"
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.2",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^20.17.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "electron-vite": "^2.3.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
   },
-  "dependencies": {},
   "build": {
     "appId": "com.openagents.launcher",
     "productName": "OpenAgents Launcher",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-    "directories": {
-      "output": "dist"
-    },
     "files": [
-      "src/**/*",
-      "node_modules/**/*",
+      "out/**/*",
       "package.json"
     ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "identity": "ZHONGYUAN ZHU (AP69DBR725)",
+      "notarize": true
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    },
     "win": {
       "target": [
         {
@@ -72,28 +105,6 @@
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "assets/icon.icns",
-      "category": "public.app-category.developer-tools",
-      "identity": "ZHONGYUAN ZHU (AP69DBR725)",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "entitlements.mac.plist",
-      "entitlementsInherit": "entitlements.mac.plist",
-      "notarize": true
-    },
-    "dmg": {
-      "title": "${productName} ${version}"
     },
     "linux": {
       "target": [
