@@ -337,6 +337,26 @@ class WorkspaceClient {
   }
 
   /**
+   * Get the workspace's top-level metadata via GET /v1/workspaces/{id}.
+   *
+   * Returns the full data block from the backend — adapters care about
+   * `browserEnabled` today, but more keys may be surfaced over time. On
+   * error, returns null so callers can fall back to defaults rather than
+   * crashing.
+   */
+  async getWorkspaceMetadata(workspaceId, token) {
+    try {
+      const data = await this._get(
+        `/v1/workspaces/${workspaceId}`,
+        this._wsHeaders(token),
+      );
+      return data.data || data || {};
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Get session/channel info via GET /v1/workspaces/{id}/channels/{name}.
    */
   async getSession(workspaceId, channelName, token) {
