@@ -22,6 +22,7 @@ struct BrowserPanel: View {
     @State private var loadedLiveUrl: String?
     @State private var isReloading: Bool = false
     @State private var loadError: String?
+    @State private var fullscreenOpen: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,6 +37,30 @@ struct BrowserPanel: View {
             // If the backend rotated the liveUrl (e.g. session reconnected)
             // pick it up without a full panel teardown.
             loadedLiveUrl = newURL
+        }
+        #if os(iOS)
+        // iOS gets a true full-screen take-over (no sheet detents / grab
+        // indicator). On macOS we use .sheet with explicit sizing because
+        // .fullScreenCover doesn't exist for the desktop SwiftUI surface.
+        .fullScreenCover(isPresented: $fullscreenOpen) {
+            fullscreenSheet
+        }
+        #else
+        .sheet(isPresented: $fullscreenOpen) {
+            fullscreenSheet
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var fullscreenSheet: some View {
+        if let tab = store.liveBrowserTab, let url = loadedLiveUrl ?? tab.liveUrl {
+            FullscreenBrowserSheet(
+                liveUrl: url,
+                title: tab.title ?? "Browser",
+                url: tab.url,
+                isPresented: $fullscreenOpen,
+            )
         }
     }
 
@@ -85,6 +110,22 @@ struct BrowserPanel: View {
                 .accessibilityLabel("Reload browser session")
                 #if os(macOS)
                 .help("Reload session")
+                #endif
+
+                Button {
+                    fullscreenOpen = true
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(loadedLiveUrl == nil)
+                .accessibilityLabel("Open browser in fullscreen")
+                #if os(macOS)
+                .help("Fullscreen")
                 #endif
             }
             .padding(.horizontal, 14)
