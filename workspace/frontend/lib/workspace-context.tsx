@@ -56,6 +56,7 @@ interface WorkspaceContextValue {
   refreshBrowserTabs: () => Promise<void>;
   openBrowserTab: (url?: string, contextId?: string) => Promise<BrowserTab>;
   closeBrowserTab: (tabId: string) => Promise<void>;
+  navigateBrowserTab: (tabId: string, url: string) => Promise<BrowserTab>;
   reconnectBrowserTab: (tabId: string) => Promise<BrowserTab>;
   browserContexts: BrowserPersistentContext[];
   refreshBrowserContexts: () => Promise<void>;
@@ -532,6 +533,12 @@ export function WorkspaceProvider({
     if (selectedBrowserTabId === tabId) setSelectedBrowserTabId(null);
   }, [selectedBrowserTabId]);
 
+  const navigateBrowserTab = useCallback(async (tabId: string, url: string) => {
+    const tab = await workspaceApi.navigateBrowserTab(tabId, url);
+    setBrowserTabs((prev) => prev.map((t) => (t.id === tabId ? tab : t)));
+    return tab;
+  }, []);
+
   const reconnectBrowserTab = useCallback(async (tabId: string) => {
     const tab = await workspaceApi.reconnectBrowserTab(tabId);
     setBrowserTabs((prev) => prev.map((t) => (t.id === tabId ? tab : t)));
@@ -883,6 +890,7 @@ export function WorkspaceProvider({
         refreshBrowserTabs,
         openBrowserTab,
         closeBrowserTab,
+        navigateBrowserTab,
         reconnectBrowserTab,
         browserContexts,
         refreshBrowserContexts,

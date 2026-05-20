@@ -372,6 +372,15 @@ class WorkspaceApi {
     return this.mapTab(result);
   }
 
+  /** Navigate a browser tab to a new URL. */
+  async navigateBrowserTab(tabId: string, url: string): Promise<BrowserTab> {
+    const result = await this.request<Record<string, unknown>>(
+      `/v1/browser/tabs/${tabId}/navigate`,
+      { method: 'POST', body: JSON.stringify({ url }) },
+    );
+    return this.mapTab(result);
+  }
+
   /** Close a browser tab. */
   async closeBrowserTab(tabId: string): Promise<void> {
     await this.request<unknown>(`/v1/browser/tabs/${tabId}`, { method: 'DELETE' });
