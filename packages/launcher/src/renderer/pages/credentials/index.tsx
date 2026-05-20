@@ -3,6 +3,7 @@ import { Plus } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { Button } from "../../components/ui/Button"
 import { SearchInput } from "../../components/ui/SearchInput"
+import { TopBar } from "../../components/TopBar"
 import { CredentialCard } from "../../components/credentials/CredentialCard"
 import { CredentialEditor } from "../../components/credentials/CredentialEditor"
 import { CredentialApplyDialog } from "../../components/credentials/CredentialApplyDialog"
@@ -140,21 +141,21 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
   }
 
   return (
-    <section>
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div>
-          <h1 className="mb-1">Credentials</h1>
-          <p className="text-[12px] text-(--text-tertiary) m-0">
-            Encrypted at rest. Never logged. One key can be reused across multiple agents.
-          </p>
-        </div>
-        <Button variant="primary" onClick={openAdd}>
-          <Plus className="w-3.5 h-3.5" />
-          Add credential
-        </Button>
-      </div>
+    <section className="flex flex-col h-full">
+      <TopBar
+        title="Credentials"
+        subtitle="— Encrypted at rest. Reusable across multiple agents"
+        actions={
+          <Button variant="primary" onClick={openAdd}>
+            <Plus className="w-3.5 h-3.5" />
+            Add credential
+          </Button>
+        }
+      />
 
-      <div className="flex items-center gap-2 mb-5 mt-4 flex-wrap">
+      <div className="flex-1 overflow-y-auto px-9 py-6">
+
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
         <SearchInput
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -240,6 +241,7 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
         <p className="text-[11px] text-(--text-tertiary) m-0">
           {PLATFORMS.length} platforms supported.
         </p>
+      </div>
       </div>
 
       <CredentialEditor

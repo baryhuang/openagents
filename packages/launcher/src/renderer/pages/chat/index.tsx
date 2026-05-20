@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Bot } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useChatStore, channelKey } from '../../store/chat'
 import { useWorkspacesStore } from '../../store/workspaces'
@@ -11,6 +12,7 @@ import type {
 import MessageList from '../../components/chat/MessageList'
 import MessageInput from '../../components/chat/MessageInput'
 import SessionList from '../../components/chat/SessionList'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import type { ToastType } from '../../hooks/useToast'
 
 const DEFAULT_CHANNEL = 'main'
@@ -78,6 +80,13 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
 
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [clearAllOpen, setClearAllOpen] = useState(false)
+  const [clearingAll, setClearingAll] = useState(false)
+  const [deleteSessionTarget, setDeleteSessionTarget] = useState<{
+    workspaceId: string
+    channelName: string
+  } | null>(null)
+  const [deletingSession, setDeletingSession] = useState(false)
   const subscribedKeyRef = useRef<{ workspaceId: string; channelName: string } | null>(null)
 
   const activeKey = active ? channelKey(active.workspaceId, active.channelName) : null
@@ -273,7 +282,14 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
     void activate(selectedWorkspaceId, DEFAULT_CHANNEL)
   }
 
-  const handleDeleteSession = async (workspaceId: string, channelName: string): Promise<void> => {
+  const requestDeleteSession = (workspaceId: string, channelName: string): void => {
+    setDeleteSessionTarget({ workspaceId, channelName })
+  }
+
+  const performDeleteSession = async (): Promise<void> => {
+    if (!deleteSessionTarget) return
+    const { workspaceId, channelName } = deleteSessionTarget
+    setDeletingSession(true)
     try {
       await window.api.sessionDelete(workspaceId, channelName)
       void refreshSessions()
@@ -288,12 +304,20 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
       }
     } catch (e: unknown) {
       showToast(`Delete failed: ${(e as Error).message}`, 'error')
+    } finally {
+      setDeletingSession(false)
+      setDeleteSessionTarget(null)
     }
   }
 
-  const handleClearAll = async (): Promise<void> => {
+  const requestClearAll = (): void => {
     if (!selectedWorkspaceId) return
-    if (!window.confirm('Clear all chat sessions for this workspace? Server-side messages are kept; only the local session list is cleared.')) return
+    setClearAllOpen(true)
+  }
+
+  const performClearAll = async (): Promise<void> => {
+    if (!selectedWorkspaceId) return
+    setClearingAll(true)
     try {
       const removed = await window.api.sessionClear(selectedWorkspaceId)
 
@@ -312,6 +336,9 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
       void refreshSessions()
     } catch (e: unknown) {
       showToast(`Clear failed: ${(e as Error).message}`, 'error')
+    } finally {
+      setClearingAll(false)
+      setClearAllOpen(false)
     }
   }
 
@@ -331,41 +358,52 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
           setSelectedWorkspaceId(id)
         }}
         onSelectSession={handleSelectSession}
-        onDeleteSession={handleDeleteSession}
-        onClearAll={handleClearAll}
+        onDeleteSession={requestDeleteSession}
+        onClearAll={requestClearAll}
         onNewChat={handleNewChat}
       />
 
       <section className="flex-1 min-w-0 flex flex-col bg-(--bg-primary)">
-        <header className="px-4 py-3 border-b border-(--border) bg-(--bg-card) flex items-center justify-between">
-          <div className="min-w-0">
-            <h2 className="text-[14px] font-semibold m-0 truncate">
+        <header className="px-5 py-3.5 border-b border-(--border) bg-(--bg-card) flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[15px] font-semibold m-0 truncate text-(--text-primary)">
               {active
-                ? `${activeWorkspace?.name || activeWorkspace?.slug || active.workspaceId} · #${active.channelName}`
+                ? activeWorkspace?.name || activeWorkspace?.slug || active.workspaceId
                 : 'No chat selected'}
             </h2>
-            <div className="text-[11px] text-(--text-tertiary) mt-0.5">
+            <div className="text-[11px] text-(--text-tertiary) mt-1">
               {active
                 ? activeParticipants.length > 0
-                  ? `${activeParticipants.length} agent${activeParticipants.length === 1 ? '' : 's'} · ${activeParticipants.filter((p) => p.status === 'online').length} online`
-                  : 'No agents joined this workspace yet'
+                  ? <>
+                      <span className="text-(--success-text) font-medium">
+                        {activeParticipants.filter((p) => p.status === 'online').length}
+                      </span>
+                      {` of ${activeParticipants.length} agent${activeParticipants.length === 1 ? '' : 's'} online · #${active.channelName}`}
+                    </>
+                  : <>No agents joined yet · #{active.channelName}</>
                 : 'Pick a workspace and start a new chat to talk with your agents'}
             </div>
           </div>
           {activeParticipants.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              {activeParticipants.slice(0, 5).map((p) => (
+            <div className="flex items-center gap-1.5 flex-wrap justify-end max-w-[60%]">
+              {activeParticipants.slice(0, 4).map((p) => (
                 <span
                   key={p.agentName}
                   title={`${p.agentName} (${p.status})`}
-                  className="text-[10px] px-1.5 py-0.5 rounded-full bg-(--bg-input) border border-(--border) flex items-center gap-1 font-mono"
+                  className="text-[11px] px-2 py-1 rounded-full bg-(--bg-input) flex items-center gap-1.5"
                 >
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${p.status === 'online' ? 'bg-(--success)' : 'bg-(--text-tertiary)'}`} />
-                  {p.agentName}
+                  <span
+                    className={`inline-block w-1.5 h-1.5 rounded-full ${
+                      p.status === 'online' ? 'bg-(--success)' : 'bg-(--text-tertiary)'
+                    }`}
+                  />
+                  <span className="text-(--text-primary)">{p.agentName}</span>
                 </span>
               ))}
-              {activeParticipants.length > 5 && (
-                <span className="text-[10px] text-(--text-tertiary)">+{activeParticipants.length - 5}</span>
+              {activeParticipants.length > 4 && (
+                <span className="text-[11px] text-(--text-tertiary) px-1.5">
+                  +{activeParticipants.length - 4}
+                </span>
               )}
             </div>
           )}
@@ -382,7 +420,9 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 px-6">
-            <div className="text-4xl">🤖</div>
+            <div className="w-14 h-14 rounded-full bg-(--accent-bg) text-(--accent) flex items-center justify-center">
+              <Bot className="w-7 h-7" />
+            </div>
             <h3 className="text-[15px] font-semibold m-0">Chat with your agents</h3>
             <p className="text-[12px] text-(--text-secondary) max-w-[420px]">
               Pick a workspace on the left, then click <strong>+ New chat</strong> to open the default <code>#main</code> channel,
@@ -398,6 +438,36 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
           onUpload={handleUpload}
         />
       </section>
+
+      <ConfirmDialog
+        open={!!deleteSessionTarget}
+        title="Delete this chat session?"
+        description={
+          deleteSessionTarget
+            ? `Removes the local session for #${deleteSessionTarget.channelName}. Server-side messages are kept.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        busy={deletingSession}
+        onCancel={() => {
+          if (!deletingSession) setDeleteSessionTarget(null)
+        }}
+        onConfirm={performDeleteSession}
+      />
+
+      <ConfirmDialog
+        open={clearAllOpen}
+        title="Clear all chat sessions?"
+        description="Clears every local session for this workspace. Server-side messages are kept; only the local session list is cleared."
+        confirmLabel="Clear all"
+        destructive
+        busy={clearingAll}
+        onCancel={() => {
+          if (!clearingAll) setClearAllOpen(false)
+        }}
+        onConfirm={performClearAll}
+      />
     </div>
   )
 }

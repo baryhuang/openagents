@@ -3,8 +3,12 @@ import { useShallow } from "zustand/react/shallow"
 import { useUiStore } from "./store/ui"
 import { useAgentsStore } from "./store/agents"
 import { useInstallStore } from "./store/install"
+import { useThemeStore } from "./store/theme"
+import { useNotificationsStore } from "./store/notifications"
 import Sidebar from "./components/Sidebar"
 import { ToastContainer } from "./components/ui/Toast"
+import { CommandPalette } from "./components/command-palette/CommandPalette"
+import { OnboardingFlow, shouldShowOnboarding } from "./components/onboarding/OnboardingFlow"
 import Dashboard from "./pages/dashboard"
 import Agents from "./pages/agents"
 import Chat from "./pages/chat"
@@ -24,7 +28,16 @@ export default function App(): React.JSX.Element {
   const currentTab = useUiStore((s) => s.currentTab)
   const setCurrentTab = useUiStore((s) => s.setCurrentTab)
   const setCoreUpdateInfo = useAgentsStore((s) => s.setCoreUpdateInfo)
+  const initTheme = useThemeStore((s) => s.init)
+  const initNotifications = useNotificationsStore((s) => s.init)
   const { showToast } = useToasts()
+  const [onboardingOpen, setOnboardingOpen] = React.useState(false)
+
+  useEffect(() => {
+    initTheme()
+    void initNotifications()
+    setOnboardingOpen(shouldShowOnboarding())
+  }, [initTheme, initNotifications])
 
   // Global install:progress + install:output subscription
   useInstallProgress()
@@ -78,9 +91,7 @@ export default function App(): React.JSX.Element {
       <main
         className={cn(
           "flex-1 min-w-0 bg-(--bg-primary)",
-          currentTab === "chat"
-            ? "overflow-hidden flex flex-col"
-            : "overflow-y-auto px-9 py-8",
+          "overflow-hidden flex flex-col",
         )}
       >
         {currentTab === "dashboard" && (
@@ -109,6 +120,12 @@ export default function App(): React.JSX.Element {
       )}
 
       <ToastContainer />
+      <CommandPalette />
+      <OnboardingFlow
+        open={onboardingOpen}
+        onClose={() => setOnboardingOpen(false)}
+        showToast={showToast}
+      />
     </div>
   )
 }

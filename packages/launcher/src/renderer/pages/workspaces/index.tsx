@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { Plus, Check, RefreshCw } from "lucide-react"
+import { Plus, Check, RefreshCw, Link as LinkIcon } from "lucide-react"
+import { TopBar } from "../../components/TopBar"
 import { Button } from "../../components/ui/Button"
 import { SearchInput } from "../../components/ui/SearchInput"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog"
@@ -290,21 +291,27 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
   }, [cards])
 
   return (
-    <section>
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div>
-          <h1 className="mb-1">Workspaces</h1>
-          <p className="text-[12px] text-(--text-tertiary) m-0">
-            Each workspace bundles its agents, recent activity, and platform connections.
-          </p>
-        </div>
-        <Button variant="primary" onClick={() => setQuickOpen(true)}>
-          <Plus className="w-3.5 h-3.5" />
-          Quick connect
-        </Button>
-      </div>
+    <section className="flex flex-col h-full">
+      <TopBar
+        title="Workspaces"
+        subtitle="— Each workspace bundles its agents, activity, and connections"
+        actions={
+          <>
+            <Button onClick={() => setQuickOpen(true)}>
+              <LinkIcon className="w-3.5 h-3.5" />
+              Join Workspace
+            </Button>
+            <Button variant="primary" onClick={() => setQuickOpen(true)}>
+              <Plus className="w-3.5 h-3.5" />
+              Create Workspace
+            </Button>
+          </>
+        }
+      />
 
-      <div className="flex items-center gap-3 my-4 text-[11px] text-(--text-tertiary)">
+      <div className="flex-1 overflow-y-auto px-9 py-6">
+
+      <div className="flex items-center gap-3 mb-4 text-[11px] text-(--text-tertiary)">
         <span>
           <span className="text-(--success-text) font-semibold">{stats.healthy}</span> healthy
         </span>
@@ -342,6 +349,10 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
         </Button>
       </div>
 
+      <h2 className="text-[14px] font-semibold text-(--text-primary) m-0 mb-3">
+        Active Workspaces
+      </h2>
+
       {loading ? (
         <div className="card-legacy empty-state">
           <p>Loading workspaces…</p>
@@ -376,6 +387,7 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
           />
         ))
       )}
+      </div>
 
       {copiedSlug && (
         <div className="fixed bottom-6 right-6 px-3 py-2 bg-(--success-bg) text-(--success-text) rounded-sm text-[11px] flex items-center gap-1.5 shadow-md">

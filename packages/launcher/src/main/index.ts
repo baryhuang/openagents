@@ -25,6 +25,17 @@ import {
 import { probe as probeConnection } from "./connection-tester"
 import { getGitHubClient, parseGitHubRepo } from "./github-bridge"
 import { GitHubBindingsStore } from "./github-bindings-store"
+import {
+  setNotificationsWindow,
+  pushNotification,
+  listNotifications,
+  markRead,
+  markAllRead,
+  clearAll as clearAllNotifications,
+  clearOne as clearOneNotification,
+  getPrefs as getNotifPrefs,
+  setPrefs as setNotifPrefs,
+} from "./notifications"
 
 function execFileAsync(
   file: string,
@@ -680,9 +691,18 @@ function createWindow(): void {
     mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"))
   }
 
+  setNotificationsWindow(mainWindow)
+
   mainWindow.once("ready-to-show", () => {
     if (process.platform === "darwin" && app.dock) app.dock.show()
     mainWindow!.show()
+    // DevTools — dev only. Production builds (`app.isPackaged === true`) skip
+    // this so end users never see the inspector pop up. In dev, electron-vite
+    // sets ELECTRON_RENDERER_URL, which is a more reliable signal than
+    // NODE_ENV under the electron-vite preview pipeline.
+    if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+      mainWindow!.webContents.openDevTools({ mode: "detach" })
+    }
   })
 
   mainWindow.on("close", (e) => {
@@ -1626,6 +1646,68 @@ function setupIPC(): void {
       }
     },
   )
+
+  // ── Notifications (5.4) ──
+  ipcMain.handle("notifications:list", () => listNotifications())
+  ipcMain.handle("notifications:push", (_e, input) => pushNotification(input))
+  ipcMain.handle("notifications:mark-read", (_e, id: string) => {
+    markRead(id)
+    return true
+  })
+  ipcMain.handle("notifications:mark-all-read", () => {
+    markAllRead()
+    return true
+  })
+  ipcMain.handle("notifications:clear", (_e, id?: string) => {
+    if (id) clearOneNotification(id)
+    else clearAllNotifications()
+    return true
+  })
+  ipcMain.handle("notifications:get-prefs", () => getNotifPrefs())
+  ipcMain.handle("notifications:set-prefs", (_e, prefs) => setNotifPrefs(prefs))
+
+  // ── Settings paths (5.7) ──
+  ipcMain.handle("paths:list", () => ({
+    userData: app.getPath("userData"),
+    logs: app.getPath("logs"),
+    downloads: app.getPath("downloads"),
+    home: app.getPath("home"),
+    cache: app.getPath("sessionData"),
+    portableNode: PORTABLE_NODE_DIR,
+    openagentsHome: path.join(os.homedir(), ".openagents"),
+  }))
+  ipcMain.handle("paths:show", (_e, p: string) => {
+    try {
+      shell.showItemInFolder(p)
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle("settings:get-all", () => store.get())
+  ipcMain.handle("settings:export", () => {
+    return JSON.stringify(store.get(), null, 2)
+  })
+  ipcMain.handle("settings:import", (_e, json: string) => {
+    try {
+      const parsed = JSON.parse(json)
+      if (!parsed || typeof parsed !== "object") {
+        return { ok: false, error: "Expected an object" }
+      }
+      for (const [k, v] of Object.entries(parsed)) {
+        store.set(k, v)
+      }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+  ipcMain.handle("settings:reset", () => {
+    const all = store.get() as Record<string, unknown>
+    for (const k of Object.keys(all)) store.delete(k)
+    return true
+  })
 
   ipcMain.handle("agents:health-check", (_e, type) => {
     if (!agentManager) return null

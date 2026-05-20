@@ -11,6 +11,7 @@ import {
   CircleDot,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
+import { TopBar } from "../../components/TopBar"
 import { Button } from "../../components/ui/Button"
 import { Card } from "../../components/ui/Card"
 import { Input } from "../../components/ui/Input"
@@ -175,42 +176,38 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
     credentials.find((c) => c.id === id)?.label || "(missing credential)"
 
   return (
-    <div className="flex flex-col gap-5 pb-10">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[20px] font-bold tracking-[-0.02em] m-0 mb-1 flex items-center gap-2">
-            <Github className="w-5 h-5" />
-            GitHub
-          </h1>
-          <p className="text-[12px] text-(--text-secondary) m-0">
-            Bind agents to repositories. Recent issues and pull requests are
-            polled on demand and shown below.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="default"
-            onClick={() => {
-              void refresh()
-              for (const b of bindings) void loadFeed(b)
-            }}
-            disabled={loading}
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
-            Refresh
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              setBindEditing(null)
-              setBindOpen(true)
-            }}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Bind repo
-          </Button>
-        </div>
-      </div>
+    <section className="flex flex-col h-full">
+      <TopBar
+        title="GitHub"
+        subtitle="— Bind agents to repos, surface recent issues / PRs"
+        actions={
+          <>
+            <Button
+              variant="default"
+              onClick={() => {
+                void refresh()
+                for (const b of bindings) void loadFeed(b)
+              }}
+              disabled={loading}
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+              Refresh
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setBindEditing(null)
+                setBindOpen(true)
+              }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Bind repo
+            </Button>
+          </>
+        }
+      />
+
+      <div className="flex-1 overflow-y-auto px-9 py-6 flex flex-col gap-5">
 
       {bindings.length > 0 && (
         <div className="max-w-md">
@@ -363,6 +360,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
           )
         })}
       </div>
+      </div>
 
       <GitHubBindDialog
         open={bindOpen}
@@ -388,7 +386,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
         onConfirm={handleUnbind}
         busy={unbinding}
       />
-    </div>
+    </section>
   )
 }
 

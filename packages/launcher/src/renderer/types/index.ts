@@ -333,6 +333,20 @@ declare global {
       }>
       getSetting(key: string): Promise<unknown>
       setSetting(key: string, value: unknown): Promise<unknown>
+      getAllSettings(): Promise<Record<string, unknown>>
+      exportSettings(): Promise<string>
+      importSettings(json: string): Promise<{ ok: boolean; error?: string }>
+      resetSettings(): Promise<boolean>
+      listPaths(): Promise<{
+        userData: string
+        logs: string
+        downloads: string
+        home: string
+        cache: string
+        portableNode: string
+        openagentsHome: string
+      }>
+      showPath(path: string): Promise<boolean>
       healthCheck(type: string): Promise<HealthCheck>
       openExternal(url: string): Promise<void>
       shellExec(cmd: string): Promise<string>
@@ -393,6 +407,17 @@ declare global {
         agentTypes: string[]
       }): Promise<{ ok: boolean; written?: string[]; errors?: string[]; error?: string }>
 
+      // ── Notifications (5.4) ──
+      notificationsList(): Promise<NotifRecord[]>
+      notificationsPush(input: NotifInput): Promise<NotifRecord>
+      notificationsMarkRead(id: string): Promise<boolean>
+      notificationsMarkAllRead(): Promise<boolean>
+      notificationsClear(id?: string): Promise<boolean>
+      notificationsGetPrefs(): Promise<NotifPrefs>
+      notificationsSetPrefs(prefs: Partial<NotifPrefs>): Promise<NotifPrefs>
+      onNotificationsUpdated(cb: (list: NotifRecord[]) => void): () => void
+      onNotificationClicked(cb: (record: NotifRecord) => void): () => void
+
       // ── GitHub Integration (4.3) ──
       githubProbe(payload: {
         credentialId?: string
@@ -433,6 +458,44 @@ declare global {
       }): Promise<{ ok: boolean; result?: unknown; error?: string }>
     }
   }
+}
+
+export type NotifKind =
+  | 'agent_error'
+  | 'agent_finished'
+  | 'agent_mention'
+  | 'agent_waiting_input'
+  | 'workspace_mention'
+  | 'workspace_message'
+  | 'workspace_error'
+  | 'platform_error'
+  | 'github'
+  | 'system'
+
+export type NotifPriority = 'low' | 'normal' | 'high' | 'critical'
+
+export interface NotifInput {
+  kind: NotifKind
+  title: string
+  body: string
+  priority?: NotifPriority
+  source?: string
+  payload?: Record<string, unknown>
+  silent?: boolean
+}
+
+export interface NotifRecord extends NotifInput {
+  id: string
+  createdAt: string
+  read: boolean
+}
+
+export interface NotifPrefs {
+  enabled: boolean
+  soundEnabled: boolean
+  mutedKinds: NotifKind[]
+  mutedSources: string[]
+  quietHours: [number, number] | null
 }
 
 export interface GitHubBinding {

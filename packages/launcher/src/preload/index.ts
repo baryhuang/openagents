@@ -56,6 +56,12 @@ contextBridge.exposeInMainWorld('api', {
 
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
+  getAllSettings: () => ipcRenderer.invoke('settings:get-all'),
+  exportSettings: () => ipcRenderer.invoke('settings:export'),
+  importSettings: (json: string) => ipcRenderer.invoke('settings:import', json),
+  resetSettings: () => ipcRenderer.invoke('settings:reset'),
+  listPaths: () => ipcRenderer.invoke('paths:list'),
+  showPath: (p: string) => ipcRenderer.invoke('paths:show', p),
 
   healthCheck: (type: string) => ipcRenderer.invoke('agents:health-check', type),
 
@@ -116,6 +122,25 @@ contextBridge.exposeInMainWorld('api', {
   setConnectionStatus: (id: string, status: string, lastError?: string) =>
     ipcRenderer.invoke('connections:set-status', id, status, lastError),
   testConnection: (id: string) => ipcRenderer.invoke('connections:test', id),
+
+  // ── Notifications (5.4) ──
+  notificationsList: () => ipcRenderer.invoke('notifications:list'),
+  notificationsPush: (input: unknown) => ipcRenderer.invoke('notifications:push', input),
+  notificationsMarkRead: (id: string) => ipcRenderer.invoke('notifications:mark-read', id),
+  notificationsMarkAllRead: () => ipcRenderer.invoke('notifications:mark-all-read'),
+  notificationsClear: (id?: string) => ipcRenderer.invoke('notifications:clear', id),
+  notificationsGetPrefs: () => ipcRenderer.invoke('notifications:get-prefs'),
+  notificationsSetPrefs: (prefs: unknown) => ipcRenderer.invoke('notifications:set-prefs', prefs),
+  onNotificationsUpdated: (cb: (list: unknown[]) => void) => {
+    const handler = (_e: unknown, list: unknown[]): void => cb(list)
+    ipcRenderer.on('notifications:updated', handler)
+    return () => ipcRenderer.removeListener('notifications:updated', handler)
+  },
+  onNotificationClicked: (cb: (record: unknown) => void) => {
+    const handler = (_e: unknown, record: unknown): void => cb(record)
+    ipcRenderer.on('notifications:clicked', handler)
+    return () => ipcRenderer.removeListener('notifications:clicked', handler)
+  },
 
   // ── GitHub Integration (4.3) ──
   githubProbe: (payload: { credentialId?: string; secret?: string }) =>

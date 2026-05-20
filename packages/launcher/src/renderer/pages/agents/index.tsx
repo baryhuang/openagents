@@ -4,9 +4,11 @@ import { useUiStore } from "../../store/ui"
 import { useShallow } from "zustand/react/shallow"
 import AgentIcon from "../../components/AgentIcon"
 import StatusDot, { displayState } from "../../components/ui/StatusDot"
+import { Plus } from "lucide-react"
 import { Button } from "../../components/ui/Button"
 import { Modal, ModalTitle } from "../../components/ui/Modal"
 import { PasswordInput } from "../../components/ui/PasswordInput"
+import { TopBar } from "../../components/TopBar"
 import type { Agent, CatalogEntry, EnvField, HealthCheck } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 
@@ -170,13 +172,19 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
   }
 
   return (
-    <section>
-      <h1 className="mb-6">My Agents</h1>
-      <div className="flex gap-2.5 mb-4">
-        <Button variant="primary" onClick={() => setNewAgentOpen(true)}>
-          + New Agent
-        </Button>
-      </div>
+    <section className="flex flex-col h-full">
+      <TopBar
+        title="My Agents"
+        subtitle="— Manage installed agent instances"
+        actions={
+          <Button variant="primary" onClick={() => setNewAgentOpen(true)}>
+            <Plus className="w-3.5 h-3.5" />
+            New Agent
+          </Button>
+        }
+      />
+
+      <div className="flex-1 overflow-y-auto px-9 py-6">
 
       {loading ? (
         <div className="flex flex-col gap-2.5">
@@ -321,6 +329,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           })}
         </div>
       )}
+      </div>
 
       <NewAgentDialog
         open={newAgentOpen}

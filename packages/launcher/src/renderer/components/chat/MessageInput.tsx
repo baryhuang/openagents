@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/utils'
+import { Button } from '../ui/Button'
 import type { Attachment, WorkspaceParticipant } from '../../types'
 
 interface MessageInputProps {
@@ -183,14 +184,15 @@ export default function MessageInput({
               >
                 <PaperclipIcon className="w-3 h-3 text-(--text-tertiary)" />
                 <span className="truncate max-w-[160px] text-(--text-primary)">{att.filename}</span>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => removeAttachment(i)}
-                  className="ml-0.5 w-4 h-4 inline-flex items-center justify-center rounded-full text-(--text-tertiary) hover:text-(--danger-text) hover:bg-(--bg-card) cursor-pointer"
                   title="Remove"
+                  className="ml-0.5 h-4 w-4 rounded-full text-(--text-tertiary) hover:enabled:text-(--danger-text)"
                 >
                   <CloseIcon className="w-2.5 h-2.5" />
-                </button>
+                </Button>
               </div>
             ))}
             {uploadingCount > 0 && (
@@ -213,19 +215,16 @@ export default function MessageInput({
             }}
           />
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => fileRef.current?.click()}
             disabled={disabled || sending}
             title="Attach file"
-            className={cn(
-              'shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full cursor-pointer',
-              'text-(--text-tertiary) hover:text-(--text-primary) hover:bg-(--bg-input)',
-              'disabled:opacity-40 disabled:cursor-not-allowed transition-colors',
-            )}
+            className="shrink-0 h-9 w-9 rounded-full text-(--text-tertiary) hover:enabled:text-(--text-primary)"
           >
             <PaperclipIcon className="w-4.5 h-4.5" />
-          </button>
+          </Button>
 
           <textarea
             ref={textRef}
@@ -243,20 +242,16 @@ export default function MessageInput({
             )}
           />
 
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="icon"
             onClick={() => void handleSend()}
             disabled={!canSend}
             title="Send (Enter)"
-            className={cn(
-              'shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full cursor-pointer transition-all',
-              canSend
-                ? 'bg-(--accent) text-(--accent-text) hover:bg-(--accent-hover) shadow-[0_1px_4px_rgba(88,86,214,0.2)]'
-                : 'bg-(--bg-input) text-(--text-tertiary) cursor-not-allowed',
-            )}
+            className="shrink-0 h-9 w-9 rounded-full"
           >
             <ArrowUpIcon className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
 
         {mentionState?.open && filteredParticipants.length > 0 && (
@@ -283,8 +278,8 @@ export default function MessageInput({
         )}
       </div>
 
-      <div className="mt-1.5 text-center text-[10px] text-(--text-tertiary)">
-        Press <kbd className="px-1 py-0.5 rounded bg-(--bg-input) border border-(--border) font-mono text-[10px]">Enter</kbd> to send · <kbd className="px-1 py-0.5 rounded bg-(--bg-input) border border-(--border) font-mono text-[10px]">Shift</kbd>+<kbd className="px-1 py-0.5 rounded bg-(--bg-input) border border-(--border) font-mono text-[10px]">Enter</kbd> for newline · type <code className="font-mono">@</code> to mention
+      <div className="mt-2 text-center text-[11px] text-(--text-tertiary)">
+        <code className="font-mono text-(--text-secondary)">@mention</code> agents to direct messages · Attach files with the clip icon · Press <kbd className="px-1 py-0.5 rounded bg-(--bg-input) text-[10px]">Enter</kbd> to send
       </div>
     </div>
   )

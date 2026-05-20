@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { SearchInput } from "../../components/ui/SearchInput"
+import { TopBar } from "../../components/TopBar"
 import { useConnectionsStore } from "../../store/connections"
 import { useCredentialsStore } from "../../store/credentials"
 import { PLATFORMS, type PlatformDef, platformLabel } from "../../components/connections/platforms"
@@ -87,24 +88,24 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
   }, [connectionByPlatform])
 
   return (
-    <section>
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div>
-          <h1 className="mb-1">Connections</h1>
-          <p className="text-[12px] text-(--text-tertiary) m-0">
-            Manage authorizations to external platforms. Credentials are encrypted on disk.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-[11px] text-(--text-tertiary)">
-          <span>
-            <span className="text-(--success-text) font-semibold">{counts.connected}</span> connected
-          </span>
-          <span>·</span>
-          <span>{counts.total} platforms</span>
-        </div>
-      </div>
+    <section className="flex flex-col h-full">
+      <TopBar
+        title="Connections"
+        subtitle="— Authorizations to external platforms (encrypted on disk)"
+        actions={
+          <div className="flex items-center gap-2 text-[11px] text-(--text-tertiary)">
+            <span>
+              <span className="text-(--success-text) font-semibold">{counts.connected}</span> connected
+            </span>
+            <span>·</span>
+            <span>{counts.total} platforms</span>
+          </div>
+        }
+      />
 
-      <div className="flex items-center gap-2 mb-5 mt-4">
+      <div className="flex-1 overflow-y-auto px-9 py-6">
+
+      <div className="flex items-center gap-2 mb-5">
         <SearchInput
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -153,6 +154,7 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
           <p>No platforms match "{search}".</p>
         </div>
       )}
+      </div>
 
       {dialogPlatform && (
         <PlatformConnectDialog

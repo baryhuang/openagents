@@ -1,5 +1,5 @@
 {
-  "name": "launcher",
+  "name": "openagents-launcher",
   "version": "0.7.1",
   "description": "OpenAgents Launcher",
   "main": "out/main/index.js",
