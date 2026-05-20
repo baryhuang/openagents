@@ -371,6 +371,7 @@ async def list_tabs(
 @router.get("/tabs/{tab_id}")
 async def get_tab(
     tab_id: str,
+    validate: bool = False,
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
@@ -384,6 +385,13 @@ async def get_tab(
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+
+    if validate:
+        try:
+            await _ensure_connected(tab, db)
+            db.commit()
+        except Exception as e:
+            logger.warning("Tab %s validation/reconnect failed: %s", tab_id, e)
 
     return success_response(_tab_to_dict(tab))
 

@@ -363,6 +363,14 @@ class WorkspaceApi {
     return this.mapTab(result);
   }
 
+  /** Validate a browser tab session — auto-reconnects if expired. */
+  async validateBrowserTab(tabId: string): Promise<BrowserTab> {
+    const result = await this.request<Record<string, unknown>>(
+      `/v1/browser/tabs/${tabId}?validate=true`,
+    );
+    return this.mapTab(result);
+  }
+
   /** Reconnect an expired browser tab (creates a new session). */
   async reconnectBrowserTab(tabId: string): Promise<BrowserTab> {
     const result = await this.request<Record<string, unknown>>(
