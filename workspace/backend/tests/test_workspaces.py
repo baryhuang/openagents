@@ -100,6 +100,56 @@ class TestUpdateWorkspace:
         assert resp.status_code == 200
         assert resp.json()["data"]["settings"]["theme"] == "dark"
 
+    def test_browser_enabled_defaults_false(self, client, workspace):
+        """A fresh workspace has browserEnabled = false."""
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        assert resp.json()["data"]["browserEnabled"] is False
+
+    def test_update_browser_enabled_true(self, client, workspace):
+        """Flip browser_enabled on; response surfaces it at the top level."""
+        resp = client.patch(f"/v1/workspaces/{workspace['id']}", json={
+            "browser_enabled": True,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["browserEnabled"] is True
+        # And it's mirrored inside the settings dict
+        assert data["settings"].get("browser_enabled") is True
+
+    def test_browser_enabled_round_trips(self, client, workspace):
+        """A subsequent GET reflects the persisted toggle."""
+        client.patch(f"/v1/workspaces/{workspace['id']}",
+                     json={"browser_enabled": True},
+                     headers={"X-Workspace-Token": workspace["token"]})
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.json()["data"]["browserEnabled"] is True
+
+    def test_browser_enabled_preserves_other_settings(self, client, workspace):
+        """Flipping browser_enabled doesn't trample unrelated settings keys."""
+        client.patch(f"/v1/workspaces/{workspace['id']}",
+                     json={"settings": {"theme": "dark"}},
+                     headers={"X-Workspace-Token": workspace["token"]})
+        resp = client.patch(f"/v1/workspaces/{workspace['id']}", json={
+            "browser_enabled": True,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        data = resp.json()["data"]
+        assert data["settings"]["theme"] == "dark"
+        assert data["settings"]["browser_enabled"] is True
+        assert data["browserEnabled"] is True
+
+    def test_browser_enabled_false_clears_panel(self, client, workspace):
+        """Toggling off persists the false value."""
+        client.patch(f"/v1/workspaces/{workspace['id']}",
+                     json={"browser_enabled": True},
+                     headers={"X-Workspace-Token": workspace["token"]})
+        resp = client.patch(f"/v1/workspaces/{workspace['id']}", json={
+            "browser_enabled": False,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.json()["data"]["browserEnabled"] is False
+
 
 class TestDeleteWorkspace:
     """DELETE /v1/workspaces/{id} — soft-delete workspace."""
