@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Pencil, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2, CheckCircle2, MessageCircle } from 'lucide-react';
+import { Pencil, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2 } from 'lucide-react';
 import { RoutinesDisclosure } from './routines-disclosure';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
@@ -63,78 +63,6 @@ function highlightMatch(text: string, query: string): React.ReactNode {
   );
 }
 
-function DMSection({
-  conversations,
-  currentSessionId,
-  onSelect,
-}: {
-  conversations: { agents: [string, string]; lastMessage: { content: string; sender: string; timestamp: number }; messageCount: number }[];
-  currentSessionId: string | null;
-  onSelect: (sessionId: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
-      >
-        <MessageCircle className="size-3" />
-        <span>Agent DMs ({conversations.length})</span>
-        <svg
-          className={cn('size-3 ml-auto transition-transform', expanded && 'rotate-180')}
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M3 5l3 3 3-3" />
-        </svg>
-      </button>
-      {expanded && (
-        <div className="mt-1 space-y-1">
-          {conversations.map((convo) => {
-            const dmId = `dm:${convo.agents[0]},${convo.agents[1]}`;
-            const isSelected = currentSessionId === dmId;
-            const agentA = convo.agents[0].replace(/^openagents:/, '');
-            const agentB = convo.agents[1].replace(/^openagents:/, '');
-            const sender = convo.lastMessage.sender.replace(/^openagents:/, '');
-            const preview = `${sender}: ${convo.lastMessage.content}`;
-            const displayTime = convo.lastMessage.timestamp
-              ? timeAgo(new Date(convo.lastMessage.timestamp).toISOString())
-              : '';
-
-            return (
-              <div
-                key={dmId}
-                onClick={() => onSelect(dmId)}
-                className={cn(
-                  'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors cursor-pointer',
-                  isSelected ? 'bg-zinc-100 dark:bg-zinc-800 ring-2 ring-indigo-500 dark:ring-indigo-400' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                )}
-              >
-                <div className="shrink-0 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 rounded-full size-[30px] bg-white dark:bg-zinc-900">
-                  <MessageCircle className="size-3.5 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
-                      {agentA} ↔ {agentB}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">{displayTime}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">{preview}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface ThreadListProps {
   /** When provided, this string drives the in-list search. Otherwise the
    *  list shows its own search input at the top. */
@@ -142,7 +70,7 @@ interface ThreadListProps {
 }
 
 export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
-  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations } = useWorkspace();
+  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, updateSession, renameSession } = useWorkspace();
   const { isMobile, openMobileDetail } = useLayout();
   const [internalSearchQuery, setInternalSearchQuery] = useState('');
   const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
@@ -184,8 +112,6 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
     }
   }
 
-  const [showArchived, setShowArchived] = useState(false);
-
   // Sort sessions by backend last_event_at (stable, no client-side jumping)
   const sortedSessions = [...sessions]
     .filter((s) => s.status !== 'deleted')
@@ -204,9 +130,8 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
   const activeSessions = sortedSessions.filter(
     (s) => s.status === 'active' && !s.sessionId.startsWith('routines:'),
   );
-  const archivedSessions = sortedSessions.filter(
-    (s) => s.status === 'archived' && !s.sessionId.startsWith('routines:'),
-  );
+  // Archived sessions are reachable via per-row "Unarchive" only; Swift
+  // doesn't surface them in the list and neither do we anymore.
 
   const filteredSessions = isSearching
     ? sortedSessions.filter((s) =>
@@ -284,16 +209,11 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
       {/* Thread rows */}
       <div className="flex-1 overflow-y-auto px-3 py-1">
         <div className="space-y-1">
-          {filteredSessions.map((session, idx) => {
+          {filteredSessions.map((session) => {
             const isSelected = session.sessionId === currentSessionId;
             const lastMsg = lastMessageBySession[session.sessionId];
             const isActive = activeSessionIds.has(session.sessionId);
-            const isCompleted = completedSessionIds.has(session.sessionId) && !isActive;
             const contentHit = hitsByChannel.get(session.sessionId);
-            // Numeric shortcut hint for the first 9 active threads. Hidden
-            // while searching because the rendered list reorders and the
-            // 1-9 handler operates on activeSessions, not search results.
-            const shortcutKey = !isSearching && idx < 9 ? idx + 1 : null;
 
             // Show last activity time from backend
             const activityMs = session.lastEventAt;
@@ -355,11 +275,11 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
                   if (isMobile) openMobileDetail();
                 }}
                 className={cn(
-                  'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-all relative group cursor-pointer',
-                  isSelected ? 'bg-zinc-100 dark:bg-zinc-800 ring-2 ring-indigo-500 dark:ring-indigo-400' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+                  'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group cursor-pointer',
+                  isSelected
+                    ? 'bg-zinc-100 dark:bg-zinc-800 ring-2 ring-indigo-500 dark:ring-indigo-400'
+                    : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
                   'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50',
-                  isActive && 'thread-wip',
-                  isCompleted && !isSelected && 'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200/60 dark:ring-amber-700/40 animate-[glow_2s_ease-in-out_infinite]'
                 )}
               >
                 {/* Avatar stack — show only channel participants */}
@@ -369,7 +289,11 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
                   } />
                 </div>
 
-                {/* Content */}
+                {/* Content — title + activity time + preview. Swift's
+                    ThreadRow has the same shape: starred star, title,
+                    spacer, lastActivityLabel, and a 2-line preview. An
+                    active session shows a tiny ProgressView next to the
+                    title (mirrors Swift's ProgressView().controlSize(.mini)). */}
                 <div className="flex-1 min-w-0 space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     {session.starred && (
@@ -380,23 +304,19 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
                         ? highlightMatch(session.title || 'Untitled', searchQuery)
                         : (session.title || 'Untitled')}
                     </span>
-                    {isCompleted && !isSelected ? (
-                      <CheckCircle2 className="size-3.5 shrink-0 text-amber-500" />
-                    ) : (
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {displayTime}
-                      </span>
+                    {isActive && (
+                      <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
                     )}
-                    {shortcutKey && (
-                      <kbd className="size-4 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input shrink-0">
-                        {shortcutKey}
-                      </kbd>
-                    )}
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {displayTime}
+                    </span>
                   </div>
-                  <p className={cn(
-                    'text-xs text-muted-foreground truncate',
-                    previewIsStatus && 'italic'
-                  )}>
+                  <p
+                    className={cn(
+                      'text-xs text-muted-foreground truncate',
+                      previewIsStatus && 'italic',
+                    )}
+                  >
                     {preview}
                   </p>
                 </div>
@@ -478,140 +398,13 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
             </div>
           )}
 
-          {/* Agent DMs section — only show DMs whose agent participant(s) are currently online */}
-          {(() => {
-            if (isSearching) return null;
-            const onlineAgentNames = new Set(
-              agents.filter((a) => a.status === 'online').map((a) => a.agentName)
-            );
-            const visibleDMs = dmConversations.filter((c) => {
-              // For each side, if it's an agent it must be online; humans pass through.
-              return c.agents.every((addr) => {
-                if (addr.startsWith('human:')) return true;
-                const name = addr.replace(/^openagents:/, '');
-                return onlineAgentNames.has(name);
-              });
-            });
-            if (visibleDMs.length === 0) return null;
-            return (
-              <DMSection
-                conversations={visibleDMs}
-                currentSessionId={currentSessionId}
-                onSelect={(id) => {
-                  setCurrentSessionId(id);
-                  if (isMobile) openMobileDetail();
-                }}
-              />
-            );
-          })()}
-
-          {/* Archived section */}
-          {!isSearching && archivedSessions.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
-              <button
-                onClick={() => setShowArchived(!showArchived)}
-                className="flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
-              >
-                <Archive className="size-3" />
-                <span>Archived ({archivedSessions.length})</span>
-                <svg
-                  className={cn('size-3 ml-auto transition-transform', showArchived && 'rotate-180')}
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M3 5l3 3 3-3" />
-                </svg>
-              </button>
-              {showArchived && (
-                <div className="mt-1 space-y-1 opacity-60">
-                  {archivedSessions.map((session) => {
-                    const isSelected = session.sessionId === currentSessionId;
-                    const lastMsg = lastMessageBySession[session.sessionId];
-                    const activityMs = session.lastEventAt;
-                    const displayTime = activityMs
-                      ? timeAgo(new Date(activityMs).toISOString())
-                      : session.createdAt ? timeAgo(session.createdAt) : '';
-                    const preview = lastMsg && lastMsg.content
-                      ? `${lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName}: ${lastMsg.content}`
-                      : 'No messages yet';
-
-                    return (
-                      <div
-                        key={session.sessionId}
-                        onClick={() => {
-                          setCurrentSessionId(session.sessionId);
-                          if (isMobile) openMobileDetail();
-                        }}
-                        className={cn(
-                          'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors relative group cursor-pointer',
-                          isSelected ? 'bg-zinc-100 dark:bg-zinc-800 ring-2 ring-indigo-500 dark:ring-indigo-400' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-                          'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50'
-                        )}
-                      >
-                        <div className="shrink-0 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 rounded-full size-[30px] bg-white dark:bg-zinc-900">
-                          <AvatarStack agents={
-                            agents.filter((a) => session.participants.includes(a.agentName))
-                          } />
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
-                              {session.title || 'Untitled'}
-                            </span>
-                            <span className="text-xs text-muted-foreground shrink-0">
-                              {displayTime}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {preview}
-                          </p>
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 shrink-0"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreVertical className="size-3.5 text-muted-foreground" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateSession(session.sessionId, { status: 'active' });
-                              }}
-                            >
-                              <ArchiveRestore className="size-4" />
-                              <span>Unarchive</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateSession(session.sessionId, { status: 'deleted' });
-                              }}
-                            >
-                              <Trash2 className="size-4" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Routines disclosure — mirrors Swift's collapsible
               `DisclosureGroup` for `routines:*` channels. Hidden during
               search so search results don't get split across two
-              sections. */}
+              sections. The Swift app doesn't surface Agent DMs or an
+              archived-chats disclosure in ThreadListView; archive +
+              unarchive are reached through the per-row context menu
+              only, so both are dropped here too. */}
           {!isSearching && <RoutinesDisclosure />}
         </div>
       </div>

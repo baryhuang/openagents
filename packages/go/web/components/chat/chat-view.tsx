@@ -9,20 +9,13 @@ import { EmptyState } from './empty-state';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe, PanelRight } from 'lucide-react';
+import { MessageSquare, ChevronLeft, PanelRight } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { MembersSheet } from './members-sheet';
 import { eventToMessage } from '@/lib/types';
-import type { WorkspaceMessage } from '@/lib/types';
+import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 
 // Module-level message cache — survives component re-renders/unmounts.
 // Keyed by sessionId, stores the last known messages for instant thread switching.
@@ -84,8 +77,9 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus } = useWorkspace();
-  const { isMobile, openMobileList, splitBrowser, showBrowserPreview, setShowBrowserPreview, rightPanelOpen, setRightPanelOpen } = useLayout();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, updateAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, consumeSkipFocus } = useWorkspace();
+  const { isMobile, openMobileList, rightPanelOpen, setRightPanelOpen } = useLayout();
+  const [membersOpen, setMembersOpen] = useState(false);
 
   // Continuously refresh message caches for top recent sessions in the background.
   // This ensures clicking any recent thread shows messages instantly and up-to-date.
@@ -138,10 +132,6 @@ export function ChatView() {
     sessionId: currentSessionId,
     initialMessages: initialMessagesRef.current,
   });
-  const [showAllSteps, setShowAllSteps] = useState(false);
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState('');
-  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Optimistic message state for instant feedback
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
@@ -237,20 +227,6 @@ export function ChatView() {
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   // Merge real messages with optimistic messages for display
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
-
-  const startEditingTitle = () => {
-    setTitleDraft(currentSession?.title || '');
-    setEditingTitle(true);
-    setTimeout(() => titleInputRef.current?.select(), 0);
-  };
-
-  const commitTitle = () => {
-    setEditingTitle(false);
-    const trimmed = titleDraft.trim();
-    if (trimmed && currentSessionId && trimmed !== currentSession?.title) {
-      renameSession(currentSessionId, trimmed);
-    }
-  };
 
   // Update last message cache for thread list preview
   useEffect(() => {
@@ -371,8 +347,6 @@ export function ChatView() {
     [currentSessionId, forceRefresh, agents]
   );
 
-  const hasStatusMessages = displayMessages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
-
   if (!currentSessionId) {
     return (
       <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
@@ -387,274 +361,60 @@ export function ChatView() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Thread header */}
-      <div className="flex items-center justify-between px-2 lg:px-4 py-2 lg:py-3 border-b shrink-0">
-        <div className="flex items-center gap-2 lg:gap-3 min-w-0">
-          {/* Back button — mobile only */}
+      {/* Thread header — minimal Swift mirror.
+          macOS in Swift hides the header inside the window title bar
+          (navigationTitle + navigationSubtitle). Web doesn't have a
+          window title bar, so we render the same shape inline. The
+          right side has just two affordances per Swift's ChatView
+          toolbar: AvatarStack → MembersSheet, and content-sidebar
+          toggle. Everything else (Stop, mode toggle, all-steps,
+          browser-preview) was UI we layered on top — gone now. */}
+      <div className="flex items-center justify-between px-3 lg:px-4 py-2 border-b shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           {isMobile && (
             <button
               onClick={openMobileList}
               className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 -ml-1"
+              aria-label="Back to chats"
             >
               <ChevronLeft className="size-5" />
             </button>
           )}
-          {isDM ? (
-            <h2 className="text-sm font-semibold truncate flex items-center gap-1.5">
-              <MessageSquare className="size-3.5 text-muted-foreground" />
-              {currentSessionId!.slice(3).split(',').map((a) => a.replace(/^openagents:/, '')).join(' ↔ ')}
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-medium">
-                read-only
-              </span>
+          <div className="flex flex-col min-w-0 leading-tight">
+            <h2 className="text-sm font-semibold truncate">
+              {isDM
+                ? currentSessionId!
+                    .slice(3)
+                    .split(',')
+                    .map((a) => a.replace(/^openagents:/, ''))
+                    .join(' ↔ ')
+                : currentSession?.title || 'Chat'}
             </h2>
-          ) : editingTitle ? (
-            <input
-              ref={titleInputRef}
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitTitle();
-                if (e.key === 'Escape') setEditingTitle(false);
-              }}
-              className="text-sm font-semibold bg-transparent border-b border-primary outline-none min-w-0 max-w-[300px]"
-              autoFocus
-            />
-          ) : (
-            <h2
-              className="text-sm font-semibold truncate cursor-pointer hover:text-primary transition-colors"
-              onClick={startEditingTitle}
-              title="Click to rename"
-            >
-              {currentSession?.title || 'Chat'}
-            </h2>
-          )}
-          {(() => {
-            const participants = currentSession?.participants || [];
-            const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
-            return (
-              <>
-                {sessionAgents.length > 1 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-medium shrink-0">
-                    group
-                  </span>
-                )}
-              </>
-            );
-          })()}
-        </div>
-        <div className="flex items-center gap-1 lg:gap-1.5">
-          {/* Participant chips — hidden on mobile, shown on desktop, not shown for DMs */}
-          {!isDM && <div className="hidden lg:flex items-center gap-1 overflow-x-auto">
             {(() => {
               const participants = currentSession?.participants || [];
-              const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
-              return sessionAgents.map((agent) => {
-                const isMaster = currentSession?.master === agent.agentName || agent.role === 'master';
-                return (
-                  <div
-                    key={agent.agentName}
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted border shrink-0"
-                  >
-                    <AgentAvatar name={agent.agentName} size={16} />
-                    <span className="text-[11px] font-medium">{agent.agentName.split('-')[0]}</span>
-                    {isMaster && (
-                      <span className="text-[8px] px-1 py-0 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">
-                        M
-                      </span>
-                    )}
-                  </div>
-                );
-              });
+              const names = agents
+                .filter((a) => participants.includes(a.agentName))
+                .map((a) => a.agentName)
+                .join(', ');
+              if (!names) return null;
+              return (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  {names}
+                </span>
+              );
             })()}
-          </div>}
-
-          {/* Compact avatar stack on mobile */}
-          {isMobile && (() => {
-            const participants = currentSession?.participants || [];
-            const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
-            if (sessionAgents.length === 0) return null;
-            return (
-              <div className="flex -space-x-1.5">
-                {sessionAgents.slice(0, 3).map((agent) => (
-                  <div key={agent.agentName} className="border-2 border-background rounded-full">
-                    <AgentAvatar name={agent.agentName} size={18} />
-                  </div>
-                ))}
-                {sessionAgents.length > 3 && (
-                  <div className="size-5 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-medium text-zinc-600 border-2 border-background">
-                    +{sessionAgents.length - 3}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Agent mode toggle — only for Claude agents */}
-          {agents.length > 0 && agents[0].agentType === 'claude' && (() => {
-            const agent = agents[0];
-            const mode = agentModes[agent.agentName] || 'execute';
-            const isExecute = mode === 'execute';
-            return (
-              <div className="flex items-center rounded-lg border border-zinc-200 dark:border-zinc-700 p-0.5 shrink-0">
-                <button
-                  onClick={() => !isExecute && toggleAgentMode(agent.agentName)}
-                  className={cn(
-                    'flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors',
-                    isExecute
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  <Zap className="size-3" />
-                  Execute
-                </button>
-                <button
-                  onClick={() => isExecute && toggleAgentMode(agent.agentName)}
-                  className={cn(
-                    'flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors',
-                    !isExecute
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  <Eye className="size-3" />
-                  Plan
-                </button>
-              </div>
-            );
-          })()}
-
-          {/* Stop button — visible when agents are working */}
-          {currentSessionId && (activeSessionIds.has(currentSessionId) || stoppingSessionIds.has(currentSessionId)) && (
-            <button
-              onClick={() => stopAllAgents(currentSessionId!)}
-              disabled={stoppingSessionIds.has(currentSessionId)}
-              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors shrink-0 disabled:opacity-60 disabled:pointer-events-none"
-            >
-              <Square className="size-3 fill-current" />
-              {stoppingSessionIds.has(currentSessionId) ? 'Stopping...' : 'Stop'}
-            </button>
-          )}
-
-          {/* All steps toggle */}
-          {hasStatusMessages && (
-            <Button
-              variant={showAllSteps ? 'outline' : 'ghost'}
-              size="sm"
-              onClick={() => setShowAllSteps((prev) => !prev)}
-              className={cn(
-                'gap-1.5 h-7 text-xs font-medium',
-                showAllSteps && 'border-primary/30 text-primary bg-primary/5'
-              )}
-              title={showAllSteps ? 'Showing all intermediate steps' : 'Showing only latest steps'}
-            >
-              <ListTree className="size-3.5" />
-            </Button>
-          )}
-
-          {/* Browser live preview toggle — only when split browser is enabled */}
-          {splitBrowser && !isMobile && (
-            <Button
-              variant={showBrowserPreview ? 'outline' : 'ghost'}
-              size="sm"
-              onClick={() => setShowBrowserPreview(!showBrowserPreview)}
-              className={cn(
-                'gap-1.5 h-7 text-xs font-medium',
-                showBrowserPreview && 'border-primary/30 text-primary bg-primary/5'
-              )}
-              title={showBrowserPreview ? 'Hide browser preview' : 'Show browser preview'}
-            >
-              <Globe className="size-3.5" />
-            </Button>
-          )}
-
-          {/* Right tabbed panel toggle — mirrors Swift's contentSidebarToggle.
-              Hidden on mobile (panel collapses into mobile view modes
-              instead). */}
-          {!isMobile && (
-            <button
-              onClick={() => setRightPanelOpen(!rightPanelOpen)}
-              className={cn(
-                'size-7 flex items-center justify-center rounded-md transition-colors',
-                rightPanelOpen
-                  ? 'bg-primary/10 text-primary hover:bg-primary/15'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800',
-              )}
-              title={rightPanelOpen ? 'Hide content panel' : 'Show content panel'}
-              aria-label="Toggle content panel"
-            >
-              <PanelRight className="size-3.5" />
-            </button>
-          )}
-
-          {/* Manage agents dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
-                title="Manage chat agents"
-              >
-                <UserPlus className="size-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {(() => {
-                const participants = currentSession?.participants || [];
-                const onlineAgents = agents.filter((a) => a.status === 'online');
-                const inThread = onlineAgents.filter((a) => participants.includes(a.agentName));
-                const notInThread = onlineAgents.filter((a) => !participants.includes(a.agentName));
-                return (
-                  <>
-                    {inThread.length > 0 && (
-                      <>
-                        <DropdownMenuLabel>In this chat</DropdownMenuLabel>
-                        {inThread.map((agent) => (
-                            <div
-                              key={agent.agentName}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded-md group"
-                            >
-                              <AgentAvatar name={agent.agentName} size={20} />
-                              <span className="text-sm flex-1 truncate">{agent.agentName}</span>
-                              {inThread.length > 1 && (
-                                <button
-                                  onClick={() => currentSessionId && removeParticipant(currentSessionId, agent.agentName)}
-                                  className="size-5 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                                  title="Remove from chat"
-                                >
-                                  <X className="size-3" />
-                                </button>
-                              )}
-                            </div>
-                        ))}
-                      </>
-                    )}
-                    {notInThread.length > 0 && (
-                      <>
-                        {inThread.length > 0 && <DropdownMenuSeparator />}
-                        <DropdownMenuLabel>Add to chat</DropdownMenuLabel>
-                        {notInThread.map((agent) => (
-                            <button
-                              key={agent.agentName}
-                              onClick={() => currentSessionId && addParticipant(currentSessionId, agent.agentName)}
-                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors"
-                            >
-                              <AgentAvatar name={agent.agentName} size={20} />
-                              <span className="text-sm flex-1 truncate text-left">{agent.agentName}</span>
-                              <Plus className="size-3 text-muted-foreground shrink-0" />
-                            </button>
-                        ))}
-                      </>
-                    )}
-                    {onlineAgents.length === 0 && (
-                      <p className="text-sm text-muted-foreground px-2 py-3 text-center">No agents online</p>
-                    )}
-                  </>
-                );
-              })()}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          </div>
         </div>
+        <ChatHeaderTrailingButtons
+          sessionId={currentSessionId}
+          sessionAgents={agents.filter((a) =>
+            (currentSession?.participants ?? []).includes(a.agentName),
+          )}
+          isMobile={isMobile}
+          rightPanelOpen={rightPanelOpen}
+          onTogglePanel={() => setRightPanelOpen(!rightPanelOpen)}
+          onOpenMembers={() => setMembersOpen(true)}
+        />
       </div>
 
       {/* Messages */}
@@ -669,7 +429,7 @@ export function ChatView() {
           <ChatMessages
             messages={displayMessages}
             agents={agents}
-            showAllSteps={showAllSteps}
+            showAllSteps={true}
             scrollKey={scrollKey}
             loadOlder={loadOlder}
             hasOlder={hasOlder}
@@ -702,6 +462,9 @@ export function ChatView() {
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 focusKey={focusKey}
+                isWorking={!!currentSessionId && activeSessionIds.has(currentSessionId)}
+                isStopping={!!currentSessionId && stoppingSessionIds.has(currentSessionId)}
+                onStop={() => currentSessionId && stopAllAgents(currentSessionId)}
                 onSlashCommand={async (cmd) => {
                   if (!currentSessionId) return;
                   const session = sessions.find((s) => s.sessionId === currentSessionId);
@@ -732,6 +495,79 @@ export function ChatView() {
           </div>
         )}
       </div>
+
+      {/* Members sheet — opened by AvatarStack click. Mirrors Swift
+          ChatView's MembersSheet (.sheet over the avatar stack). */}
+      {currentSessionId && (
+        <MembersSheet
+          open={membersOpen}
+          onOpenChange={setMembersOpen}
+          sessionId={currentSessionId}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Trailing toolbar: AvatarStack → Members + content-sidebar toggle ──
+// Mirrors Swift ChatView's `.toolbar { AvatarStack, contentSidebarToggle }`
+// (ChatView.swift:161-182). Two affordances, nothing else.
+
+function ChatHeaderTrailingButtons({
+  sessionId,
+  sessionAgents,
+  isMobile,
+  rightPanelOpen,
+  onTogglePanel,
+  onOpenMembers,
+}: {
+  sessionId: string | null;
+  sessionAgents: WorkspaceAgent[];
+  isMobile: boolean;
+  rightPanelOpen: boolean;
+  onTogglePanel: () => void;
+  onOpenMembers: () => void;
+}) {
+  const shown = sessionAgents.slice(0, 3);
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      {sessionId && shown.length > 0 && (
+        <button
+          onClick={onOpenMembers}
+          className="flex -space-x-1.5 rounded-full hover:ring-2 hover:ring-zinc-200 dark:hover:ring-zinc-700 transition-shadow"
+          aria-label="Manage channel members"
+          title="Channel members"
+        >
+          {shown.map((agent) => (
+            <div
+              key={agent.agentName}
+              className="border-2 border-background rounded-full"
+            >
+              <AgentAvatar name={agent.agentName} size={20} />
+            </div>
+          ))}
+          {sessionAgents.length > shown.length && (
+            <div className="size-5 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-[8px] font-medium text-zinc-600 dark:text-zinc-300 border-2 border-background">
+              +{sessionAgents.length - shown.length}
+            </div>
+          )}
+        </button>
+      )}
+      {!isMobile && (
+        <button
+          onClick={onTogglePanel}
+          className={cn(
+            'size-7 flex items-center justify-center rounded-md transition-colors',
+            rightPanelOpen
+              ? 'bg-primary/10 text-primary hover:bg-primary/15'
+              : 'text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800',
+          )}
+          title={rightPanelOpen ? 'Hide content panel' : 'Show content panel'}
+          aria-label="Toggle content panel"
+        >
+          <PanelRight className="size-3.5" />
+        </button>
+      )}
     </div>
   );
 }

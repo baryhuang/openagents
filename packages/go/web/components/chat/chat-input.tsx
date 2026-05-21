@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon, RotateCcw, Info, CalendarClock } from 'lucide-react';
+import { SendHorizontal, Paperclip, X, FileIcon, RotateCcw, Info, CalendarClock, Square } from 'lucide-react';
 import type { WorkspaceAgent } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 
@@ -41,13 +41,18 @@ interface ChatInputProps {
    * When omitted, slash-command UI is suppressed.
    */
   onSlashCommand?: (cmd: SlashCommandKey) => void;
+  /** True while an agent is currently working in the channel. Drives the
+   *  send → stop button swap (mirrors Swift's sendOrStopButton). */
+  isWorking?: boolean;
+  isStopping?: boolean;
+  onStop?: () => void;
 }
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange, focusKey, onSlashCommand }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange, focusKey, onSlashCommand, isWorking, isStopping, onStop }: ChatInputProps) {
   const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
@@ -469,25 +474,14 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
             data-chat-input
             className="w-full border-0 bg-transparent shadow-none focus:outline-none placeholder:text-muted-foreground h-auto px-0 text-sm py-2 resize-none"
           />
-          {/* Shortcut hint: always show 'esc' when focused, show 'i' when not focused and empty */}
-          {isFocused ? (
-            <kbd
-              className="pointer-events-none absolute right-1 top-2.5 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input h-4 px-1"
-              title="Press Esc to exit typing mode"
-            >
-              esc
-            </kbd>
-          ) : !message && (
-            <kbd
-              className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input size-4"
-              title="Press any key to start typing"
-            >
-              i
-            </kbd>
-          )}
         </div>
 
         <div className="flex items-center justify-between">
+          {/* Swift's paperclipControl accepts images + arbitrary files
+              through one button. The web composer used to also show a
+              dedicated "image only" button next to it — dropped here
+              because the underlying picker already handles both, and
+              Swift never had that affordance. */}
           <div className="flex items-center gap-1">
             <input
               ref={fileInputRef}
@@ -504,38 +498,39 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
             >
               <Paperclip className="size-4" />
             </button>
-            <button
-              onClick={() => {
-                // Open file input in image-only mode
-                if (fileInputRef.current) {
-                  fileInputRef.current.accept = 'image/*';
-                  fileInputRef.current.click();
-                  // Reset to full accept list
-                  setTimeout(() => {
-                    if (fileInputRef.current) {
-                      fileInputRef.current.accept = "image/*,.pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.hpp,.sh,.yaml,.yml,.toml";
-                    }
-                  }, 100);
-                }
-              }}
-              className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Attach image"
-            >
-              <ImageIcon className="size-4" />
-            </button>
           </div>
-          <Button
-            variant={hasContent ? 'primary' : 'secondary'}
-            size="icon"
-            className={cn(
-              'size-9 rounded-xl transition-all',
-              hasContent ? 'opacity-100' : 'opacity-50'
-            )}
-            onClick={handleSend}
-            disabled={!hasContent || disabled}
-          >
-            <SendHorizontal className="size-4" />
-          </Button>
+          {isWorking ? (
+            // Send → Stop swap mirrors Swift `sendOrStopButton`. The
+            // red square only renders while an agent is actively
+            // running — clicking it cancels the run. While the stop
+            // RPC is in flight the button stays disabled so users
+            // don't double-fire.
+            <Button
+              variant="destructive"
+              size="icon"
+              className="size-9 rounded-xl"
+              onClick={onStop}
+              disabled={isStopping || !onStop}
+              aria-label={isStopping ? 'Stopping' : 'Stop agent'}
+              title={isStopping ? 'Stopping…' : 'Stop agent'}
+            >
+              <Square className="size-4 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              variant={hasContent ? 'primary' : 'secondary'}
+              size="icon"
+              className={cn(
+                'size-9 rounded-xl transition-all',
+                hasContent ? 'opacity-100' : 'opacity-50',
+              )}
+              onClick={handleSend}
+              disabled={!hasContent || disabled}
+              aria-label="Send message"
+            >
+              <SendHorizontal className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
     </div>
