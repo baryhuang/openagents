@@ -1,0 +1,205 @@
+# OpenAgents Go — Web Port
+
+Plan for cloning the React workspace frontend into `packages/go/web/`,
+rebranding it to match the Swift Go app, and bringing it to feature parity
+with the 0.3.0 Swift release. Source of truth for execution order and
+progress.
+
+## Why
+
+The Swift Go app has drifted from the React workspace frontend at
+`workspace/frontend/` — different terminology ("Chat" vs "Thread"),
+different icon, different right-panel model (tabbed Content/Browser),
+different workspace-level browser toggle. We want **one product** called
+"OpenAgents Go" that owns macOS, iOS, **and** web, sharing brand,
+terminology, and feature pace.
+
+Decision matrix from the planning conversation:
+
+| Question | Choice |
+|---|---|
+| Strategy | **A — Copy + rebrand.** Copy React app, rebrand, sunset old later. |
+| Old `workspace/frontend/` | **Leave in place** (deprecated mirror) until parity reached. |
+| Deploy target | **Same InsForge project** `caremojo-openagents`, same `agents.caremojo.app` CNAME. |
+| v1 scope | **Full parity** with Swift 0.3.0 (every 0.2.x→0.3.0 feature). |
+
+## Layout
+
+```
+packages/go/
+├── OpenAgents/            # existing Swift sources (mac + iOS)
+├── OpenAgentsGo.xcodeproj/
+├── dist/                  # Swift DMG output
+├── web/                   # NEW — Next.js workspace UI
+│   ├── app/
+│   ├── components/
+│   ├── lib/
+│   ├── public/
+│   ├── package.json       # @openagents-org/go-web
+│   └── .insforge/         # InsForge project link (caremojo-openagents)
+├── project.yml            # xcodegen
+└── PORT-PLAN.md           # this file
+```
+
+`workspace/frontend/` stays intact during the port and is removed in
+Phase 8 once `packages/go/web/` is at parity.
+
+## Phases
+
+### Phase 0 — Mechanical copy + verify deploy (½ day)
+
+Goal: `agents.caremojo.app` still serves correctly after a deploy run
+from the new path.
+
+- `cp -r workspace/frontend packages/go/web` (skip `node_modules`,
+  `.next`, `.insforge`)
+- Rename `package.json` `name` → `@openagents-org/go-web`
+- Drop the `.insforge/project.json` from the old path so the InsForge
+  CLI rejects deploys from there (enforces "only deploy from new path")
+- `npm install` in the new path
+- `npm run build` clean
+- `insforge deployments deploy .` from the new path
+- Verify `agents.caremojo.app` returns 200 with `x-vercel-cache: HIT`
+
+No UX change; this is a relocation only.
+
+### Phase 1 — Brand identity (1–2 days)
+
+- Favicon + app logo → squircle icon from Swift's PR #390 (the 80%-scaled,
+  rounded version that ships in 0.3.0). Generate 16/32/180/192/512 PNGs +
+  Apple-touch-icon
+- `theme_color` / `background_color` in `manifest.json`
+- Color tokens: align `tailwind.config.js` (or CSS vars) to Swift's accent
+  palette
+- Page `<title>` → "OpenAgents Go" / "{Workspace} — OpenAgents Go"
+- Header brand text + sidebar logo
+
+### Phase 2 — Thread→Chat terminology (½ day)
+
+Mirrors Swift PR #388. User-visible strings only; internal identifiers
+(`channel_name`, `Channel`, `useChannel`) stay.
+
+- "New Thread" → "New Chat"
+- "Threads" / "thread list" → "Chats" / "chat list"
+- "Start Thread" → "Start Chat"
+- "Rename thread" → "Rename chat"
+- Empty states / tooltips / aria-labels
+- Manual review pass for context-dependent variants
+
+### Phase 3 — iMessage-style 2-pane layout (3–4 days)
+
+Match Swift `ChatView` + sidebars.
+
+- Left column (~280pt): workspace selector at top + chat list with
+  starred section, swipe / context-menu actions (rename / star / archive /
+  delete), agent-working spinner, search bar
+- Center column (flexible): chat with markdown bubbles, fenced code, HTML
+  blocks, GFM tables, file chips, sender grouping, status messages, per-chat
+  input drafts
+- Right column (toggleable, ~280–560pt): tabbed panel (Phase 5)
+- Composer at the bottom of the center column (Phase 6)
+- macOS: window-toolbar title + agent-name subtitle
+- iOS / mobile: collapse to single-column NavigationStack pattern
+
+### Phase 4 — Workspace browser_enabled toggle (½ day)
+
+Mirrors Swift PR #393's toolbar Safari toggle.
+
+- `<Switch>` (or icon button) next to the workspace name in the workspace
+  header
+- Calls `PATCH /v1/workspaces/{id}` with `{ "browser_enabled": bool }`
+  (typed field; backend PR #392 already deployed)
+- Optimistic local flip + debounced PATCH; rollback on error
+- Read from workspace metadata's `browserEnabled` field
+
+### Phase 5 — Tabbed right panel (3–5 days)
+
+Single panel surface that swaps between Content and Browser tabs.
+
+- Two-tab header `[Content | Browser]` — Browser tab hidden unless
+  `workspace.browserEnabled === true` **and** any tab has `liveUrl`
+- **Content tab** (mirrors Swift `ContentSidebar` + `FileDetailView`):
+  - File grid (1-col narrow / 2-col wide)
+  - File detail with kind-specific viewers (image / text / PDF / HTML /
+    other)
+  - Icon-only download button in detail header
+  - Fullscreen HTML modal viewer (mirrors Swift `FullscreenHTMLSheet`)
+- **Browser tab** (mirrors Swift `BrowserPanel`):
+  - URL pill with hover→copy button (already done today)
+  - Reload (validate=true) + fullscreen buttons
+  - WKWebView equivalent: an `<iframe>` whose container clamps
+    `overflow-x` so wide Browser Fabric pages don't push the panel
+- **Auto-focus rule**: first time the workspace transitions to "has live
+  session" while toggle is on, open the panel + focus Browser tab. After
+  that, respect the user's tab pick (token-style counter like Swift's
+  `browserAutoFocusToken`)
+
+### Phase 6 — Composer polish (2–3 days)
+
+- Drag-and-drop file attachments via HTML5 `dragenter` / `drop` (mirrors
+  Swift's `ChatView.onDrop`); dashed accent overlay during hover
+- Paste-image-from-clipboard
+- IME-safe Enter / Shift+Enter behavior
+- Slash-command popup (`/restart`, `/status`, `/routines`)
+- Pending-attachments chip row above the input with thumbnails for images,
+  document chips for others
+- Image downsampling client-side before upload (mirrors Swift
+  `ImageDownsampler.ensureFits`)
+
+### Phase 7 — Misc polish (2–3 days)
+
+- A2UI inline renderer in chat bubbles (uses the same JSON spec as Swift's
+  `A2UIRendererView` via SwiftUIJSONRender; web equivalent: a small JS
+  component tree)
+- BrowserFabric iframe overflow clamp via CSS on the iframe's wrapper +
+  `sandbox` attribute audit
+- Markdown segmenter parity: file chips, fenced `html` blocks (sandboxed
+  iframe), GFM tables, image rendering, auto-hyperlinking
+- Members sheet (avatar stack → modal)
+- Responsive breakpoints — match Swift's iPhone-vs-iPad pivot at
+  `horizontalSizeClass`
+- Loading + error states + retry affordances
+
+### Phase 8 — Verify + sunset (1 day)
+
+- Side-by-side QA: open the Swift app and the new web app, walk through
+  every 0.2.x→0.3.0 feature, confirm parity (or note "platform-specific —
+  not applicable")
+- Delete `workspace/frontend/`
+- Update `CLAUDE.md` / `README.md` / docs / any CI workflows that
+  referenced the old path
+- Final deploy from `packages/go/web/`
+
+## Discipline rules during the port
+
+1. **Only `packages/go/web/` deploys.** `workspace/frontend/` loses its
+   `.insforge/` directory in Phase 0 so accidental `insforge deployments
+   deploy` from there fails fast.
+2. **Backend changes go in `workspace/backend/`**, regardless of which
+   frontend they're for. No per-platform backend forks.
+3. **No new Swift features** between Phase 0 and Phase 8. Feature freeze on
+   `packages/go/OpenAgents/` so the web app can catch up without chasing a
+   moving target.
+4. **Commits target `feat/go-web-port`** for the whole port. Phase-end
+   commits get conventional headers (`feat(go-web): …` / `chore(go-web):
+   …`). The branch turns into ONE big PR at Phase 8, or one PR per phase
+   if review fatigue hits.
+
+## Risks called out at planning time
+
+- **Visual divergence**: SwiftUI primitives (blur, system animations) don't
+  have exact CSS equivalents. I'll pick close analogs; aesthetic calls
+  bubble back for your OK.
+- **A2UI parity**: `SwiftUIJSONRender` is a Swift-only package. The web
+  equivalent has to be written from scratch — bounded set of node types
+  (`Stack`, `Heading`, `Text`, `Image`, `Button`, `ChoiceList`, …) so
+  scope is contained, but it's a non-trivial mini-renderer.
+- **Markdown segmenter**: the Swift version (`MarkdownSegments.swift`)
+  has custom rules for fenced `html` blocks and file chips. We need
+  equivalent behavior on the web — probably via `react-markdown` plugins
+  or a custom plug-in pass.
+
+## Status
+
+Tracked in `TaskList` (tasks #16–#24). This document gets updated at each
+phase boundary with the commit SHA and the deployment ID.
