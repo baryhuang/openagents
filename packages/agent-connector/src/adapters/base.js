@@ -459,11 +459,23 @@ class BaseAdapter {
         }
       }
 
-      // Adaptive polling: 2s active, up to 15s idle.
-      // Each connected agent runs this loop, so faster rates multiply across
-      // every workspace member — keep this conservative and tune separately
-      // with a load-impact analysis on workspace-endpoint.
-      const delay = incoming.length > 0 ? 2000 : Math.min(2000 + idleCount * 1000, 15000);
+      // Adaptive polling with warm plateau:
+      //   Active (messages incoming):  2s
+      //   Warm (≤5 min since last msg): 5s
+      //   Cooldown (5-7 min):          5s → 15s (ramp 1s per idle poll)
+      //   Cold (>7 min):              15s
+      // The warm plateau keeps the agent responsive during typical user
+      // think-time between messages without hammering the backend.
+      const WARM_INTERVAL = 5000;
+      const WARM_POLLS = 60;  // 60 × 5s = 5 minutes warm plateau
+      let delay;
+      if (incoming.length > 0) {
+        delay = 2000;
+      } else if (idleCount <= WARM_POLLS) {
+        delay = WARM_INTERVAL;
+      } else {
+        delay = Math.min(WARM_INTERVAL + (idleCount - WARM_POLLS) * 1000, 15000);
+      }
       await this._sleep(delay);
     }
   }
