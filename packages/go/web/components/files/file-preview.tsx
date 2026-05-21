@@ -23,6 +23,10 @@ function isImageFile(contentType: string): boolean {
   return contentType.startsWith('image/');
 }
 
+function isPdfFile(contentType: string, filename: string): boolean {
+  return contentType === 'application/pdf' || /\.pdf$/i.test(filename);
+}
+
 function isMarkdownFile(contentType: string, filename: string): boolean {
   return contentType === 'text/markdown' || /\.mdx?$/i.test(filename);
 }
@@ -68,9 +72,11 @@ export function FilePreview() {
     const isHtml = isHtmlFile(ct, fn);
     const isImage = isImageFile(ct);
     const isText = isTextFile(ct, fn);
+    const isPdf = isPdfFile(ct, fn);
 
-    // HTML and images use the direct URL — no fetch needed
-    if (isHtml) {
+    // HTML and PDF use the direct URL in an iframe / object — no fetch
+    // needed.
+    if (isHtml || isPdf) {
       setContent(null);
       const url = workspaceApi.getFileUrl(file.id);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
@@ -201,6 +207,12 @@ export function FilePreview() {
             className="w-full h-full border-0"
             sandbox="allow-scripts allow-same-origin"
           />
+        ) : isPdfFile(file.contentType || '', file.filename) && blobUrl ? (
+          // PDF preview via the browser's native PDF viewer — mirrors
+          // Swift's PDFKit preview added in 0.2.7.
+          <object data={blobUrl} type="application/pdf" className="w-full h-full">
+            <iframe src={blobUrl} title={file.filename} className="w-full h-full border-0" />
+          </object>
         ) : blobUrl && isImageFile(file.contentType || '') ? (
           <div className="flex items-center justify-center p-4 h-full">
             <img

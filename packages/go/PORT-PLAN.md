@@ -216,3 +216,22 @@ Single panel surface that swaps between Content and Browser tabs.
 Status: PR ready. The old path stays put per the user's instruction —
 no changes under `workspace/frontend/`. Sunset is a future call once
 visual / feature parity is verified in production.
+
+## Post-audit gap-closure (after the audit table)
+
+A complete walk through the `packages/go/OpenAgents/` git history caught
+seven Swift features that weren't yet in the web port. All closed in
+one follow-up pass:
+
+| Swift commit | Feature | Web location |
+|---|---|---|
+| `3815fb49` | Workspace-file chips for `/v1/files/<id>` URLs in messages | `components/chat/markdown-content.tsx` — link override detects the URL and renders `FileChip` (paperclip pill, opens file in Content panel) |
+| `83911faa` | Fenced ` ```html ` blocks → sandboxed iframe + fullscreen modal | `markdown-content.tsx` — `code` override returns `<HtmlBlock>` for `language-html`. Inline iframe with `sandbox=""` (no scripts), CSP locked to `script-src 'none'`; Maximize button opens a true app-front modal |
+| `5400bcf2` | PDF preview in content panel | `components/files/file-preview.tsx` — new `isPdfFile` helper + `<object data type="application/pdf">` viewer with iframe fallback |
+| `dc7c0355` | Fullscreen HTML viewer modal | Same `HtmlBlock` component above also handles its own fullscreen modal — single component covers both inline + modal |
+| `00fa44a1` | Fullscreen Browser Fabric viewer modal | `components/browser/browser-view.tsx` — new `FullscreenBrowserModal` (`fixed inset-0 z-[100]`); rotated `Maximize2` button distinguishes "true fullscreen" from existing in-layout expand. Esc dismisses. |
+| `01c125e4` / `127c78a5` | Auto-follow `/restart` with `/status`; treat "Session restarted" as terminal | `chat-view.tsx` slash handler fires `/status` after a successful `/restart`. `intermediate-steps.tsx` extends `isTerminalStatus` regex to include `session restarted`. |
+| `0ce5202d` | Bold matched prefix in slash autocomplete | `chat-input.tsx` slash popup splits each label at `1 + matchLen` and bolds the prefix |
+
+All build-clean; the four-feature audit now closes to zero outstanding
+Swift features that didn't have a web equivalent.

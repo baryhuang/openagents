@@ -338,12 +338,19 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     >
       {/* Slash-command popup — mirrors Swift's slashSuggestionsPopup, fires
           onSlashCommand and clears the input on pick. Hidden when the
-          parent didn't wire a handler. */}
+          parent didn't wire a handler. The matched prefix is bolded
+          (parity with Swift commit 0ce5202d). */}
       {showSlash && (
         <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden">
           {filteredSlash.map((cmd, i) => {
             const Icon = cmd.icon;
             const active = i === Math.min(slashIndex, filteredSlash.length - 1);
+            // Bold the part of the label that matches what the user typed.
+            // The label is `/<cmd>`; the prefix the user typed is
+            // `/<slashFilter>` (slashFilter is just the chars after the
+            // leading slash, lowercased).
+            const filter = slashFilter ?? '';
+            const matchLen = filter.length;
             return (
               <button
                 key={cmd.id}
@@ -357,7 +364,10 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
                 }}
               >
                 <Icon className="size-4 text-muted-foreground" />
-                <span className="font-mono font-medium">{cmd.label}</span>
+                <span className="font-mono">
+                  <span className="font-bold">{cmd.label.slice(0, 1 + matchLen)}</span>
+                  <span className="font-medium opacity-70">{cmd.label.slice(1 + matchLen)}</span>
+                </span>
                 <span className="text-xs text-muted-foreground truncate flex-1">{cmd.description}</span>
               </button>
             );

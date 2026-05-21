@@ -713,6 +713,16 @@ export function ChatView() {
                   try {
                     await workspaceApi.sendAgentControl(master, cmd, { channel: currentSessionId });
                     toast.success(`Sent /${cmd}`);
+                    // Mirror Swift's auto-follow: after /restart, fire a
+                    // /status so the user can confirm the new session
+                    // landed (parity with commit 01c125e4).
+                    if (cmd === 'restart') {
+                      try {
+                        await workspaceApi.sendAgentControl(master, 'status', { channel: currentSessionId });
+                      } catch {
+                        // Best-effort follow-up; primary action already toast'd.
+                      }
+                    }
                   } catch (err) {
                     toast.error(err instanceof Error ? err.message : `Failed to send /${cmd}`);
                   }

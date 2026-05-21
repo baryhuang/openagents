@@ -22,6 +22,10 @@ export function BrowserView() {
   const [navigating, setNavigating] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
   const [editingUrl, setEditingUrl] = useState(false);
+  // True app-front modal — covers everything including the chat (parity
+  // with Swift's FullscreenBrowserSheet). Distinct from `isDetailExpanded`
+  // which only hides the sidebar within the current layout.
+  const [presentMode, setPresentMode] = useState(false);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const prevBlobRef = useRef<string | null>(null);
   const failCountRef = useRef(0);
@@ -321,6 +325,18 @@ export function BrowserView() {
           </button>
         )}
 
+        {/* True app-front modal — mirrors Swift's FullscreenBrowserSheet
+            (covers chat + everything, not just the sidebar). */}
+        <button
+          onClick={() => setPresentMode(true)}
+          disabled={!tab.liveUrl}
+          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 disabled:opacity-30"
+          title="Open in fullscreen"
+          aria-label="Open browser in fullscreen"
+        >
+          <Maximize2 className="size-4 rotate-45" />
+        </button>
+
         <button
           onClick={handleClose}
           className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
@@ -377,6 +393,51 @@ export function BrowserView() {
           </div>
         )}
       </div>
+
+      {/* Fullscreen modal — covers everything including chat. Esc to dismiss. */}
+      {presentMode && tab.liveUrl && (
+        <FullscreenBrowserModal
+          title={tab.title || 'Browser'}
+          url={tab.url}
+          liveUrl={tab.liveUrl}
+          onClose={() => setPresentMode(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FullscreenBrowserModal({ title, url, liveUrl, onClose }: { title: string; url?: string; liveUrl: string; onClose: () => void }) {
+  // Esc dismisses — mirrors Swift `.keyboardShortcut(.cancelAction)` on
+  // the close button.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[100] bg-background flex flex-col">
+      <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0">
+        <Globe className="size-4 text-blue-500" />
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-semibold truncate">{title}</p>
+          {url && <p className="text-xs text-muted-foreground truncate font-mono">{url}</p>}
+        </div>
+        <button
+          onClick={onClose}
+          className="size-8 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          title="Close (Esc)"
+          aria-label="Close fullscreen"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <iframe
+        src={liveUrl}
+        className="flex-1 w-full border-0"
+        allow="clipboard-read; clipboard-write"
+        title={`Live browser: ${url || liveUrl}`}
+      />
     </div>
   );
 }

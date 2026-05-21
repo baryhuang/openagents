@@ -279,9 +279,12 @@ function ActivityIndicator() {
 }
 
 function isTerminalStatus(step: WorkspaceMessage) {
+  // Treat "Session restarted" as terminal too — mirrors Swift commit
+  // 127c78a5 so the activity indicator stops spinning after /restart
+  // completes (instead of waiting for a stop event that never comes).
   return (
     step.messageType === 'status' &&
-    /stopped|stopping failed/i.test(step.content)
+    /stopped|stopping failed|session restarted/i.test(step.content)
   );
 }
 
