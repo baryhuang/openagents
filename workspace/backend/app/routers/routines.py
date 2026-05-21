@@ -91,7 +91,7 @@ def _get_or_create_routine_channel(
     channel = Channel(
         workspace_id=str(workspace.id),
         name=name,
-        title=routine_name,
+        title=f"Routine: {routine_name}",
         master_agent=agent,
         created_by="system:routine",
         status="active",
