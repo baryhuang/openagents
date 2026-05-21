@@ -203,15 +203,16 @@ Single panel surface that swaps between Content and Browser tabs.
 
 | Phase | Status | Notes |
 |---|---|---|
-| 0 — Copy + verify deploy | ✅ done | `packages/go/web/` builds + deploys; deployment `0f5da872` |
+| 0 — Copy + verify deploy | ✅ done | `packages/go/web/` builds + deploys; first deployment `0f5da872` |
 | 1 — Brand identity | ✅ done | Squircle icons regenerated from Swift master; title/manifest updated to "OpenAgents Go" |
-| 2 — Thread→Chat terminology | ✅ done | UI strings swapped across dialogs, nav, settings, monitor, mobile |
-| 3 — iMessage-style 2-pane layout | ⏸ deferred | Current 3-pane (sidebar + list + detail) is functional; layout rewrite is a separate iteration |
+| 2 — Thread→Chat terminology | ✅ done | UI strings swapped across dialogs, nav, settings, monitor, mobile, chat header |
+| 3 — Right tabbed panel + chat-view toggle | ✅ done | `RightTabbedPanel` component with `[Content \| Browser]` tabs alongside chat detail. Toggle via `PanelRight` button in chat header. State persists to localStorage (`x-right-panel-open`). Browser tab gated on `workspace.browserEnabled`; auto-rebound to Content when toggle off. Left sidebar / 3-pane still works — additive, not destructive. |
 | 4 — Workspace `browser_enabled` toggle | ✅ done | Globe button next to workspace name in `SidebarHeader`; optimistic PATCH; rollback on error |
 | 5 — Browser surface gating + URL polish | ✅ done | Nav button hidden when toggle off (sidebar + mobile); auto-rebound to Chats; URL pill with hover-copy; iframe `overflow-x-hidden` clamp |
-| 6 — Composer polish | ⏸ deferred | Drag-drop / paste / IME already work via browser native; deep parity audit deferred |
-| 7 — Misc polish (A2UI, members, responsive) | ⏸ deferred | Existing implementations carry over from `workspace/frontend/`; targeted polish deferred |
-| 8 — Sunset `workspace/frontend/` | ⏸ deferred | Keep old path as deprecated mirror until visual/feature parity is verified in production |
+| 6 — Composer polish | ✅ done | Drag-drop / paste / IME composition were already wired. Added slash-command popup (`/restart`, `/status`, `/routines`) with arrow / Enter / Tab / Esc navigation — fires `sendAgentControl` against the channel's master agent. |
+| 7 — A2UI + tool result wiring | ✅ done | Message type gains `spec` + `specToolCallId`. Event-to-message parser pulls them off `payload`. New `A2UIRenderer` component handles Stack / Card / Heading / Text / Image / Icon / Button / ChoiceList / ConfirmDialog / Alert / Divider / Spacer; unknown types render a placeholder chip. `workspaceApi.sendToolResult` posts user interactions back via `workspace.tool_result`. |
+| 8 — Docs (sunset deferred) | ✅ done | New `packages/go/web/CLAUDE.md` documents the package origin, deploy story, Swift-specific differences, and what stays in `workspace/frontend/` (deprecated mirror, not deleted). |
 
-This document gets updated as the deferred phases land in follow-up
-commits / PRs.
+Status: PR ready. The old path stays put per the user's instruction —
+no changes under `workspace/frontend/`. Sunset is a future call once
+visual / feature parity is verified in production.

@@ -14,6 +14,7 @@ import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 import { MonitorGrid } from '@/components/monitor/monitor-grid';
 import { TasksView } from '@/components/tasks/tasks-view';
 import { RoutinesView } from '@/components/routines/routines-view';
+import { RightTabbedPanel } from './right-tabbed-panel';
 import { useWorkspace } from '@/lib/workspace-context';
 
 export function Wrapper() {
@@ -116,21 +117,26 @@ export function Wrapper() {
                   </div>
                 </div>
               ) : (
-                <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
-                  {viewMode === 'threads' && (
-                    <main className="h-full" role="content">
-                      <ChatView />
-                    </main>
-                  )}
-                  {viewMode === 'files' && <FilePreview />}
-                  {viewMode === 'browser' && <BrowserView />}
-                  {viewMode === 'connect' && <ConnectAgentView />}
-                  {viewMode === 'tasks' && <TasksView />}
-                  {viewMode === 'routines' && <RoutinesView />}
+                <>
+                  <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+                    {viewMode === 'threads' && (
+                      <main className="h-full" role="content">
+                        <ChatView />
+                      </main>
+                    )}
+                    {viewMode === 'files' && <FilePreview />}
+                    {viewMode === 'browser' && <BrowserView />}
+                    {viewMode === 'connect' && <ConnectAgentView />}
+                    {viewMode === 'tasks' && <TasksView />}
+                    {viewMode === 'routines' && <RoutinesView />}
 
-                  {/* Agent profile slide-over */}
-                  {isAgentPanelOpen && <AgentProfilePanel />}
-                </div>
+                    {/* Agent profile slide-over */}
+                    {isAgentPanelOpen && <AgentProfilePanel />}
+                  </div>
+                  {/* Right-side tabbed panel (Content | Browser) when in
+                      threads view — mirrors the Swift ContentSidebar. */}
+                  {viewMode === 'threads' && <RightTabbedPanel />}
+                </>
               )}
             </>
           )}

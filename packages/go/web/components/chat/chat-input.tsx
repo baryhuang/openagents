@@ -3,9 +3,22 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon } from 'lucide-react';
+import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon, RotateCcw, Info, CalendarClock } from 'lucide-react';
 import type { WorkspaceAgent } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+
+/**
+ * Slash-command popup contents. Mirrors the Swift `ChatView.availableCommands`
+ * list — keeps the agent control surface consistent across native and web.
+ * Each command becomes an entry in the popup when the user types `/` at the
+ * start of the message.
+ */
+type SlashCommandKey = 'restart' | 'status' | 'routines';
+const SLASH_COMMANDS: Array<{ id: SlashCommandKey; label: string; description: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { id: 'restart', label: '/restart', description: 'Reset agent conversation. Next message starts fresh.', icon: RotateCcw },
+  { id: 'status', label: '/status', description: 'Show agent uptime, version, and network.', icon: Info },
+  { id: 'routines', label: '/routines', description: 'List active recurring routines for this agent.', icon: CalendarClock },
+];
 
 export interface PendingFile {
   file: File;
@@ -21,13 +34,20 @@ interface ChatInputProps {
   onDraftChange?: (draft: string) => void;
   /** Auto-focus the textarea when mounted or when this key changes. */
   focusKey?: number;
+  /**
+   * Fired when the user picks a slash command from the autocomplete popup
+   * (or types one and presses Enter). The parent typically wires this to
+   * `workspaceApi.sendAgentControl` against the channel's master agent.
+   * When omitted, slash-command UI is suppressed.
+   */
+  onSlashCommand?: (cmd: SlashCommandKey) => void;
 }
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange, focusKey }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange, focusKey, onSlashCommand }: ChatInputProps) {
   const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
@@ -35,6 +55,18 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
   const [pendingFiles, setPendingFiles] = React.useState<PendingFile[]>([]);
   const [isDragging, setIsDragging] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
+
+  // Slash-command popup state — parallel to @mention state. Appears when
+  // the message starts with `/` and we have a handler wired. Mirrors the
+  // Swift ChatView's slashSuggestionsOpen / slashSuggestionIndex.
+  const [slashIndex, setSlashIndex] = React.useState(0);
+  const slashFilter = message.startsWith('/') && !message.includes(' ') && !message.includes('\n')
+    ? message.slice(1).toLowerCase()
+    : null;
+  const filteredSlash = slashFilter !== null
+    ? SLASH_COMMANDS.filter((c) => c.id.startsWith(slashFilter))
+    : [];
+  const showSlash = !!onSlashCommand && slashFilter !== null && filteredSlash.length > 0;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const dragCountRef = React.useRef(0);
@@ -138,9 +170,44 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     }, 0);
   };
 
+  const fireSlash = (cmd: SlashCommandKey) => {
+    onSlashCommand?.(cmd);
+    setMessage('');
+    onDraftChange?.('');
+    setSlashIndex(0);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Ignore Enter during IME composition (Chinese, Japanese, Korean input)
     if (e.nativeEvent.isComposing || e.key === 'Process') return;
+
+    if (showSlash) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashIndex((prev) => (prev + 1) % filteredSlash.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashIndex((prev) => (prev - 1 + filteredSlash.length) % filteredSlash.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const cmd = filteredSlash[Math.min(slashIndex, filteredSlash.length - 1)];
+        if (cmd) fireSlash(cmd.id);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMessage('');
+        onDraftChange?.('');
+        return;
+      }
+    }
 
     if (showMentions && filteredAgents.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -269,6 +336,35 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {/* Slash-command popup — mirrors Swift's slashSuggestionsPopup, fires
+          onSlashCommand and clears the input on pick. Hidden when the
+          parent didn't wire a handler. */}
+      {showSlash && (
+        <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden">
+          {filteredSlash.map((cmd, i) => {
+            const Icon = cmd.icon;
+            const active = i === Math.min(slashIndex, filteredSlash.length - 1);
+            return (
+              <button
+                key={cmd.id}
+                className={cn(
+                  'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-accent transition-colors',
+                  active && 'bg-accent',
+                )}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  fireSlash(cmd.id);
+                }}
+              >
+                <Icon className="size-4 text-muted-foreground" />
+                <span className="font-mono font-medium">{cmd.label}</span>
+                <span className="text-xs text-muted-foreground truncate flex-1">{cmd.description}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* @mention autocomplete dropdown */}
       {showMentions && filteredAgents.length > 0 && (
         <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
 import { ChatMessages } from './chat-messages';
 import { ChatInput, type PendingFile } from './chat-input';
 import { ThreadStatusBar } from './thread-status-bar';
@@ -16,7 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe, PanelRight } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
@@ -84,7 +85,7 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 
 export function ChatView() {
   const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus } = useWorkspace();
-  const { isMobile, openMobileList, splitBrowser, showBrowserPreview, setShowBrowserPreview } = useLayout();
+  const { isMobile, openMobileList, splitBrowser, showBrowserPreview, setShowBrowserPreview, rightPanelOpen, setRightPanelOpen } = useLayout();
 
   // Continuously refresh message caches for top recent sessions in the background.
   // This ensures clicking any recent thread shows messages instantly and up-to-date.
@@ -425,7 +426,7 @@ export function ChatView() {
               onClick={startEditingTitle}
               title="Click to rename"
             >
-              {currentSession?.title || 'Thread'}
+              {currentSession?.title || 'Chat'}
             </h2>
           )}
           {(() => {
@@ -568,6 +569,25 @@ export function ChatView() {
             </Button>
           )}
 
+          {/* Right tabbed panel toggle — mirrors Swift's contentSidebarToggle.
+              Hidden on mobile (panel collapses into mobile view modes
+              instead). */}
+          {!isMobile && (
+            <button
+              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+              className={cn(
+                'size-7 flex items-center justify-center rounded-md transition-colors',
+                rightPanelOpen
+                  ? 'bg-primary/10 text-primary hover:bg-primary/15'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800',
+              )}
+              title={rightPanelOpen ? 'Hide content panel' : 'Show content panel'}
+              aria-label="Toggle content panel"
+            >
+              <PanelRight className="size-3.5" />
+            </button>
+          )}
+
           {/* Manage agents dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -655,6 +675,19 @@ export function ChatView() {
             hasOlder={hasOlder}
             loadingOlder={loadingOlder}
             className="flex-1 overflow-y-auto px-3 lg:px-5 py-3"
+            onA2UIAction={async (action, toolCallId) => {
+              if (!currentSessionId) return;
+              try {
+                await workspaceApi.sendToolResult({
+                  channel: currentSessionId,
+                  actionId: action.id,
+                  toolCallId,
+                  value: action.value,
+                });
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Failed to send action');
+              }
+            }}
           />
         )}
 
@@ -669,6 +702,21 @@ export function ChatView() {
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 focusKey={focusKey}
+                onSlashCommand={async (cmd) => {
+                  if (!currentSessionId) return;
+                  const session = sessions.find((s) => s.sessionId === currentSessionId);
+                  const master = session?.master;
+                  if (!master) {
+                    toast.error('No master agent in this chat');
+                    return;
+                  }
+                  try {
+                    await workspaceApi.sendAgentControl(master, cmd, { channel: currentSessionId });
+                    toast.success(`Sent /${cmd}`);
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : `Failed to send /${cmd}`);
+                  }
+                }}
               />
             </div>
           </div>
