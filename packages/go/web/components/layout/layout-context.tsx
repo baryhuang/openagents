@@ -55,6 +55,10 @@ interface LayoutState {
   setRightPanelOpen: (v: boolean) => void;
   rightPanelTab: 'content' | 'browser';
   setRightPanelTab: (t: 'content' | 'browser') => void;
+  /** User-resizable right-panel width in px. Persists to localStorage.
+   *  Mirrors Swift's `sidebarWidth` + drag handle in ChatView. */
+  rightPanelWidth: number;
+  setRightPanelWidth: (px: number) => void;
 }
 
 const LayoutContext = createContext<LayoutState | undefined>(undefined);
@@ -90,6 +94,17 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
     }
   }, []);
   const [rightPanelTab, setRightPanelTab] = useState<'content' | 'browser'>('content');
+  const [rightPanelWidth, setRightPanelWidthState] = useState<number>(() => {
+    if (typeof window === 'undefined') return 320;
+    const stored = parseInt(localStorage.getItem('x-right-panel-width') || '', 10);
+    return Number.isFinite(stored) && stored >= 240 ? stored : 320;
+  });
+  const setRightPanelWidth = useCallback((px: number) => {
+    setRightPanelWidthState(px);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('x-right-panel-width', String(Math.round(px)));
+    }
+  }, []);
 
   // Legacy viewMode shim: 'files' → open right inspector to Content tab,
   // 'browser' → open right inspector to Browser tab. 'threads' is a no-op.
@@ -169,6 +184,8 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
         setRightPanelOpen,
         rightPanelTab,
         setRightPanelTab,
+        rightPanelWidth,
+        setRightPanelWidth,
       }}
     >
       <div data-slot="layout-wrapper" className="flex grow">
