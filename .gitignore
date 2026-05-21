@@ -238,3 +238,4 @@ internal_frontend/
 Formula/
 deploy/
 .vercel
+.gstack/

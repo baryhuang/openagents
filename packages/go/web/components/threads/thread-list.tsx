@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { PanelLeft, Pencil, RefreshCw, Search, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2, CheckCircle2, MessageCircle } from 'lucide-react';
+import { Pencil, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2, CheckCircle2, MessageCircle } from 'lucide-react';
+import { RoutinesDisclosure } from './routines-disclosure';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
@@ -134,10 +135,17 @@ function DMSection({
   );
 }
 
-export function ThreadList() {
+interface ThreadListProps {
+  /** When provided, this string drives the in-list search. Otherwise the
+   *  list shows its own search input at the top. */
+  externalSearchQuery?: string;
+}
+
+export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
   const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations } = useWorkspace();
-  const { sidebarToggle, isMobile, openMobileDetail } = useLayout();
-  const [searchQuery, setSearchQuery] = useState('');
+  const { isMobile, openMobileDetail } = useLayout();
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -190,8 +198,15 @@ export function ThreadList() {
       return bTime - aTime;
     });
 
-  const activeSessions = sortedSessions.filter((s) => s.status === 'active');
-  const archivedSessions = sortedSessions.filter((s) => s.status === 'archived');
+  // Routine channels (sessionId starts with `routines:`) live in their own
+  // collapsible disclosure group at the bottom — same pattern as Swift's
+  // ThreadListView. Strip them from the main active list.
+  const activeSessions = sortedSessions.filter(
+    (s) => s.status === 'active' && !s.sessionId.startsWith('routines:'),
+  );
+  const archivedSessions = sortedSessions.filter(
+    (s) => s.status === 'archived' && !s.sessionId.startsWith('routines:'),
+  );
 
   const filteredSessions = isSearching
     ? sortedSessions.filter((s) =>
@@ -245,41 +260,29 @@ export function ThreadList() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-1 px-2 py-3 shrink-0">
-        {!isMobile && (
-          <button
-            onClick={sidebarToggle}
-            className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-muted-foreground transition-colors shrink-0"
-          >
-            <PanelLeft className="size-4" />
-          </button>
-        )}
-        <div className="flex items-center w-full gap-1">
+      {/* In-list search is only rendered when no external search is wired
+          (the new sidebar-header owns the search input). The spinner over
+          the workspace name handles the "searching" indicator when search
+          is hoisted, so we don't need to surface it here. */}
+      {externalSearchQuery === undefined && (
+        <div className="flex items-center gap-1 px-3 pt-2 pb-1 shrink-0">
           <div className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-muted/50 border border-input text-muted-foreground">
-            <Search className="size-3.5" />
             <input
               type="text"
               placeholder="Search messages..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={internalSearchQuery}
+              onChange={(e) => setInternalSearchQuery(e.target.value)}
               className="text-xs bg-transparent outline-none flex-1 placeholder:text-muted-foreground"
             />
             {searching && (
               <div className="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
             )}
           </div>
-          <button
-            className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-muted-foreground transition-colors shrink-0"
-            title="Refresh"
-          >
-            <RefreshCw className="size-3.5" />
-          </button>
         </div>
-      </div>
+      )}
 
       {/* Thread rows */}
-      <div className="flex-1 overflow-y-auto px-4 py-1">
+      <div className="flex-1 overflow-y-auto px-3 py-1">
         <div className="space-y-1">
           {filteredSessions.map((session, idx) => {
             const isSelected = session.sessionId === currentSessionId;
@@ -604,6 +607,12 @@ export function ThreadList() {
               )}
             </div>
           )}
+
+          {/* Routines disclosure — mirrors Swift's collapsible
+              `DisclosureGroup` for `routines:*` channels. Hidden during
+              search so search results don't get split across two
+              sections. */}
+          {!isSearching && <RoutinesDisclosure />}
         </div>
       </div>
     </div>
