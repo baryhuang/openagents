@@ -33,6 +33,7 @@ router = APIRouter(prefix="/v1", tags=["Routines"])
 class CreateRoutineRequest(BaseModel):
     name: str
     message: str
+    context: str
     # Daily mode (hour + minute, optional days). interval_minutes is the other mode.
     hour: Optional[int] = None
     minute: Optional[int] = None
@@ -65,18 +66,19 @@ def _normalize_agent_name(source: str) -> str:
     return source or ""
 
 
-def _routine_channel_name(agent: str) -> str:
-    return f"{ROUTINE_CHANNEL_PREFIX}{agent}"
+def _routine_channel_name(routine_id: str) -> str:
+    return f"routine:{routine_id}"
 
 
-def _get_or_create_routine_channel(db: Session, workspace: Workspace, agent: str) -> Channel:
-    """Find-or-create the per-agent routine channel for this workspace.
+def _get_or_create_routine_channel(
+    db: Session, workspace: Workspace, agent: str, routine_id: str, routine_name: str,
+) -> Channel:
+    """Find-or-create a per-routine channel for this workspace.
 
-    The channel functions as a per-agent job queue: every routine for this
-    agent fires into it. master_agent is set so the existing routing /
-    discovery code treats this as the agent's own thread.
+    Each routine gets its own dedicated channel so different routines
+    don't interfere, and the full context is preserved in the thread.
     """
-    name = _routine_channel_name(agent)
+    name = _routine_channel_name(routine_id)
     existing = db.execute(
         select(Channel).where(
             Channel.workspace_id == str(workspace.id),
@@ -89,13 +91,13 @@ def _get_or_create_routine_channel(db: Session, workspace: Workspace, agent: str
     channel = Channel(
         workspace_id=str(workspace.id),
         name=name,
-        title=agent,
+        title=routine_name,
         master_agent=agent,
-        created_by=f"system:routine",
+        created_by="system:routine",
         status="active",
     )
     db.add(channel)
-    db.flush()  # so channel.id is available for the membership row
+    db.flush()
     db.add(ChannelMember(channel_id=channel.id, agent_name=agent))
     return channel
 
@@ -142,6 +144,7 @@ def _serialize_routine(r: RoutineRecord) -> dict:
         "id": r.id,
         "name": r.name,
         "message": r.message,
+        "context": r.context,
         "schedule_hour": r.schedule_hour,
         "schedule_minute": r.schedule_minute,
         "schedule_days": r.schedule_days,
@@ -237,16 +240,22 @@ async def create_routine(
             f"source '{body.source}' is not a member of this workspace",
         )
 
-    routine_channel = _get_or_create_routine_channel(db, workspace, target_agent)
+    import uuid as _uuid_mod
+    routine_id = str(_uuid_mod.uuid4())
+    routine_channel = _get_or_create_routine_channel(
+        db, workspace, target_agent, routine_id, body.name,
+    )
     next_fire = _compute_next_fires_at(body.hour, body.minute, body.days, body.interval_minutes)
 
     routine = RoutineRecord(
+        id=routine_id,
         workspace_id=str(workspace.id),
         channel_name=routine_channel.name,
         thread_id=body.thread_id,
         created_by=target_agent,
         name=body.name,
         message=body.message,
+        context=body.context,
         schedule_hour=body.hour,
         schedule_minute=body.minute,
         schedule_days=body.days,

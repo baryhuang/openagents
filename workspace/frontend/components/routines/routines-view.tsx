@@ -10,6 +10,11 @@ import type { RoutineItem } from '@/lib/types';
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function formatSchedule(r: RoutineItem): string {
+  if (r.scheduleIntervalMinutes) {
+    const mins = r.scheduleIntervalMinutes;
+    if (mins >= 60) return `Every ${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}`;
+    return `Every ${mins}m`;
+  }
   const time = `${String(r.scheduleHour).padStart(2, '0')}:${String(r.scheduleMinute).padStart(2, '0')} UTC`;
   if (!r.scheduleDays || r.scheduleDays.length === 7) {
     return `Daily at ${time}`;
@@ -123,6 +128,11 @@ export function RoutinesView() {
                       <div className="text-xs text-muted-foreground mt-0.5 truncate">
                         {routine.message}
                       </div>
+                      {routine.context && (
+                        <div className="text-[11px] text-muted-foreground/60 mt-1 line-clamp-2">
+                          {routine.context}
+                        </div>
+                      )}
                       <div className="flex items-center gap-3 mt-1.5 text-[10px] text-muted-foreground/70">
                         <span>{agentName}</span>
                         <span>·</span>

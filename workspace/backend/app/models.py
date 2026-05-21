@@ -389,6 +389,7 @@ class RoutineRecord(Base):
     created_by = Column(Text, nullable=False)              # "openagents:agent-name"
     name = Column(Text, nullable=False)                     # human-readable label
     message = Column(Text, nullable=False)                  # message posted when routine fires
+    context = Column(Text, nullable=True)                    # comprehensive background for the routine
     # Daily schedule mode: hour + minute (+ optional days). One of the two
     # modes must be set when the row is created (enforced in the router).
     schedule_hour = Column(Integer, nullable=True)          # 0-23 UTC

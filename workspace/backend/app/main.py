@@ -106,16 +106,6 @@ async def _timer_loop():
                     if not workspace:
                         continue
                     agent_name = routine.created_by.replace("openagents:", "")
-                    event = Event(
-                        type="workspace.message.posted",
-                        source="system:routine",
-                        target=f"channel/{routine.channel_name}",
-                        payload={
-                            "content": f"🔁 Routine \"{routine.name}\" fired (set by @{agent_name}): {routine.message}",
-                            "message_type": "chat",
-                        },
-                        metadata={"target_agents": [agent_name]},
-                    )
                     ctx = PipelineContext(
                         network_id=str(workspace.id),
                         agent_address=routine.created_by,
@@ -124,7 +114,30 @@ async def _timer_loop():
                         token=workspace.password_hash,
                     )
                     try:
-                        await pipeline.process(event, ctx)
+                        if routine.context:
+                            context_event = Event(
+                                type="workspace.message.posted",
+                                source="system:routine",
+                                target=f"channel/{routine.channel_name}",
+                                payload={
+                                    "content": f"**Routine Context for \"{routine.name}\"**\n\n{routine.context}",
+                                    "message_type": "chat",
+                                },
+                                metadata={"target_agents": [agent_name]},
+                            )
+                            await pipeline.process(context_event, ctx)
+
+                        trigger_event = Event(
+                            type="workspace.message.posted",
+                            source="system:routine",
+                            target=f"channel/{routine.channel_name}",
+                            payload={
+                                "content": f"Routine \"{routine.name}\" fired: {routine.message}",
+                                "message_type": "chat",
+                            },
+                            metadata={"target_agents": [agent_name]},
+                        )
+                        await pipeline.process(trigger_event, ctx)
                     except Exception:
                         logger.exception("Routine fire failed for %s", routine.id)
 
