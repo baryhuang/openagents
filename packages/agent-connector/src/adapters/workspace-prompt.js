@@ -12,6 +12,51 @@
 'use strict';
 
 /**
+ * Strong directive forcing agents to use the workspace browser when the
+ * workspace has Browser Fabric enabled. Emitted high in the system prompt
+ * so it wins against any earlier guidance that suggests local browsing
+ * tools.
+ *
+ * Returns '' when the toggle is off; the caller can unconditionally
+ * concatenate the result.
+ *
+ * Mirrors `build_browser_directive` in
+ * sdk/src/openagents/adapters/workspace_prompt.py.
+ */
+function buildBrowserDirective(browserEnabled) {
+  if (!browserEnabled) return '';
+  return (
+    '\n## Browser Use (MANDATORY)\n' +
+    'This workspace has the **shared Browser Fabric session** enabled. ' +
+    'All web browsing MUST go through it so the user can watch the ' +
+    'session live in their right-side panel and so cookies / state ' +
+    'persist across agents.\n\n' +
+    '**Use ONLY these tools for any web browsing:**\n' +
+    '- `mcp__openagents-workspace__workspace_browser_open`\n' +
+    '- `mcp__openagents-workspace__workspace_browser_navigate`\n' +
+    '- `mcp__openagents-workspace__workspace_browser_click`\n' +
+    '- `mcp__openagents-workspace__workspace_browser_type`\n' +
+    '- `mcp__openagents-workspace__workspace_browser_snapshot`\n' +
+    '- `mcp__openagents-workspace__workspace_browser_screenshot`\n' +
+    '- `mcp__openagents-workspace__workspace_browser_list_tabs`\n' +
+    '- `mcp__openagents-workspace__workspace_browser_close`\n' +
+    '\n' +
+    'If you don\'t have these MCP tools, use `Bash` + `curl` against ' +
+    '`/v1/browser/tabs` (documented below in Shared Browser).\n\n' +
+    '**FORBIDDEN — do NOT call any of these:**\n' +
+    '- `mcp__browsermcp__*` (any local Browser MCP extension tool)\n' +
+    '- `mcp__playwright__*`, `mcp__puppeteer__*`, `mcp__chrome-devtools__*`, or any other local-browser MCP\n' +
+    '- `WebFetch`, `WebSearch`, `web_fetch`, `web_search`, or any built-in network/browser tool\n' +
+    '\n' +
+    'If a local browser tool errors with "extension isn\'t connected" or ' +
+    '"connect your browser", do NOT ask the user to connect anything — ' +
+    'the local extension is irrelevant here. Immediately switch to the ' +
+    'workspace browser tools above. The Browser Fabric session is already ' +
+    'running on the backend.\n'
+  );
+}
+
+/**
  * Build the identity section common to all adapters.
  */
 function buildWorkspaceIdentity(agentName, workspaceId, channelName, mode = 'execute') {
@@ -365,7 +410,7 @@ function buildGuardrails() {
  * Build the system prompt for Claude adapter (MCP-based).
  * Claude gets identity + collaboration instructions but NOT API skills.
  */
-function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = 'execute' }) {
+function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = 'execute', browserEnabled = false }) {
   const parts = [];
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
   parts.push(
@@ -375,6 +420,7 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
     'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n'
   );
+  parts.push(buildBrowserDirective(browserEnabled));
   parts.push(buildCollaborationPrompt());
   parts.push(buildA2UIPrompt());
 
@@ -470,9 +516,10 @@ function buildA2UIPrompt() {
 /**
  * Build the full system prompt for OpenClaw/non-MCP agents.
  */
-function buildOpenclawSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules }) {
+function buildOpenclawSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules, browserEnabled = false }) {
   const parts = [];
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
+  parts.push(buildBrowserDirective(browserEnabled));
   parts.push(buildCollaborationPrompt());
   parts.push(buildA2UIPrompt());
   parts.push(buildModePrompt(mode));
@@ -486,12 +533,13 @@ function buildOpenclawSystemPrompt({ agentName, workspaceId, channelName, endpoi
 /**
  * Build a SKILL.md file for OpenClaw's skill auto-discovery.
  */
-function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules }) {
+function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules, browserEnabled = false }) {
   const body = buildApiSkillsPrompt({
     endpoint, workspaceId, token, agentName, channelName, disabledModules, mode: 'execute',
   });
 
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
+  const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
 
   const frontmatter = (
@@ -508,18 +556,19 @@ function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channel
     '---\n\n'
   );
 
-  return frontmatter + identity + '\n' + collab + '\n' + body + '\n' + buildGuardrails();
+  return frontmatter + identity + directive + '\n' + collab + '\n' + body + '\n' + buildGuardrails();
 }
 
 /**
  * Build system prompt for OpenCode adapter.
  */
-function buildOpenCodeSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules }) {
+function buildOpenCodeSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules, browserEnabled = false }) {
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, mode);
+  const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
   const modePrompt = buildModePrompt(mode);
   const api = buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channelName, disabledModules, mode });
-  return identity + '\n' + collab + '\n' + modePrompt + '\n' + api + '\n' + buildGuardrails();
+  return identity + directive + '\n' + collab + '\n' + modePrompt + '\n' + api + '\n' + buildGuardrails();
 }
 
 /**
@@ -553,7 +602,7 @@ function buildOpenCodeSkillMd({ endpoint, workspaceId, token, agentName, channel
  * of spawning an MCP server. Claude Code discovers the skill via its
  * .claude/skills/ directory and uses Bash + curl to call workspace APIs.
  */
-function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules }) {
+function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules, browserEnabled = false }) {
   const api = buildApiSkillsPrompt({
     endpoint, workspaceId, token, agentName,
     channelName: channelName || 'general',
@@ -562,6 +611,7 @@ function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelNa
   });
 
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
+  const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
 
   const frontmatter =
@@ -574,7 +624,7 @@ function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelNa
     '  or collaborating with other agents via @mentions.\n' +
     '---\n\n';
 
-  return frontmatter + identity + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
+  return frontmatter + identity + directive + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
 }
 
 /**
@@ -583,7 +633,7 @@ function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelNa
  * Written to .cursor/skills/openagents-workspace.md before each CLI spawn.
  * Cursor discovers skills from the .cursor/skills/ directory automatically.
  */
-function buildCursorSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules }) {
+function buildCursorSkillMd({ endpoint, workspaceId, token, agentName, channelName, disabledModules, browserEnabled = false }) {
   const api = buildApiSkillsPrompt({
     endpoint, workspaceId, token, agentName,
     channelName: channelName || 'general',
@@ -592,6 +642,7 @@ function buildCursorSkillMd({ endpoint, workspaceId, token, agentName, channelNa
   });
 
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
+  const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
 
   const frontmatter =
@@ -604,11 +655,12 @@ function buildCursorSkillMd({ endpoint, workspaceId, token, agentName, channelNa
     '  or collaborating with other agents via @mentions.\n' +
     '---\n\n';
 
-  return frontmatter + identity + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
+  return frontmatter + identity + directive + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
 }
 
 module.exports = {
   buildWorkspaceIdentity,
+  buildBrowserDirective,
   buildCollaborationPrompt,
   buildModePrompt,
   buildGuardrails,

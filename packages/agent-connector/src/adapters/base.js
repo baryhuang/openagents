@@ -53,6 +53,11 @@ class BaseAdapter {
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
     this._channelQueues = {};
+    // Cached workspace.browser_enabled. Populated lazily on first read so we
+    // don't pay an HTTP roundtrip per message — adapters that toggle the
+    // workspace flag must reconnect/restart to pick up the change (matches
+    // the Python adapter behavior in workspace_prompt.py).
+    this._browserEnabledCache = null;
     // Wall-clock timestamp of adapter init, used by the `status` control
     // action to report uptime back to the channel. Reset on reinstantiation
     // (e.g. after a `restart` IPC bounce) so uptime tracks "time since last
@@ -705,6 +710,25 @@ class BaseAdapter {
 
   _sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Return whether the workspace has the Browser Fabric viewer toggle on.
+   * Cached for the lifetime of the adapter — restart to pick up a flip.
+   * Falls back to false on error so the prompt builders don't accidentally
+   * inject the strong directive against an older backend that can't route
+   * to Browser Fabric.
+   */
+  async getBrowserEnabled() {
+    if (this._browserEnabledCache === null) {
+      try {
+        const meta = await this.client.getWorkspaceMetadata(this.workspaceId, this.token);
+        this._browserEnabledCache = !!(meta && meta.browserEnabled);
+      } catch (e) {
+        this._browserEnabledCache = false;
+      }
+    }
+    return this._browserEnabledCache;
   }
 }
 

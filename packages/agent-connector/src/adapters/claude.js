@@ -358,7 +358,7 @@ class ClaudeAdapter extends BaseAdapter {
     return null;
   }
 
-  _buildClaudeCmd(prompt, channelName, { skipResume = false } = {}) {
+  _buildClaudeCmd(prompt, channelName, { skipResume = false, browserEnabled = false } = {}) {
     const claudeBin = this._findClaudeBinary();
     if (!claudeBin) {
       throw new Error('claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash');
@@ -369,6 +369,7 @@ class ClaudeAdapter extends BaseAdapter {
       workspaceId: this.workspaceId,
       channelName,
       mode: this._mode,
+      browserEnabled,
     });
 
     // In skills mode, replace MCP tool references with curl-based instructions
@@ -432,6 +433,7 @@ class ClaudeAdapter extends BaseAdapter {
       agentName: this.agentName,
       channelName,
       disabledModules: this.disabledModules,
+      browserEnabled: this._browserEnabledCache === true,
     });
     fs.writeFileSync(skillFile, skillContent, 'utf-8');
     this._log(`Wrote workspace skill to ${skillFile}`);
@@ -648,7 +650,11 @@ class ClaudeAdapter extends BaseAdapter {
       }
 
       try {
-        const built = this._buildClaudeCmd(effectiveContent, msgChannel, { skipResume: attempt > 0 });
+        const browserEnabled = await this.getBrowserEnabled();
+        const built = this._buildClaudeCmd(effectiveContent, msgChannel, {
+          skipResume: attempt > 0,
+          browserEnabled,
+        });
         cmd = built.cmd;
         mcpConfigFile = built.mcpConfigFile;
       } catch (e) {
