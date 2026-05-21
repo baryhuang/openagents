@@ -141,7 +141,7 @@ export function SidebarContent() {
                 <Plus className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">New Thread</TooltipContent>
+            <TooltipContent side="right">New Chat</TooltipContent>
           </Tooltip>
         </div>
 
@@ -217,7 +217,7 @@ export function SidebarContent() {
               className="w-full h-9 flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-[13px] font-medium hover:bg-primary/90 transition-colors"
             >
               <Plus className="size-4" />
-              <span>New Thread</span>
+              <span>New Chat</span>
             </button>
           </div>
 
@@ -246,7 +246,7 @@ export function SidebarContent() {
               Collaboration
             </p>
             <div className="space-y-0.5">
-              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.length} onClick={() => setViewMode('threads')} />
+              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Chats" count={sessions.length} onClick={() => setViewMode('threads')} />
               <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
               <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
               <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
@@ -535,7 +535,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Show a 2x3 grid overview of recent threads instead of the thread list.
+                Show a 2x3 grid overview of recent chats instead of the chat list.
               </p>
             </div>
             <Switch checked={monitorMode} onCheckedChange={setMonitorMode} size="sm" />
@@ -560,7 +560,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Show browser tab side-by-side with chat when viewing threads.
+                Show browser tab side-by-side with chat when viewing chats.
               </p>
             </div>
             <Switch checked={splitBrowser} onCheckedChange={setSplitBrowser} size="sm" />

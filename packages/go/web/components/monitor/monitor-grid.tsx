@@ -229,7 +229,7 @@ export function MonitorGrid() {
           <button
             onClick={() => { setSearchOpen(true); setSearchQuery(''); }}
             className="absolute bottom-3 right-3 size-10 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors z-10"
-            title="Search threads (/)"
+            title="Search chats (/)"
           >
             <Search className="size-4" />
           </button>
@@ -255,7 +255,7 @@ export function MonitorGrid() {
                     handleSearchSelect(filteredSessions[0].sessionId);
                   }
                 }}
-                placeholder="Search threads..."
+                placeholder="Search chats..."
                 className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
               />
               <button
@@ -269,7 +269,7 @@ export function MonitorGrid() {
             {/* Thread list */}
             <div className="max-h-64 overflow-y-auto">
               {filteredSessions.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-6">No threads found</p>
+                <p className="text-xs text-muted-foreground text-center py-6">No chats found</p>
               ) : (
                 filteredSessions.map((session) => {
                   const isInGrid = topSessions.some((t) => t.sessionId === session.sessionId);

@@ -412,7 +412,7 @@ export function ThreadList() {
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        const next = window.prompt('Rename thread', session.title || '');
+                        const next = window.prompt('Rename chat', session.title || '');
                         const trimmed = next?.trim();
                         if (trimmed && trimmed !== session.title) {
                           renameSession(session.sessionId, trimmed);
@@ -468,8 +468,8 @@ export function ThreadList() {
                 </>
               ) : (
                 <>
-                  <p className="text-sm">No threads yet</p>
-                  <p className="text-xs mt-1">Create a thread to start chatting</p>
+                  <p className="text-sm">No chats yet</p>
+                  <p className="text-xs mt-1">Create a chat to start chatting</p>
                 </>
               )}
             </div>

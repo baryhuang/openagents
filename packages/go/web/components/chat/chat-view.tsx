@@ -378,8 +378,8 @@ export function ChatView() {
         <div className="opacity-20 mb-3">
           <MessageSquare className="size-10" />
         </div>
-        <p className="text-sm font-medium">Select a thread</p>
-        <p className="text-xs mt-1">Choose a thread from the list or create a new one.</p>
+        <p className="text-sm font-medium">Select a chat</p>
+        <p className="text-xs mt-1">Choose a chat from the list or create a new one.</p>
       </div>
     );
   }
@@ -573,7 +573,7 @@ export function ChatView() {
             <DropdownMenuTrigger asChild>
               <button
                 className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
-                title="Manage thread agents"
+                title="Manage chat agents"
               >
                 <UserPlus className="size-3.5" />
               </button>
@@ -588,7 +588,7 @@ export function ChatView() {
                   <>
                     {inThread.length > 0 && (
                       <>
-                        <DropdownMenuLabel>In this thread</DropdownMenuLabel>
+                        <DropdownMenuLabel>In this chat</DropdownMenuLabel>
                         {inThread.map((agent) => (
                             <div
                               key={agent.agentName}
@@ -600,7 +600,7 @@ export function ChatView() {
                                 <button
                                   onClick={() => currentSessionId && removeParticipant(currentSessionId, agent.agentName)}
                                   className="size-5 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                                  title="Remove from thread"
+                                  title="Remove from chat"
                                 >
                                   <X className="size-3" />
                                 </button>
@@ -612,7 +612,7 @@ export function ChatView() {
                     {notInThread.length > 0 && (
                       <>
                         {inThread.length > 0 && <DropdownMenuSeparator />}
-                        <DropdownMenuLabel>Add to thread</DropdownMenuLabel>
+                        <DropdownMenuLabel>Add to chat</DropdownMenuLabel>
                         {notInThread.map((agent) => (
                             <button
                               key={agent.agentName}

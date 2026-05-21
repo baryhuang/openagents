@@ -76,7 +76,7 @@ export function ConnectAgentView() {
         <button
           onClick={() => setViewMode('threads')}
           className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
-          title="Back to threads"
+          title="Back to chats"
         >
           <X className="size-4" />
         </button>

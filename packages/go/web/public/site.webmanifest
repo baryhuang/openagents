@@ -1,6 +1,6 @@
 {
-  "name": "OpenAgents Workspace",
-  "short_name": "Workspace",
+  "name": "OpenAgents Go",
+  "short_name": "OpenAgents Go",
   "icons": [
     {
       "src": "/android-chrome-192x192.png",

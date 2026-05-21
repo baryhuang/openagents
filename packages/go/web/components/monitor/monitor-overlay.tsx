@@ -171,7 +171,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent variant="fullscreen" className="flex flex-col p-0 gap-0" showCloseButton>
-        <DialogTitle className="sr-only">{session.title || 'Thread'}</DialogTitle>
+        <DialogTitle className="sr-only">{session.title || "Chat"}</DialogTitle>
 
         {/* Header — pr-12 leaves room for the absolute-positioned close button */}
         <div className="flex items-center gap-3 pl-5 pr-12 py-3 border-b shrink-0">
@@ -194,7 +194,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
               onClick={startEditingTitle}
               title="Click to rename"
             >
-              {session.title || 'Thread'}
+              {session.title || 'Chat'}
             </h2>
           )}
           {/* Stop button — visible when a Claude agent is working */}

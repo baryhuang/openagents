@@ -10,8 +10,8 @@ import '@/styles/globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'OpenAgents Workspace',
-  description: 'Interact with your AI agents in real time',
+  title: 'OpenAgents Go',
+  description: 'Chat with your AI agents, share files, and watch their browser sessions live — OpenAgents Go for the web.',
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },

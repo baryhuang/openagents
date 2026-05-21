@@ -95,7 +95,7 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogTitle>New Thread</DialogTitle>
+        <DialogTitle>New Chat</DialogTitle>
         <DialogDescription className="text-sm text-muted-foreground">
           {multipleAgents
             ? 'Pick which agents join this conversation.'
@@ -195,7 +195,7 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
             Cancel
           </Button>
           <Button size="sm" onClick={handleCreate} disabled={selected.size === 0}>
-            {resumeFrom ? 'Resume Thread' : 'Start Thread'}
+            {resumeFrom ? 'Resume Chat' : 'Start Chat'}
           </Button>
         </div>
       </DialogContent>
