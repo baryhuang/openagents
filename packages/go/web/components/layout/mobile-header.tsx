@@ -48,7 +48,9 @@ export function MobileHeader() {
   const tabs: { mode: ViewMode; icon: typeof MessageSquare; label: string }[] = [
     { mode: 'threads', icon: MessageSquare, label: 'Chats' },
     { mode: 'files', icon: FileText, label: 'Files' },
-    { mode: 'browser', icon: Globe, label: 'Browser' },
+    // Mirror sidebar: Browser tab is workspace-gated. Hidden unless the
+    // workspace toggle in SidebarHeader is on.
+    ...(workspace?.browserEnabled ? [{ mode: 'browser' as ViewMode, icon: Globe, label: 'Browser' }] : []),
   ];
 
   return (

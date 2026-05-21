@@ -2,17 +2,29 @@
 
 import { useState, useRef } from 'react';
 import Image from 'next/image';
-import { PanelLeft } from 'lucide-react';
+import { PanelLeft, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useLayout } from './layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 
 export function SidebarHeader() {
   const { sidebarToggle, isSidebarOpen } = useLayout();
-  const { workspace, renameWorkspace } = useWorkspace();
+  const { workspace, renameWorkspace, setBrowserEnabled } = useWorkspace();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Workspace-scoped Browser Fabric viewer toggle — mirrors the Safari
+  // button in the Swift app's workspace header. Filled-blue when ON,
+  // muted globe when OFF. Persists via PATCH /v1/workspaces/{id}.
+  const browserEnabled = !!workspace?.browserEnabled;
+  const toggleBrowser = () => {
+    if (!workspace) return;
+    setBrowserEnabled(!browserEnabled).catch(() => {
+      // toast.error already fired inside the context callback
+    });
+  };
 
   const startEditing = () => {
     setDraft(workspace?.name || '');
@@ -69,6 +81,20 @@ export function SidebarHeader() {
         )}
         <p className="text-xs text-muted-foreground truncate font-mono">{workspace?.slug || ''}</p>
       </div>
+      <button
+        onClick={toggleBrowser}
+        disabled={!workspace}
+        className={cn(
+          'size-7 flex items-center justify-center rounded-md transition-colors shrink-0',
+          browserEnabled
+            ? 'bg-primary/10 text-primary hover:bg-primary/15'
+            : 'text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800',
+        )}
+        title={browserEnabled ? 'Hide browser panel for this workspace' : 'Show browser panel when a session is live'}
+        aria-label={browserEnabled ? 'Disable browser panel' : 'Enable browser panel'}
+      >
+        <Globe className="size-4" />
+      </button>
     </div>
   );
 }

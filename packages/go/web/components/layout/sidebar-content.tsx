@@ -106,6 +106,16 @@ export function SidebarContent() {
     }
   };
 
+  // If the workspace browser toggle gets flipped off while the user is
+  // viewing the Browser tab, bounce them back to Chats so they aren't
+  // stuck on a now-hidden view (parity with Swift's
+  // `controller.selectedTab = .content` rebound).
+  useEffect(() => {
+    if (!workspace?.browserEnabled && viewMode === 'browser') {
+      setViewMode('threads');
+    }
+  }, [workspace?.browserEnabled, viewMode, setViewMode]);
+
   // Filter sidebar to only show online + recently-seen agents
   const recentAgents = useMemo(() => agents.filter(isRecentAgent), [agents]);
   const onlineCount = agents.filter((a) => a.status === 'online').length;
@@ -250,7 +260,13 @@ export function SidebarContent() {
               <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
               <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
               <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
-              <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+              {/* Browser is workspace-gated: hidden unless the workspace toggle in
+                  SidebarHeader is on. Mirrors the Swift app's [Content | Browser]
+                  tab pattern where the Browser tab only appears when the toggle
+                  is enabled. */}
+              {workspace?.browserEnabled && (
+                <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+              )}
             </div>
 
             {/* Actions */}
