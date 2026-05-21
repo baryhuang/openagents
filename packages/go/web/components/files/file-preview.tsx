@@ -74,18 +74,7 @@ export function FilePreview() {
     const isText = isTextFile(ct, fn);
     const isPdf = isPdfFile(ct, fn);
 
-    // HTML and PDF use the direct URL in an iframe / object — no fetch
-    // needed.
-    if (isHtml || isPdf) {
-      setContent(null);
-      const url = workspaceApi.getFileUrl(file.id);
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-      setBlobUrl(url);
-      setLoading(false);
-      return;
-    }
-
-    if (!isText && !isImage) {
+    if (!isText && !isImage && !isPdf && !isHtml) {
       setContent(null);
       setBlobUrl(null);
       return;
@@ -104,7 +93,15 @@ export function FilePreview() {
         if (cancelled) return;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        if (isImage) {
+        // Binary preview formats (image, pdf) and embedded-frame formats
+        // (html) all go through a blob URL. PDFs especially need this:
+        // the workspace endpoint is cross-origin from the web app, and
+        // <object data="https://other-origin/.pdf"> is unreliable across
+        // browsers when CORS / X-Frame-Options aren't perfectly aligned.
+        // Pulling the bytes ourselves and handing the resulting blob URL
+        // to the <object>/<iframe> sidesteps that entirely (same-origin
+        // blob: scheme).
+        if (isImage || isPdf || isHtml) {
           const blob = await res.blob();
           if (!cancelled) {
             if (blobUrl) URL.revokeObjectURL(blobUrl);
@@ -209,10 +206,16 @@ export function FilePreview() {
           />
         ) : isPdfFile(file.contentType || '', file.filename) && blobUrl ? (
           // PDF preview via the browser's native PDF viewer — mirrors
-          // Swift's PDFKit preview added in 0.2.7.
-          <object data={blobUrl} type="application/pdf" className="w-full h-full">
-            <iframe src={blobUrl} title={file.filename} className="w-full h-full border-0" />
-          </object>
+          // Swift's PDFKit preview. The blob: URL is same-origin, so the
+          // browser's bundled viewer (Chrome PDF Viewer / Preview.app on
+          // Safari / pdf.js on Firefox) renders without CORS friction.
+          // Iframe is a touch more reliable across browsers than <object>
+          // for blob URLs.
+          <iframe
+            src={blobUrl}
+            title={file.filename}
+            className="w-full h-full border-0 block"
+          />
         ) : blobUrl && isImageFile(file.contentType || '') ? (
           <div className="flex items-center justify-center p-4 h-full">
             <img

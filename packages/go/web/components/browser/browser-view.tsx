@@ -1,32 +1,37 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Globe, X, RefreshCw, Users, ChevronLeft, Lock, Unlock, Maximize2, Minimize2, Copy } from 'lucide-react';
+import { Globe, RefreshCw, ChevronLeft, Maximize2, X } from 'lucide-react';
+import { toast } from 'sonner';
+
+// Middle-truncate a long URL the way Swift's `.truncationMode(.middle)`
+// does — preserve the beginning (scheme + host) and the end (last path
+// segment + query) so users can still tell at a glance where they are.
+function middleTruncate(s: string, maxLen: number): string {
+  if (s.length <= maxLen) return s;
+  const keep = Math.max(8, Math.floor((maxLen - 1) / 2));
+  return s.slice(0, keep) + '…' + s.slice(-keep);
+}
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
 
 export function BrowserView() {
   const {
     browserTabs, selectedBrowserTabId, setSelectedBrowserTabId,
-    closeBrowserTab, navigateBrowserTab, reconnectBrowserTab, persistBrowserTab, unpersistBrowserTab, browserContexts,
+    reconnectBrowserTab,
     refreshBrowserTabs,
   } = useWorkspace();
-  const { isMobile, openMobileList, isDetailExpanded, toggleDetailExpanded } = useLayout();
+  const { isMobile, openMobileList } = useLayout();
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [sessionDead, setSessionDead] = useState(false);
   const [navigating, setNavigating] = useState(false);
-  const [urlDraft, setUrlDraft] = useState('');
-  const [editingUrl, setEditingUrl] = useState(false);
-  // True app-front modal — covers everything including the chat (parity
-  // with Swift's FullscreenBrowserSheet). Distinct from `isDetailExpanded`
-  // which only hides the sidebar within the current layout.
+  // True app-front modal — covers everything (parity with Swift's
+  // FullscreenBrowserSheet).
   const [presentMode, setPresentMode] = useState(false);
-  const urlInputRef = useRef<HTMLInputElement>(null);
   const prevBlobRef = useRef<string | null>(null);
   const failCountRef = useRef(0);
 
@@ -137,62 +142,6 @@ export function BrowserView() {
     }
   };
 
-  const startEditingUrl = () => {
-    setUrlDraft(tab?.url || '');
-    setEditingUrl(true);
-    setTimeout(() => urlInputRef.current?.select(), 0);
-  };
-
-  const handleNavigate = async () => {
-    setEditingUrl(false);
-    const trimmed = urlDraft.trim();
-    if (!trimmed || !tab || trimmed === tab.url) return;
-    const url = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-    setNavigating(true);
-    try {
-      await navigateBrowserTab(tab.id, url);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to navigate');
-    } finally {
-      setNavigating(false);
-    }
-  };
-
-  const handleClose = async () => {
-    if (!selectedBrowserTabId) return;
-    try {
-      await closeBrowserTab(selectedBrowserTabId);
-      toast.success('Tab closed');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to close tab');
-    }
-  };
-
-  const handlePersist = async () => {
-    if (!tab || tab.contextId) return;
-    const name = prompt('Give this session a name (e.g. "LinkedIn Account", "Google Search Console"):');
-    if (!name?.trim()) return;
-    try {
-      await persistBrowserTab(tab.id, name.trim());
-      toast.success(`"${name.trim()}" is now persistent`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to make persistent');
-    }
-  };
-
-  const handleUnpersist = async () => {
-    if (!tab || !tab.contextId) return;
-    const ctx = browserContexts.find((c) => c.id === tab.contextId);
-    const label = ctx?.name || 'this tab';
-    if (!confirm(`Remove persistent state from "${label}"? The saved cookies and login state will be deleted.`)) return;
-    try {
-      await unpersistBrowserTab(tab.id);
-      toast.success('Tab is now temporal');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove persistent state');
-    }
-  };
-
   // No tab selected
   if (!tab) {
     return (
@@ -208,141 +157,66 @@ export function BrowserView() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-2 lg:px-4 py-2 lg:py-2.5 border-b border-input shrink-0">
+      {/* Header — strict Swift BrowserPanel mirror: Globe + (Title +
+          URL middle-truncated OR "opened by <agent>") + Reload +
+          Fullscreen. Swift commits 2e8a4791 + 00fa44a1. No extras. */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-input shrink-0">
         {isMobile && (
           <button
             onClick={openMobileList}
-            className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
+            className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
+            aria-label="Back"
           >
-            <ChevronLeft className="size-5" />
+            <ChevronLeft className="size-4" />
           </button>
         )}
-        <Globe className={cn("size-4 shrink-0", navigating ? "text-amber-500 animate-pulse" : "text-blue-500")} />
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <p className="text-sm font-medium truncate">{tab.title || 'Untitled'}</p>
-          {editingUrl ? (
-            <input
-              ref={urlInputRef}
-              value={urlDraft}
-              onChange={(e) => setUrlDraft(e.target.value)}
-              onBlur={() => setEditingUrl(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleNavigate();
-                if (e.key === 'Escape') setEditingUrl(false);
-              }}
-              className="w-full block text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded px-1.5 py-0.5 outline-none focus:border-blue-500 font-mono"
-              autoFocus
-            />
-          ) : (
-            // Pill-style URL "input" that strictly clips inside the
-            // panel. Native `title` tooltip shows the full URL; hover
-            // surfaces a copy button on the right edge so users don't
-            // have to enter edit mode just to grab the URL.
-            <div
-              className="group relative flex items-center w-full max-w-full bg-zinc-100/60 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded px-1.5 py-0.5 cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
-              onClick={startEditingUrl}
+        <Globe
+          className={cn(
+            'size-3.5 shrink-0 text-muted-foreground',
+            navigating && 'text-amber-500 animate-pulse',
+          )}
+        />
+        <div className="flex-1 min-w-0 leading-tight">
+          <p
+            className="text-[12px] font-semibold truncate"
+            title={tab.title || 'Browser'}
+          >
+            {tab.title || 'Browser'}
+          </p>
+          {tab.url ? (
+            <p
+              className="text-[10px] text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis"
               title={tab.url}
             >
-              <span className="flex-1 min-w-0 text-xs text-muted-foreground truncate font-mono group-hover:text-foreground transition-colors">
-                {tab.url}
-              </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (tab.url) {
-                    navigator.clipboard.writeText(tab.url)
-                      .then(() => toast.success('URL copied'))
-                      .catch(() => toast.error('Copy failed'));
-                  }
-                }}
-                className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 flex items-center justify-center size-4 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-muted-foreground hover:text-foreground transition-opacity"
-                aria-label="Copy URL"
-                title="Copy URL"
-              >
-                <Copy className="size-3" />
-              </button>
-            </div>
-          )}
+              {middleTruncate(tab.url, 56)}
+            </p>
+          ) : tab.createdBy ? (
+            <p className="text-[10px] text-muted-foreground truncate">
+              opened by {tab.createdBy.replace(/^(openagents:|human:)/, '')}
+            </p>
+          ) : null}
         </div>
-
-        {/* Shared with badges */}
-        {tab.sharedWith.length > 0 && (
-          <div className="flex items-center gap-1 shrink-0">
-            <Users className="size-3.5 text-muted-foreground" />
-            {tab.sharedWith.map((agent) => (
-              <span
-                key={agent}
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-              >
-                {agent}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <span className="text-[10px] text-muted-foreground shrink-0">
-          by {(tab.createdBy || 'unknown').replace(/^(openagents:|human:)/, '')}
-        </span>
-
-        {tab.contextId ? (
-          <button
-            onClick={handleUnpersist}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-green-600 dark:text-green-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-orange-500 dark:hover:text-orange-400 transition-colors shrink-0"
-            title="Remove persistent state — revert to temporal tab"
-          >
-            <Lock className="size-3" />
-            {browserContexts.find((c) => c.id === tab.contextId)?.name || 'persistent'}
-          </button>
-        ) : (
-          <button
-            onClick={handlePersist}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-green-600 transition-colors shrink-0"
-            title="Make persistent — preserve login state for agents to reuse"
-          >
-            <Lock className="size-3" />
-            Make Persistent
-          </button>
-        )}
 
         <button
           onClick={handleReconnect}
           disabled={reconnecting}
-          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 disabled:opacity-50"
-          title="Reconnect — create a new browser session"
+          className="size-[22px] flex items-center justify-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 disabled:opacity-50"
+          title="Reload session"
+          aria-label="Reload browser session"
         >
-          <RefreshCw className={cn("size-4", reconnecting && "animate-spin")} />
+          <RefreshCw className={cn('size-3.5', reconnecting && 'animate-spin')} />
         </button>
 
-        {!isMobile && (
-          <button
-            onClick={toggleDetailExpanded}
-            className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0"
-            title={isDetailExpanded ? 'Restore size' : 'Expand to full page'}
-          >
-            {isDetailExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          </button>
-        )}
-
-        {/* True app-front modal — mirrors Swift's FullscreenBrowserSheet
-            (covers chat + everything, not just the sidebar). */}
+        {/* Fullscreen take-over — matches Swift's
+            `arrow.up.left.and.arrow.down.right`. No rotation. */}
         <button
           onClick={() => setPresentMode(true)}
           disabled={!tab.liveUrl}
-          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 disabled:opacity-30"
-          title="Open in fullscreen"
+          className="size-[22px] flex items-center justify-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors shrink-0 disabled:opacity-30"
+          title="Fullscreen"
           aria-label="Open browser in fullscreen"
         >
-          <Maximize2 className="size-4 rotate-45" />
-        </button>
-
-        <button
-          onClick={handleClose}
-          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
-          title="Close tab"
-        >
-          <X className="size-4" />
+          <Maximize2 className="size-3.5" />
         </button>
       </div>
 

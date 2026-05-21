@@ -1,12 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+// Workspace switcher — mirrors Swift's `WorkspaceSelectorView`
+// (Views/WorkspaceSelectorView.swift). Same input fields, same recent
+// workspaces chip row, same Advanced collapsible API-URL override, same
+// "Connect to Workspace" + "Back to current workspace" affordances. The
+// re-homed Settings / Share / Copy-Token items live below the form so
+// the popover still serves as the central workspace menu.
+
+import { cloneElement, isValidElement, useEffect, useState, type ReactElement, type MouseEventHandler } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { toast } from 'sonner';
 import {
   Clock,
   Link as LinkIcon,
   ArrowRight,
+  ArrowLeft,
   Settings,
   Share2,
   KeyRound,
@@ -15,12 +24,8 @@ import {
   Crown,
   Shield,
   X,
+  ChevronDown,
 } from 'lucide-react';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import {
   Dialog,
   DialogContent,
@@ -34,7 +39,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
-import { useLayout } from './layout-context';
+import { cn } from '@/lib/utils';
 import {
   WorkspaceHistory,
   parseWorkspaceURL,
@@ -49,37 +54,98 @@ interface Props {
 }
 
 export function WorkspaceSwitcherMenu({ trigger }: Props) {
-  const router = useRouter();
-  const { workspace, token, refreshWorkspace } = useWorkspace();
   const [open, setOpen] = useState(false);
+  // Clone the consumer's trigger so we can attach onClick directly on
+  // it (rather than wrapping in a span, which produces nested-button
+  // markup when the trigger is itself a <button>).
+  const triggerEl =
+    isValidElement(trigger) ? (
+      cloneElement(trigger as ReactElement<{ onClick?: MouseEventHandler }>, {
+        onClick: (e: React.MouseEvent) => {
+          (trigger.props as { onClick?: MouseEventHandler }).onClick?.(e);
+          if (!e.defaultPrevented) setOpen(true);
+        },
+      })
+    ) : (
+      <button onClick={() => setOpen(true)}>{trigger}</button>
+    );
+
+  return (
+    <>
+      {triggerEl}
+      <WorkspaceSelectorDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+// ─── Selector dialog (Swift WorkspaceSelectorView mirror) ─────────────
+
+function WorkspaceSelectorDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const router = useRouter();
+  const { workspace, token } = useWorkspace();
+
   const [entries, setEntries] = useState<WorkspaceHistoryEntry[]>([]);
   const [urlInput, setUrlInput] = useState('');
-  const [urlError, setUrlError] = useState<string | null>(null);
+  const [apiURLInput, setApiURLInput] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
 
+  // Refresh history on each open — matches Swift's `.onAppear { history
+  // = WorkspaceHistory.shared.entries() }`.
   useEffect(() => {
     if (open) {
       setEntries(WorkspaceHistory.entries());
       setUrlInput('');
-      setUrlError(null);
+      setApiURLInput('');
+      setAdvancedOpen(false);
+      setDropdownOpen(false);
+      setError(null);
     }
   }, [open]);
 
   const connectTo = (workspaceId: string, t: string) => {
-    setOpen(false);
+    onOpenChange(false);
     router.push(`/${workspaceId}?token=${encodeURIComponent(t)}`);
   };
 
   const handleConnect = () => {
-    setUrlError(null);
-    const parsed = parseWorkspaceURL(urlInput);
+    setError(null);
+    setDropdownOpen(false);
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    const parsed = parseWorkspaceURL(trimmed);
     if (!parsed) {
-      setUrlError(
-        'Paste a workspace URL like https://agents.caremojo.app/<id>?token=…',
-      );
+      setError('Please enter a valid workspace URL or ID.');
       return;
+    }
+    if (!parsed.token) {
+      setError('URL must include a token parameter (e.g. ?token=…).');
+      return;
+    }
+    // Advanced API URL override — Swift validates this same way; we
+    // mostly trust it through but at least require a sane http(s) scheme
+    // so a typo doesn't silently break the SDK call later.
+    const apiTrim = apiURLInput.trim();
+    if (apiTrim && !/^https?:\/\//i.test(apiTrim)) {
+      setError('API URL must be a valid http(s) URL.');
+      return;
+    }
+    if (apiTrim && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('oa_api_url_override', apiTrim);
+      } catch {
+        // best-effort
+      }
     }
     connectTo(parsed.workspaceId, parsed.token);
   };
@@ -95,120 +161,262 @@ export function WorkspaceSwitcherMenu({ trigger }: Props) {
     setTimeout(() => setTokenCopied(false), 1500);
   };
 
-  // The current workspace is filtered out of "recent" so the user
-  // doesn't see "switch to where you already are."
-  const recents = entries.filter(
+  // Top three recents, excluding the current workspace (Swift renders
+  // them as chips at the top of the form).
+  const topRecents = entries
+    .filter((e) => e.workspaceId !== workspace?.slug)
+    .slice(0, 3);
+
+  // Full history (for the dropdown panel below the URL input)
+  const fullHistory = entries.filter(
     (e) => e.workspaceId !== workspace?.slug,
   );
 
+  const isSwitching = !!workspace;
+
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        <PopoverContent
-          side="bottom"
-          align="start"
-          className="w-[320px] p-0"
-        >
-          <div className="p-3 border-b border-border">
-            <p className="text-[10px] font-semibold tracking-wide text-muted-foreground mb-2 px-1">
-              CONNECT TO A WORKSPACE
-            </p>
-            <div className="flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1.5">
-              <LinkIcon className="size-3.5 text-muted-foreground shrink-0" />
-              <input
-                type="text"
-                value={urlInput}
-                onChange={(e) => {
-                  setUrlInput(e.target.value);
-                  setUrlError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleConnect();
-                }}
-                placeholder="Paste workspace URL"
-                className="flex-1 min-w-0 bg-transparent outline-none text-xs"
-              />
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[480px] p-0">
+          <DialogHeader className="px-6 pt-6 pb-2">
+            <DialogTitle className="sr-only">
+              {isSwitching ? 'Switch workspace' : 'Connect to workspace'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="px-6 pb-6 space-y-6">
+            {/* Header — app logo + title + subhead */}
+            <div className="flex flex-col items-center gap-3 pt-2">
+              <div className="size-14">
+                <Image
+                  src="/logo-black.png"
+                  alt="OpenAgents"
+                  width={56}
+                  height={56}
+                  className="size-full object-contain dark:hidden"
+                />
+                <Image
+                  src="/logo-white.png"
+                  alt="OpenAgents"
+                  width={56}
+                  height={56}
+                  className="size-full object-contain hidden dark:block"
+                />
+              </div>
+              <h2 className="text-lg font-semibold">OpenAgents Workspace</h2>
+              <p className="text-sm text-muted-foreground text-center">
+                {isSwitching
+                  ? 'Select a workspace or paste a new URL.'
+                  : 'Paste your workspace URL to get started.'}
+              </p>
+            </div>
+
+            {/* Recent workspaces chip row */}
+            {topRecents.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-medium tracking-wider text-muted-foreground">
+                  RECENT WORKSPACES
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {topRecents.map((entry) => (
+                    <button
+                      key={entry.workspaceId}
+                      onClick={() =>
+                        connectTo(entry.workspaceId, entry.workspaceToken)
+                      }
+                      title={`/${entry.workspaceId}?token=${entry.workspaceToken}`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-input bg-muted/40 hover:bg-muted transition-colors text-xs"
+                    >
+                      <Clock className="size-3 text-muted-foreground" />
+                      <span className="font-medium truncate max-w-[140px]">
+                        {entry.name || entry.workspaceId}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Connect form */}
+            <div className="space-y-2">
+              <div className="relative">
+                <div className="flex items-center rounded-lg border border-input bg-background overflow-hidden">
+                  <LinkIcon className="size-4 text-muted-foreground ml-3 shrink-0" />
+                  <input
+                    type="text"
+                    value={urlInput}
+                    onChange={(e) => {
+                      setUrlInput(e.target.value);
+                      setError(null);
+                      setDropdownOpen(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleConnect();
+                    }}
+                    placeholder="https://agents.caremojo.app/abc?token=…"
+                    className="flex-1 min-w-0 bg-transparent outline-none text-sm py-3 px-2 placeholder:text-muted-foreground/60"
+                    autoFocus
+                  />
+                  {fullHistory.length > 0 && (
+                    <button
+                      onClick={() => setDropdownOpen((v) => !v)}
+                      className="size-9 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                      aria-label="Show recent workspaces"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'size-4 transition-transform',
+                          dropdownOpen && 'rotate-180',
+                        )}
+                      />
+                    </button>
+                  )}
+                </div>
+                {dropdownOpen && fullHistory.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-input bg-background shadow-lg overflow-hidden max-h-[260px] overflow-y-auto">
+                    {fullHistory.map((entry, idx) => (
+                      <button
+                        key={entry.workspaceId}
+                        onClick={() => {
+                          setDropdownOpen(false);
+                          connectTo(entry.workspaceId, entry.workspaceToken);
+                        }}
+                        className={cn(
+                          'w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-muted/60 transition-colors',
+                          idx > 0 && 'border-t border-input/60',
+                        )}
+                      >
+                        <Clock className="size-3 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {entry.name || entry.workspaceId}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground truncate font-mono">
+                            {entry.workspaceId}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Advanced — collapsible API URL override */}
               <button
+                onClick={() => setAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronDown
+                  className={cn(
+                    'size-3 transition-transform',
+                    advancedOpen && 'rotate-180',
+                  )}
+                />
+                Advanced
+              </button>
+              {advancedOpen && (
+                <div className="space-y-2 pt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Override the backend API URL when it differs from the workspace
+                    URL above (self-hosted setups). Saved together with this workspace.
+                  </p>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium tracking-wider text-muted-foreground">
+                      API URL
+                    </p>
+                    <input
+                      type="text"
+                      value={apiURLInput}
+                      onChange={(e) => setApiURLInput(e.target.value)}
+                      placeholder="https://workspace-endpoint.openagents.org"
+                      className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono outline-none focus:border-primary placeholder:text-muted-foreground/60"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <p className="text-xs text-destructive px-1">{error}</p>
+              )}
+
+              <Button
                 onClick={handleConnect}
                 disabled={!urlInput.trim()}
-                className="size-6 flex items-center justify-center rounded text-primary disabled:opacity-30 hover:bg-primary/10 shrink-0"
-                aria-label="Connect"
+                className="w-full"
               >
-                <ArrowRight className="size-3.5" />
+                Connect to Workspace
+                <ArrowRight className="size-4 ml-1" />
+              </Button>
+            </div>
+
+            {/* Back to current workspace — only when switching from a
+                live workspace, mirrors Swift's `router.isSwitching`. */}
+            {isSwitching && (
+              <button
+                onClick={() => onOpenChange(false)}
+                className="w-full flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+              >
+                <ArrowLeft className="size-3" />
+                Back to current workspace
               </button>
-            </div>
-            {urlError && (
-              <p className="mt-1.5 text-[11px] text-destructive px-1">{urlError}</p>
             )}
-          </div>
 
-          {recents.length > 0 && (
-            <div className="p-2 border-b border-border max-h-[260px] overflow-y-auto">
-              <p className="text-[10px] font-semibold tracking-wide text-muted-foreground mb-1 px-2 mt-1">
-                RECENT
-              </p>
-              {recents.map((entry) => (
-                <button
-                  key={entry.workspaceId}
-                  onClick={() =>
-                    connectTo(entry.workspaceId, entry.workspaceToken)
-                  }
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left transition-colors"
-                >
-                  <Clock className="size-3 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate">
-                      {entry.name || entry.workspaceId}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground truncate font-mono">
-                      {entry.workspaceId}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="p-1">
-            <MenuItem
-              icon={<Settings className="size-3.5" />}
-              label="Workspace settings"
-              onClick={() => {
-                setOpen(false);
-                setSettingsOpen(true);
-              }}
-            />
-            <MenuItem
-              icon={<Share2 className="size-3.5" />}
-              label="Share workspace"
-              onClick={() => {
-                setOpen(false);
-                setShareOpen(true);
-              }}
-            />
-            {token && (
-              <MenuItem
-                icon={
-                  tokenCopied ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <KeyRound className="size-3.5" />
-                  )
-                }
-                label={tokenCopied ? 'Copied!' : 'Copy workspace token'}
-                onClick={handleCopyToken}
-              />
+            {/* Workspace actions (re-homed from the dead nav rail).
+                These aren't in Swift's selector — Swift exposes a gear
+                in the top-right corner that opens SettingsSheet. On
+                web we surface them inline since we don't have a
+                separate window-toolbar slot. */}
+            {workspace && (
+              <div className="border-t border-border pt-4 space-y-1">
+                <p className="text-[10px] font-medium tracking-wider text-muted-foreground px-1 pb-1">
+                  THIS WORKSPACE
+                </p>
+                <MenuItem
+                  icon={<Settings className="size-3.5" />}
+                  label="Workspace settings"
+                  onClick={() => {
+                    onOpenChange(false);
+                    setSettingsOpen(true);
+                  }}
+                />
+                <MenuItem
+                  icon={<Share2 className="size-3.5" />}
+                  label="Share workspace"
+                  onClick={() => {
+                    onOpenChange(false);
+                    setShareOpen(true);
+                  }}
+                />
+                {token && (
+                  <MenuItem
+                    icon={
+                      tokenCopied ? (
+                        <Check className="size-3.5" />
+                      ) : (
+                        <KeyRound className="size-3.5" />
+                      )
+                    }
+                    label={tokenCopied ? 'Copied!' : 'Copy workspace token'}
+                    onClick={handleCopyToken}
+                  />
+                )}
+              </div>
             )}
-          </div>
-        </PopoverContent>
-      </Popover>
 
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        refreshWorkspace={refreshWorkspace}
-      />
+            <p className="text-[11px] text-muted-foreground text-center pt-1">
+              Get a workspace URL by running{' '}
+              <code className="bg-muted px-1.5 py-0.5 rounded text-[10px]">
+                openagents workspace create
+              </code>
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} />
     </>
   );
@@ -226,7 +434,7 @@ function MenuItem({
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left text-xs transition-colors"
+      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/60 text-left text-xs transition-colors"
     >
       <span className="text-muted-foreground">{icon}</span>
       <span>{label}</span>
@@ -234,7 +442,7 @@ function MenuItem({
   );
 }
 
-// ─── Share Dialog (lifted out of the old sidebar-content) ────────────────
+// ─── Share Dialog ─────────────────────────────────────────────────────
 
 function ShareDialog({
   open,
@@ -256,7 +464,7 @@ function ShareDialog({
       setCollaborators(data.collaborators);
       setOwner(data.owner);
     } catch {
-      // ignore — modal still shows the add form
+      // ignore
     }
     setLoading(false);
   };
@@ -302,7 +510,6 @@ function ShareDialog({
             Add people by email. They can access this workspace by signing in — no
             token needed.
           </p>
-
           <div className="space-y-2">
             <Label>Email address</Label>
             <div className="flex items-center gap-2">
@@ -320,7 +527,6 @@ function ShareDialog({
               </Button>
             </div>
           </div>
-
           <div className="space-y-2">
             <Label variant="secondary">People with access</Label>
             <div className="space-y-1.5 max-h-60 overflow-y-auto">
@@ -369,18 +575,17 @@ function ShareDialog({
   );
 }
 
-// ─── Settings Dialog (lifted out of the old sidebar-content) ──────────────
+// ─── Settings Dialog ──────────────────────────────────────────────────
 
 function SettingsDialog({
   open,
   onOpenChange,
-  refreshWorkspace,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  refreshWorkspace: () => Promise<void>;
 }) {
-  const { workspace, notificationSound, setNotificationSound } = useWorkspace();
+  const { workspace, notificationSound, setNotificationSound, refreshWorkspace } =
+    useWorkspace();
   const { user, isOpenAgentsDomain } = useOpenAgentsAuth();
   const [name, setName] = useState(workspace?.name || '');
   const [monitorMode, setMonitorMode] = useState(false);
@@ -455,11 +660,7 @@ function SettingsDialog({
           <div className="space-y-2">
             <Label variant="secondary">Workspace URL</Label>
             <div className="flex items-center gap-2">
-              <Input
-                value={workspaceUrl}
-                readOnly
-                className="text-xs font-mono"
-              />
+              <Input value={workspaceUrl} readOnly className="text-xs font-mono" />
               <Button
                 variant="outline"
                 size="icon"
@@ -483,7 +684,6 @@ function SettingsDialog({
             </div>
           </div>
 
-          {/* Claim affordance for OpenAgents-hosted users on unclaimed workspaces */}
           {isOpenAgentsDomain && user && isUnclaimed && (
             <Button
               onClick={handleClaim}
