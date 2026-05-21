@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Globe, X, RefreshCw, Users, ChevronLeft, Lock, Unlock, Maximize2, Minimize2 } from 'lucide-react';
+import { Globe, X, RefreshCw, Users, ChevronLeft, Lock, Unlock, Maximize2, Minimize2, Copy } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
@@ -215,7 +215,7 @@ export function BrowserView() {
           </button>
         )}
         <Globe className={cn("size-4 shrink-0", navigating ? "text-amber-500 animate-pulse" : "text-blue-500")} />
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-hidden">
           <p className="text-sm font-medium truncate">{tab.title || 'Untitled'}</p>
           {editingUrl ? (
             <input
@@ -227,17 +227,39 @@ export function BrowserView() {
                 if (e.key === 'Enter') handleNavigate();
                 if (e.key === 'Escape') setEditingUrl(false);
               }}
-              className="w-full text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded px-1.5 py-0.5 outline-none focus:border-blue-500 font-mono"
+              className="w-full block text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded px-1.5 py-0.5 outline-none focus:border-blue-500 font-mono"
               autoFocus
             />
           ) : (
-            <p
-              className="text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors"
+            // Pill-style URL "input" that strictly clips inside the
+            // panel. Native `title` tooltip shows the full URL; hover
+            // surfaces a copy button on the right edge so users don't
+            // have to enter edit mode just to grab the URL.
+            <div
+              className="group relative flex items-center w-full max-w-full bg-zinc-100/60 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded px-1.5 py-0.5 cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
               onClick={startEditingUrl}
-              title="Click to edit URL"
+              title={tab.url}
             >
-              {tab.url}
-            </p>
+              <span className="flex-1 min-w-0 text-xs text-muted-foreground truncate font-mono group-hover:text-foreground transition-colors">
+                {tab.url}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (tab.url) {
+                    navigator.clipboard.writeText(tab.url)
+                      .then(() => toast.success('URL copied'))
+                      .catch(() => toast.error('Copy failed'));
+                  }
+                }}
+                className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 flex items-center justify-center size-4 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-muted-foreground hover:text-foreground transition-opacity"
+                aria-label="Copy URL"
+                title="Copy URL"
+              >
+                <Copy className="size-3" />
+              </button>
+            </div>
           )}
         </div>
 
@@ -308,8 +330,12 @@ export function BrowserView() {
         </button>
       </div>
 
-      {/* Browser view area */}
-      <div className="flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-900 flex items-start justify-center">
+      {/* Browser view area — overflow-hidden on the X axis so a wide
+          iframe (Browser Fabric's live viewer can size its inner UI
+          past the panel width) doesn't push the workspace into a
+          horizontal scroll. Vertical scroll stays available for the
+          screenshot fallback. */}
+      <div className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto bg-zinc-50 dark:bg-zinc-900 flex items-start justify-center">
         {tab.liveUrl && !reconnecting ? (
           <iframe
             src={tab.liveUrl}

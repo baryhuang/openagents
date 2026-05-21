@@ -201,5 +201,17 @@ Single panel surface that swaps between Content and Browser tabs.
 
 ## Status
 
-Tracked in `TaskList` (tasks #16–#24). This document gets updated at each
-phase boundary with the commit SHA and the deployment ID.
+| Phase | Status | Notes |
+|---|---|---|
+| 0 — Copy + verify deploy | ✅ done | `packages/go/web/` builds + deploys; deployment `0f5da872` |
+| 1 — Brand identity | ✅ done | Squircle icons regenerated from Swift master; title/manifest updated to "OpenAgents Go" |
+| 2 — Thread→Chat terminology | ✅ done | UI strings swapped across dialogs, nav, settings, monitor, mobile |
+| 3 — iMessage-style 2-pane layout | ⏸ deferred | Current 3-pane (sidebar + list + detail) is functional; layout rewrite is a separate iteration |
+| 4 — Workspace `browser_enabled` toggle | ✅ done | Globe button next to workspace name in `SidebarHeader`; optimistic PATCH; rollback on error |
+| 5 — Browser surface gating + URL polish | ✅ done | Nav button hidden when toggle off (sidebar + mobile); auto-rebound to Chats; URL pill with hover-copy; iframe `overflow-x-hidden` clamp |
+| 6 — Composer polish | ⏸ deferred | Drag-drop / paste / IME already work via browser native; deep parity audit deferred |
+| 7 — Misc polish (A2UI, members, responsive) | ⏸ deferred | Existing implementations carry over from `workspace/frontend/`; targeted polish deferred |
+| 8 — Sunset `workspace/frontend/` | ⏸ deferred | Keep old path as deprecated mirror until visual/feature parity is verified in production |
+
+This document gets updated as the deferred phases land in follow-up
+commits / PRs.
