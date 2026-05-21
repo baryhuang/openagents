@@ -42,6 +42,24 @@ final class WorkspaceStore {
     var isLoading: Bool = true
     var lastError: String?
 
+    /// Browser Fabric tabs currently known for this workspace. v1 of the
+    /// viewer treats the workspace as having at most one "live" browser —
+    /// `liveBrowserTab` picks the most-recent one with a `liveUrl`. Refreshed
+    /// in the existing discovery poll cycle.
+    var browserTabs: [BrowserTab] = []
+
+    /// Increments whenever a live browser session first appears (transition
+    /// from "no live tab" to "at least one live tab") while the workspace
+    /// toggle is on. The chat view observes this to auto-open the right
+    /// panel and focus the Browser tab the first time a session goes live.
+    /// After the user picks a different tab, future transitions don't
+    /// auto-switch — we only nudge once per appearance.
+    var browserAutoFocusToken: Int = 0
+
+    /// Last-known "had any live browser tab" flag used to detect the
+    /// transition that drives `browserAutoFocusToken`.
+    private var hadLiveBrowserTab: Bool = false
+
     private var pollTask: Task<Void, Never>?
     private var messagePollTask: Task<Void, Never>?
 
@@ -102,6 +120,22 @@ final class WorkspaceStore {
     }
 
     var onlineAgents: [Agent] { agents.filter(\.isOnline) }
+
+    /// The single tab the Browser panel should render. Picks the most-recent
+    /// tab with a `liveUrl`; nil when nothing is live. v1 is single-tab by
+    /// product decision — multi-tab list UI is out of scope.
+    var liveBrowserTab: BrowserTab? {
+        browserTabs
+            .filter(\.isLive)
+            .sorted(by: { $0.sortKey > $1.sortKey })
+            .first
+    }
+
+    /// True when the workspace has the toggle on AND there's a live session
+    /// to show. Drives whether the Browser tab is visible in the right panel.
+    var browserPanelAvailable: Bool {
+        (workspace?.browserEnabled ?? false) && liveBrowserTab != nil
+    }
 
     /// True when any session's most recent message is a pending status (agent working) — drives
     /// adaptive polling speed.
@@ -200,9 +234,86 @@ final class WorkspaceStore {
             if workspace == nil {
                 Task { try? await self.refreshWorkspaceMetadata() }
             }
+            // Refresh browser tabs in parallel — non-blocking, errors swallowed.
+            // Only fetch when the toggle is on; otherwise the data is wasted.
+            if workspace?.browserEnabled == true {
+                Task { await self.refreshBrowserTabs() }
+            } else {
+                // Clear stale tabs when the feature is off so re-enabling
+                // doesn't briefly show a phantom session from a previous poll.
+                browserTabs = []
+                hadLiveBrowserTab = false
+            }
             lastError = nil
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    /// Fetch a single tab with `validate=true` so the backend wakes the
+    /// underlying Browser Fabric session if it's expired and returns a
+    /// fresh `liveUrl`. Used by `BrowserPanel` on first load and reload.
+    func validateBrowserTab(tabId: String) async throws -> BrowserTab {
+        let updated = try await api.getBrowserTab(tabId: tabId, validate: true)
+        // Merge the fresh tab into our local list so the rest of the UI
+        // (toggle availability, etc.) reflects the validated state.
+        if let i = browserTabs.firstIndex(where: { $0.id == tabId }) {
+            browserTabs[i] = updated
+        } else {
+            browserTabs.append(updated)
+        }
+        return updated
+    }
+
+    /// Fetch the workspace's current browser tabs. Detects the
+    /// no-live → live transition and increments `browserAutoFocusToken`
+    /// so the chat view can auto-open the panel on the Browser tab.
+    func refreshBrowserTabs() async {
+        do {
+            let tabs = try await api.listBrowserTabs()
+            self.browserTabs = tabs
+            let isLiveNow = tabs.contains(where: \.isLive)
+            if isLiveNow, !hadLiveBrowserTab, workspace?.browserEnabled == true {
+                browserAutoFocusToken &+= 1
+                logInfo("browser", "live session appeared — nudge=\(browserAutoFocusToken)")
+            }
+            hadLiveBrowserTab = isLiveNow
+        } catch {
+            logError("browser", "list tabs failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Flip the workspace-level browser-panel toggle. Optimistic — updates
+    /// local state immediately, then PATCHes the backend. On error, rolls
+    /// back and surfaces the message via `lastError`.
+    func setBrowserEnabled(_ enabled: Bool) async {
+        guard let current = workspace else {
+            logError("browser", "setBrowserEnabled before workspace loaded — ignored")
+            return
+        }
+        guard current.browserEnabled != enabled else { return }
+        let optimistic = Workspace(
+            workspaceId: current.workspaceId,
+            slug: current.slug,
+            name: current.name,
+            creatorEmail: current.creatorEmail,
+            status: current.status,
+            createdAt: current.createdAt,
+            lastActivityAt: current.lastActivityAt,
+            agents: current.agents,
+            browserEnabled: enabled,
+        )
+        self.workspace = optimistic
+        do {
+            let updated = try await api.updateWorkspaceBrowserEnabled(enabled)
+            self.workspace = updated
+            // Re-fetch tabs immediately so the UI doesn't wait up to 15s for
+            // the next poll to surface the newly-enabled view.
+            if enabled { await refreshBrowserTabs() }
+        } catch {
+            self.workspace = current  // rollback
+            lastError = "Couldn't update workspace: \(error.localizedDescription)"
+            logError("browser", "setBrowserEnabled rollback: \(error.localizedDescription)")
         }
     }
 

@@ -24,22 +24,32 @@ struct ContentSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let fileId = controller.selectedFileId {
-                detailHeader
+            // Tab bar only renders when the Browser tab is available; when
+            // it's just Content there's nothing to switch between and the
+            // original header is enough. Keeps the v0.2 visual when nothing
+            // is live and there's no toggle on.
+            if store.browserPanelAvailable {
+                tabBar
                 Divider()
-                FileDetailView(
-                    fileId: fileId,
-                    labelHint: controller.selectedFileLabelHint,
-                )
-            } else {
-                listHeader
-                Divider()
-                listBody
+            }
+            switch effectiveTab {
+            case .browser:
+                BrowserPanel()
+            case .content:
+                contentBody
             }
         }
         .background(sidebarBackground)
         .task(id: store.workspaceId) {
             await refresh()
+        }
+        .onChange(of: store.browserPanelAvailable) { _, available in
+            // If the Browser tab vanishes (toggle off, session ended), drop
+            // back to Content so the panel doesn't get stuck on a tab that
+            // is no longer in the header.
+            if !available, controller.selectedTab == .browser {
+                controller.selectedTab = .content
+            }
         }
         .fileExporter(
             isPresented: $showExporter,
@@ -51,6 +61,81 @@ struct ContentSidebar: View {
                 logError("ui", "fileExporter failed: \(err.localizedDescription)")
             }
             pendingDownload = nil
+        }
+    }
+
+    /// Falls back to .content if the controller wants .browser but the
+    /// browser panel isn't currently available (toggle off / no live tab).
+    private var effectiveTab: ContentSidebarTab {
+        if controller.selectedTab == .browser, !store.browserPanelAvailable {
+            return .content
+        }
+        return controller.selectedTab
+    }
+
+    /// Two-tab header at the top of the panel, shown only when the Browser
+    /// tab is available. Tapping a tab flips `controller.selectedTab`.
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(.content, label: "Content", icon: "doc.text")
+            tabButton(.browser, label: "Browser", icon: "globe")
+            Spacer(minLength: 0)
+            Button {
+                controller.close()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close panel")
+            #if os(macOS)
+            .help("Close")
+            #endif
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+
+    private func tabButton(_ tab: ContentSidebarTab, label: String, icon: String) -> some View {
+        let selected = effectiveTab == tab
+        return Button {
+            controller.selectedTab = tab
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+                Text(label)
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(selected ? Color.accentColor.opacity(0.12) : .clear),
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Original Content sidebar behavior — file list or detail with their
+    /// own headers. Now wrapped so it's swappable with the Browser tab.
+    @ViewBuilder
+    private var contentBody: some View {
+        if let fileId = controller.selectedFileId {
+            detailHeader
+            Divider()
+            FileDetailView(
+                fileId: fileId,
+                labelHint: controller.selectedFileLabelHint,
+            )
+        } else {
+            listHeader
+            Divider()
+            listBody
         }
     }
 
