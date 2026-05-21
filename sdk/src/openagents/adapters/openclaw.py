@@ -228,8 +228,13 @@ class OpenClawAdapter(BaseAdapter):
                     return candidate
         return None
 
-    def _build_system_prompt(self, channel_name: str) -> str:
-        """Build system prompt with workspace context and API skills."""
+    def _build_system_prompt(self, channel_name: str, browser_enabled: bool = False) -> str:
+        """Build system prompt with workspace context and API skills.
+
+        `browser_enabled` is resolved by the caller (async) via
+        `self.get_browser_enabled()`; when True, the prompt forbids any
+        `mcp__browsermcp__*` or other local-browser tools.
+        """
         return build_openclaw_system_prompt(
             agent_name=self.agent_name,
             workspace_id=self.workspace_id,
@@ -238,6 +243,7 @@ class OpenClawAdapter(BaseAdapter):
             token=self.token,
             mode=self._mode,
             disabled_modules=self.disabled_modules,
+            browser_enabled=browser_enabled,
         )
 
     def _resolve_openclaw_workspace(self) -> Optional[Path]:
@@ -653,7 +659,8 @@ class OpenClawAdapter(BaseAdapter):
         """
         # Build messages
         history_text = await self._get_recent_history_text(channel)
-        system_prompt = self._build_system_prompt(channel)
+        browser_enabled = await self.get_browser_enabled()
+        system_prompt = self._build_system_prompt(channel, browser_enabled=browser_enabled)
         if history_text:
             system_prompt += "\n" + history_text
 

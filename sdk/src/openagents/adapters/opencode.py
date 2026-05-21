@@ -118,7 +118,7 @@ class OpenCodeAdapter(BaseAdapter):
         except Exception:
             logger.debug("Could not write workspace skill to %s", skill_file)
 
-    def _build_system_context(self, channel_name: str) -> str:
+    def _build_system_context(self, channel_name: str, browser_enabled: bool = False) -> str:
         return build_opencode_system_prompt(
             agent_name=self.agent_name,
             workspace_id=self.workspace_id,
@@ -127,6 +127,7 @@ class OpenCodeAdapter(BaseAdapter):
             token=self.token,
             mode=self._mode,
             disabled_modules=self.disabled_modules,
+            browser_enabled=browser_enabled,
         )
 
     # ------------------------------------------------------------------
@@ -298,7 +299,8 @@ class OpenCodeAdapter(BaseAdapter):
         else:
             # New session: inject workspace skill and prepend system context
             self._ensure_workspace_skill(msg_channel)
-            context = self._build_system_context(msg_channel)
+            browser_enabled = await self.get_browser_enabled()
+            context = self._build_system_context(msg_channel, browser_enabled=browser_enabled)
             full_prompt = f"{context}\n\n---\n\n{content}"
 
         if platform.system() == "Windows" and cmd[0].lower().endswith(".cmd"):
