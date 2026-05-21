@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FileText, Download, Trash2, Loader2, ChevronLeft } from 'lucide-react';
+import { FileText, Download, Trash2, Loader2, ChevronLeft, Maximize2, X } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
@@ -49,6 +49,7 @@ export function FilePreview() {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [htmlFullscreen, setHtmlFullscreen] = useState(false);
 
   const file = files.find((f) => f.id === selectedFileId);
 
@@ -198,12 +199,28 @@ export function FilePreview() {
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : isHtmlFile(file.contentType || '', file.filename) && blobUrl ? (
-          <iframe
-            src={blobUrl}
-            title={file.filename}
-            className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin"
-          />
+          // HTML files mirror Swift's HTMLFileBody — sandboxed WebView
+          // plus a fullscreen button in a small toolbar above (Swift uses
+          // `arrow.up.left.and.arrow.down.right`, same shape as Maximize2).
+          // Clicking opens a take-over modal that covers the whole window.
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-end px-2 py-1 border-b border-input/60 shrink-0">
+              <button
+                onClick={() => setHtmlFullscreen(true)}
+                className="size-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                title="Fullscreen"
+                aria-label="Open HTML in fullscreen"
+              >
+                <Maximize2 className="size-3.5" />
+              </button>
+            </div>
+            <iframe
+              src={blobUrl}
+              title={file.filename}
+              className="flex-1 w-full border-0"
+              sandbox="allow-scripts allow-same-origin"
+            />
+          </div>
         ) : isPdfFile(file.contentType || '', file.filename) && blobUrl ? (
           // PDF preview via the browser's native PDF viewer — mirrors
           // Swift's PDFKit preview. The blob: URL is same-origin, so the
@@ -245,6 +262,57 @@ export function FilePreview() {
           </div>
         )}
       </div>
+
+      {/* HTML fullscreen modal — mirrors Swift's FullscreenHTMLSheet
+          (Views/FullscreenHTMLSheet.swift). Esc closes. */}
+      {htmlFullscreen && blobUrl && isHtmlFile(file.contentType || '', file.filename) && (
+        <HtmlFullscreenModal
+          src={blobUrl}
+          title={file.filename}
+          onClose={() => setHtmlFullscreen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function HtmlFullscreenModal({
+  src,
+  title,
+  onClose,
+}: {
+  src: string;
+  title: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-background flex flex-col">
+      <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0">
+        <FileText className="size-4 text-muted-foreground" />
+        <p className="flex-1 min-w-0 text-sm font-semibold truncate">{title}</p>
+        <button
+          onClick={onClose}
+          className="size-8 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          title="Close (Esc)"
+          aria-label="Close fullscreen"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <iframe
+        src={src}
+        title={title}
+        className="flex-1 w-full border-0"
+        sandbox="allow-scripts allow-same-origin"
+      />
     </div>
   );
 }
