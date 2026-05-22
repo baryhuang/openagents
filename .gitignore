@@ -220,6 +220,9 @@ sdk/studio/my_first_network/mods/.keep
 sdk/studio/my_first_network/tools/.keep
 sdk/studio/.nvmrc
 
+# Runtime log output (examples/demos write here). The SAFETY NET at the
+# end of this file re-includes any `logs/` directory inside a `src/` tree
+# so source-code components named `logs` are never accidentally ignored.
 **/logs/**
 *.lock
 
@@ -239,3 +242,24 @@ Formula/
 deploy/
 .vercel
 .gstack/
+
+# ============================================================
+# SAFETY NET — never ignore source code
+# ============================================================
+# Broad patterns above (e.g. `**/logs/**`, `lib/`, `dist/`, `temp`)
+# can accidentally swallow files inside source trees. The negations
+# below re-include anything under a `src/` directory so source files
+# always reach git. Keep this block at the END of the file so these
+# negations win over earlier ignore patterns.
+#
+# If you add a new package or SDK with a non-standard source root,
+# add a matching `!path/**` line below.
+
+!**/src/
+!**/src/**
+!packages/*/src/
+!packages/*/src/**
+!sdk/src/
+!sdk/src/**
+!sdk/studio/src/
+!sdk/studio/src/**

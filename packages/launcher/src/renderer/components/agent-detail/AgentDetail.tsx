@@ -291,16 +291,16 @@ export default function AgentDetail({
         open={confirmingUninstall}
         onClose={() => setConfirmingUninstall(false)}
       >
-        <div className="flex flex-col items-center" style={{ padding: "8px 0" }}>
+        <div className="flex flex-col items-center py-2">
           <AgentIcon type={entry.name} size={40} />
-          <ModalTitle style={{ marginTop: 12, textAlign: "center" }}>
+          <ModalTitle className="mt-3 text-center">
             Uninstall {entry.label || entry.name}?
           </ModalTitle>
-          <p className="hint" style={{ margin: "12px 0 20px", textAlign: "center" }}>
+          <p className="hint mt-3 mb-5 text-center">
             This will remove <strong>{entry.label || entry.name}</strong> from
             your system. Configured agents of this type may stop working.
           </p>
-          <div className="form-actions" style={{ justifyContent: "center", marginTop: 0 }}>
+          <div className="form-actions justify-center mt-0">
             <Button variant="destructive" onClick={startUninstall}>
               Uninstall
             </Button>

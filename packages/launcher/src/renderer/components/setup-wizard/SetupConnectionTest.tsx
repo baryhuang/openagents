@@ -18,12 +18,11 @@ export function SetupConnectionTest({
   return (
     <>
       <p
-        className={ok ? "test-success" : "test-error"}
-        style={{ fontSize: 13, marginTop: 4 }}
+        className={`text-[13px] mt-1 ${ok ? "test-success" : "test-error"}`}
       >
         {message}
       </p>
-      <p className="hint" style={{ marginBottom: 12 }}>
+      <p className="hint mb-3">
         {ok
           ? "Connection looks good. Pick a name for your first agent instance."
           : "You can go back and adjust the configuration, or skip the test."}

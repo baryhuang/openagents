@@ -111,11 +111,11 @@ export default function SetupWizard({
     <Modal open={open} onClose={onClose} className="!min-w-[480px] !max-w-[560px]">
       <div className="flex items-center gap-3 mb-3">
         <AgentIcon type={entry.name} size={28} />
-        <ModalTitle style={{ margin: 0 }}>
+        <ModalTitle className="m-0">
           Set up {entry.label || entry.name}
         </ModalTitle>
       </div>
-      <p className="hint" style={{ margin: "0 0 12px" }}>
+      <p className="hint m-0 mb-3">
         Quick setup — configure, verify, then create your first agent.
       </p>
 

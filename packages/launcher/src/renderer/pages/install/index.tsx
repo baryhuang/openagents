@@ -19,6 +19,8 @@ import type { ToastType } from "../../hooks/useToast"
 import { Button } from "../../components/ui/Button"
 import { Modal, ModalTitle } from "../../components/ui/Modal"
 import { InstallConfirmModal } from "../../components/agent-detail/InstallConfirmModal"
+import { TopBar } from "../../components/TopBar"
+import { FeaturedBanner } from "../../components/install/FeaturedBanner"
 
 interface InstallProps {
   showToast: (msg: string, type?: ToastType) => void
@@ -229,143 +231,152 @@ export default function Install({
     : null
   if (selected) {
     return (
-      <>
-        <AgentDetail
-          entry={selected}
-          onBack={() => setSelectedName(null)}
-          onAfterInstall={(e) => {
-            // Optimistically reflect the just-finished job in local state so
-            // pressing Back immediately shows the right badge before
-            // loadAll() resolves.
-            const job = useInstallStore.getState().jobs[e.name]
-            if (
-              job?.verb === "install" ||
-              job?.verb === "update" ||
-              job?.verb === "rollback"
-            ) {
-              setCatalog((prev) =>
-                prev.map((c) =>
-                  c.name === e.name ? { ...c, installed: true } : c,
-                ),
-              )
-            } else if (job?.verb === "uninstall") {
-              setCatalog((prev) =>
-                prev.map((c) =>
-                  c.name === e.name ? { ...c, installed: false } : c,
-                ),
-              )
-            }
-            loadAll()
-            if (!installedList.find((r) => r.name === e.name)) setWizardEntry(e)
-          }}
-          onOpenWizard={(e) => setWizardEntry(e)}
-          showToast={showToast}
-        />
+      <section className="flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto px-9 py-6">
+          <AgentDetail
+            entry={selected}
+            onBack={() => setSelectedName(null)}
+            onAfterInstall={(e) => {
+              // Optimistically reflect the just-finished job in local state so
+              // pressing Back immediately shows the right badge before
+              // loadAll() resolves.
+              const job = useInstallStore.getState().jobs[e.name]
+              if (
+                job?.verb === "install" ||
+                job?.verb === "update" ||
+                job?.verb === "rollback"
+              ) {
+                setCatalog((prev) =>
+                  prev.map((c) =>
+                    c.name === e.name ? { ...c, installed: true } : c,
+                  ),
+                )
+              } else if (job?.verb === "uninstall") {
+                setCatalog((prev) =>
+                  prev.map((c) =>
+                    c.name === e.name ? { ...c, installed: false } : c,
+                  ),
+                )
+              }
+              loadAll()
+              if (!installedList.find((r) => r.name === e.name))
+                setWizardEntry(e)
+            }}
+            onOpenWizard={(e) => setWizardEntry(e)}
+            showToast={showToast}
+          />
+        </div>
         <SetupWizard
           entry={wizardEntry}
           open={!!wizardEntry}
           onClose={() => setWizardEntry(null)}
           showToast={showToast}
         />
-      </>
+      </section>
     )
   }
 
   return (
-    <section className="flex flex-col gap-3.5">
-      <header className="flex items-baseline justify-between">
-        <div>
-          <h1 className="m-0">Agent Marketplace</h1>
-          <p className="hint m-0 mt-1">
-            Discover, install, and update agents — like a desktop app store.
-          </p>
-        </div>
-        {loading ? (
-          <span className="skeleton-shimmer rounded-full h-3 w-30" />
-        ) : (
-          <span className="hint m-0">
-            {catalog.length} agents · {installedList.length} installed
-          </span>
-        )}
-      </header>
-
-      <div className="flex flex-wrap items-center gap-2.5 [&>*]:shrink-0">
-        <div className="flex-1 min-w-[180px]">
-          <MarketplaceSearch value={search} onChange={setSearch} />
-        </div>
-        <MarketplaceSort value={prefs.sort} onChange={setSort} />
-        <MarketplaceViewToggle value={prefs.view} onChange={setView} />
-      </div>
-
-      <MarketplaceFilter
-        catalog={catalog}
-        category={prefs.category}
-        onCategoryChange={setCategory}
+    <section className="flex flex-col h-full">
+      <TopBar
+        title="Marketplace"
+        subtitle="— Discover and install AI agents"
+        showSearch
       />
+      <div className="flex-1 overflow-y-auto px-9 py-6 flex flex-col gap-3.5">
+        <FeaturedBanner catalog={catalog} onOpen={setSelectedName} />
 
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1920px]:grid-cols-6 min-[2400px]:grid-cols-7 min-[2880px]:grid-cols-8 gap-3">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
-      ) : filteredSorted.length === 0 ? (
-        <div className="py-10 text-center">
-          <p className="hint m-0">No agents match the current filters.</p>
-          {(search || prefs.category !== "all") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setSearch("")
-                setCategory("all")
-              }}
-              className="mt-2"
-            >
-              Reset filters
-            </Button>
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-[14px] font-semibold text-(--text-primary) m-0">
+            All agents
+          </h2>
+          {loading ? (
+            <span className="skeleton-shimmer rounded-full h-3 w-30" />
+          ) : (
+            <span className="hint m-0">
+              {catalog.length} agents · {installedList.length} installed
+            </span>
           )}
         </div>
-      ) : prefs.view === "grid" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1920px]:grid-cols-6 min-[2400px]:grid-cols-7 min-[2880px]:grid-cols-8 gap-3">
-          {filteredSorted.map((c) => (
-            <AgentCard
-              key={c.name}
-              entry={c}
-              job={jobs[c.name]}
-              hasUpdate={hasPendingUpdate(updates, c.name)}
-              onOpen={() => setSelectedName(c.name)}
-              onInstall={() =>
-                handleInstall(
-                  c,
-                  c.installed && c.managed !== false ? "update" : "install",
-                )
-              }
-              onUninstall={() => handleUninstall(c)}
-            />
-          ))}
+
+        <div className="flex flex-wrap items-center gap-2.5 [&>*]:shrink-0">
+          <div className="flex-1 min-w-[180px]">
+            <MarketplaceSearch value={search} onChange={setSearch} />
+          </div>
+          <MarketplaceSort value={prefs.sort} onChange={setSort} />
+          <MarketplaceViewToggle value={prefs.view} onChange={setView} />
         </div>
-      ) : (
-        <div className="flex flex-col gap-2.5">
-          {filteredSorted.map((c) => (
-            <AgentRow
-              key={c.name}
-              entry={c}
-              job={jobs[c.name]}
-              hasUpdate={hasPendingUpdate(updates, c.name)}
-              onOpen={() => setSelectedName(c.name)}
-              onInstall={() =>
-                handleInstall(
-                  c,
-                  c.installed && c.managed !== false ? "update" : "install",
-                )
-              }
-              onUninstall={() => handleUninstall(c)}
-            />
-          ))}
-        </div>
-      )}
+
+        <MarketplaceFilter
+          catalog={catalog}
+          category={prefs.category}
+          onCategoryChange={setCategory}
+        />
+
+        {loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1920px]:grid-cols-6 min-[2400px]:grid-cols-7 min-[2880px]:grid-cols-8 gap-3">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : filteredSorted.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="hint m-0">No agents match the current filters.</p>
+            {(search || prefs.category !== "all") && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSearch("")
+                  setCategory("all")
+                }}
+                className="mt-2"
+              >
+                Reset filters
+              </Button>
+            )}
+          </div>
+        ) : prefs.view === "grid" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1920px]:grid-cols-6 min-[2400px]:grid-cols-7 min-[2880px]:grid-cols-8 gap-3">
+            {filteredSorted.map((c) => (
+              <AgentCard
+                key={c.name}
+                entry={c}
+                job={jobs[c.name]}
+                hasUpdate={hasPendingUpdate(updates, c.name)}
+                onOpen={() => setSelectedName(c.name)}
+                onInstall={() =>
+                  handleInstall(
+                    c,
+                    c.installed && c.managed !== false ? "update" : "install",
+                  )
+                }
+                onUninstall={() => handleUninstall(c)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {filteredSorted.map((c) => (
+              <AgentRow
+                key={c.name}
+                entry={c}
+                job={jobs[c.name]}
+                hasUpdate={hasPendingUpdate(updates, c.name)}
+                onOpen={() => setSelectedName(c.name)}
+                onInstall={() =>
+                  handleInstall(
+                    c,
+                    c.installed && c.managed !== false ? "update" : "install",
+                  )
+                }
+                onUninstall={() => handleUninstall(c)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <InstallConfirmModal
         open={!!confirmInstall}
@@ -417,10 +428,7 @@ function UninstallConfirmModal({
           This will remove <strong>{entry.label || entry.name}</strong> from
           your system. Configured agents of this type may stop working.
         </p>
-        <div
-          className="form-actions"
-          style={{ justifyContent: "center", marginTop: 0 }}
-        >
+        <div className="form-actions justify-center mt-0">
           <Button variant="destructive" onClick={onConfirm}>
             Uninstall
           </Button>

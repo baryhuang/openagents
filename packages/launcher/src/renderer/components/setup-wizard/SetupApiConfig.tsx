@@ -31,7 +31,7 @@ export function SetupApiConfig({
   if (fields.length === 0) {
     return (
       <>
-        <p className="hint" style={{ margin: "8px 0 16px" }}>
+        <p className="hint mt-2 mb-4">
           This agent has no API key requirements. You can continue and create
           your first instance.
         </p>
@@ -45,7 +45,7 @@ export function SetupApiConfig({
 
   return (
     <>
-      <p className="hint" style={{ margin: "4px 0 12px" }}>
+      <p className="hint mt-1 mb-3">
         Saved locally to <code>~/.openagents/env/</code>. Secrets are never
         printed to logs.
       </p>
@@ -66,7 +66,7 @@ export function SetupApiConfig({
         )
       })}
       {errorMessage && (
-        <p className="test-error" style={{ fontSize: 12, margin: "4px 0 12px" }}>
+        <p className="test-error text-xs mt-1 mb-3">
           {errorMessage}
         </p>
       )}
