@@ -231,45 +231,48 @@ export default function Install({
     : null
   if (selected) {
     return (
-      <>
-        <AgentDetail
-          entry={selected}
-          onBack={() => setSelectedName(null)}
-          onAfterInstall={(e) => {
-            // Optimistically reflect the just-finished job in local state so
-            // pressing Back immediately shows the right badge before
-            // loadAll() resolves.
-            const job = useInstallStore.getState().jobs[e.name]
-            if (
-              job?.verb === "install" ||
-              job?.verb === "update" ||
-              job?.verb === "rollback"
-            ) {
-              setCatalog((prev) =>
-                prev.map((c) =>
-                  c.name === e.name ? { ...c, installed: true } : c,
-                ),
-              )
-            } else if (job?.verb === "uninstall") {
-              setCatalog((prev) =>
-                prev.map((c) =>
-                  c.name === e.name ? { ...c, installed: false } : c,
-                ),
-              )
-            }
-            loadAll()
-            if (!installedList.find((r) => r.name === e.name)) setWizardEntry(e)
-          }}
-          onOpenWizard={(e) => setWizardEntry(e)}
-          showToast={showToast}
-        />
+      <section className="flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto px-9 py-6">
+          <AgentDetail
+            entry={selected}
+            onBack={() => setSelectedName(null)}
+            onAfterInstall={(e) => {
+              // Optimistically reflect the just-finished job in local state so
+              // pressing Back immediately shows the right badge before
+              // loadAll() resolves.
+              const job = useInstallStore.getState().jobs[e.name]
+              if (
+                job?.verb === "install" ||
+                job?.verb === "update" ||
+                job?.verb === "rollback"
+              ) {
+                setCatalog((prev) =>
+                  prev.map((c) =>
+                    c.name === e.name ? { ...c, installed: true } : c,
+                  ),
+                )
+              } else if (job?.verb === "uninstall") {
+                setCatalog((prev) =>
+                  prev.map((c) =>
+                    c.name === e.name ? { ...c, installed: false } : c,
+                  ),
+                )
+              }
+              loadAll()
+              if (!installedList.find((r) => r.name === e.name))
+                setWizardEntry(e)
+            }}
+            onOpenWizard={(e) => setWizardEntry(e)}
+            showToast={showToast}
+          />
+        </div>
         <SetupWizard
           entry={wizardEntry}
           open={!!wizardEntry}
           onClose={() => setWizardEntry(null)}
           showToast={showToast}
         />
-      </>
+      </section>
     )
   }
 
@@ -425,10 +428,7 @@ function UninstallConfirmModal({
           This will remove <strong>{entry.label || entry.name}</strong> from
           your system. Configured agents of this type may stop working.
         </p>
-        <div
-          className="form-actions"
-          style={{ justifyContent: "center", marginTop: 0 }}
-        >
+        <div className="form-actions justify-center mt-0">
           <Button variant="destructive" onClick={onConfirm}>
             Uninstall
           </Button>

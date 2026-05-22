@@ -452,10 +452,9 @@ function IssueList({
                   {i.labels.slice(0, 3).map((l) => (
                     <span
                       key={l.name}
-                      className="px-1.5 py-0.5 rounded-full text-[10px]"
+                      className="px-1.5 py-0.5 rounded-full text-[10px] text-(--text-secondary)"
                       style={{
                         background: l.color ? `#${l.color}33` : "var(--bg-input)",
-                        color: "var(--text-secondary)",
                       }}
                     >
                       {l.name}

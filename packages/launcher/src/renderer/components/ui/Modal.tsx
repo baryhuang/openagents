@@ -23,26 +23,16 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
 
   return ReactDOM.createPortal(
     <div
-      style={{
-        position: "fixed", inset: 0,
-        background: "rgba(0,0,0,0.2)",
-        backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 1000, animation: "fadeIn 0.15s var(--ease)",
-      }}
+      className="fixed inset-0 z-1000 flex items-center justify-center bg-black/20 backdrop-blur-2xl animate-[fadeIn_0.15s_var(--ease)]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className={cn(className)}
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
-          padding: 28, minWidth: 400, maxWidth: 520,
-          maxHeight: "80vh", overflowY: "auto",
-          boxShadow: "var(--shadow-lg)",
-          animation: "modalIn 0.22s var(--ease)",
-        }}
+        className={cn(
+          "min-w-100 max-w-130 max-h-[80vh] overflow-y-auto p-7",
+          "rounded-lg bg-(--bg-card) border border-(--border) shadow-lg",
+          "animate-[modalIn_0.22s_var(--ease)]",
+          className,
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {title && <ModalTitle>{title}</ModalTitle>}
@@ -53,9 +43,23 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
   )
 }
 
-export function ModalTitle({ className, children, style }: { className?: string; children: React.ReactNode; style?: React.CSSProperties }): React.JSX.Element {
+export function ModalTitle({
+  className,
+  children,
+  style,
+}: {
+  className?: string
+  children: React.ReactNode
+  style?: React.CSSProperties
+}): React.JSX.Element {
   return (
-    <h3 className={cn(className)} style={{ fontSize: 17, fontWeight: 700, marginBottom: 20, letterSpacing: "-0.02em", ...style }}>
+    <h3
+      className={cn(
+        "text-[17px] font-bold mb-5 tracking-[-0.02em]",
+        className,
+      )}
+      style={style}
+    >
       {children}
     </h3>
   )

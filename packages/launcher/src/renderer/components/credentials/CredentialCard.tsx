@@ -53,10 +53,7 @@ export function CredentialCard({
         {platform ? (
           <PlatformLogo platform={platform} size={32} />
         ) : (
-          <div
-            className="flex items-center justify-center rounded-md shrink-0 text-white font-bold bg-(--text-tertiary)"
-            style={{ width: 32, height: 32, fontSize: 14 }}
-          >
+          <div className="flex items-center justify-center rounded-md shrink-0 text-white font-bold bg-(--text-tertiary) w-8 h-8 text-sm">
             ?
           </div>
         )}

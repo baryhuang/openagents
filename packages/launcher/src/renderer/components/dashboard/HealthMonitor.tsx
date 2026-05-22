@@ -57,7 +57,7 @@ export function HealthMonitor({
   for (const a of agents) buckets[bucket(a)].push(a)
 
   return (
-    <div className="bg-(--bg-card) border border-(--border) rounded-(--radius) px-4 py-3.5">
+    <div className="flex flex-col h-full bg-(--bg-card) border border-(--border) rounded-(--radius) px-4 py-3.5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-[13px] font-semibold text-(--text-primary) m-0">
           Agent health
@@ -66,7 +66,7 @@ export function HealthMonitor({
           {agents.length} agents
         </span>
       </div>
-      <div className="grid grid-cols-5 gap-2 mb-3">
+      <div className="grid grid-cols-5 gap-2 mb-3 shrink-0">
         {(Object.keys(BUCKET_META) as Bucket[]).map((b) => {
           const meta = BUCKET_META[b]
           const count = buckets[b].length
@@ -93,11 +93,11 @@ export function HealthMonitor({
         })}
       </div>
       {agents.length === 0 ? (
-        <div className="text-[11px] text-(--text-tertiary) text-center py-3">
+        <div className="flex-1 flex items-center justify-center text-[11px] text-(--text-tertiary) text-center py-3">
           No agents configured.
         </div>
       ) : (
-        <ul className="m-0 p-0 list-none flex flex-col gap-1 max-h-[200px] overflow-y-auto">
+        <ul className="m-0 p-0 list-none flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto">
           {agents.map((a) => (
             <li
               key={a.name}

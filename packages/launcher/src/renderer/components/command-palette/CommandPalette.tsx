@@ -302,26 +302,15 @@ export function CommandPalette(): React.JSX.Element | null {
       onClick={(e) => {
         if (e.target === e.currentTarget) close()
       }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.25)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        zIndex: 2000,
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        paddingTop: "12vh",
-      }}
+      className="fixed inset-0 z-2000 flex items-start justify-center pt-[12vh] bg-black/25 backdrop-blur-md"
     >
       <div
         className={cn(
-          "w-[640px] max-w-[90vw] max-h-[60vh]",
-          "bg-(--bg-card) border border-(--border) rounded-(--radius-lg) shadow-(--shadow-lg)",
+          "w-160 max-w-[90vw] max-h-[60vh]",
+          "bg-(--bg-card) border border-(--border) rounded-lg shadow-lg",
           "flex flex-col overflow-hidden",
+          "animate-[modalIn_0.18s_var(--ease)]",
         )}
-        style={{ animation: "modalIn 0.18s var(--ease)" }}
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-(--border)">
           <Search className="w-4 h-4 text-(--text-tertiary)" />

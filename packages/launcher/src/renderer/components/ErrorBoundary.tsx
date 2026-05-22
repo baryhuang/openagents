@@ -26,48 +26,17 @@ export class ErrorBoundary extends React.Component<
     const { error } = this.state
     if (!error) return this.props.children
     return (
-      <div
-        style={{
-          padding: 32,
-          fontFamily:
-            "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
-          color: "var(--text-primary)",
-          background: "var(--bg-primary)",
-          minHeight: "100vh",
-          overflow: "auto",
-        }}
-      >
-        <h1 style={{ fontSize: 18, marginBottom: 12 }}>
+      <div className="p-8 min-h-screen overflow-auto font-sans text-(--text-primary) bg-(--bg-primary)">
+        <h1 className="text-lg mb-3">
           The launcher hit a rendering error
         </h1>
-        <pre
-          style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: 12,
-            fontSize: 12,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            maxHeight: 480,
-            overflow: "auto",
-          }}
-        >
+        <pre className="p-3 rounded-lg text-xs max-h-120 overflow-auto whitespace-pre-wrap wrap-break-word bg-(--bg-card) border border-(--border)">
           {error.stack || error.message}
         </pre>
         <button
           type="button"
           onClick={this.reset}
-          style={{
-            marginTop: 12,
-            padding: "6px 14px",
-            background: "var(--accent)",
-            color: "var(--accent-text)",
-            border: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-            fontSize: 13,
-          }}
+          className="mt-3 px-3.5 py-1.5 rounded-md text-[13px] cursor-pointer border-0 bg-(--accent) text-(--accent-text)"
         >
           Try again
         </button>

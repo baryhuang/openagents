@@ -85,7 +85,7 @@ export function AgentChangelog({
   return (
     <div className={SECTION}>
       <div className="flex items-center justify-between mb-2.5">
-        <h4 className={SECTION_H4} style={{ margin: 0 }}>Versions</h4>
+        <h4 className={`${SECTION_H4} m-0`}>Versions</h4>
         {homepage && (
           <a
             href="#"

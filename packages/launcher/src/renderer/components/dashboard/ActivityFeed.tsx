@@ -114,7 +114,7 @@ export function ActivityFeed({
   // We just present the union with notifications taking precedence.
 
   return (
-    <div className="bg-(--bg-card) border border-(--border) rounded-(--radius) px-4 py-3.5">
+    <div className="flex flex-col h-full bg-(--bg-card) border border-(--border) rounded-(--radius) px-4 py-3.5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-[13px] font-semibold text-(--text-primary) m-0">
           Activity
@@ -124,11 +124,11 @@ export function ActivityFeed({
         </span>
       </div>
       {items.length === 0 ? (
-        <div className="text-[11px] text-(--text-tertiary) text-center py-6">
+        <div className="flex-1 flex items-center justify-center text-[11px] text-(--text-tertiary) text-center py-6">
           No activity yet. Start an agent to see events.
         </div>
       ) : (
-        <ul className="m-0 p-0 list-none max-h-[300px] overflow-y-auto">
+        <ul className="m-0 p-0 list-none flex-1 min-h-0 overflow-y-auto">
           {items.slice(0, 30).map((it) => (
             <li
               key={it.id}

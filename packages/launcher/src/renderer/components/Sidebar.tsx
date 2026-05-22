@@ -95,25 +95,14 @@ export default function Sidebar(): React.JSX.Element {
       data-sidebar="dark"
       className={cn(
         "w-(--sidebar-width) shrink-0 h-screen",
-        "flex flex-col sidebar-drag",
-        "select-none",
+        "flex flex-col sidebar-drag select-none",
+        "bg-[#0e1117] text-[#c1c2cb] border-r border-white/5",
       )}
-      style={{
-        background: "#0e1117",
-        borderRight: "1px solid rgba(255,255,255,0.04)",
-        color: "#c1c2cb",
-      }}
     >
       {/* Brand */}
       <div className="px-4 pt-5 pb-4 sidebar-no-drag">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div
-            className="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-            style={{
-              background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
-              boxShadow: "0 2px 8px rgba(99,102,241,0.35)",
-            }}
-          >
+          <div className="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-[0_2px_8px_rgba(99,102,241,0.35)] bg-[linear-gradient(135deg,#6366f1_0%,#4f46e5_100%)]">
             OA
           </div>
           <span
@@ -131,10 +120,7 @@ export default function Sidebar(): React.JSX.Element {
           const items = NAV_ITEMS.filter((i) => i.section === section)
           return (
             <div key={section} className="mb-5 last:mb-0">
-              <div
-                className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
-                style={{ color: "#5a5e6b" }}
-              >
+              <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5a5e6b]">
                 {SECTION_LABELS[section]}
               </div>
               <ul className="m-0 p-0 list-none">
@@ -151,40 +137,25 @@ export default function Sidebar(): React.JSX.Element {
                             : setCurrentTab(item.id)
                         }
                         className={cn(
-                          "group w-full flex items-center gap-2.5 px-2.5 py-2 mb-[1px]",
+                          "group w-full flex items-center gap-2.5 px-2.5 py-2 mb-px",
                           "rounded-md text-[13px] font-medium text-left cursor-pointer",
-                          "transition-colors duration-100",
-                          "border-0",
+                          "transition-colors duration-100 border-0",
+                          active
+                            ? "bg-[#1a1d2a] text-white"
+                            : "bg-transparent text-[#a8aabb] hover:bg-[#15171f] hover:text-[#e5e6ed]",
                         )}
-                        style={{
-                          background: active ? "#1a1d2a" : "transparent",
-                          color: active ? "#ffffff" : "#a8aabb",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!active) {
-                            ;(e.currentTarget as HTMLButtonElement).style.background = "#15171f"
-                            ;(e.currentTarget as HTMLButtonElement).style.color = "#e5e6ed"
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!active) {
-                            ;(e.currentTarget as HTMLButtonElement).style.background = "transparent"
-                            ;(e.currentTarget as HTMLButtonElement).style.color = "#a8aabb"
-                          }
-                        }}
                       >
                         <span
-                          className="shrink-0"
-                          style={{ opacity: active ? 1 : 0.75 }}
+                          className={cn(
+                            "shrink-0",
+                            active ? "opacity-100" : "opacity-75",
+                          )}
                         >
                           {item.icon}
                         </span>
                         <span className="flex-1 truncate">{item.label}</span>
                         {badge !== undefined && (
-                          <span
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 text-white"
-                            style={{ background: "#6366f1" }}
-                          >
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 text-white bg-[#6366f1]">
                             {badge}
                           </span>
                         )}
@@ -199,37 +170,27 @@ export default function Sidebar(): React.JSX.Element {
       </nav>
 
       {/* Footer: bell + theme strip, then daemon status + version */}
-      <div
-        className="px-3 py-2 sidebar-no-drag flex items-center gap-1"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}
-      >
+      <div className="px-3 py-2 sidebar-no-drag flex items-center gap-1 border-t border-white/5">
         <NotificationBellDark />
         <ThemeToggleDark />
       </div>
       <div
-        className="px-4 pt-2 pb-3 sidebar-no-drag flex items-center gap-2 text-[11px]"
-        style={{ color: "#7a7e8c" }}
+        className="px-4 pt-2 pb-3 sidebar-no-drag flex items-center gap-2 text-[11px] text-[#7a7e8c]"
         title={daemonLabel}
       >
         <span
           className={cn(
             "inline-block w-[7px] h-[7px] rounded-full shrink-0",
-            daemonStatus === "starting" && "animate-[pulse-dot_1.5s_infinite]",
+            daemonStatus === "running" &&
+              "bg-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.15)]",
+            daemonStatus === "starting" &&
+              "bg-[#f59e0b] animate-[pulse-dot_1.5s_infinite]",
+            daemonStatus === "stopped" && "bg-[#f59e0b]",
+            daemonStatus !== "running" &&
+              daemonStatus !== "starting" &&
+              daemonStatus !== "stopped" &&
+              "bg-[#6b7280]",
           )}
-          style={{
-            background:
-              daemonStatus === "running"
-                ? "#22c55e"
-                : daemonStatus === "starting"
-                  ? "#f59e0b"
-                  : daemonStatus === "stopped"
-                    ? "#f59e0b"
-                    : "#6b7280",
-            boxShadow:
-              daemonStatus === "running"
-                ? "0 0 0 3px rgba(34,197,94,0.15)"
-                : undefined,
-          }}
         />
         <span className="truncate">{daemonLabel}</span>
         <span className="opacity-60">·</span>
@@ -275,23 +236,11 @@ function NotificationBellDark(): React.JSX.Element {
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Notifications"
-        className="relative w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent transition-colors"
-        style={{ color: "#a8aabb" }}
-        onMouseEnter={(e) => {
-          ;(e.currentTarget as HTMLButtonElement).style.background = "#15171f"
-          ;(e.currentTarget as HTMLButtonElement).style.color = "#ffffff"
-        }}
-        onMouseLeave={(e) => {
-          ;(e.currentTarget as HTMLButtonElement).style.background = "transparent"
-          ;(e.currentTarget as HTMLButtonElement).style.color = "#a8aabb"
-        }}
+        className="relative w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent text-[#a8aabb] hover:bg-[#15171f] hover:text-white transition-colors"
       >
         <Bell className="w-3.5 h-3.5" />
         {unread > 0 && (
-          <span
-            className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-1 rounded-full text-[9px] font-bold leading-[14px] text-center text-white"
-            style={{ background: "#ef4444" }}
-          >
+          <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-1 rounded-full text-[9px] font-bold leading-3.5 text-center text-white bg-[#ef4444]">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
@@ -299,12 +248,12 @@ function NotificationBellDark(): React.JSX.Element {
       {open && (
         <div
           className={cn(
-            "absolute left-0 top-[calc(100%+8px)] z-50",
+            "absolute left-0 bottom-[calc(100%+8px)] z-50",
             "w-[340px] max-h-[460px]",
             "bg-(--bg-card) border border-(--border) rounded-(--radius)",
-            "shadow-(--shadow-lg) overflow-hidden flex flex-col",
+            "shadow-lg overflow-hidden flex flex-col",
+            "text-(--text-primary)",
           )}
-          style={{ color: "var(--text-primary)" }}
         >
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-(--border)">
             <div className="text-[13px] font-semibold text-(--text-primary)">
@@ -388,16 +337,7 @@ function ThemeToggleDark(): React.JSX.Element {
       onClick={() => setMode(next)}
       title={`Theme: ${mode} — click for ${next}`}
       aria-label="Toggle theme"
-      className="w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent transition-colors"
-      style={{ color: "#a8aabb" }}
-      onMouseEnter={(e) => {
-        ;(e.currentTarget as HTMLButtonElement).style.background = "#15171f"
-        ;(e.currentTarget as HTMLButtonElement).style.color = "#ffffff"
-      }}
-      onMouseLeave={(e) => {
-        ;(e.currentTarget as HTMLButtonElement).style.background = "transparent"
-        ;(e.currentTarget as HTMLButtonElement).style.color = "#a8aabb"
-      }}
+      className="w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent text-[#a8aabb] hover:bg-[#15171f] hover:text-white transition-colors"
     >
       <Icon className="w-3.5 h-3.5" />
     </button>

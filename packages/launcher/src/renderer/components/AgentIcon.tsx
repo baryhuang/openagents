@@ -1,4 +1,5 @@
 import React from "react"
+import { cn } from "../lib/utils"
 
 const BUNDLED_SLUGS = new Set([
   "aider",
@@ -39,8 +40,7 @@ export default function AgentIcon({
       width={size}
       height={size}
       alt={type}
-      className={className}
-      style={{ borderRadius: 6, flexShrink: 0 }}
+      className={cn("rounded-md shrink-0", className)}
     />
   )
 }

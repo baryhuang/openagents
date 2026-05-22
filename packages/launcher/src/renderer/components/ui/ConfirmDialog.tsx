@@ -40,10 +40,7 @@ export function ConfirmDialog({
         {description && (
           <p className="hint mt-3 mb-5 text-center">{description}</p>
         )}
-        <div
-          className="form-actions"
-          style={{ justifyContent: "center", marginTop: 0 }}
-        >
+        <div className="form-actions justify-center mt-0">
           <Button
             variant={destructive ? "destructive" : "primary"}
             onClick={onConfirm}

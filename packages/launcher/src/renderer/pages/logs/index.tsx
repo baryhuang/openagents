@@ -343,7 +343,6 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
         ref={containerRef}
         onScroll={onScroll}
         className="flex-1 bg-(--bg-card) border border-(--border) rounded-(--radius-sm) overflow-auto font-mono text-[12px] leading-snug"
-        style={{ fontFamily: "'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace" }}
       >
         {filtered.length === 0 ? (
           <div className="px-4 py-6 text-center text-[12px] text-(--text-tertiary)">
@@ -433,14 +432,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
           />
         </div>
         {clearError && (
-          <p
-            style={{
-              color: "var(--danger-text)",
-              fontSize: 12,
-              margin: "0 0 10px",
-              minHeight: 18,
-            }}
-          >
+          <p className="text-xs text-(--danger-text) m-0 mb-2.5 min-h-4.5">
             {clearError}
           </p>
         )}

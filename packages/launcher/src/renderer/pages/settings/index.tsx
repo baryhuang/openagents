@@ -413,6 +413,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
               </Row>
               <Separator />
               <Row
+                stacked
                 label="Default model"
                 desc="Suggested model when configuring a new agent"
               >
@@ -421,7 +422,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                   onChange={(e) => setDefaultModel(e.target.value)}
                   onBlur={() => void set("defaultModel", defaultModel)}
                   placeholder="e.g. claude-sonnet-4-5"
-                  className="w-[260px]"
+                  className="w-full"
                 />
               </Row>
               <Separator />
@@ -472,6 +473,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           {section === "network" && (
             <SettingsCard title="Network">
               <Row
+                stacked
                 label="HTTP proxy"
                 desc="Used by agents and the launcher for outbound HTTP"
               >
@@ -480,21 +482,22 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                   onChange={(e) => setHttpProxy(e.target.value)}
                   onBlur={() => void set("httpProxy", httpProxy)}
                   placeholder="http://user:pass@host:port"
-                  className="w-[280px]"
+                  className="w-full"
                 />
               </Row>
               <Separator />
-              <Row label="HTTPS proxy" desc="Outbound HTTPS proxy">
+              <Row stacked label="HTTPS proxy" desc="Outbound HTTPS proxy">
                 <Input
                   value={httpsProxy}
                   onChange={(e) => setHttpsProxy(e.target.value)}
                   onBlur={() => void set("httpsProxy", httpsProxy)}
                   placeholder="http://user:pass@host:port"
-                  className="w-[280px]"
+                  className="w-full"
                 />
               </Row>
               <Separator />
               <Row
+                stacked
                 label="No proxy"
                 desc="Comma-separated hosts that bypass the proxy"
               >
@@ -503,7 +506,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                   onChange={(e) => setNoProxy(e.target.value)}
                   onBlur={() => void set("noProxy", noProxy)}
                   placeholder="localhost,127.0.0.1,*.internal"
-                  className="w-[280px]"
+                  className="w-full"
                 />
               </Row>
               <p className="text-[11px] text-(--text-tertiary) m-0 mt-3">
@@ -678,19 +681,40 @@ function Row({
   label,
   desc,
   children,
+  stacked,
 }: {
   label: string
   desc?: string
   children: React.ReactNode
+  /** Stack label above the control. Use for wide inputs / long descriptions
+   *  where the side-by-side layout would crush the label column. */
+  stacked?: boolean
 }): React.JSX.Element {
+  if (stacked) {
+    return (
+      <div className="flex flex-col gap-2 py-2.5">
+        <Label plain className="m-0 normal-case tracking-normal">
+          <span className="text-[13px] font-medium text-(--text-primary)">
+            {label}
+          </span>
+          {desc && (
+            <span className="block text-[11px] text-(--text-tertiary) font-normal mt-0.5">
+              {desc}
+            </span>
+          )}
+        </Label>
+        <div className="w-full">{children}</div>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-between gap-4 py-2.5">
-      <Label plain className="m-0 normal-case tracking-normal">
-        <span className="text-[13px] font-medium text-[var(--text-primary)]">
+      <Label plain className="m-0 normal-case tracking-normal min-w-0">
+        <span className="text-[13px] font-medium text-(--text-primary)">
           {label}
         </span>
         {desc && (
-          <span className="block text-[11px] text-[var(--text-tertiary)] font-normal mt-0.5">
+          <span className="block text-[11px] text-(--text-tertiary) font-normal mt-0.5">
             {desc}
           </span>
         )}

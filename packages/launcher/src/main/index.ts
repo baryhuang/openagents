@@ -697,13 +697,30 @@ function createWindow(): void {
     if (process.platform === "darwin" && app.dock) app.dock.show()
     mainWindow!.show()
     // DevTools — dev only. Production builds (`app.isPackaged === true`) skip
-    // this so end users never see the inspector pop up. In dev, electron-vite
-    // sets ELECTRON_RENDERER_URL, which is a more reliable signal than
-    // NODE_ENV under the electron-vite preview pipeline.
-    if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+    // this so end users never see the inspector pop up.
+    if (!app.isPackaged) {
       mainWindow!.webContents.openDevTools({ mode: "detach" })
     }
   })
+
+  // Keyboard shortcuts to toggle DevTools manually in dev (F12 / Cmd+Opt+I /
+  // Ctrl+Shift+I). Disabled in packaged builds.
+  if (!app.isPackaged) {
+    mainWindow.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return
+      const isToggle =
+        input.key === "F12" ||
+        (input.key.toLowerCase() === "i" &&
+          ((process.platform === "darwin" && input.meta && input.alt) ||
+            (process.platform !== "darwin" && input.control && input.shift)))
+      if (isToggle) {
+        event.preventDefault()
+        const wc = mainWindow!.webContents
+        if (wc.isDevToolsOpened()) wc.closeDevTools()
+        else wc.openDevTools({ mode: "detach" })
+      }
+    })
+  }
 
   mainWindow.on("close", (e) => {
     if (!(app as typeof app & { isQuitting?: boolean }).isQuitting) {

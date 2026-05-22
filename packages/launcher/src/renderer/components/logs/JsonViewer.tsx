@@ -8,11 +8,11 @@ interface Props {
   depth?: number
 }
 
-function tokenColor(t: string): string {
-  if (t === "string") return "var(--success-text)"
-  if (t === "number") return "var(--accent)"
-  if (t === "boolean" || t === "null") return "var(--warning-text)"
-  return "var(--text-primary)"
+function tokenClass(t: string): string {
+  if (t === "string") return "text-(--success-text)"
+  if (t === "number") return "text-(--accent)"
+  if (t === "boolean" || t === "null") return "text-(--warning-text)"
+  return "text-(--text-primary)"
 }
 
 export function JsonViewer({
@@ -22,13 +22,13 @@ export function JsonViewer({
 }: Props): React.JSX.Element {
   const [open, setOpen] = useState(!collapsed || depth === 0)
   if (value === null) {
-    return <span style={{ color: tokenColor("null") }}>null</span>
+    return <span className={tokenClass("null")}>null</span>
   }
   if (typeof value === "string") {
-    return <span style={{ color: tokenColor("string") }}>"{value}"</span>
+    return <span className={tokenClass("string")}>"{value}"</span>
   }
   if (typeof value === "number" || typeof value === "boolean") {
-    return <span style={{ color: tokenColor(typeof value) }}>{String(value)}</span>
+    return <span className={tokenClass(typeof value)}>{String(value)}</span>
   }
   if (Array.isArray(value)) {
     if (value.length === 0) return <span>[]</span>
@@ -48,7 +48,7 @@ export function JsonViewer({
         </button>
         <span> [{!open && <span className="text-(--text-tertiary)"> {value.length} items </span>}{open && "\n"}</span>
         {open && (
-          <span style={{ paddingLeft: 12, display: "block" }}>
+          <span className="block pl-3">
             {value.map((v, i) => (
               <span key={i} className="block">
                 <JsonViewer value={v} depth={depth + 1} />
@@ -87,10 +87,10 @@ export function JsonViewer({
           {open && "\n"}
         </span>
         {open && (
-          <span style={{ paddingLeft: 12, display: "block" }}>
+          <span className="block pl-3">
             {keys.map((k, i) => (
               <span key={k} className="block">
-                <span style={{ color: "var(--accent)" }}>"{k}"</span>:{" "}
+                <span className="text-(--accent)">"{k}"</span>:{" "}
                 <JsonViewer value={obj[k]} depth={depth + 1} />
                 {i < keys.length - 1 ? "," : ""}
               </span>

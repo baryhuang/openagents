@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useCallback, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { Square, ArrowRight } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 import { useAgentsStore } from "../../store/agents"
 import { useUiStore } from "../../store/ui"
 import { useInstallStore } from "../../store/install"
@@ -12,6 +12,7 @@ import { StatsOverview } from "../../components/dashboard/StatsOverview"
 import { HealthMonitor } from "../../components/dashboard/HealthMonitor"
 import { ActivityFeed } from "../../components/dashboard/ActivityFeed"
 import { AgentCard } from "../../components/dashboard/AgentCard"
+import { QuickActions } from "../../components/dashboard/QuickActions"
 import type { Agent, AgentUpdateInfo } from "../../types"
 import { useUpdateDismissals } from "../../hooks/useUpdateDismissals"
 import type { ToastType } from "../../hooks/useToast"
@@ -253,8 +254,25 @@ export default function Dashboard({
     }
   }
 
+  const startAllIdle = async (): Promise<void> => {
+    try {
+      await window.api.startAll()
+      showToast("Starting all agents…", "info")
+      refresh()
+    } catch (err) {
+      showToast(`Error: ${(err as Error).message}`, "error")
+    }
+  }
+
   const hasRunning = useMemo(
     () => agents.some((a) => ["online", "running", "idle"].includes(a.state)),
+    [agents],
+  )
+  const hasIdle = useMemo(
+    () =>
+      agents.some(
+        (a) => !["online", "running", "idle", "starting"].includes(a.state),
+      ),
     [agents],
   )
 
@@ -280,7 +298,7 @@ export default function Dashboard({
         installedCount={installedCount}
         pendingUpdateCount={pendingUpdates.length}
         pendingUpdates={pendingUpdates}
-        className="mb-6"
+        className="mb-4"
         onClickUpdates={() => {
           if (pendingUpdates.length === 1) {
             setInstallFocusAgent(pendingUpdates[0].name)
@@ -288,6 +306,19 @@ export default function Dashboard({
           setCurrentTab("install")
         }}
       />
+
+      <div className="mb-5">
+        <QuickActions
+          hasRunning={hasRunning}
+          hasIdle={hasIdle}
+          onStartAll={() => void startAllIdle()}
+          onStopAll={() => void stopAllRunning()}
+          onOpenChat={() => setCurrentTab("chat")}
+          onNewWorkspace={() => setCurrentTab("workspaces")}
+          onAddConnection={() => setCurrentTab("connections")}
+          onNewAgent={() => goToInstallList()}
+        />
+      </div>
 
       {pendingUpdates.length > 0 && (
         <div className="mb-5 flex items-center gap-3 px-4 py-3 text-xs bg-(--accent-bg) border border-(--accent-border) rounded-(--radius)">
@@ -349,24 +380,14 @@ export default function Dashboard({
         <h2 className="text-[14px] font-semibold text-(--text-primary) m-0">
           Active Agents
         </h2>
-        <div className="flex items-center gap-3">
-          <Button
-            size="sm"
-            onClick={stopAllRunning}
-            disabled={!hasRunning}
-          >
-            <Square className="w-3 h-3" />
-            Stop All
-          </Button>
-          <button
-            type="button"
-            onClick={() => setCurrentTab("agents")}
-            className="text-[12px] text-(--accent) hover:underline bg-transparent border-0 cursor-pointer p-0 flex items-center gap-1"
-          >
-            View all
-            <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setCurrentTab("agents")}
+          className="text-[12px] text-(--accent) hover:underline bg-transparent border-0 cursor-pointer p-0 flex items-center gap-1"
+        >
+          View all
+          <ArrowRight className="w-3 h-3" />
+        </button>
       </div>
 
       {loading ? (
@@ -399,7 +420,7 @@ export default function Dashboard({
       )}
 
       {/* Health + Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 mb-6 min-h-70 items-stretch">
         <HealthMonitor
           agents={agents}
           onSelect={(name) => {
@@ -407,9 +428,7 @@ export default function Dashboard({
             setCurrentTab("agents")
           }}
         />
-        <div className="lg:col-span-2">
-          <ActivityFeed uiActivity={activityLog} notifications={notifItems} />
-        </div>
+        <ActivityFeed uiActivity={activityLog} notifications={notifItems} />
       </div>
       </div>
     </section>

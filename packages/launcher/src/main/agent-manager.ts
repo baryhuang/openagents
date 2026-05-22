@@ -599,6 +599,9 @@ export class AgentManager extends EventEmitter {
       path: agentConfig.path,
       env: agentConfig.env,
     })
+    // Bust the 1.5s agents cache so the renderer's immediate post-mutation
+    // refresh() returns fresh data instead of the stale pre-add list.
+    this._agentsCache = { value: [], at: 0 }
     return { success: true, agent: agentConfig }
   }
 
@@ -608,6 +611,8 @@ export class AgentManager extends EventEmitter {
     } catch {}
     const removeAgent = this._connector!.removeAgent as (name: string) => void
     removeAgent.call(this._connector, name)
+    // See addAgent: bust the cache so the deleted agent doesn't linger.
+    this._agentsCache = { value: [], at: 0 }
     return { success: true }
   }
 
@@ -622,6 +627,7 @@ export class AgentManager extends EventEmitter {
       ) => void
       saveEnv.call(this._connector, name, updates.env)
     }
+    this._agentsCache = { value: [], at: 0 }
     return { success: true }
   }
 
