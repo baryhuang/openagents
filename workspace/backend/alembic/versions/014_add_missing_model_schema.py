@@ -6,10 +6,9 @@ Revises: 013
 Create Date: 2026-05-22
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
-
 
 revision = "014"
 down_revision = "013"
@@ -49,6 +48,9 @@ def upgrade() -> None:
     if not _has_column(inspector, "channels", "resume_from"):
         op.add_column("channels", sa.Column("resume_from", sa.Text(), nullable=True))
 
+    if not _has_index(inspector, "channels", "uq_channels_ws_name"):
+        op.create_index("uq_channels_ws_name", "channels", ["workspace_id", "name"], unique=True)
+
     if not _has_table(inspector, "files"):
         op.create_table(
             "files",
@@ -78,6 +80,8 @@ def downgrade() -> None:
     if _has_table(inspector, "files"):
         op.drop_table("files")
 
+    if _has_index(inspector, "channels", "uq_channels_ws_name"):
+        op.drop_index("uq_channels_ws_name", table_name="channels")
     if _has_column(inspector, "channels", "resume_from"):
         op.drop_column("channels", "resume_from")
     if _has_column(inspector, "channels", "title_manually_set"):
