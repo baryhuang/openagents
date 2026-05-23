@@ -32,7 +32,7 @@ export function MonitorGrid() {
 
   const activeSessions = useMemo(() => {
     return [...sessions]
-      .filter((s) => s.status === 'active' && s.starred)
+      .filter((s) => s.status === 'active')
       .sort((a, b) => {
         const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
         const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
