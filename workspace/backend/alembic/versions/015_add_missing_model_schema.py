@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Add schema objects that were present in models but missing from migrations.
 
-Revision ID: 014
-Revises: 013
+Revision ID: 015
+Revises: 014
 Create Date: 2026-05-22
 """
 
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = "014"
-down_revision = "013"
+revision = "015"
+down_revision = "014"
 branch_labels = None
 depends_on = None
 

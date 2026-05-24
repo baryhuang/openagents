@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
 -- ===========================================================================
 -- Alembic stamp — schema is at head; backend's `alembic upgrade head` no-ops.
--- Update '014' to match the latest revision in
+-- Update '015' to match the latest revision in
 -- workspace/backend/alembic/versions/ when the source schema changes.
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS alembic_version (
@@ -289,4 +289,4 @@ CREATE TABLE IF NOT EXISTS alembic_version (
     CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
 );
 INSERT INTO alembic_version (version_num)
-SELECT '014' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
+SELECT '015' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
