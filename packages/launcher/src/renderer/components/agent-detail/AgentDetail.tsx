@@ -23,6 +23,7 @@ import { InstallConfirmModal } from "./InstallConfirmModal"
 import { ChannelSelector } from "./ChannelSelector"
 import { StagedProgress } from "../install-progress/StagedProgress"
 import { useAgentChannel, channelToDistTag } from "../../hooks/useAgentChannel"
+import { installErrorMessage, throwIfInstallFailed } from "../../utils/installErrors"
 
 interface AgentDetailProps {
   entry: CatalogEntry
@@ -132,18 +133,20 @@ export default function AgentDetail({
       // dist-tag (`@beta`, `@nightly`). Stable goes through the regular
       // pipeline which already follows `@latest`.
       const tag = channelToDistTag(channel)
+      let result: unknown
       if (tag) {
-        await window.api.installAgentTypeAtVersionStreaming(entry.name, tag)
+        result = await window.api.installAgentTypeAtVersionStreaming(entry.name, tag)
       } else {
-        await window.api.installAgentTypeStreaming(entry.name)
+        result = await window.api.installAgentTypeStreaming(entry.name)
       }
+      throwIfInstallFailed(result)
       showToast(
         `${entry.label || entry.name} ${verb === "update" ? "updated" : "installed"}${tag ? ` (${tag})` : ""}`,
         "success",
       )
       onAfterInstall(entry)
     } catch (e: unknown) {
-      showToast(`${verb} failed: ${(e as Error).message}`, "error")
+      showToast(`${verb} failed: ${installErrorMessage(e)}`, "error")
     }
   }, [entry, channel, onAfterInstall, showToast])
 
@@ -151,11 +154,12 @@ export default function AgentDetail({
     setConfirmingUninstall(false)
     useInstallStore.getState().startJob({ agent: entry.name, verb: "uninstall" })
     try {
-      await window.api.uninstallAgentTypeStreaming(entry.name)
+      const result = await window.api.uninstallAgentTypeStreaming(entry.name)
+      throwIfInstallFailed(result)
       showToast(`${entry.label || entry.name} uninstalled`, "success")
       onAfterInstall(entry)
     } catch (e: unknown) {
-      showToast(`Uninstall failed: ${(e as Error).message}`, "error")
+      showToast(`Uninstall failed: ${installErrorMessage(e)}`, "error")
     }
   }, [entry, onAfterInstall, showToast])
 
@@ -174,7 +178,7 @@ export default function AgentDetail({
         showToast(r.error || "Rollback failed", "error")
       }
     } catch (e: unknown) {
-      showToast(`Rollback failed: ${(e as Error).message}`, "error")
+      showToast(`Rollback failed: ${installErrorMessage(e)}`, "error")
     }
   }, [entry, installed, onAfterInstall, showToast])
 
