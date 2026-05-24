@@ -1415,7 +1415,12 @@ function setupIPC(): void {
   )
 
   ipcMain.handle("settings:get", (_e, key) => store.get(key))
-  ipcMain.handle("settings:set", (_e, key, value) => store.set(key, value))
+  ipcMain.handle("settings:set", (_e, key, value) => {
+    store.set(key, value)
+    if (key === "workspaceEndpoint" && agentManager) {
+      agentManager.reloadCore()
+    }
+  })
 
   // ── Connections ──
   ipcMain.handle("connections:list", () => connectionsStore.list())
