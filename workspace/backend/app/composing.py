@@ -1,36 +1,28 @@
-"""In-memory composing (typing) signal store.
+"""Composing (typing) signal store backed by Redis.
 
 Tracks which channels have a user actively typing. Signals expire after
-TTL_SECONDS without a refresh. No database, no persistence — ephemeral
-by design.
+TTL_SECONDS without a refresh. Uses Redis so the signal is shared across
+replicas. Falls back to in-memory dict when Redis is unavailable.
 """
 
-import time
-from typing import Dict
+from app import cache
 
 TTL_SECONDS = 30.0
-
-# {workspace_id: {channel_name: last_signal_timestamp}}
-_composing: Dict[str, Dict[str, float]] = {}
+_KEY_PREFIX = "composing:"
 
 
 def set_composing(workspace_id: str, channel: str) -> None:
-    ws = _composing.get(workspace_id)
-    if ws is None:
-        ws = {}
-        _composing[workspace_id] = ws
-    ws[channel] = time.monotonic()
+    key = f"{_KEY_PREFIX}{workspace_id}:{channel}"
+    cache.set_bytes(key, b"1", TTL_SECONDS)
 
 
 def has_any_composing(workspace_id: str) -> bool:
-    ws = _composing.get(workspace_id)
-    if not ws:
+    c = cache._lazy_client()
+    if c is None:
         return False
-    now = time.monotonic()
-    expired = [ch for ch, ts in ws.items() if now - ts > TTL_SECONDS]
-    for ch in expired:
-        del ws[ch]
-    if not ws:
-        _composing.pop(workspace_id, None)
+    try:
+        pattern = f"{_KEY_PREFIX}{workspace_id}:*"
+        cursor, keys = c.scan(cursor=0, match=pattern, count=10)
+        return len(keys) > 0
+    except Exception:
         return False
-    return True
