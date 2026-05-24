@@ -38,12 +38,13 @@ function normalizeWorkspaceEndpoint(value: unknown): string | undefined {
   if (!raw) return undefined
   try {
     const url = new URL(raw)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
     if (url.hostname === "workspace.openagents.org") {
       return url.origin.replace("workspace.openagents.org", "workspace-endpoint.openagents.org")
     }
     return url.origin
   } catch {
-    return raw.replace(/\/$/, "")
+    return undefined
   }
 }
 
@@ -843,6 +844,7 @@ export class AgentManager extends EventEmitter {
   ): { endpoint?: string; slug?: string; token?: string } | null {
     try {
       const u = new URL(urlStr.trim())
+      if (u.protocol !== "http:" && u.protocol !== "https:") return null
       const host = u.hostname.toLowerCase()
       if (host === "workspace.openagents.org") {
         return null
