@@ -301,12 +301,13 @@ function buildToolDefs(disabledModules) {
     },
     {
       name: 'workspace_create_routine',
-      description: 'Create a recurring scheduled routine that posts a message on a repeating schedule. Two modes: daily (hour+minute, optional days) or interval (every N minutes).',
+      description: 'Create a recurring scheduled routine. Each routine gets its own dedicated thread with full context. Two schedule modes: daily (hour+minute, optional days) or interval (every N minutes).',
       inputSchema: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Human-readable label for the routine (e.g. "Daily PR Review")' },
-          message: { type: 'string', description: 'Message to post each time the routine fires' },
+          message: { type: 'string', description: 'Short trigger message posted each time the routine fires' },
+          context: { type: 'string', description: 'Comprehensive context for the routine: what it should do, background info, goals, relevant details from the current conversation. This is posted at the start of the routine\'s dedicated thread so you have full background every time it fires. Be thorough — this is your only memory of why this routine exists.' },
           hour: { type: 'integer', description: 'Daily mode: hour in UTC (0-23). Omit if using interval_minutes.' },
           minute: { type: 'integer', description: 'Daily mode: minute (0-59). Omit if using interval_minutes.' },
           days: {
@@ -319,7 +320,7 @@ function buildToolDefs(disabledModules) {
             description: 'Interval mode: fire every N minutes (1-1440). Mutually exclusive with hour/minute.',
           },
         },
-        required: ['name', 'message'],
+        required: ['name', 'message', 'context'],
       },
     },
     {
@@ -764,6 +765,7 @@ class McpServer {
           {
             name: args.name,
             message: args.message,
+            context: args.context,
             hour: args.hour,
             minute: args.minute,
             days: args.days,
@@ -778,9 +780,9 @@ class McpServer {
           const daysStr = args.days ? `days [${args.days.join(',')}]` : 'every day';
           scheduleStr = `at ${String(args.hour).padStart(2,'0')}:${String(args.minute).padStart(2,'0')} UTC, ${daysStr}`;
         }
-        const channel = (result && result.channel_name) || `routines:${this.agentName}`;
+        const channel = (result && result.channel_name) || `routine:${result.id}`;
         return text(
-          `Routine created: "${args.name}" ${scheduleStr} in \`${channel}\` (id: ${result.id})`,
+          `Routine created: "${args.name}" ${scheduleStr} in dedicated thread \`${channel}\` (id: ${result.id})`,
         );
       }
 

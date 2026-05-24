@@ -42,48 +42,67 @@ export const toast = {
   info:    (msg: string) => addToast(msg, "info"),
 }
 
-// ─── per-type colors (bg / text / icon) ────────────────────────────────────
-const typeStyle: Record<ToastItem["type"], { bg: string; text: string; icon: string }> = {
-  success: { bg: "var(--success-bg)", text: "var(--success-text)", icon: "✓" },
-  error:   { bg: "var(--danger-bg)",  text: "var(--danger-text)",  icon: "✕" },
-  warning: { bg: "var(--warning-bg)", text: "var(--warning-text)", icon: "⚠" },
-  info:    { bg: "var(--accent-bg)",  text: "var(--accent)",       icon: "ℹ" },
+// ─── per-type classes ──────────────────────────────────────────────────────
+// `tint` is a flat-color gradient stacked on top of an opaque `--bg-card`
+// base. The CSS variables (--success-bg, --danger-bg, etc.) are intentionally
+// semi-transparent rgba() values (~8% alpha) — so we layer the opaque card
+// color underneath to keep the toast itself fully opaque while still showing
+// the tint.
+const TYPE_CLASSES: Record<
+  ToastItem["type"],
+  { tint: string; text: string; border: string; icon: string }
+> = {
+  success: {
+    tint: "bg-[linear-gradient(var(--success-bg),var(--success-bg))]",
+    text: "text-(--success-text)",
+    border: "border-(--success-text)/25",
+    icon: "✓",
+  },
+  error: {
+    tint: "bg-[linear-gradient(var(--danger-bg),var(--danger-bg))]",
+    text: "text-(--danger-text)",
+    border: "border-(--danger-text)/25",
+    icon: "✕",
+  },
+  warning: {
+    tint: "bg-[linear-gradient(var(--warning-bg),var(--warning-bg))]",
+    text: "text-(--warning-text)",
+    border: "border-(--warning-text)/25",
+    icon: "⚠",
+  },
+  info: {
+    tint: "bg-[linear-gradient(var(--accent-bg),var(--accent-bg))]",
+    text: "text-(--accent)",
+    border: "border-(--accent)/25",
+    icon: "ℹ",
+  },
 }
 
 // ─── single toast card ─────────────────────────────────────────────────────
 function ToastCard({ toast: t }: { toast: ToastItem }): React.JSX.Element {
   const [mounted, setMounted] = useState(false)
-  useEffect(() => { requestAnimationFrame(() => setMounted(true)) }, [])
+  useEffect(() => {
+    requestAnimationFrame(() => setMounted(true))
+  }, [])
 
-  const { bg, text, icon } = typeStyle[t.type]
+  const { tint, text, border, icon } = TYPE_CLASSES[t.type]
   const show = mounted && t.visible
 
   return (
     <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        width: 300,
-        padding: "10px 14px",
-        background: "var(--bg-card)",
-        backgroundImage: `linear-gradient(${bg}, ${bg})`,
-        border: `1px solid ${text}40`,
-        borderRadius: "var(--radius-sm)",
-        boxShadow: "var(--shadow-md)",
-        color: text,
-        transform: show ? "translateX(0)" : "translateX(calc(100% + 20px))",
-        opacity: show ? 1 : 0,
-        transition: "transform 0.25s var(--ease), opacity 0.25s var(--ease)",
-        pointerEvents: "auto",
-      }}
+      className={[
+        "pointer-events-auto flex items-center gap-2 w-75 px-3.5 py-2.5",
+        "rounded-(--radius-sm) shadow-md border",
+        "transition-[transform,opacity] duration-250 ease-(--ease)",
+        "bg-(--bg-card)",
+        tint,
+        text,
+        border,
+        show ? "translate-x-0 opacity-100" : "translate-x-[calc(100%+20px)] opacity-0",
+      ].join(" ")}
     >
-      <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, lineHeight: 1 }}>
-        {icon}
-      </span>
-      <span style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.4, flex: 1 }}>
-        {t.message}
-      </span>
+      <span className="text-[13px] font-bold leading-none shrink-0">{icon}</span>
+      <span className="text-[12px] font-medium leading-[1.4] flex-1">{t.message}</span>
     </div>
   )
 }
@@ -92,18 +111,7 @@ function ToastCard({ toast: t }: { toast: ToastItem }): React.JSX.Element {
 export function ToastContainer(): React.JSX.Element {
   const toasts = useToastStore((s) => s.toasts)
   return ReactDOM.createPortal(
-    <div
-      style={{
-        position: "fixed",
-        top: 20,
-        right: 20,
-        zIndex: 9999,
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        pointerEvents: "none",
-      }}
-    >
+    <div className="fixed top-5 right-5 z-9999 flex flex-col gap-2 pointer-events-none">
       {toasts.map((t) => (
         <ToastCard key={t.id} toast={t} />
       ))}

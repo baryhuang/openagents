@@ -85,13 +85,12 @@ export function AgentEnvConfig({
       })}
       {testResult && (
         <p
-          className={testResult.ok ? "test-success" : "test-error"}
-          style={{ fontSize: 12, margin: "4px 0 10px" }}
+          className={`text-xs mt-1 mb-2.5 ${testResult.ok ? "test-success" : "test-error"}`}
         >
           {testResult.message}
         </p>
       )}
-      <div className="form-actions" style={{ marginTop: 4 }}>
+      <div className="form-actions mt-1">
         <Button size="sm" variant="primary" onClick={saveEnv} disabled={saving}>
           {saving ? "Saving…" : "Save"}
         </Button>

@@ -46,15 +46,12 @@ export function InstallConfirmModal({
 
   return (
     <Modal open={open} onClose={onCancel}>
-      <div className="flex flex-col items-center" style={{ padding: "8px 0" }}>
+      <div className="flex flex-col items-center py-2">
         <AgentIcon type={entry.name} size={40} />
-        <ModalTitle style={{ marginTop: 12, textAlign: "center" }}>
+        <ModalTitle className="mt-3 text-center">
           {verbLabel} {label}?
         </ModalTitle>
-        <p
-          className="hint"
-          style={{ margin: "12px 0 8px", textAlign: "center", maxWidth: 360 }}
-        >
+        <p className="hint mt-3 mb-2 text-center max-w-90">
           {installCmd ? (
             <>
               This will run the following command on your system:
@@ -68,10 +65,7 @@ export function InstallConfirmModal({
             {installCmd}
           </code>
         )}
-        <div
-          className="form-actions"
-          style={{ justifyContent: "center", marginTop: 20 }}
-        >
+        <div className="form-actions justify-center mt-5">
           <Button variant="primary" onClick={onConfirm}>
             {verbLabel}
           </Button>

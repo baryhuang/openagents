@@ -6,6 +6,7 @@ const { Registry } = require('./registry');
 const { Installer } = require('./installer');
 const { Daemon } = require('./daemon');
 const { WorkspaceClient } = require('./workspace-client');
+const { GitHubClient } = require('./github-client');
 
 /**
  * Main entry point for the agent-connector library.
@@ -274,4 +275,4 @@ class AgentConnector {
 const adapters = require('./adapters');
 
 const paths = require('./paths');
-module.exports = { AgentConnector, Daemon, WorkspaceClient, adapters, paths };
+module.exports = { AgentConnector, Daemon, WorkspaceClient, GitHubClient, adapters, paths };

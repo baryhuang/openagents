@@ -77,6 +77,9 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
   const prevLengthRef = useRef(0);
   // Track session identity to reset scroll state on thread switch
   const prevSessionRef = useRef<string | null>(null);
+  // True when the user has intentionally scrolled away from the bottom.
+  // Prevents auto-scroll from yanking them back while reading history.
+  const userScrolledUpRef = useRef(false);
 
   // Separate loading indicators (optimistic) from real messages
   const loadingMessages = useMemo(() => messages.filter((m) => m.messageType === 'loading'), [messages]);
@@ -180,32 +183,29 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
   // Derive the current session from messages for thread-switch detection
   const currentSessionId = messages.length > 0 ? messages[0].sessionId : null;
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages — but NOT when user has scrolled up to read history
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // Detect thread switch: reset prevLength so wasEmpty triggers scroll-to-bottom
+    // Detect thread switch: reset scroll state
     if (currentSessionId !== prevSessionRef.current) {
       prevSessionRef.current = currentSessionId;
       prevLengthRef.current = 0;
+      userScrolledUpRef.current = false;
     }
 
-    const wasEmpty = prevLengthRef.current === 0;
     prevLengthRef.current = messages.length;
 
-    // Always scroll on initial load or thread switch; otherwise only if near bottom
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    if (wasEmpty || isNearBottom) {
-      requestAnimationFrame(() => {
-        scrollToBottom();
-      });
-    }
+    if (userScrolledUpRef.current) return;
+
+    requestAnimationFrame(() => scrollToBottom());
   }, [messages.length, currentSessionId, scrollToBottom]);
 
   // Force scroll when scrollKey changes (user sent a message)
   useEffect(() => {
     if (scrollKey) {
+      userScrolledUpRef.current = false;
       requestAnimationFrame(() => scrollToBottom());
     }
   }, [scrollKey, scrollToBottom]);
@@ -219,6 +219,7 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
     const onScroll = async () => {
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
       setShowScrollBtn(!isNearBottom);
+      userScrolledUpRef.current = !isNearBottom;
 
       // Infinite scroll: load older messages when near the top
       if (
@@ -345,7 +346,7 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
             variant="secondary"
             size="sm"
             className="rounded-full shadow-lg"
-            onClick={scrollToBottom}
+            onClick={() => { userScrolledUpRef.current = false; scrollToBottom(); }}
           >
             <ArrowDown className="size-4 mr-1" />
             New messages

@@ -91,4 +91,4 @@ Tests are in `test/` using Node.js built-in test runner. Existing test files:
 - **Event cursor**: Each adapter tracks last-seen event ID to avoid reprocessing
 - **Resolve env**: Generic LLM_* vars mapped to provider-specific vars (OPENAI_API_KEY vs ANTHROPIC_API_KEY) based on base URL
 - **Isolated runtimes**: Each agent type gets own npm prefix at ~/.openagents/runtimes/<type>/
-- **Adaptive polling**: Poll interval adjusts between 2-15s based on activity
+- **Adaptive polling**: 2s active → 5s warm plateau (5 min) → ramp to 15s cold

@@ -351,10 +351,10 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
     if not channel_name or not agent_name:
         return None
 
-    if channel_name.startswith("routines:"):
+    if channel_name.startswith("routines:") or channel_name.startswith("routine:"):
         raise EventRejected(
             "workspace_mod",
-            "routine_channel_locked: membership of routines:* is managed by the system",
+            "routine_channel_locked: membership of routine channels is managed by the system",
         )
 
     channel = db.execute(
@@ -408,10 +408,10 @@ async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[
     if not channel_name or not agent_name:
         return None
 
-    if channel_name.startswith("routines:"):
+    if channel_name.startswith("routines:") or channel_name.startswith("routine:"):
         raise EventRejected(
             "workspace_mod",
-            "routine_channel_locked: membership of routines:* is managed by the system",
+            "routine_channel_locked: membership of routine channels is managed by the system",
         )
 
     channel = db.execute(
@@ -886,10 +886,11 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     #   2. Only auto-add when the sender is a human. Agent→agent routing
     #      decisions (from the LLM router or master-fallback) used to
     #      drag bystander agents into channels they didn't belong in.
-    #   3. Routine channels (`routines:<agent>`) are locked single-agent
-    #      job queues — never add anyone but the owner.
+    #   3. Routine channels are locked single-agent job queues — never
+    #      add anyone but the owner.
     if event.source and event.source.startswith("human:") and \
-            not channel.name.startswith("routines:"):
+            not channel.name.startswith("routines:") and \
+            not channel.name.startswith("routine:"):
         from app.models import ChannelMember
         existing = {p.agent_name for p in (channel.participants or [])}
         for agent_name in event.metadata.get("target_agents", []):

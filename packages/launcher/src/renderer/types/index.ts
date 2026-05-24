@@ -113,11 +113,152 @@ export interface Workspace {
   token?: string
 }
 
+// ── Platform Connections ──
+
+export type ConnectionStatus =
+  | 'connected'
+  | 'disconnected'
+  | 'expired'
+  | 'unauthorized'
+  | 'rate_limited'
+  | 'offline'
+  | 'error'
+
+export type ConnectionAuthKind = 'oauth' | 'token' | 'pat' | 'app' | 'webhook'
+
+export type PlatformId =
+  | 'github' | 'slack' | 'discord' | 'telegram'
+  | 'notion' | 'linear' | 'openai' | 'anthropic' | 'google'
+
+export interface ConnectionRecord {
+  id: string
+  platform: PlatformId | string
+  account?: string
+  label?: string
+  status: ConnectionStatus
+  authKind?: ConnectionAuthKind
+  scopes?: string[]
+  credentialId?: string
+  meta?: Record<string, unknown>
+  lastSyncAt?: string
+  lastError?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type CredentialKind = 'api_key' | 'token' | 'oauth' | 'webhook_secret' | 'password'
+
+export interface CredentialSummary {
+  id: string
+  provider: string
+  kind: CredentialKind
+  label: string
+  secretMasked: string
+  shared: boolean
+  scopes?: string[]
+  usedByAgents?: string[]
+  usedByConnections?: string[]
+  lastTestedAt?: string
+  lastTestOk?: boolean
+  lastTestError?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ConnectionTestResult {
+  ok: boolean
+  status: 'connected' | 'unauthorized' | 'rate_limited' | 'expired' | 'offline' | 'error'
+  account?: string
+  detail?: string
+}
+
 export interface RuntimeInfo {
   nodeVersion: string | null
   npmVersion: string | null
   coreVersion: string | null
   latestVersion: string | null
+}
+
+// ── Chat ──
+
+export interface Attachment {
+  fileId?: string
+  filename?: string
+  contentType?: string
+  size?: number
+  url?: string
+}
+
+export interface ToolCall {
+  id: string
+  name: string
+  category?: 'workspace' | 'files' | 'browser' | 'tunnel' | 'todos' | 'timers' | 'terminal' | 'other'
+  status: 'pending' | 'success' | 'error'
+  args?: unknown
+  result?: unknown
+  durationMs?: number
+}
+
+export interface ChatMessage {
+  messageId: string
+  sessionId: string
+  senderType: 'human' | 'agent' | 'system'
+  senderName: string
+  content: string
+  mentions?: string[]
+  messageType?: string
+  metadata?: Record<string, unknown>
+  attachments?: Attachment[]
+  createdAt?: string
+  toolCalls?: ToolCall[]
+}
+
+export interface SendMessageInput {
+  workspaceId: string
+  channelName?: string
+  agentId?: string
+  content: string
+  mentions?: string[]
+  attachments?: Attachment[]
+}
+
+export interface SendMessageResult {
+  success: boolean
+  messageId: string
+  error?: string
+}
+
+export interface ChatSessionMeta {
+  id: string
+  workspaceId: string
+  workspaceSlug?: string
+  workspaceName?: string
+  channelName: string
+  title: string
+  lastMessageAt: string | null
+  lastMessagePreview: string | null
+  messageCount: number
+  participants: string[]
+  createdAt: string
+}
+
+export type ChatStreamEvent =
+  | { type: 'message'; channel: string; workspaceId: string; message: ChatMessage }
+  | { type: 'agent-status'; channel: string; workspaceId: string; agentName: string; status: 'thinking' | 'idle' | 'error'; detail?: string }
+  | { type: 'error'; channel: string; workspaceId: string; error: string }
+
+export interface WorkspaceParticipant {
+  agentName: string
+  role: string
+  status: string
+}
+
+export interface FileListEntry {
+  id: string
+  filename: string
+  content_type?: string
+  size?: number
+  created_at?: string
 }
 
 export interface PythonStatus {
@@ -179,8 +320,33 @@ declare global {
       removeWorkspace(slug: string): Promise<unknown>
       listWorkspaces(): Promise<Workspace[]>
       createWorkspace(name: string): Promise<{ token?: string; slug?: string }>
+      registerWorkspaceFromToken(input: {
+        url?: string
+        token?: string
+        slug?: string
+      }): Promise<{
+        id?: string
+        slug?: string
+        name?: string
+        endpoint?: string
+        token?: string
+      }>
       getSetting(key: string): Promise<unknown>
       setSetting(key: string, value: unknown): Promise<unknown>
+      getAllSettings(): Promise<Record<string, unknown>>
+      exportSettings(): Promise<string>
+      importSettings(json: string): Promise<{ ok: boolean; error?: string }>
+      resetSettings(): Promise<boolean>
+      listPaths(): Promise<{
+        userData: string
+        logs: string
+        downloads: string
+        home: string
+        cache: string
+        portableNode: string
+        openagentsHome: string
+      }>
+      showPath(path: string): Promise<boolean>
       healthCheck(type: string): Promise<HealthCheck>
       openExternal(url: string): Promise<void>
       shellExec(cmd: string): Promise<string>
@@ -192,6 +358,178 @@ declare global {
       getIconPath(name: string): Promise<string | null>
       getIconsDir(): Promise<string | null>
       debugEnv(): Promise<Record<string, string>>
+
+      // ── Chat ──
+      chatSendMessage(input: SendMessageInput): Promise<SendMessageResult>
+      chatGetMessages(workspaceId: string, channelName?: string, limit?: number): Promise<ChatMessage[]>
+      chatStartPolling(workspaceId: string, channelName?: string): Promise<{ success: boolean; key?: string }>
+      chatStopPolling(workspaceId: string, channelName?: string): Promise<{ success: boolean }>
+      chatListParticipants(workspaceId: string): Promise<WorkspaceParticipant[]>
+      onChatEvent(cb: (ev: ChatStreamEvent) => void): () => void
+
+      // ── Files ──
+      chatUploadFile(workspaceId: string, filename: string, contentBase64: string, opts?: { contentType?: string; channelName?: string }): Promise<{ success: boolean; fileId?: string; url?: string; filename?: string; error?: string }>
+      chatListFiles(workspaceId: string, opts?: { limit?: number; offset?: number }): Promise<{ files?: FileListEntry[] } | unknown>
+      chatReadFile(workspaceId: string, fileId: string): Promise<{ success: boolean; contentBase64?: string; error?: string }>
+      chatDeleteFile(workspaceId: string, fileId: string): Promise<{ success: boolean; error?: string }>
+
+      // ── Sessions ──
+      sessionList(workspaceId?: string): Promise<ChatSessionMeta[]>
+      sessionLoad(workspaceId: string, channelName: string): Promise<ChatSessionMeta | null>
+      sessionDelete(workspaceId: string, channelName: string): Promise<boolean>
+      sessionClear(workspaceId?: string): Promise<number>
+
+      // ── Connections ──
+      listConnections(): Promise<ConnectionRecord[]>
+      upsertConnection(record: Partial<ConnectionRecord> & { platform: string }): Promise<ConnectionRecord>
+      removeConnection(id: string): Promise<boolean>
+      setConnectionStatus(id: string, status: ConnectionStatus, lastError?: string): Promise<ConnectionRecord | null>
+      testConnection(id: string): Promise<ConnectionTestResult>
+
+      // ── Credentials ──
+      listCredentials(): Promise<CredentialSummary[]>
+      upsertCredential(input: {
+        id?: string
+        provider: string
+        kind: CredentialKind
+        label: string
+        secret?: string
+        shared?: boolean
+        scopes?: string[]
+        usedByAgents?: string[]
+      }): Promise<{ ok: boolean; record?: CredentialSummary; error?: string }>
+      removeCredential(id: string): Promise<boolean>
+      revealCredential(id: string): Promise<{ ok: boolean; secret?: string; error?: string }>
+      testCredential(input: { id?: string; provider: string; secret?: string }): Promise<ConnectionTestResult>
+      applyCredentialToAgents(input: {
+        credentialId: string
+        envKey: string
+        agentTypes: string[]
+      }): Promise<{ ok: boolean; written?: string[]; errors?: string[]; error?: string }>
+
+      // ── Notifications (5.4) ──
+      notificationsList(): Promise<NotifRecord[]>
+      notificationsPush(input: NotifInput): Promise<NotifRecord>
+      notificationsMarkRead(id: string): Promise<boolean>
+      notificationsMarkAllRead(): Promise<boolean>
+      notificationsClear(id?: string): Promise<boolean>
+      notificationsGetPrefs(): Promise<NotifPrefs>
+      notificationsSetPrefs(prefs: Partial<NotifPrefs>): Promise<NotifPrefs>
+      onNotificationsUpdated(cb: (list: NotifRecord[]) => void): () => void
+      onNotificationClicked(cb: (record: NotifRecord) => void): () => void
+
+      // ── GitHub Integration (4.3) ──
+      githubProbe(payload: {
+        credentialId?: string
+        secret?: string
+      }): Promise<{
+        ok: boolean
+        login?: string
+        name?: string | null
+        avatarUrl?: string | null
+        scopes?: string[]
+        rate?: { limit: number; used: number; remaining: number; reset: number } | null
+        error?: string
+      }>
+      githubParseRepo(input: string): Promise<{ owner: string; name: string } | null>
+      githubListBindings(): Promise<GitHubBinding[]>
+      githubBindRepo(payload: {
+        agentName: string
+        repo: string
+        credentialId: string
+      }): Promise<{ ok: boolean; binding?: GitHubBinding; error?: string }>
+      githubUnbindRepo(agentName: string): Promise<boolean>
+      githubListIssues(payload: {
+        agentName: string
+        state?: 'open' | 'closed' | 'all'
+        perPage?: number
+        page?: number
+      }): Promise<{ ok: boolean; items?: GitHubIssue[]; error?: string }>
+      githubListPullRequests(payload: {
+        agentName: string
+        state?: 'open' | 'closed' | 'all'
+        perPage?: number
+        page?: number
+      }): Promise<{ ok: boolean; items?: GitHubPullRequest[]; error?: string }>
+      githubComment(payload: {
+        agentName: string
+        issueNumber: number
+        body: string
+      }): Promise<{ ok: boolean; result?: unknown; error?: string }>
     }
   }
+}
+
+export type NotifKind =
+  | 'agent_error'
+  | 'agent_finished'
+  | 'agent_mention'
+  | 'agent_waiting_input'
+  | 'workspace_mention'
+  | 'workspace_message'
+  | 'workspace_error'
+  | 'platform_error'
+  | 'github'
+  | 'system'
+
+export type NotifPriority = 'low' | 'normal' | 'high' | 'critical'
+
+export interface NotifInput {
+  kind: NotifKind
+  title: string
+  body: string
+  priority?: NotifPriority
+  source?: string
+  payload?: Record<string, unknown>
+  silent?: boolean
+}
+
+export interface NotifRecord extends NotifInput {
+  id: string
+  createdAt: string
+  read: boolean
+}
+
+export interface NotifPrefs {
+  enabled: boolean
+  soundEnabled: boolean
+  mutedKinds: NotifKind[]
+  mutedSources: string[]
+  quietHours: [number, number] | null
+}
+
+export interface GitHubBinding {
+  agentName: string
+  owner: string
+  repo: string
+  credentialId: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GitHubIssue {
+  number: number
+  title: string
+  state: 'open' | 'closed'
+  html_url: string
+  user: { login: string; avatar_url?: string }
+  created_at: string
+  updated_at: string
+  comments: number
+  labels: Array<{ name: string; color?: string }>
+  body?: string | null
+}
+
+export interface GitHubPullRequest {
+  number: number
+  title: string
+  state: 'open' | 'closed'
+  draft?: boolean
+  merged_at?: string | null
+  html_url: string
+  user: { login: string; avatar_url?: string }
+  created_at: string
+  updated_at: string
+  head: { ref: string }
+  base: { ref: string }
 }

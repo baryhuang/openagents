@@ -34,7 +34,7 @@ export function SetupCreateInstance({
           placeholder={defaultName}
         />
       </div>
-      <p className="hint" style={{ margin: "-4px 0 12px" }}>
+      <p className="hint -mt-1 mb-3">
         Used as the local identifier — you can rename or remove it later from
         the Agents tab.
       </p>

@@ -134,9 +134,11 @@ export interface RoutineItem {
   id: string;
   name: string;
   message: string;
+  context: string | null;
   scheduleHour: number;
   scheduleMinute: number;
   scheduleDays: number[] | null;
+  scheduleIntervalMinutes: number | null;
   timezone: string;
   nextFiresAt: string;
   lastFiredAt: string | null;

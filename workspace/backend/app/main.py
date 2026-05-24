@@ -91,6 +91,25 @@ async def _timer_loop():
                 if expired:
                     logger.info("Expired %d stale todo(s)", len(expired))
 
+                # ── Auto-archive stale threads (no activity for 30 days) ──
+                from app.models import Channel
+                stale_thread_cutoff = int((now - timedelta(days=30)).timestamp() * 1000)
+                archived = db.execute(
+                    update(Channel)
+                    .where(
+                        Channel.status == "active",
+                        Channel.starred == False,  # noqa: E712
+                        Channel.last_event_at != None,  # noqa: E711
+                        Channel.last_event_at < stale_thread_cutoff,
+                        ~Channel.name.startswith("routine:"),
+                        ~Channel.name.startswith("routines:"),
+                    )
+                    .values(status="archived")
+                    .returning(Channel.id)
+                ).fetchall()
+                if archived:
+                    logger.info("Auto-archived %d stale thread(s)", len(archived))
+
                 # ── Fire due routines ──
                 due_routines = db.execute(
                     select(RoutineRecord).where(
@@ -106,16 +125,6 @@ async def _timer_loop():
                     if not workspace:
                         continue
                     agent_name = routine.created_by.replace("openagents:", "")
-                    event = Event(
-                        type="workspace.message.posted",
-                        source="system:routine",
-                        target=f"channel/{routine.channel_name}",
-                        payload={
-                            "content": f"🔁 Routine \"{routine.name}\" fired (set by @{agent_name}): {routine.message}",
-                            "message_type": "chat",
-                        },
-                        metadata={"target_agents": [agent_name]},
-                    )
                     ctx = PipelineContext(
                         network_id=str(workspace.id),
                         agent_address=routine.created_by,
@@ -124,7 +133,30 @@ async def _timer_loop():
                         token=workspace.password_hash,
                     )
                     try:
-                        await pipeline.process(event, ctx)
+                        if routine.context:
+                            context_event = Event(
+                                type="workspace.message.posted",
+                                source="system:routine",
+                                target=f"channel/{routine.channel_name}",
+                                payload={
+                                    "content": f"**Routine Context for \"{routine.name}\"**\n\n{routine.context}",
+                                    "message_type": "chat",
+                                },
+                                metadata={"target_agents": [agent_name]},
+                            )
+                            await pipeline.process(context_event, ctx)
+
+                        trigger_event = Event(
+                            type="workspace.message.posted",
+                            source="system:routine",
+                            target=f"channel/{routine.channel_name}",
+                            payload={
+                                "content": f"Routine \"{routine.name}\" fired: {routine.message}",
+                                "message_type": "chat",
+                            },
+                            metadata={"target_agents": [agent_name]},
+                        )
+                        await pipeline.process(trigger_event, ctx)
                     except Exception:
                         logger.exception("Routine fire failed for %s", routine.id)
 

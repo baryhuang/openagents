@@ -4,11 +4,14 @@ import { useUiStore } from "../../store/ui"
 import { useShallow } from "zustand/react/shallow"
 import AgentIcon from "../../components/AgentIcon"
 import StatusDot, { displayState } from "../../components/ui/StatusDot"
+import { Plus } from "lucide-react"
 import { Button } from "../../components/ui/Button"
 import { Modal, ModalTitle } from "../../components/ui/Modal"
 import { PasswordInput } from "../../components/ui/PasswordInput"
+import { TopBar } from "../../components/TopBar"
 import type { Agent, CatalogEntry, EnvField, HealthCheck } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
+import { cn } from "../../lib/utils"
 
 function formatHealthLabel(health: HealthCheck | null): string {
   if (!health) return "Not configured"
@@ -170,13 +173,19 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
   }
 
   return (
-    <section>
-      <h1 className="mb-6">My Agents</h1>
-      <div className="flex gap-2.5 mb-4">
-        <Button variant="primary" onClick={() => setNewAgentOpen(true)}>
-          + New Agent
-        </Button>
-      </div>
+    <section className="flex flex-col h-full">
+      <TopBar
+        title="My Agents"
+        subtitle="— Manage installed agent instances"
+        actions={
+          <Button variant="primary" onClick={() => setNewAgentOpen(true)}>
+            <Plus className="w-3.5 h-3.5" />
+            New Agent
+          </Button>
+        }
+      />
+
+      <div className="flex-1 overflow-y-auto px-9 py-6">
 
       {loading ? (
         <div className="flex flex-col gap-2.5">
@@ -321,6 +330,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           })}
         </div>
       )}
+      </div>
 
       <NewAgentDialog
         open={newAgentOpen}
@@ -354,15 +364,15 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
       />
 
       <Modal open={!!removeTarget} onClose={() => setRemoveTarget(null)}>
-        <div className="flex flex-col items-center" style={{ padding: "8px 0" }}>
+        <div className="flex flex-col items-center py-2">
           <AgentIcon type={agents.find((a) => a.name === removeTarget)?.type || ""} size={40} />
-          <ModalTitle style={{ marginTop: 12, textAlign: "center" }}>
+          <ModalTitle className="mt-3 text-center">
             Remove {removeTarget}?
           </ModalTitle>
-          <p className="hint" style={{ margin: "12px 0 20px", textAlign: "center" }}>
+          <p className="hint mt-3 mb-5 text-center">
             This will stop and remove <strong>{removeTarget}</strong>.
           </p>
-          <div className="form-actions" style={{ justifyContent: "center", marginTop: 0 }}>
+          <div className="form-actions justify-center mt-0">
             <Button variant="destructive" onClick={() => { if (removeTarget) removeAgent(removeTarget) }}>
               Remove
             </Button>
@@ -631,15 +641,9 @@ function ConfigureDialog({
         ) : loginCmd ? (
           <>
             <p className="hint">This agent uses login-based authentication.</p>
-            <div
-              className="flex items-center gap-2 mb-4 rounded-[var(--radius)]"
-              style={{
-                background: "var(--bg-input)",
-                padding: 12,
-              }}
-            >
-              <span style={{ fontSize: 18 }}>{loggedIn ? "✅" : "⚠️"}</span>
-              <strong style={{ fontSize: 13 }}>
+            <div className="flex items-center gap-2 mb-4 p-3 rounded-(--radius) bg-(--bg-input)">
+              <span className="text-lg">{loggedIn ? "✅" : "⚠️"}</span>
+              <strong className="text-[13px]">
                 {loggedIn ? "Logged in" : "Not logged in"}
               </strong>
             </div>
@@ -710,14 +714,14 @@ function ConfigureDialog({
             </div>
             {testResult && (
               <div
-                className={
+                className={cn(
+                  "text-xs mb-2.5",
                   testStatus === "ok"
                     ? "test-success"
                     : testStatus === "error"
                       ? "test-error"
-                      : "test-loading"
-                }
-                style={{ fontSize: 12, marginBottom: 10 }}
+                      : "test-loading",
+                )}
               >
                 {testResult}
               </div>

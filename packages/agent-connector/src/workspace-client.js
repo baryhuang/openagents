@@ -271,7 +271,7 @@ class WorkspaceClient {
    * Poll for pending messages targeted at an agent via GET /v1/events.
    * Returns { messages, cursor } where cursor is the last event ID.
    */
-  async pollPending(workspaceId, agentName, token, { after, limit = 50 } = {}) {
+  async pollPending(workspaceId, agentName, token, { after, limit = 500 } = {}) {
     const params = new URLSearchParams({
       network: workspaceId,
       type: 'workspace.message.posted',
@@ -626,10 +626,11 @@ class WorkspaceClient {
 
   // ── Routines ──
 
-  async createRoutine(workspaceId, channelName, token, { name, message, hour, minute, days, interval_minutes, source } = {}) {
+  async createRoutine(workspaceId, channelName, token, { name, message, context, hour, minute, days, interval_minutes, source } = {}) {
     const body = {
       name,
       message,
+      context: context || '',
       network: workspaceId,
       channel: channelName,
       source: source || 'openagents:unknown',

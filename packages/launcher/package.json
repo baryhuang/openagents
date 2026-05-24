@@ -1,6 +1,6 @@
 {
-  "name": "launcher",
-  "version": "0.7.1",
+  "name": "openagents-launcher",
+  "version": "0.7.2",
   "description": "OpenAgents Launcher",
   "main": "out/main/index.js",
   "scripts": {
