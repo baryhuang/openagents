@@ -708,7 +708,7 @@ export class AgentManager extends EventEmitter {
           (b.env_config as unknown[] | undefined)?.length
         )
           e.env_config = b.env_config
-        if (!e.install && b.install) e.install = b.install
+        if (b.install) e.install = { ...b.install }
         if (!e.launch && b.launch) e.launch = b.launch
       }
     }
@@ -1025,7 +1025,7 @@ export class AgentManager extends EventEmitter {
     const install = entry.install as Record<string, unknown> | undefined
     if (!install) return null
     if (install.npm_package) return install.npm_package as string
-    const cmd = (install[Installer.platformKey()] || install.command) as
+    const cmd = (install[Installer.platformKey()] || install.command || install.npm) as
       | string
       | undefined
     if (!cmd) return install.binary as string | null
