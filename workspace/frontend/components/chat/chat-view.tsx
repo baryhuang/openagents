@@ -7,6 +7,7 @@ import { ThreadStatusBar } from './thread-status-bar';
 import { EmptyState } from './empty-state';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
+import { useComposingSignal } from '@/hooks/use-composing-signal';
 import { workspaceApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import {
@@ -144,6 +145,7 @@ export function ChatView() {
     sessionId: currentSessionId,
     initialMessages: initialMessagesRef.current,
   });
+  const { notifyFocus, notifyBlur, notifyTyping } = useComposingSignal(currentSessionId);
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -237,7 +239,8 @@ export function ChatView() {
     if (currentSessionId) {
       draftsRef.current[currentSessionId] = draft;
     }
-  }, [currentSessionId]);
+    notifyTyping();
+  }, [currentSessionId, notifyTyping]);
 
   const isDM = currentSessionId?.startsWith('dm:') ?? false;
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
@@ -678,6 +681,7 @@ export function ChatView() {
                 agents={agents}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
+                onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}
                 focusKey={focusKey}
               />
             </div>
