@@ -104,8 +104,12 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
       if (isRunning) {
         await window.api.stopAgent(agent.name)
         showToast(`Stopping ${agent.name}...`, "info")
-        for (let i = 0; i < 5; i++) {
-          await new Promise((r) => setTimeout(r, 3000))
+        // Fast initial polls — the daemon now processes stop commands within
+        // ~200ms, so checking quickly catches the state flip without making
+        // the user stare at a "Stopping…" toast for 3+ seconds.
+        const stopWaits = [400, 800, 1500, 2500, 3000, 3000]
+        for (const w of stopWaits) {
+          await new Promise((r) => setTimeout(r, w))
           const status = await window.api.agentStatus()
           if (!status[agent.name] || status[agent.name].state === "stopped") {
             showToast(`${agent.name} stopped`, "success")
@@ -116,8 +120,11 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
       } else {
         await window.api.startAgent(agent.name)
         showToast(`Starting ${agent.name}...`, "info")
-        for (let i = 0; i < 10; i++) {
-          await new Promise((r) => setTimeout(r, 3000))
+        const startWaits = [
+          500, 1000, 1500, 2500, 3000, 3000, 3000, 3000, 3000, 3000,
+        ]
+        for (const w of startWaits) {
+          await new Promise((r) => setTimeout(r, w))
           const status = await window.api.agentStatus()
           const s = status[agent.name]
           if (s && ["running", "online"].includes(s.state)) {

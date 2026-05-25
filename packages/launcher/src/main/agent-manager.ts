@@ -737,6 +737,13 @@ export class AgentManager extends EventEmitter {
     return getInstanceEnv.call(this._connector, agentName)
   }
 
+  deleteAgentEnv(agentType: string): unknown {
+    const deleteEnv = this._connector!.deleteAgentEnv as (
+      type: string,
+    ) => unknown
+    return deleteEnv.call(this._connector, agentType)
+  }
+
   saveAgentEnv(agentType: string, env: Record<string, string>): unknown {
     const saveEnv = this._connector!.saveAgentEnv as (
       type: string,
@@ -1349,6 +1356,9 @@ export class AgentManager extends EventEmitter {
       )
     const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
     sendCmd.call(this._connector, `start:${name}`)
+    // Bust the 1s status cache so the next poll from the renderer sees the
+    // daemon's freshly written 'starting' state instead of stale 'stopped'.
+    this._statusCache = { value: {}, at: 0 }
     return { success: true, message: `Start command sent for ${name}` }
   }
 
@@ -1357,6 +1367,7 @@ export class AgentManager extends EventEmitter {
     if (!pid) return { success: true, message: "Daemon not running" }
     const sendCmd = this._connector!.sendDaemonCommand as (cmd: string) => void
     sendCmd.call(this._connector, `stop:${name}`)
+    this._statusCache = { value: {}, at: 0 }
     return { success: true, message: `Stop command sent for ${name}` }
   }
 

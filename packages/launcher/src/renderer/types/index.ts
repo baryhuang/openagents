@@ -311,6 +311,7 @@ declare global {
       getEnvFields(type: string): Promise<EnvField[]>
       getAgentEnv(type: string): Promise<Record<string, string>>
       saveAgentEnv(type: string, env: Record<string, string>): Promise<unknown>
+      deleteAgentEnv(type: string): Promise<unknown>
       getAgentInstanceEnv(name: string): Promise<Record<string, string>>
       saveAgentInstanceEnv(name: string, env: Record<string, string>): Promise<unknown>
       testLLM(env: Record<string, string>): Promise<{ success: boolean; model?: string; response?: string; error?: string }>
