@@ -378,6 +378,7 @@ declare global {
 
       // ── Sessions ──
       sessionList(workspaceId?: string): Promise<ChatSessionMeta[]>
+      sessionCreate(workspaceId: string): Promise<ChatSessionMeta>
       sessionLoad(workspaceId: string, channelName: string): Promise<ChatSessionMeta | null>
       sessionDelete(workspaceId: string, channelName: string): Promise<boolean>
       sessionClear(workspaceId?: string): Promise<number>
