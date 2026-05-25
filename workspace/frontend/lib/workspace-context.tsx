@@ -70,6 +70,15 @@ interface WorkspaceContextValue {
   refreshTodos: () => Promise<void>;
   routines: RoutineItem[];
   refreshRoutines: () => Promise<void>;
+  createRoutine: (params: {
+    name: string;
+    message: string;
+    source: string;
+    hour?: number;
+    minute?: number;
+    days?: number[];
+    interval_minutes?: number;
+  }) => Promise<void>;
   notificationSound: boolean;
   setNotificationSound: (enabled: boolean) => void;
 }
@@ -500,6 +509,19 @@ export function WorkspaceProvider({
     }
   }, []);
 
+  const createRoutine = useCallback(async (params: {
+    name: string;
+    message: string;
+    source: string;
+    hour?: number;
+    minute?: number;
+    days?: number[];
+    interval_minutes?: number;
+  }) => {
+    await workspaceApi.createRoutine(params);
+    await refreshRoutines();
+  }, [refreshRoutines]);
+
   const uploadFile = useCallback(async (file: File) => {
     const result = await workspaceApi.uploadFile(file);
     await refreshFiles();
@@ -904,6 +926,7 @@ export function WorkspaceProvider({
         refreshTodos,
         routines,
         refreshRoutines,
+        createRoutine,
         notificationSound,
         setNotificationSound,
       }}

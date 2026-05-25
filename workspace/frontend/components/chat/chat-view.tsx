@@ -21,6 +21,7 @@ import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Pl
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { CreateRoutineDialog } from '@/components/routines/create-routine-dialog';
 import { eventToMessage } from '@/lib/types';
 import type { WorkspaceMessage } from '@/lib/types';
 
@@ -84,7 +85,8 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus } = useWorkspace();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus, createRoutine } = useWorkspace();
+  const [showCreateRoutine, setShowCreateRoutine] = useState(false);
   const {
     isMobile,
     openMobileList,
@@ -683,10 +685,18 @@ export function ChatView() {
                 onDraftChange={handleDraftChange}
                 onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}
                 focusKey={focusKey}
+                onCreateRoutine={() => setShowCreateRoutine(true)}
               />
             </div>
           </div>
         )}
+
+        <CreateRoutineDialog
+          open={showCreateRoutine}
+          onOpenChange={setShowCreateRoutine}
+          agents={agents}
+          onCreateRoutine={createRoutine}
+        />
       </div>
     </div>
   );
