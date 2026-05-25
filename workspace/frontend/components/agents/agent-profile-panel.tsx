@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog, Cloud, Trash2 } from 'lucide-react';
+import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog, Cloud, Trash2, KeyRound, RefreshCw } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
@@ -41,6 +41,31 @@ export function AgentProfilePanel() {
       toast.error('Failed to remove cloud agent');
     }
   }, [agent, setSelectedAgentName, refreshWorkspace]);
+
+  // Inline API key update
+  const [editingKey, setEditingKey] = useState(false);
+  const [newApiKey, setNewApiKey] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+
+  const handleUpdateApiKey = useCallback(async () => {
+    if (!agent || !newApiKey) return;
+    setSavingKey(true);
+    try {
+      await workspaceApi.updateCloudAgent(agent.agentName, { apiKey: newApiKey });
+      toast.success('API key updated');
+      setEditingKey(false);
+      setNewApiKey('');
+      workspaceApi.listCloudAgents().then((configs) => {
+        setCloudConfig(configs.find((c) => c.agentName === agent.agentName) || null);
+      }).catch(() => {});
+    } catch {
+      toast.error('Failed to update API key');
+    } finally {
+      setSavingKey(false);
+    }
+  }, [agent, newApiKey]);
+
+  useEffect(() => { setEditingKey(false); setNewApiKey(''); }, [agent?.agentName]);
 
   // Description state — local draft + save
   const [description, setDescription] = useState('');
@@ -211,6 +236,67 @@ export function AgentProfilePanel() {
               ))}
             </div>
           </div>
+
+          {/* Cloud config management */}
+          {isCloud && cloudConfig && (
+            <div className="rounded-lg border overflow-hidden">
+              <div className="px-3.5 py-2.5 border-b">
+                <span className="text-xs font-medium">Cloud Configuration</span>
+              </div>
+              <div className="p-3 space-y-3">
+                {/* API Key */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] text-muted-foreground">API Key</span>
+                    {!editingKey && (
+                      <button
+                        onClick={() => setEditingKey(true)}
+                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <KeyRound className="size-2.5" />
+                        Update
+                      </button>
+                    )}
+                  </div>
+                  {editingKey ? (
+                    <div className="flex gap-1.5">
+                      <input
+                        type="password"
+                        value={newApiKey}
+                        onChange={(e) => setNewApiKey(e.target.value)}
+                        placeholder="New API key..."
+                        className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono rounded border bg-transparent outline-none focus:ring-1 focus:ring-foreground/20"
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleUpdateApiKey}
+                        disabled={savingKey || !newApiKey}
+                        className="px-2 py-1.5 text-[10px] font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      >
+                        {savingKey ? <RefreshCw className="size-2.5 animate-spin" /> : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => { setEditingKey(false); setNewApiKey(''); }}
+                        className="px-2 py-1.5 text-[10px] font-medium rounded border hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-mono text-muted-foreground">{cloudConfig.apiKeyMasked}</span>
+                  )}
+                </div>
+
+                {/* System prompt (if set) */}
+                {cloudConfig.systemPrompt && (
+                  <div>
+                    <span className="text-[11px] text-muted-foreground">System Prompt</span>
+                    <p className="text-xs text-foreground mt-1 whitespace-pre-wrap line-clamp-3">{cloudConfig.systemPrompt}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Skills */}
           <AgentSkillsSection agent={agent} />
