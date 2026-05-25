@@ -4,6 +4,7 @@ export interface Workspace {
   name: string;
   creatorEmail: string | null;
   settings: Record<string, unknown>;
+  browserfabricApiKey: string | null;
   status: string;
   createdAt: string | null;
   lastActivityAt: string | null;
@@ -186,6 +187,34 @@ export interface AgentCatalogEntry {
   homepage: string;
   tags: string[];
   builtin: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Cloud agents
+// ---------------------------------------------------------------------------
+
+export interface CloudAgentProvider {
+  name: string;
+  label: string;
+  models: CloudAgentModel[];
+}
+
+export interface CloudAgentModel {
+  id: string;
+  category: 'chat' | 'image';
+  label: string;
+}
+
+export interface CloudAgentConfig {
+  agentName: string;
+  provider: string;
+  model: string;
+  category: 'chat' | 'image';
+  apiKeyMasked: string;
+  systemPrompt: string | null;
+  maxTokens: number | null;
+  status: string;
+  createdAt: string | null;
 }
 
 // ---------------------------------------------------------------------------

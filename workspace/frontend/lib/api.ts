@@ -3,6 +3,8 @@ import type {
   ApiResponse,
   BrowserPersistentContext,
   BrowserTab,
+  CloudAgentConfig,
+  CloudAgentProvider,
   DMConversation,
   EventPollResponse,
   MessagePollResponse,
@@ -88,7 +90,7 @@ class WorkspaceApi {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`);
   }
 
-  async updateWorkspace(updates: { name?: string; settings?: Record<string, unknown> }): Promise<Workspace> {
+  async updateWorkspace(updates: { name?: string; settings?: Record<string, unknown>; browserfabric_api_key?: string }): Promise<Workspace> {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
@@ -488,6 +490,70 @@ class WorkspaceApi {
     await this.request<unknown>('/v1/remove', {
       method: 'POST',
       body: JSON.stringify({ agent_name: agentName, network: this.workspaceId }),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cloud agents
+  // ---------------------------------------------------------------------------
+
+  async getCloudProviders(): Promise<CloudAgentProvider[]> {
+    const res = await this.request<{ providers: CloudAgentProvider[] }>('/v1/cloud-agents/providers');
+    return res.providers;
+  }
+
+  async listCloudAgents(): Promise<CloudAgentConfig[]> {
+    const res = await this.request<{ cloud_agents: CloudAgentConfig[] }>(
+      `/v1/cloud-agents?network=${this.workspaceId}`
+    );
+    return res.cloud_agents;
+  }
+
+  async addCloudAgent(params: {
+    agentName: string;
+    provider: string;
+    model: string;
+    apiKey: string;
+    systemPrompt?: string;
+    maxTokens?: number;
+  }): Promise<CloudAgentConfig> {
+    return this.request<CloudAgentConfig>('/v1/cloud-agents', {
+      method: 'POST',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        agent_name: params.agentName,
+        provider: params.provider,
+        model: params.model,
+        api_key: params.apiKey,
+        system_prompt: params.systemPrompt || null,
+        max_tokens: params.maxTokens || null,
+      }),
+    });
+  }
+
+  async updateCloudAgent(agentName: string, updates: {
+    model?: string;
+    apiKey?: string;
+    systemPrompt?: string;
+    maxTokens?: number;
+    status?: string;
+  }): Promise<CloudAgentConfig> {
+    return this.request<CloudAgentConfig>(`/v1/cloud-agents/${agentName}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        ...updates.model !== undefined && { model: updates.model },
+        ...updates.apiKey !== undefined && { api_key: updates.apiKey },
+        ...updates.systemPrompt !== undefined && { system_prompt: updates.systemPrompt },
+        ...updates.maxTokens !== undefined && { max_tokens: updates.maxTokens },
+        ...updates.status !== undefined && { status: updates.status },
+      }),
+    });
+  }
+
+  async removeCloudAgent(agentName: string): Promise<void> {
+    await this.request<unknown>(`/v1/cloud-agents/${agentName}?network=${this.workspaceId}`, {
+      method: 'DELETE',
     });
   }
 

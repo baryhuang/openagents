@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Settings, Copy, Check, Bot } from 'lucide-react';
+import { Settings, Copy, Check, Bot, Globe } from 'lucide-react';
 import { workspaceApi } from '@/lib/api';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
@@ -30,18 +30,20 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
   const [name, setName] = useState(workspace?.name || '');
   const [saving, setSaving] = useState(false);
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
+  const [bfApiKey, setBfApiKey] = useState('');
   const { refreshWorkspace } = useWorkspace();
   const { isCopied: urlCopied, copyToClipboard: copyUrl } = useCopyToClipboard();
   const { isCopied: tokenCopied, copyToClipboard: copyToken } = useCopyToClipboard();
 
   // Sync descriptions from workspace agents when dialog opens
   useEffect(() => {
-    if (open && workspace?.agents) {
+    if (open && workspace) {
       const descs: Record<string, string> = {};
       for (const agent of workspace.agents) {
         descs[agent.agentName] = agent.description || '';
       }
       setDescriptions(descs);
+      setBfApiKey('');
     }
   }, [open, workspace?.agents]);
 
@@ -55,11 +57,13 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      // Save workspace name
-      await workspaceApi.updateWorkspace({ name: name.trim() });
+      // Save workspace name + BF key
+      const updates: Record<string, unknown> = { name: name.trim() };
+      if (bfApiKey) updates.browserfabric_api_key = bfApiKey.trim();
+      await workspaceApi.updateWorkspace(updates);
 
       // Save agent descriptions
-      const updates = workspace.agents.map((agent) => {
+      const descUpdates = workspace.agents.map((agent) => {
         const newDesc = descriptions[agent.agentName] ?? '';
         const oldDesc = agent.description || '';
         if (newDesc !== oldDesc) {
@@ -68,7 +72,7 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
         return null;
       }).filter(Boolean);
 
-      await Promise.all(updates);
+      await Promise.all(descUpdates);
       await refreshWorkspace();
       toast.success('Settings saved');
       setOpen(false);
@@ -138,6 +142,28 @@ export function SettingsDialog({ workspace }: SettingsDialogProps) {
                 {tokenCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
               </Button>
             </div>
+          </div>
+
+          {/* Browser Fabric API Key */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Globe className="size-4 text-muted-foreground" />
+              <Label>Browser Fabric API Key</Label>
+            </div>
+            {workspace.browserfabricApiKey && (
+              <p className="text-xs text-muted-foreground font-mono">
+                Current: {workspace.browserfabricApiKey}
+              </p>
+            )}
+            <Input
+              value={bfApiKey}
+              onChange={(e) => setBfApiKey(e.target.value)}
+              placeholder={workspace.browserfabricApiKey ? 'Enter new key to replace' : 'bf_... (optional — auto-provisioned if empty)'}
+              className="text-xs font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              Each workspace gets a free-tier key automatically. Set a custom key here to use your own BrowserFabric account.
+            </p>
           </div>
 
           {/* Agent Descriptions */}
