@@ -23,6 +23,7 @@ import { Modal, ModalTitle } from "../../components/ui/Modal"
 import { InstallConfirmModal } from "../../components/agent-detail/InstallConfirmModal"
 import { TopBar } from "../../components/TopBar"
 import { FeaturedBanner } from "../../components/install/FeaturedBanner"
+import { installErrorMessage, throwIfInstallFailed } from "../../utils/installErrors"
 
 interface InstallProps {
   showToast: (msg: string, type?: ToastType) => void
@@ -155,14 +156,15 @@ export default function Install({
       const wasInstalled = installedList.some((r) => r.name === entry.name)
       useInstallStore.getState().startJob({ agent: entry.name, verb })
       try {
-        await window.api.installAgentTypeStreaming(entry.name)
+        const result = await window.api.installAgentTypeStreaming(entry.name)
+        throwIfInstallFailed(result)
         showToast(
           `${entry.label || entry.name} ${verb === "update" ? "updated" : "installed"}`,
           "success",
         )
         if (!wasInstalled && verb === "install") setWizardEntry(entry)
       } catch (e: unknown) {
-        showToast(`${verb} failed: ${(e as Error).message}`, "error")
+        showToast(`${verb} failed: ${installErrorMessage(e)}`, "error")
       }
     },
     [showToast, installedList],

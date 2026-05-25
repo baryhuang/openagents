@@ -26,6 +26,7 @@ import { InstallConfirmModal } from "./InstallConfirmModal"
 import { ChannelSelector } from "./ChannelSelector"
 import { StagedProgress } from "../install-progress/StagedProgress"
 import { useAgentChannel, channelToDistTag } from "../../hooks/useAgentChannel"
+import { installErrorMessage, throwIfInstallFailed } from "../../utils/installErrors"
 
 interface AgentDetailProps {
   entry: CatalogEntry
@@ -208,7 +209,7 @@ export default function AgentDetail({
       showToast(`${entry.label || entry.name} uninstalled`, "success")
       onAfterInstall(entry)
     } catch (e: unknown) {
-      showToast(`Uninstall failed: ${(e as Error).message}`, "error")
+      showToast(`Uninstall failed: ${installErrorMessage(e)}`, "error")
     }
   }, [entry, onAfterInstall, showToast, wipeEnvOnUninstall])
 
@@ -227,7 +228,7 @@ export default function AgentDetail({
         showToast(r.error || "Rollback failed", "error")
       }
     } catch (e: unknown) {
-      showToast(`Rollback failed: ${(e as Error).message}`, "error")
+      showToast(`Rollback failed: ${installErrorMessage(e)}`, "error")
     }
   }, [entry, installed, onAfterInstall, showToast])
 

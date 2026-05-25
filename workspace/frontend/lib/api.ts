@@ -233,6 +233,21 @@ class WorkspaceApi {
   }
 
   // ---------------------------------------------------------------------------
+  // Composing signal — notify backend that a user is typing
+  // ---------------------------------------------------------------------------
+
+  async sendComposing(channelName: string): Promise<void> {
+    try {
+      await this.request<unknown>('/v1/composing', {
+        method: 'POST',
+        body: JSON.stringify({ network: this.workspaceId, channel: channelName }),
+      });
+    } catch {
+      // Fire-and-forget
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Agent control — mode changes etc.
   // ---------------------------------------------------------------------------
 

@@ -53,6 +53,9 @@ export interface CatalogEntry {
   requires?: string[]
   install?: {
     binary?: string
+    binary_aliases?: string[]
+    npm?: string
+    npm_package?: string
     requires?: (string | null)[]
     macos?: string
     linux?: string

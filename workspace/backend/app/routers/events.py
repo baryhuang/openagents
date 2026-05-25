@@ -168,7 +168,7 @@ async def poll_events(
     search: Optional[str] = Query(None, description="Search message content (case-insensitive)"),
     member: Optional[str] = Query(None, description="Filter to channels where this agent is a member"),
     sort: Optional[str] = Query(None, description="Sort order: 'asc' (default) or 'desc'"),
-    limit: int = Query(50, ge=1, le=200, description="Max events to return"),
+    limit: int = Query(50, ge=1, le=500, description="Max events to return"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -341,7 +341,12 @@ async def poll_events(
     has_more = len(rows) > limit
     events = rows[:limit]
 
-    response = success_response({
+    composing = False
+    if not search and not conversation:
+        from app.composing import has_any_composing
+        composing = has_any_composing(str(workspace.id))
+
+    response_data = {
         "events": [
             {
                 "id": e.id,
@@ -358,7 +363,11 @@ async def poll_events(
         "has_more": has_more,
         "oldest_id": (events[-1].id if sort == "desc" else events[0].id) if events else None,
         "newest_id": (events[0].id if sort == "desc" else events[-1].id) if events else None,
-    })
+    }
+    if composing:
+        response_data["composing"] = True
+
+    response = success_response(response_data)
 
     # Populate cache for subsequent polls within the TTL window.
     # success_response returns a dict; Redis stores the serialized JSON.

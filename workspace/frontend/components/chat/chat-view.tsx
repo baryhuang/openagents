@@ -7,6 +7,7 @@ import { ThreadStatusBar } from './thread-status-bar';
 import { EmptyState } from './empty-state';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
+import { useComposingSignal } from '@/hooks/use-composing-signal';
 import { workspaceApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import {
@@ -84,7 +85,14 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 
 export function ChatView() {
   const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus } = useWorkspace();
-  const { isMobile, openMobileList, splitBrowser, showBrowserPreview, setShowBrowserPreview } = useLayout();
+  const {
+    isMobile,
+    openMobileList,
+    splitBrowser,
+    setSplitBrowser,
+    showBrowserPreview,
+    setShowBrowserPreview,
+  } = useLayout();
 
   // Continuously refresh message caches for top recent sessions in the background.
   // This ensures clicking any recent thread shows messages instantly and up-to-date.
@@ -137,6 +145,7 @@ export function ChatView() {
     sessionId: currentSessionId,
     initialMessages: initialMessagesRef.current,
   });
+  const { notifyFocus, notifyBlur, notifyTyping } = useComposingSignal(currentSessionId);
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -230,7 +239,8 @@ export function ChatView() {
     if (currentSessionId) {
       draftsRef.current[currentSessionId] = draft;
     }
-  }, [currentSessionId]);
+    notifyTyping();
+  }, [currentSessionId, notifyTyping]);
 
   const isDM = currentSessionId?.startsWith('dm:') ?? false;
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
@@ -552,17 +562,20 @@ export function ChatView() {
             </Button>
           )}
 
-          {/* Browser live preview toggle — only when split browser is enabled */}
-          {splitBrowser && !isMobile && (
+          {/* Browser live preview toggle */}
+          {!isMobile && (
             <Button
-              variant={showBrowserPreview ? 'outline' : 'ghost'}
+              variant={splitBrowser && showBrowserPreview ? 'outline' : 'ghost'}
               size="sm"
-              onClick={() => setShowBrowserPreview(!showBrowserPreview)}
+              onClick={() => {
+                if (!splitBrowser) setSplitBrowser(true);
+                setShowBrowserPreview(!(splitBrowser && showBrowserPreview));
+              }}
               className={cn(
                 'gap-1.5 h-7 text-xs font-medium',
-                showBrowserPreview && 'border-primary/30 text-primary bg-primary/5'
+                splitBrowser && showBrowserPreview && 'border-primary/30 text-primary bg-primary/5'
               )}
-              title={showBrowserPreview ? 'Hide browser preview' : 'Show browser preview'}
+              title={splitBrowser && showBrowserPreview ? 'Hide browser preview' : 'Show browser preview'}
             >
               <Globe className="size-3.5" />
             </Button>
@@ -668,6 +681,7 @@ export function ChatView() {
                 agents={agents}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
+                onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}
                 focusKey={focusKey}
               />
             </div>
