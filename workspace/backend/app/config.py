@@ -51,6 +51,10 @@ class Config:
     ROUTER_LLM_BASE_URL: str = os.environ.get("ROUTER_LLM_BASE_URL", "")  # custom endpoint for openai provider
     ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")  # fallback for anthropic provider
 
+    # Cloud agents
+    CLOUD_AGENT_MAX_CONTEXT_MESSAGES: int = int(os.environ.get("CLOUD_AGENT_MAX_CONTEXT_MESSAGES", "10"))
+    CLOUD_AGENT_MAX_DEPTH: int = int(os.environ.get("CLOUD_AGENT_MAX_DEPTH", "3"))
+
     # Server
     HOST: str = os.environ.get("HOST", "0.0.0.0")
     PORT: int = int(os.environ.get("PORT", "8000"))

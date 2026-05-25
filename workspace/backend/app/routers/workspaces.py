@@ -120,7 +120,8 @@ def _format_workspace(ws: Workspace, members: list, now: datetime) -> dict:
     agents = []
     for m in members:
         status = m.status
-        if m.last_heartbeat:
+        is_cloud = (m.agent_type or "").startswith("cloud:")
+        if not is_cloud and m.last_heartbeat:
             # Ensure timezone-aware comparison (SQLite stores naive datetimes)
             heartbeat = m.last_heartbeat
             if heartbeat.tzinfo is None:

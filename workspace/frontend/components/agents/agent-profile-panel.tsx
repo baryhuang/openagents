@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog } from 'lucide-react';
+import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog, Cloud, Trash2 } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
@@ -10,6 +10,7 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import type { CloudAgentConfig } from '@/lib/types';
 
 export function AgentProfilePanel() {
   const { selectedAgentName, setSelectedAgentName, isMobile, setViewMode } = useLayout();
@@ -17,6 +18,29 @@ export function AgentProfilePanel() {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
 
   const agent = agents.find((a) => a.agentName === selectedAgentName);
+
+  const isCloud = agent?.agentType?.startsWith('cloud:') ?? false;
+
+  // Cloud agent config
+  const [cloudConfig, setCloudConfig] = useState<CloudAgentConfig | null>(null);
+  useEffect(() => {
+    if (!isCloud || !agent) { setCloudConfig(null); return; }
+    workspaceApi.listCloudAgents().then((configs) => {
+      setCloudConfig(configs.find((c) => c.agentName === agent.agentName) || null);
+    }).catch(() => {});
+  }, [isCloud, agent?.agentName]);
+
+  const handleRemoveCloudAgent = useCallback(async () => {
+    if (!agent) return;
+    try {
+      await workspaceApi.removeCloudAgent(agent.agentName);
+      toast.success(`Removed cloud agent "${agent.agentName}"`);
+      setSelectedAgentName(null);
+      refreshWorkspace();
+    } catch {
+      toast.error('Failed to remove cloud agent');
+    }
+  }, [agent, setSelectedAgentName, refreshWorkspace]);
 
   // Description state — local draft + save
   const [description, setDescription] = useState('');
@@ -57,17 +81,26 @@ export function AgentProfilePanel() {
 
   const isOnline = agent.status === 'online';
 
-  // Capitalize agent type for display (e.g. "claude" → "Claude")
-  const displayType = agent.agentType
-    ? agent.agentType.charAt(0).toUpperCase() + agent.agentType.slice(1)
-    : 'Unknown';
+  // Capitalize agent type for display (e.g. "claude" → "Claude", "cloud:openai" → "Cloud: OpenAI")
+  const displayType = isCloud
+    ? `Cloud: ${(agent.agentType || '').replace('cloud:', '').charAt(0).toUpperCase()}${(agent.agentType || '').replace('cloud:', '').slice(1)}`
+    : agent.agentType
+      ? agent.agentType.charAt(0).toUpperCase() + agent.agentType.slice(1)
+      : 'Unknown';
 
-  const infoItems = [
-    { icon: <Monitor className="size-3.5" />, label: 'Type', value: displayType },
-    { icon: <Globe className="size-3.5" />, label: 'Server', value: agent.serverHost || '—' },
-    { icon: <Folder className="size-3.5" />, label: 'Folder', value: agent.workingDir || '—' },
-    { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
-  ];
+  const infoItems = isCloud
+    ? [
+        { icon: <Cloud className="size-3.5" />, label: 'Type', value: displayType },
+        { icon: <Monitor className="size-3.5" />, label: 'Model', value: cloudConfig?.model || '—' },
+        { icon: <Globe className="size-3.5" />, label: 'API Key', value: cloudConfig?.apiKeyMasked || '—' },
+        { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
+      ]
+    : [
+        { icon: <Monitor className="size-3.5" />, label: 'Type', value: displayType },
+        { icon: <Globe className="size-3.5" />, label: 'Server', value: agent.serverHost || '—' },
+        { icon: <Folder className="size-3.5" />, label: 'Folder', value: agent.workingDir || '—' },
+        { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
+      ];
 
   return (
     <>
@@ -193,6 +226,16 @@ export function AgentProfilePanel() {
               <Plus className="size-3" />
               Start a Thread
             </button>
+            {isCloud && (
+              <button
+                onClick={handleRemoveCloudAgent}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                title="Remove cloud agent"
+              >
+                <Trash2 className="size-3" />
+                Remove
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -414,6 +414,32 @@ class RoutineRecord(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Cloud agent configurations
+# ---------------------------------------------------------------------------
+
+class CloudAgentConfig(Base):
+    """Configuration for a cloud-based agent (API-proxied by the server)."""
+    __tablename__ = "cloud_agent_configs"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    agent_name = Column(Text, nullable=False)
+    provider = Column(Text, nullable=False)              # "openai", "google", "xai", "deepseek"
+    model = Column(Text, nullable=False)                  # "gpt-4o", "gemini-2.5-pro", etc.
+    category = Column(Text, nullable=False, default="chat")  # "chat" or "image"
+    api_key = Column(Text, nullable=False)
+    system_prompt = Column(Text, nullable=True)
+    max_tokens = Column(Integer, nullable=True)
+    status = Column(Text, nullable=False, default="active")  # active | disabled
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "agent_name", name="uq_cloud_agent_workspace_name"),
+        Index("idx_cloud_agent_workspace", "workspace_id"),
+    )
+
+
 # Standalone agent table (used when IDENTITY_MODE=standalone)
 class Agent(Base):
     """Local agent identity (standalone mode only)."""

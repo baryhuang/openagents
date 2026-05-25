@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, ExternalLink, Loader2, Terminal, ArrowRight, Key } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, Loader2, Terminal, ArrowRight, Key, Cloud, Trash2, MessageSquare, Image as ImageIcon } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { AgentCatalogEntry } from '@/lib/types';
+import { toast } from 'sonner';
+import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider } from '@/lib/types';
+import { AddCloudAgentDialog } from './add-cloud-agent-dialog';
 
 // Colors assigned to agent cards based on index
 const CARD_COLORS = [
@@ -30,7 +32,7 @@ function getCardColor(index: number): string {
 
 export function ConnectAgentView() {
   const { setViewMode } = useLayout();
-  const { workspace, token } = useWorkspace();
+  const { workspace, token, refreshWorkspace } = useWorkspace();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const [tokenCopied, setTokenCopied] = useState(false);
 
@@ -38,15 +40,31 @@ export function ConnectAgentView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Cloud agents state
+  const [cloudProviders, setCloudProviders] = useState<CloudAgentProvider[]>([]);
+  const [cloudAgents, setCloudAgents] = useState<CloudAgentConfig[]>([]);
+  const [cloudDialogOpen, setCloudDialogOpen] = useState(false);
+  const [cloudDialogProvider, setCloudDialogProvider] = useState<string | undefined>();
+
   const wsId = workspace?.workspaceId || '';
+
+  const loadCloudAgents = () => {
+    workspaceApi.listCloudAgents().then(setCloudAgents).catch(() => {});
+  };
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    workspaceApi
-      .getAgentCatalog()
-      .then((entries) => {
-        if (!cancelled) setCatalog(entries);
+    Promise.all([
+      workspaceApi.getAgentCatalog(),
+      workspaceApi.getCloudProviders(),
+      workspaceApi.listCloudAgents(),
+    ])
+      .then(([entries, providers, agents]) => {
+        if (cancelled) return;
+        setCatalog(entries);
+        setCloudProviders(providers);
+        setCloudAgents(agents);
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Failed to load catalog');
@@ -56,6 +74,17 @@ export function ConnectAgentView() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  const handleRemoveCloudAgent = async (agentName: string) => {
+    try {
+      await workspaceApi.removeCloudAgent(agentName);
+      toast.success(`Removed cloud agent "${agentName}"`);
+      loadCloudAgents();
+      refreshWorkspace();
+    } catch {
+      toast.error('Failed to remove cloud agent');
+    }
+  };
 
   const handleCopyToken = () => {
     navigator.clipboard.writeText(token);
@@ -176,11 +205,74 @@ export function ConnectAgentView() {
             </div>
           </div>
 
+          {/* ── Cloud Agents ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Cloud className="size-5 text-primary shrink-0" />
+              <h3 className="text-sm font-semibold">Cloud Agents</h3>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3 ml-7">
+              Connect cloud-based AI services directly. Just provide an API key — no CLI needed.
+            </p>
+            <div className="ml-7">
+              {!loading && cloudProviders.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {cloudProviders.map((p) => (
+                    <button
+                      key={p.name}
+                      onClick={() => {
+                        setCloudDialogProvider(p.name);
+                        setCloudDialogOpen(true);
+                      }}
+                      className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-zinc-200 dark:border-zinc-700 hover:border-primary/40 dark:hover:border-primary/40 transition-colors group"
+                    >
+                      <Cloud className="size-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                      <span className="text-xs font-medium">{p.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Connected cloud agents */}
+              {cloudAgents.length > 0 && (
+                <div className="space-y-1.5 mt-3">
+                  <span className="text-[11px] text-muted-foreground font-medium">Connected</span>
+                  {cloudAgents.map((agent) => (
+                    <div
+                      key={agent.agentName}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                    >
+                      {agent.category === 'image' ? (
+                        <ImageIcon className="size-3.5 text-violet-500 shrink-0" />
+                      ) : (
+                        <MessageSquare className="size-3.5 text-blue-500 shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-medium">@{agent.agentName}</span>
+                        <span className="text-[10px] text-muted-foreground ml-1.5">{agent.model}</span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground font-mono">{agent.apiKeyMasked}</span>
+                      <button
+                        onClick={() => handleRemoveCloudAgent(agent.agentName)}
+                        className="size-6 flex items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 transition-colors"
+                        title="Remove"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t" />
+
           {/* ── Step 3: Supported Agent Types ── */}
           <div>
             <div className="flex items-center gap-2 mb-3">
-              <div className="size-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">3</div>
-              <h3 className="text-sm font-semibold">Supported Agent Types</h3>
+              <Terminal className="size-5 text-primary shrink-0" />
+              <h3 className="text-sm font-semibold">Local Agent Types</h3>
             </div>
             <p className="text-xs text-muted-foreground mb-3 ml-8">
               The CLI supports these agent types. You&apos;ll select one during the guided setup.
@@ -234,6 +326,13 @@ export function ConnectAgentView() {
           </div>
         </div>
       </div>
+
+      <AddCloudAgentDialog
+        open={cloudDialogOpen}
+        onOpenChange={setCloudDialogOpen}
+        initialProvider={cloudDialogProvider}
+        onAdded={loadCloudAgents}
+      />
     </div>
   );
 }

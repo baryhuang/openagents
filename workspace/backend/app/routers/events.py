@@ -129,18 +129,21 @@ async def send_event(
     # creation; failures are logged but never raised. The service opens
     # its own short-lived DB session because `db` here is request-scoped.
     from app.services.push import fanout_for_event
-    background_tasks.add_task(
-        fanout_for_event,
-        str(workspace.id),
-        {
-            "id": result.id,
-            "type": result.type,
-            "source": result.source,
-            "target": result.target,
-            "payload": result.payload,
-            "timestamp": result.timestamp,
-        },
-    )
+    event_snapshot = {
+        "id": result.id,
+        "type": result.type,
+        "source": result.source,
+        "target": result.target,
+        "payload": result.payload,
+        "metadata": result.metadata,
+        "timestamp": result.timestamp,
+    }
+    background_tasks.add_task(fanout_for_event, str(workspace.id), event_snapshot)
+
+    # Invoke cloud agents if any are targeted by this message.
+    if result.type == "workspace.message.posted":
+        from app.services.cloud_agent import invoke_cloud_agents
+        background_tasks.add_task(invoke_cloud_agents, str(workspace.id), event_snapshot)
 
     return success_response({
         "id": result.id,
