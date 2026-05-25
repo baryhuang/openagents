@@ -1410,6 +1410,9 @@ function setupIPC(): void {
   ipcMain.handle("agents:save-env", (_e, agentType, env) =>
     requireManager().saveAgentEnv(agentType, env),
   )
+  ipcMain.handle("agents:delete-env", (_e, agentType) =>
+    requireManager().deleteAgentEnv(agentType),
+  )
   ipcMain.handle("agents:get-instance-env", (_e, agentName) =>
     requireManager().getAgentInstanceEnv(agentName),
   )
