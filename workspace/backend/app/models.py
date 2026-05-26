@@ -470,6 +470,31 @@ class CloudAgentConfig(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Shared conversation snapshots
+# ---------------------------------------------------------------------------
+
+class ShareSnapshot(Base):
+    """A public snapshot of a conversation thread."""
+    __tablename__ = "share_snapshots"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    channel_name = Column(Text, nullable=False)
+    title = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=False)
+    snapshot_data = Column(JSONB, nullable=False)
+    share_token = Column(Text, unique=True, nullable=False)
+    message_count = Column(Integer, nullable=False, default=0)
+    status = Column(Text, nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        Index("idx_share_snapshots_workspace", "workspace_id"),
+        Index("idx_share_snapshots_token", "share_token"),
+    )
+
+
 # Standalone agent table (used when IDENTITY_MODE=standalone)
 class Agent(Base):
     """Local agent identity (standalone mode only)."""

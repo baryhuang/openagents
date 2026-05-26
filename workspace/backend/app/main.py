@@ -17,7 +17,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
-from app.routers import browser, cloud_agents, devices, events, files, network, notifications, routines, timers, todos, workspaces
+from app.routers import browser, cloud_agents, devices, events, files, network, notifications, routines, shares, timers, todos, workspaces
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -273,6 +273,7 @@ app.include_router(files.router)
 app.include_router(network.router)
 app.include_router(notifications.router)
 app.include_router(routines.router)
+app.include_router(shares.router)
 app.include_router(todos.router)
 app.include_router(timers.router)
 app.include_router(workspaces.router)

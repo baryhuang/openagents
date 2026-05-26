@@ -12,6 +12,7 @@ import type {
   NetworkProfile,
   NotificationItem,
   ONMEvent,
+  ShareSummary,
   TimerItem,
   TodoItem,
   Workspace,
@@ -876,6 +877,37 @@ class WorkspaceApi {
 
   async dismissNotification(notificationId: string): Promise<void> {
     await this.request<unknown>(`/v1/notifications/${notificationId}`, { method: 'DELETE' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shares (conversation snapshots)
+  // ---------------------------------------------------------------------------
+
+  async createShare(channelName: string, createdBy?: string): Promise<ShareSummary> {
+    const raw = await this.request<Record<string, unknown>>('/v1/shares', {
+      method: 'POST',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        channel: channelName,
+        created_by: createdBy || 'human:user',
+      }),
+    });
+    return {
+      id: raw.id as string,
+      workspaceId: (raw.workspace_id || '') as string,
+      channelName: (raw.channel_name || '') as string,
+      title: (raw.title || null) as string | null,
+      shareToken: raw.share_token as string,
+      messageCount: (raw.message_count || 0) as number,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+    };
+  }
+
+  async deleteShare(shareId: string): Promise<void> {
+    await this.request<unknown>(`/v1/shares/${shareId}?network=${this.workspaceId}`, {
+      method: 'DELETE',
+    });
   }
 
   async cancelChannelTodos(channel: string, source: string): Promise<void> {

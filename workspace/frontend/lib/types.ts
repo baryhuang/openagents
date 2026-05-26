@@ -130,6 +130,36 @@ export interface BrowserPersistentContext {
 }
 
 // ---------------------------------------------------------------------------
+// Shared conversation snapshots
+// ---------------------------------------------------------------------------
+
+export interface SharedSnapshotMessage {
+  sender_name: string;
+  sender_type: string;
+  content: string;
+  created_at: string | null;
+}
+
+export interface SharedSnapshot {
+  id: string;
+  title: string | null;
+  messages: SharedSnapshotMessage[];
+  messageCount: number;
+  createdAt: string | null;
+}
+
+export interface ShareSummary {
+  id: string;
+  workspaceId: string;
+  channelName: string;
+  title: string | null;
+  shareToken: string;
+  messageCount: number;
+  status: string;
+  createdAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Todos / Tasks (agent planning)
 // ---------------------------------------------------------------------------
 
