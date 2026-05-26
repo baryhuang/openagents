@@ -29,9 +29,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["Shares"])
 
-MAX_SNAPSHOT_MESSAGES = 100
-
-
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -84,7 +81,6 @@ async def create_share(
     if not _verify_workspace_access(workspace, x_workspace_token, bearer):
         return json_response(ResponseCode.UNAUTHORIZED, "Unauthorized")
 
-    # Fetch chat-only messages from the channel, most recent N
     channel_target = f"channel/{body.channel}"
     events = db.execute(
         select(EventRecord)
@@ -93,13 +89,12 @@ async def create_share(
             EventRecord.target == channel_target,
             EventRecord.type == "workspace.message.posted",
         )
-        .order_by(EventRecord.timestamp.desc())
-        .limit(MAX_SNAPSHOT_MESSAGES * 3)  # over-fetch to allow filtering
+        .order_by(EventRecord.timestamp.asc())
     ).scalars().all()
 
     # Filter to chat messages only (exclude status, thinking, todos, loading)
     chat_messages = []
-    for ev in reversed(events):
+    for ev in events:
         payload = ev.payload or {}
         msg_type = payload.get("message_type", "chat")
         if msg_type != "chat":
@@ -110,8 +105,6 @@ async def create_share(
             "content": payload.get("content", ""),
             "created_at": ev.created_at.isoformat() if ev.created_at else None,
         })
-        if len(chat_messages) >= MAX_SNAPSHOT_MESSAGES:
-            break
 
     if not chat_messages:
         return json_response(ResponseCode.BAD_REQUEST, "No chat messages found in this channel")

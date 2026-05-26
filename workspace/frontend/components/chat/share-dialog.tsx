@@ -105,7 +105,7 @@ export function ShareDialog({ open, onOpenChange, sessionId }: ShareDialogProps)
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                This snapshot includes up to 100 chat messages. Internal tool use and thinking steps are excluded.
+                This snapshot includes all chat messages. Internal tool use and thinking steps are excluded.
               </p>
             </div>
           )}
