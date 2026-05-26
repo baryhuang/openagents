@@ -5,7 +5,7 @@ import { workspaceApi } from './api';
 import { useOpenAgentsAuth } from './openagents-auth-context';
 import { generateUserId, getStoredIdentity, storeIdentity } from './identity';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, DMConversation, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
 
 function useWorkspaceIdentity() {
   const { user } = useOpenAgentsAuth();
@@ -117,6 +117,12 @@ interface WorkspaceContextValue {
     days?: number[];
     interval_minutes?: number;
   }) => Promise<void>;
+  notifications: NotificationItem[];
+  unreadNotificationCount: number;
+  refreshNotifications: () => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+  dismissNotification: (id: string) => Promise<void>;
   notificationSound: boolean;
   setNotificationSound: (enabled: boolean) => void;
 }
@@ -187,6 +193,8 @@ export function WorkspaceProvider({
   const [dmConversations, setDMConversations] = useState<DMConversation[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [routines, setRoutines] = useState<RoutineItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
   // Auto-select browser tabs for split browser view:
@@ -581,6 +589,10 @@ export function WorkspaceProvider({
       workspaceApi.listConversations().then((c) => setDMConversations(c)).catch(() => {});
       workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {});
       workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {});
+      workspaceApi.listNotifications().then((r) => {
+        setNotifications(r.notifications);
+        setUnreadNotificationCount(r.unreadCount);
+      }).catch(() => {});
     } catch {
       // Non-critical — keep existing state
     }
@@ -628,6 +640,47 @@ export function WorkspaceProvider({
     await workspaceApi.createRoutine(params);
     await refreshRoutines();
   }, [refreshRoutines]);
+
+  const refreshNotifications = useCallback(async () => {
+    try {
+      const result = await workspaceApi.listNotifications();
+      setNotifications(result.notifications);
+      setUnreadNotificationCount(result.unreadCount);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const markNotificationRead = useCallback(async (id: string) => {
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
+    setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
+    try {
+      await workspaceApi.markNotificationRead(id);
+    } catch {
+      await refreshNotifications();
+    }
+  }, [refreshNotifications]);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setUnreadNotificationCount(0);
+    try {
+      await workspaceApi.markAllNotificationsRead();
+    } catch {
+      await refreshNotifications();
+    }
+  }, [refreshNotifications]);
+
+  const dismissNotification = useCallback(async (id: string) => {
+    const wasUnread = notifications.find((n) => n.id === id && !n.isRead);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (wasUnread) setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
+    try {
+      await workspaceApi.dismissNotification(id);
+    } catch {
+      await refreshNotifications();
+    }
+  }, [notifications, refreshNotifications]);
 
   const uploadFile = useCallback(async (file: File) => {
     const result = await workspaceApi.uploadFile(file);
@@ -736,6 +789,10 @@ export function WorkspaceProvider({
           workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {}),
           workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {}),
           workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {}),
+          workspaceApi.listNotifications().then((r) => {
+            setNotifications(r.notifications);
+            setUnreadNotificationCount(r.unreadCount);
+          }).catch(() => {}),
         ]);
         if (cancelled) return;
 
@@ -1037,6 +1094,12 @@ export function WorkspaceProvider({
         routines,
         refreshRoutines,
         createRoutine,
+        notifications,
+        unreadNotificationCount,
+        refreshNotifications,
+        markNotificationRead,
+        markAllNotificationsRead,
+        dismissNotification,
         notificationSound,
         setNotificationSound,
       }}

@@ -366,6 +366,25 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     );
   }
 
+  // Notifications / Inbox
+  if (!isPlan && !disabled.has('notifications')) {
+    sections.push(
+      '\n### Notifications (Inbox)\n\n' +
+      'Send notifications to the workspace inbox. Notifications appear in a ' +
+      'dedicated panel separate from the chat stream. Use for task completions, ' +
+      'important findings, or anything that needs human attention.\n\n' +
+      '**Send a notification:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/notifications -d '{"title":"Task Complete","message":"The analysis is ready.",` +
+      `"priority":"normal","channel":"${channelName}",` +
+      `"network":"${workspaceId}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**Priority values:** `low`, `normal`, `high`\n\n' +
+      '**List notifications:**\n' +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/notifications?network=${workspaceId}"\`\n`
+    );
+  }
+
   // Discovery
   sections.push(
     '\n### Discover Agents\n\n' +
@@ -408,7 +427,8 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_get_agents to see other agents.\n' +
     'Use workspace_put_todos to track your progress. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
     'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
-    'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n'
+    'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n' +
+    'Use workspace_send_notification to send a notification to the workspace inbox when you complete a task or have important results.\n'
   );
   parts.push(buildBrowserDirective(browserEnabled));
   parts.push(buildCollaborationPrompt());

@@ -17,7 +17,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
-from app.routers import browser, cloud_agents, devices, events, files, network, routines, timers, todos, workspaces
+from app.routers import browser, cloud_agents, devices, events, files, network, notifications, routines, timers, todos, workspaces
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ async def _timer_loop():
     from datetime import timedelta
     from sqlalchemy import select, update
     from app.database import SessionLocal
-    from app.models import RoutineRecord, TimerRecord, TodoRecord, Workspace
+    from app.models import NotificationRecord, RoutineRecord, TimerRecord, TodoRecord, Workspace
     from app.pipeline_factory import pipeline
     from openagents.core.onm_events import Event
     from openagents.core.onm_mods import PipelineContext
@@ -90,6 +90,20 @@ async def _timer_loop():
                 ).fetchall()
                 if expired:
                     logger.info("Expired %d stale todo(s)", len(expired))
+
+                # ── Expire old notifications (older than 7 days) ──
+                seven_days_ago = now - timedelta(days=7)
+                expired_notifs = db.execute(
+                    update(NotificationRecord)
+                    .where(
+                        NotificationRecord.status == "active",
+                        NotificationRecord.created_at < seven_days_ago,
+                    )
+                    .values(status="expired")
+                    .returning(NotificationRecord.id)
+                ).fetchall()
+                if expired_notifs:
+                    logger.info("Expired %d old notification(s)", len(expired_notifs))
 
                 # ── Auto-archive stale threads (no activity for 30 days) ──
                 from app.models import Channel
@@ -257,6 +271,7 @@ app.include_router(devices.router)
 app.include_router(events.router)
 app.include_router(files.router)
 app.include_router(network.router)
+app.include_router(notifications.router)
 app.include_router(routines.router)
 app.include_router(todos.router)
 app.include_router(timers.router)

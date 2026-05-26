@@ -10,6 +10,7 @@ import type {
   MessagePollResponse,
   NetworkDiscovery,
   NetworkProfile,
+  NotificationItem,
   ONMEvent,
   TimerItem,
   TodoItem,
@@ -832,6 +833,47 @@ class WorkspaceApi {
 
   async cancelRoutine(routineId: string): Promise<void> {
     await this.request<unknown>(`/v1/routines/${routineId}`, { method: 'DELETE' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notifications / Inbox
+  // ---------------------------------------------------------------------------
+
+  async listNotifications(opts?: { status?: string; isRead?: boolean; limit?: number }): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
+    const params = new URLSearchParams({ network: this.workspaceId });
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.isRead !== undefined) params.set('is_read', String(opts.isRead));
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    const raw = await this.request<{ notifications: Record<string, unknown>[]; unread_count: number }>(`/v1/notifications?${params}`);
+    return {
+      notifications: (raw.notifications || []).map((n): NotificationItem => ({
+        id: n.id as string,
+        title: n.title as string,
+        message: n.message as string,
+        priority: (n.priority || 'normal') as NotificationItem['priority'],
+        isRead: !!(n.is_read),
+        createdBy: (n.created_by || '') as string,
+        channelName: (n.channel_name ?? null) as string | null,
+        threadId: (n.thread_id ?? null) as string | null,
+        linkUrl: (n.link_url ?? null) as string | null,
+        status: (n.status || 'active') as string,
+        createdAt: (n.created_at || null) as string | null,
+        readAt: (n.read_at || null) as string | null,
+      })),
+      unreadCount: raw.unread_count || 0,
+    };
+  }
+
+  async markNotificationRead(notificationId: string): Promise<void> {
+    await this.request<unknown>(`/v1/notifications/${notificationId}/read`, { method: 'PATCH' });
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    await this.request<unknown>(`/v1/notifications/read-all?network=${this.workspaceId}`, { method: 'PATCH' });
+  }
+
+  async dismissNotification(notificationId: string): Promise<void> {
+    await this.request<unknown>(`/v1/notifications/${notificationId}`, { method: 'DELETE' });
   }
 
   async cancelChannelTodos(channel: string, source: string): Promise<void> {

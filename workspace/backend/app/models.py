@@ -415,6 +415,35 @@ class RoutineRecord(Base):
 
 
 # ---------------------------------------------------------------------------
+# Inbox / Notifications
+# ---------------------------------------------------------------------------
+
+class NotificationRecord(Base):
+    """A notification sent by an agent to the workspace inbox."""
+    __tablename__ = "notifications"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(Text, nullable=False)              # "openagents:agent-name" or "system:routine"
+    title = Column(Text, nullable=False)
+    message = Column(Text, nullable=False)
+    priority = Column(Text, nullable=False, default="normal")  # low | normal | high
+    is_read = Column(Boolean, default=False, server_default=text("FALSE"))
+    channel_name = Column(Text, nullable=True)              # optional link to related thread
+    thread_id = Column(Text, nullable=True)
+    link_url = Column(Text, nullable=True)                  # optional external link
+    status = Column(Text, nullable=False, default="active") # active | dismissed | expired
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_notifications_workspace_status", "workspace_id", "status"),
+        Index("idx_notifications_workspace_read", "workspace_id", "is_read"),
+        Index("idx_notifications_created_at", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cloud agent configurations
 # ---------------------------------------------------------------------------
 

@@ -660,6 +660,30 @@ class WorkspaceClient {
     return data.data || data;
   }
 
+  // ── Notifications ──
+
+  async createNotification(workspaceId, token, { title, message, priority, channel, source } = {}) {
+    const body = {
+      title,
+      message,
+      priority: priority || 'normal',
+      network: workspaceId,
+      source: source || 'openagents:unknown',
+    };
+    if (channel) body.channel = channel;
+    const data = await this._post('/v1/notifications', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async listNotifications(workspaceId, token, { limit = 50 } = {}) {
+    const params = new URLSearchParams({
+      network: workspaceId,
+      limit: String(limit),
+    });
+    const data = await this._get(`/v1/notifications?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
   // ── Internal helpers ──
 
   /**

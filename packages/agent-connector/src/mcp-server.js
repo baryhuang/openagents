@@ -355,6 +355,36 @@ function buildToolDefs(disabledModules) {
     );
   }
 
+  // -- Notifications --
+  if (!disabledModules.has('notifications')) {
+    tools.push(
+      {
+        name: 'workspace_send_notification',
+        description: 'Send a notification to the workspace inbox. Use this to alert humans about completed tasks, important findings, or anything that needs their attention outside the chat stream.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Short notification title (e.g. "News scan complete")' },
+            message: { type: 'string', description: 'Notification body with details' },
+            priority: { type: 'string', enum: ['low', 'normal', 'high'], description: 'Notification priority (default: normal)' },
+            channel: { type: 'string', description: 'Related channel/thread name (for navigation link)' },
+          },
+          required: ['title', 'message'],
+        },
+      },
+      {
+        name: 'workspace_get_notifications',
+        description: 'List notifications you have sent to the workspace inbox.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: { type: 'integer', description: 'Number of notifications to return (default 20)' },
+          },
+        },
+      },
+    );
+  }
+
   return tools;
 }
 
@@ -820,6 +850,34 @@ class McpServer {
       case 'workspace_cancel_routine': {
         await this.ws.cancelRoutine(this.workspaceId, this.token, args.routine_id);
         return text(`Routine cancelled: ${args.routine_id}`);
+      }
+
+      case 'workspace_send_notification': {
+        const result = await this.ws.createNotification(
+          this.workspaceId, this.token,
+          {
+            title: args.title,
+            message: args.message,
+            priority: args.priority || 'normal',
+            channel: args.channel || this.channelName,
+            source: `openagents:${this.agentName}`,
+          },
+        );
+        return text(`Notification sent: "${args.title}" (id: ${result.id})`);
+      }
+
+      case 'workspace_get_notifications': {
+        const data = await this.ws.listNotifications(this.workspaceId, this.token, {
+          limit: args.limit || 20,
+        });
+        const notifications = (data && data.notifications) || [];
+        if (!notifications.length) return text('No notifications.');
+        const lines = notifications.map((n) => {
+          const readStatus = n.is_read ? '[read]' : '[unread]';
+          const prio = n.priority !== 'normal' ? ` [${n.priority}]` : '';
+          return `- ${readStatus}${prio} ${n.title}: ${n.message.slice(0, 80)}${n.message.length > 80 ? '...' : ''} (${n.created_at})`;
+        });
+        return text(lines.join('\n'));
       }
 
       default:

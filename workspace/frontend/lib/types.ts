@@ -176,6 +176,25 @@ export interface RoutineItem {
 }
 
 // ---------------------------------------------------------------------------
+// Inbox / Notifications
+// ---------------------------------------------------------------------------
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  priority: 'low' | 'normal' | 'high';
+  isRead: boolean;
+  createdBy: string;
+  channelName: string | null;
+  threadId: string | null;
+  linkUrl: string | null;
+  status: string;
+  createdAt: string | null;
+  readAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Agent catalog (supported client types)
 // ---------------------------------------------------------------------------
 
