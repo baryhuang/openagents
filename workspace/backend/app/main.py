@@ -115,7 +115,6 @@ async def _timer_loop():
                         Channel.starred == False,  # noqa: E712
                         Channel.last_event_at != None,  # noqa: E711
                         Channel.last_event_at < stale_thread_cutoff,
-                        ~Channel.name.startswith("routine:"),
                         ~Channel.name.startswith("routines:"),
                     )
                     .values(status="archived")

@@ -98,12 +98,7 @@ export function InboxList() {
     <div className="flex-1 overflow-y-auto px-3 py-1">
       <div className="space-y-1">
         {routineSessions.map((session) => {
-          // Legacy `routines:<agent>` carries the agent name in the id;
-          // per-routine `routine:<id>` channels put a human label in the
-          // session title (e.g. "Routine: Morning digest"). Prefer the
-          // agent name when we can extract it.
-          const displayName =
-            routineAgentName(session.sessionId) ?? session.title;
+          const agentName = routineAgentName(session.sessionId) ?? session.title;
           const lastMsg = lastMessageBySession[session.sessionId];
           const isSelected = session.sessionId === currentSessionId;
           const isActive = activeSessionIds.has(session.sessionId);
@@ -172,13 +167,7 @@ export function InboxList() {
               </div>
 
               <div className="shrink-0">
-                {routineAgentName(session.sessionId) ? (
-                  <AgentAvatar name={displayName} size={30} />
-                ) : (
-                  <div className="size-[30px] rounded-full bg-muted/60 flex items-center justify-center">
-                    <CalendarClock className="size-3.5 text-muted-foreground" />
-                  </div>
-                )}
+                <AgentAvatar name={agentName} size={30} />
               </div>
 
               <div className="flex-1 min-w-0 space-y-0.5">
@@ -189,7 +178,7 @@ export function InboxList() {
                       isUnread ? 'font-semibold' : 'font-normal',
                     )}
                   >
-                    {displayName}
+                    {agentName}
                   </span>
                   {isActive && (
                     <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />

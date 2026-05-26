@@ -908,17 +908,8 @@ final class WorkspaceStore {
            let ownerAgent = agents.first(where: { $0.agentName == owner }) {
             sessionAgents = [ownerAgent]
         } else if session.isRoutineChannel {
-            // Per-routine channels (`routine:<id>`) don't encode the
-            // owner in the sessionId — fall back to the channel's
-            // participants list, since the backend guarantees a routine
-            // channel has exactly one agent member.
-            sessionAgents = agents.filter {
-                session.participants.contains($0.agentName)
-            }
-            if sessionAgents.isEmpty {
-                logWarn("routines", "owner agent not online for \(sessionId)")
-                return
-            }
+            logWarn("routines", "owner agent not online for \(sessionId)")
+            return
         } else {
             sessionAgents = agents.filter {
                 session.participants.isEmpty || session.participants.contains($0.agentName)

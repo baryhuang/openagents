@@ -5,25 +5,17 @@ import AppKit
 import UIKit
 #endif
 
-/// Channels representing routine activity. Two backend conventions
-/// co-exist:
-///   - legacy `routines:<agent>` — one queue per agent (older routines)
-///   - current `routine:<routine-id>` — one channel per routine, since
-///     backend commit `ad061c2c` (May 2026)
-/// Both belong in the Inbox tab and must not leak into Chats.
-private let routineChannelPrefixes = ["routine:", "routines:"]
+/// Per-agent routine queues — each agent gets one channel
+/// (`routines:<agent>`) per workspace, and every routine the agent owns
+/// fires into it. These live in the Inbox tab; everything else lives
+/// in Chats.
+private let routineChannelPrefix = "routines:"
 
 extension Session {
-    var isRoutineChannel: Bool {
-        routineChannelPrefixes.contains { sessionId.hasPrefix($0) }
-    }
-
-    /// Legacy single-agent routine queues encode the agent name in the
-    /// sessionId after `routines:`. Per-routine channels (`routine:<id>`)
-    /// don't, so callers should fall back to `title` for those.
+    var isRoutineChannel: Bool { sessionId.hasPrefix(routineChannelPrefix) }
     var routineAgentName: String? {
-        guard sessionId.hasPrefix("routines:") else { return nil }
-        return String(sessionId.dropFirst("routines:".count))
+        guard isRoutineChannel else { return nil }
+        return String(sessionId.dropFirst(routineChannelPrefix.count))
     }
 }
 
@@ -565,11 +557,7 @@ private struct RoutineThreadRow: View {
     let lastMessage: Message?
     let isUnread: Bool
 
-    // Legacy per-agent queues (`routines:<agent>`) carry the name in the
-    // sessionId; per-routine channels (`routine:<id>`) put it in the
-    // human title (e.g. "Routine: Morning digest"). Prefer agent name
-    // when it's there, otherwise show the title.
-    private var displayTitle: String { session.routineAgentName ?? session.title }
+    private var agentName: String { session.routineAgentName ?? session.title }
 
     private var lastActivityLabel: String {
         if let ms = session.lastEventAt {
@@ -608,7 +596,7 @@ private struct RoutineThreadRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(displayTitle)
+                    Text(agentName)
                         .font(.body)
                         .fontWeight(isUnread ? .semibold : .regular)
                         .lineLimit(1)

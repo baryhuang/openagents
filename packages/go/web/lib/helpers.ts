@@ -81,23 +81,18 @@ export function getAgentColor(agentName: string, allAgentNames: string[]): Agent
 
 // ── Routine channel detection ──
 //
-// Two backend channel-name conventions co-exist:
-//   - legacy  `routines:<agent>`     — one queue per agent
-//   - current `routine:<routine-id>` — one channel per routine
-//     (backend commit ad061c2c, May 2026)
-// Both belong in the Inbox tab and must be excluded from Chats.
+// Routine channels are per-agent job queues: `routines:<agent-name>`.
+// One channel per agent per workspace — every routine the agent owns
+// fires into it. These belong in the Inbox tab and must be excluded
+// from the Chats list.
 
-export const ROUTINE_CHANNEL_PREFIXES = ['routine:', 'routines:'] as const;
+export const ROUTINE_CHANNEL_PREFIX = 'routines:';
 
 export function isRoutineChannel(sessionId: string | null | undefined): boolean {
-  if (!sessionId) return false;
-  return ROUTINE_CHANNEL_PREFIXES.some((p) => sessionId.startsWith(p));
+  return !!sessionId && sessionId.startsWith(ROUTINE_CHANNEL_PREFIX);
 }
 
-/** Legacy per-agent queue (`routines:<agent>`) carries the agent name in
- *  the sessionId. Per-routine channels (`routine:<id>`) don't — callers
- *  should fall back to the session title for those. */
 export function routineAgentName(sessionId: string): string | null {
-  if (!sessionId.startsWith('routines:')) return null;
-  return sessionId.slice('routines:'.length) || null;
+  if (!sessionId.startsWith(ROUTINE_CHANNEL_PREFIX)) return null;
+  return sessionId.slice(ROUTINE_CHANNEL_PREFIX.length) || null;
 }
