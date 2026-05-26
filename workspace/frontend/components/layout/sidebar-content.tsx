@@ -277,13 +277,12 @@ export function SidebarContent() {
               <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
             </div>
 
+            <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
           </div>
         </ScrollArea>
 
         {/* Bottom section — pinned to bottom */}
         <div className="shrink-0 border-t border-border px-2.5 py-2.5 space-y-1">
-          <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
-
           {/* Logged-in user details */}
           {isOpenAgentsDomain && user && (
             <div className="px-2 py-1.5 space-y-2">
