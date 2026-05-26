@@ -234,6 +234,39 @@ describe('Installer', () => {
     }
   });
 
+  it('_wrapForWindowsShell wraps PowerShell-only commands on Windows', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    const original = process.platform;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+      // Bare PS aliases get wrapped
+      const wrapped = inst._wrapForWindowsShell("irm 'https://cursor.com/install?win32=true' | iex");
+      assert.match(wrapped, /^powershell\.exe -NoProfile -ExecutionPolicy Bypass -Command "/);
+      assert.ok(wrapped.includes("cursor.com/install"));
+
+      // Already wrapped: don't double-wrap
+      const already = 'powershell -c "irm https://foo | iex"';
+      assert.equal(inst._wrapForWindowsShell(already), already);
+
+      const explicitExe = '"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "irm x | iex"';
+      assert.equal(inst._wrapForWindowsShell(explicitExe), explicitExe);
+
+      // Plain cmd.exe-compatible commands pass through
+      const npm = 'npm install -g testpkg@latest';
+      assert.equal(inst._wrapForWindowsShell(npm), npm);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: original, configurable: true });
+    }
+  });
+
+  it('_wrapForWindowsShell is a no-op on non-Windows', () => {
+    if (process.platform === 'win32') return;
+    const inst = new Installer(mockRegistry, tmpDir);
+    const cmd = "irm 'https://cursor.com/install' | iex";
+    assert.equal(inst._wrapForWindowsShell(cmd), cmd);
+  });
+
   it('healthCheck does not treat OPENAI_API_KEY alone as codex ready', () => {
     process.env.OPENAI_API_KEY = 'sk-test';
     const inst = new Installer(mockRegistry, tmpDir);

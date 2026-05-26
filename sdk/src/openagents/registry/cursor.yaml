@@ -6,11 +6,12 @@ tags: [coding, editor, cli, ai]
 builtin: true
 
 install:
-  binary: cursor
+  binary: cursor-agent
+  binary_aliases: [agent]
   requires: []
   macos: "curl https://cursor.com/install -fsSL | bash"
   linux: "curl https://cursor.com/install -fsSL | bash"
-  windows: "echo 'Download Cursor from https://cursor.com/downloads'"
+  windows: "powershell -c \"irm 'https://cursor.com/install?win32=true' | iex\""
 
 adapter:
   module: openagents.adapters.cursor

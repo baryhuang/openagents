@@ -270,6 +270,8 @@ def _make_plugin_from_yaml(data: dict):
 
     install = data.get("install", {})
     binary = install.get("binary", data["name"])
+    binary_aliases = install.get("binary_aliases") or []
+    binary_names = [binary, *binary_aliases]
     adapter_cfg = data.get("adapter", {})
     launch_cfg = data.get("launch", {})
     env_config = data.get("env_config", [])
@@ -282,24 +284,31 @@ def _make_plugin_from_yaml(data: dict):
         install_command = get_install_command(install)
 
         def _which_binary(self) -> Optional[str]:
-            """Find the binary, preferring .cmd/.exe on Windows."""
+            """Find the binary, preferring .cmd/.exe on Windows.
+
+            When `binary_aliases` is set, the primary name is tried first,
+            then each alias in order — covers upstream CLI renames (e.g.
+            Cursor's `agent` → `cursor-agent`) without breaking detection
+            for users with the older binary still on PATH.
+            """
             if platform.system() == "Windows":
                 # On Windows, npm-installed packages create .cmd wrappers.
                 # The bare name may resolve to a non-executable shell script,
                 # so prefer .cmd/.exe and only fall back to bare name with
                 # validation that it's actually executable by Windows.
-                path = shutil.which(binary + ".cmd") or shutil.which(binary + ".exe")
-                if path:
-                    return path
-                # Bare name fallback — shutil.which checks PATHEXT,
-                # so if it returns something it should be executable
-                bare = shutil.which(binary)
-                if bare:
-                    # Validate it has a Windows-executable extension
-                    ext = Path(bare).suffix.lower()
-                    win_exts = {e.lower() for e in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")}
-                    if ext in win_exts:
-                        return bare
+                for name in binary_names:
+                    path = shutil.which(name + ".cmd") or shutil.which(name + ".exe")
+                    if path:
+                        return path
+                    # Bare name fallback — shutil.which checks PATHEXT,
+                    # so if it returns something it should be executable
+                    bare = shutil.which(name)
+                    if bare:
+                        # Validate it has a Windows-executable extension
+                        ext = Path(bare).suffix.lower()
+                        win_exts = {e.lower() for e in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")}
+                        if ext in win_exts:
+                            return bare
                 # Fallback: check npm global prefix (custom prefix e.g. D:\node\node_global)
                 try:
                     import subprocess as _sp
@@ -308,36 +317,41 @@ def _make_plugin_from_yaml(data: dict):
                         text=True, timeout=5,
                     ).strip()
                     if npm_prefix:
-                        for _ext in (".cmd", ".exe", ""):
-                            _candidate = str(Path(npm_prefix) / (binary + _ext))
-                            if Path(_candidate).is_file():
-                                return _candidate
+                        for name in binary_names:
+                            for _ext in (".cmd", ".exe", ""):
+                                _candidate = str(Path(npm_prefix) / (name + _ext))
+                                if Path(_candidate).is_file():
+                                    return _candidate
                 except Exception:
                     pass
                 return None
-            found = shutil.which(binary)
-            if found:
-                return found
+            for name in binary_names:
+                found = shutil.which(name)
+                if found:
+                    return found
             # nvm
             home = Path.home()
             nvm_dir = Path(os.environ.get("NVM_DIR", home / ".nvm"))
             node_versions = nvm_dir / "versions" / "node"
             if node_versions.is_dir():
                 for d in sorted(node_versions.iterdir(), reverse=True):
-                    c = d / "bin" / binary
-                    if c.is_file() and os.access(c, os.X_OK):
-                        return str(c)
+                    for name in binary_names:
+                        c = d / "bin" / name
+                        if c.is_file() and os.access(c, os.X_OK):
+                            return str(c)
             # fnm
             fnm_dir = home / ".local" / "share" / "fnm" / "node-versions"
             if fnm_dir.is_dir():
                 for d in sorted(fnm_dir.iterdir(), reverse=True):
-                    c = d / "installation" / "bin" / binary
-                    if c.is_file() and os.access(c, os.X_OK):
-                        return str(c)
+                    for name in binary_names:
+                        c = d / "installation" / "bin" / name
+                        if c.is_file() and os.access(c, os.X_OK):
+                            return str(c)
             # volta
-            volta_bin = home / ".volta" / "bin" / binary
-            if volta_bin.is_file() and os.access(volta_bin, os.X_OK):
-                return str(volta_bin)
+            for name in binary_names:
+                volta_bin = home / ".volta" / "bin" / name
+                if volta_bin.is_file() and os.access(volta_bin, os.X_OK):
+                    return str(volta_bin)
             return None
 
         def is_installed(self) -> bool:

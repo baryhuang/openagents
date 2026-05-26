@@ -418,6 +418,8 @@ class Installer {
       cmd = rawCmd; // pip commands stay as-is
     }
 
+    cmd = this._wrapForWindowsShell(cmd);
+
     if (onData) onData(`$ ${cmd}\n\n`);
 
     const env = this._buildShellEnv();
@@ -578,6 +580,8 @@ class Installer {
       const args = rawCmd.replace('npm uninstall', 'uninstall --loglevel=verbose --no-save');
       cmd = this._resolveNpmCommand(args);
     }
+
+    cmd = this._wrapForWindowsShell(cmd);
 
     if (onData) onData(`$ ${cmd}\n\n`);
 
@@ -1040,6 +1044,24 @@ class Installer {
     return `${npmBin} ${args}`;
   }
 
+  /**
+   * Wrap a command in `powershell.exe -Command "..."` when (a) we're on Windows
+   * and (b) the command uses PowerShell-only tokens like `irm`, `iex`,
+   * `Invoke-RestMethod`, etc. The launcher's install shell is cmd.exe, which
+   * doesn't recognize these aliases — without wrapping, e.g. Cursor's
+   * `irm '…' | iex` exits 255. Skips commands already prefixed with
+   * `powershell`/`powershell.exe` so we don't double-wrap.
+   */
+  _wrapForWindowsShell(cmd) {
+    if (!cmd || process.platform !== 'win32') return cmd;
+    const trimmed = cmd.trimStart();
+    if (/^("[^"]*\\)?powershell(\.exe)?["']?\s/i.test(trimmed)) return cmd;
+    const psTokens = /\b(irm|iwr|iex|Invoke-RestMethod|Invoke-WebRequest|Invoke-Expression|Expand-Archive|Get-[A-Z]\w*|Set-[A-Z]\w*)\b/;
+    if (!psTokens.test(cmd)) return cmd;
+    const escaped = cmd.replace(/"/g, '\\"');
+    return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "${escaped}"`;
+  }
+
   _execShell(cmd, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
       const env = this._buildShellEnv();
@@ -1049,7 +1071,8 @@ class Installer {
         shell = env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
       }
 
-      exec(cmd, {
+      const finalCmd = this._wrapForWindowsShell(cmd);
+      exec(finalCmd, {
         encoding: 'utf-8',
         timeout: timeoutMs,
         shell,
