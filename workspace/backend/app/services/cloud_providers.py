@@ -75,6 +75,12 @@ PROVIDERS: dict[str, ProviderInfo] = {
             ModelInfo("deepseek-reasoner", "chat", "DeepSeek Reasoner"),
         ],
     ),
+    "custom": ProviderInfo(
+        name="custom",
+        label="Custom Endpoint",
+        base_url=None,
+        models=[],
+    ),
 }
 
 
@@ -83,6 +89,8 @@ def get_provider(name: str) -> Optional[ProviderInfo]:
 
 
 def validate_provider_model(provider: str, model: str) -> Optional[ModelInfo]:
+    if provider == "custom":
+        return ModelInfo(model, "chat", model)
     prov = PROVIDERS.get(provider)
     if not prov:
         return None
@@ -111,7 +119,12 @@ def providers_catalog() -> list[dict]:
 # API client
 # ---------------------------------------------------------------------------
 
-def _make_client(api_key: str, provider: str) -> AsyncOpenAI:
+def _make_client(api_key: str, provider: str, base_url_override: Optional[str] = None) -> AsyncOpenAI:
+    if base_url_override:
+        base_url = base_url_override.rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url = base_url + "/v1"
+        return AsyncOpenAI(api_key=api_key, base_url=base_url)
     prov = PROVIDERS.get(provider)
     base_url = prov.base_url if prov else None
     return AsyncOpenAI(api_key=api_key, base_url=base_url)
@@ -124,9 +137,10 @@ async def chat_completion(
     messages: list[dict],
     system_prompt: Optional[str] = None,
     max_tokens: Optional[int] = None,
+    base_url: Optional[str] = None,
 ) -> str:
     """Call a chat completion API and return the text response."""
-    client = _make_client(api_key, provider)
+    client = _make_client(api_key, provider, base_url_override=base_url)
 
     api_messages = []
     if system_prompt:
@@ -149,9 +163,10 @@ async def image_generation(
     provider: str,
     model: str,
     prompt: str,
+    base_url: Optional[str] = None,
 ) -> tuple[bytes, str]:
     """Call an image generation API. Returns (image_bytes, format)."""
-    client = _make_client(api_key, provider)
+    client = _make_client(api_key, provider, base_url_override=base_url)
 
     try:
         kwargs: dict = {"model": model, "prompt": prompt, "n": 1}

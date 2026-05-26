@@ -44,6 +44,7 @@ def _format_cloud_agent(cfg: CloudAgentConfig) -> dict:
         "model": cfg.model,
         "category": cfg.category,
         "apiKeyMasked": _mask_api_key(cfg.api_key),
+        "baseUrl": cfg.base_url,
         "systemPrompt": cfg.system_prompt,
         "maxTokens": cfg.max_tokens,
         "status": cfg.status,
@@ -71,6 +72,7 @@ class AddCloudAgentRequest(BaseModel):
     provider: str
     model: str
     api_key: str
+    base_url: Optional[str] = None
     system_prompt: Optional[str] = None
     max_tokens: Optional[int] = None
 
@@ -115,6 +117,12 @@ async def add_cloud_agent(
             f"Agent '{body.agent_name}' already exists in this workspace",
         )
 
+    if body.provider == "custom" and not body.base_url:
+        return json_response(
+            ResponseCode.BAD_REQUEST,
+            "Custom provider requires a base_url",
+        )
+
     cfg = CloudAgentConfig(
         workspace_id=str(workspace.id),
         agent_name=body.agent_name,
@@ -122,6 +130,7 @@ async def add_cloud_agent(
         model=body.model,
         category=model_info.category,
         api_key=body.api_key,
+        base_url=body.base_url,
         system_prompt=body.system_prompt,
         max_tokens=body.max_tokens,
     )
@@ -185,6 +194,7 @@ class UpdateCloudAgentRequest(BaseModel):
     network: str
     model: Optional[str] = None
     api_key: Optional[str] = None
+    base_url: Optional[str] = None
     system_prompt: Optional[str] = None
     max_tokens: Optional[int] = None
     status: Optional[str] = None
@@ -237,6 +247,9 @@ async def update_cloud_agent(
 
     if body.api_key is not None:
         cfg.api_key = body.api_key
+
+    if body.base_url is not None:
+        cfg.base_url = body.base_url or None
 
     if body.system_prompt is not None:
         cfg.system_prompt = body.system_prompt or None

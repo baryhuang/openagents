@@ -118,6 +118,7 @@ async def _invoke_chat_agent(
         messages=messages,
         system_prompt=cloud_config.system_prompt,
         max_tokens=cloud_config.max_tokens,
+        base_url=cloud_config.base_url,
     )
 
     await _post_response(
@@ -148,6 +149,7 @@ async def _invoke_image_agent(
         provider=cloud_config.provider,
         model=cloud_config.model,
         prompt=prompt,
+        base_url=cloud_config.base_url,
     )
 
     file_id = await _upload_image(

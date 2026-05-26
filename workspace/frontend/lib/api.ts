@@ -515,6 +515,7 @@ class WorkspaceApi {
     provider: string;
     model: string;
     apiKey: string;
+    baseUrl?: string;
     systemPrompt?: string;
     maxTokens?: number;
   }): Promise<CloudAgentConfig> {
@@ -526,6 +527,7 @@ class WorkspaceApi {
         provider: params.provider,
         model: params.model,
         api_key: params.apiKey,
+        base_url: params.baseUrl || null,
         system_prompt: params.systemPrompt || null,
         max_tokens: params.maxTokens || null,
       }),

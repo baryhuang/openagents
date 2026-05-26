@@ -458,6 +458,7 @@ class CloudAgentConfig(Base):
     model = Column(Text, nullable=False)                  # "gpt-4o", "gemini-2.5-pro", etc.
     category = Column(Text, nullable=False, default="chat")  # "chat" or "image"
     api_key = Column(Text, nullable=False)
+    base_url = Column(Text, nullable=True)                # custom OpenAI-compatible endpoint
     system_prompt = Column(Text, nullable=True)
     max_tokens = Column(Integer, nullable=True)
     status = Column(Text, nullable=False, default="active")  # active | disabled

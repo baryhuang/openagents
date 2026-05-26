@@ -230,6 +230,7 @@ export interface CloudAgentConfig {
   model: string;
   category: 'chat' | 'image';
   apiKeyMasked: string;
+  baseUrl: string | null;
   systemPrompt: string | null;
   maxTokens: number | null;
   status: string;

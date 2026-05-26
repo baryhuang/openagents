@@ -73,6 +73,7 @@ export function ConnectAgentView() {
   const [cfgModel, setCfgModel] = useState('');
   const [cfgName, setCfgName] = useState('');
   const [cfgKey, setCfgKey] = useState('');
+  const [cfgBaseUrl, setCfgBaseUrl] = useState('');
   const [cfgPrompt, setCfgPrompt] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -112,18 +113,24 @@ export function ConnectAgentView() {
     [cloudProviders, selectedProvider],
   );
 
+  const isCustomProvider = selectedProvider === 'custom';
+
   // Auto-select first model and generate name when provider changes
   useEffect(() => {
-    if (selectedProviderInfo && selectedProviderInfo.models.length > 0) {
+    if (isCustomProvider) {
+      setCfgModel('');
+      setCfgName('');
+    } else if (selectedProviderInfo && selectedProviderInfo.models.length > 0) {
       setCfgModel(selectedProviderInfo.models[0].id);
       const base = selectedProviderInfo.models[0].label
         .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       setCfgName(base);
     }
     setCfgKey('');
+    setCfgBaseUrl('');
     setCfgPrompt('');
     setShowAdvanced(false);
-  }, [selectedProviderInfo]);
+  }, [selectedProviderInfo, isCustomProvider]);
 
   // Update name when model changes
   useEffect(() => {
@@ -149,6 +156,10 @@ export function ConnectAgentView() {
       toast.error('Please fill in all required fields');
       return;
     }
+    if (isCustomProvider && !cfgBaseUrl) {
+      toast.error('Custom endpoint requires a base URL');
+      return;
+    }
     setSaving(true);
     try {
       await workspaceApi.addCloudAgent({
@@ -156,6 +167,7 @@ export function ConnectAgentView() {
         provider: selectedProvider,
         model: cfgModel,
         apiKey: cfgKey,
+        baseUrl: cfgBaseUrl || undefined,
         systemPrompt: cfgPrompt || undefined,
       });
       toast.success(`Cloud agent "@${cfgName}" added`);
@@ -256,6 +268,7 @@ export function ConnectAgentView() {
             cloudAgents={cloudAgents}
             selectedProvider={selectedProvider}
             selectedProviderInfo={selectedProviderInfo}
+            isCustomProvider={isCustomProvider}
             onSelectProvider={setSelectedProvider}
             cfgModel={cfgModel}
             setCfgModel={setCfgModel}
@@ -263,6 +276,8 @@ export function ConnectAgentView() {
             setCfgName={setCfgName}
             cfgKey={cfgKey}
             setCfgKey={setCfgKey}
+            cfgBaseUrl={cfgBaseUrl}
+            setCfgBaseUrl={setCfgBaseUrl}
             cfgPrompt={cfgPrompt}
             setCfgPrompt={setCfgPrompt}
             showAdvanced={showAdvanced}
@@ -455,6 +470,7 @@ function CloudAgentsTab({
   cloudAgents,
   selectedProvider,
   selectedProviderInfo,
+  isCustomProvider,
   onSelectProvider,
   cfgModel,
   setCfgModel,
@@ -462,6 +478,8 @@ function CloudAgentsTab({
   setCfgName,
   cfgKey,
   setCfgKey,
+  cfgBaseUrl,
+  setCfgBaseUrl,
   cfgPrompt,
   setCfgPrompt,
   showAdvanced,
@@ -474,6 +492,7 @@ function CloudAgentsTab({
   cloudAgents: CloudAgentConfig[];
   selectedProvider: string | null;
   selectedProviderInfo: CloudAgentProvider | undefined;
+  isCustomProvider: boolean;
   onSelectProvider: (name: string | null) => void;
   cfgModel: string;
   setCfgModel: (v: string) => void;
@@ -481,6 +500,8 @@ function CloudAgentsTab({
   setCfgName: (v: string) => void;
   cfgKey: string;
   setCfgKey: (v: string) => void;
+  cfgBaseUrl: string;
+  setCfgBaseUrl: (v: string) => void;
   cfgPrompt: string;
   setCfgPrompt: (v: string) => void;
   showAdvanced: boolean;
@@ -537,40 +558,70 @@ function CloudAgentsTab({
               </div>
               <div>
                 <h3 className="text-sm font-semibold">{selectedProviderInfo.label}</h3>
-                <p className="text-[11px] text-muted-foreground">Configure and add a cloud agent</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {isCustomProvider ? 'Connect any OpenAI-compatible endpoint' : 'Configure and add a cloud agent'}
+                </p>
               </div>
             </div>
           </div>
 
           <div className="p-4 space-y-3">
-            {/* Model selector */}
-            <div className="space-y-1.5">
-              <Label className="text-xs">Model</Label>
-              <div className="grid grid-cols-1 gap-1">
-                {selectedProviderInfo.models.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => setCfgModel(m.id)}
-                    className={cn(
-                      'flex items-center gap-2.5 px-3 py-2 rounded-md border text-xs text-left transition-colors',
-                      cfgModel === m.id
-                        ? 'border-foreground/20 bg-background ring-1 ring-foreground/5'
-                        : 'border-transparent hover:bg-background/60',
-                    )}
-                  >
-                    {m.category === 'image' ? (
-                      <ImageIcon className="size-3.5 text-violet-500 shrink-0" />
-                    ) : (
-                      <MessageSquare className="size-3.5 text-blue-500 shrink-0" />
-                    )}
-                    <span className="font-medium flex-1">{m.label}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                      {m.category}
-                    </span>
-                  </button>
-                ))}
+            {/* Custom endpoint: Base URL */}
+            {isCustomProvider && (
+              <div className="space-y-1.5">
+                <Label htmlFor="cloud-base-url" className="text-xs">Endpoint URL</Label>
+                <Input
+                  id="cloud-base-url"
+                  value={cfgBaseUrl}
+                  onChange={(e) => setCfgBaseUrl(e.target.value)}
+                  placeholder="https://api.example.com"
+                  className="text-sm font-mono h-9"
+                />
+                <p className="text-[10px] text-muted-foreground">/v1 is appended automatically if needed</p>
               </div>
-            </div>
+            )}
+
+            {/* Model selector — list for known providers, text input for custom */}
+            {isCustomProvider ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="cloud-model" className="text-xs">Model Name</Label>
+                <Input
+                  id="cloud-model"
+                  value={cfgModel}
+                  onChange={(e) => setCfgModel(e.target.value)}
+                  placeholder="e.g. gpt-4o, deepseek-chat, qwen-turbo"
+                  className="text-sm font-mono h-9"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Model</Label>
+                <div className="grid grid-cols-1 gap-1">
+                  {selectedProviderInfo.models.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setCfgModel(m.id)}
+                      className={cn(
+                        'flex items-center gap-2.5 px-3 py-2 rounded-md border text-xs text-left transition-colors',
+                        cfgModel === m.id
+                          ? 'border-foreground/20 bg-background ring-1 ring-foreground/5'
+                          : 'border-transparent hover:bg-background/60',
+                      )}
+                    >
+                      {m.category === 'image' ? (
+                        <ImageIcon className="size-3.5 text-violet-500 shrink-0" />
+                      ) : (
+                        <MessageSquare className="size-3.5 text-blue-500 shrink-0" />
+                      )}
+                      <span className="font-medium flex-1">{m.label}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                        {m.category}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Agent name */}
             <div className="space-y-1.5">
@@ -623,7 +674,7 @@ function CloudAgentsTab({
             {/* Add button */}
             <Button
               onClick={onAdd}
-              disabled={saving || !cfgName || !cfgKey || !cfgModel}
+              disabled={saving || !cfgName || !cfgKey || !cfgModel || (isCustomProvider && !cfgBaseUrl)}
               className="w-full"
               size="sm"
             >
