@@ -17,6 +17,7 @@ interface CreateRoutineDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agents: WorkspaceAgent[];
+  conversationHistory?: string;
   onCreateRoutine: (params: {
     name: string;
     message: string;
@@ -25,6 +26,7 @@ interface CreateRoutineDialogProps {
     minute?: number;
     days?: number[];
     interval_minutes?: number;
+    conversation_history?: string;
   }) => Promise<void>;
 }
 
@@ -36,7 +38,7 @@ const INTERVAL_PRESETS = [
   { label: '4h', value: 240 },
 ];
 
-export function CreateRoutineDialog({ open, onOpenChange, agents, onCreateRoutine }: CreateRoutineDialogProps) {
+export function CreateRoutineDialog({ open, onOpenChange, agents, conversationHistory, onCreateRoutine }: CreateRoutineDialogProps) {
   const onlineAgents = agents.filter((a) => a.status === 'online');
   const defaultAgent = onlineAgents.find((a) => a.role === 'master')?.agentName || onlineAgents[0]?.agentName || '';
 
@@ -97,6 +99,7 @@ export function CreateRoutineDialog({ open, onOpenChange, agents, onCreateRoutin
         name: name.trim(),
         message: message.trim(),
         source: `openagents:${source}`,
+        ...(conversationHistory ? { conversation_history: conversationHistory } : {}),
       };
       if (scheduleType === 'interval') {
         params.interval_minutes = intervalMinutes;

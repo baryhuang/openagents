@@ -718,6 +718,12 @@ export function ChatView() {
           open={showCreateRoutine}
           onOpenChange={setShowCreateRoutine}
           agents={agents}
+          conversationHistory={(() => {
+            if (!messages.length) return undefined;
+            const recent = messages.filter((m) => m.messageType === 'chat').slice(-20);
+            if (!recent.length) return undefined;
+            return recent.map((m) => `${m.senderName}: ${m.content}`).join('\n');
+          })()}
           onCreateRoutine={createRoutine}
         />
 

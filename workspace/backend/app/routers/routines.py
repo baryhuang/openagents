@@ -34,6 +34,7 @@ class CreateRoutineRequest(BaseModel):
     name: str
     message: str
     context: Optional[str] = None
+    conversation_history: Optional[str] = None
     # Daily mode (hour + minute, optional days). interval_minutes is the other mode.
     hour: Optional[int] = None
     minute: Optional[int] = None
@@ -160,7 +161,12 @@ def _describe_schedule(
     return f"{', '.join(day_labels)} at {time_str}"
 
 
-def _generate_routine_context_sync(name: str, message: str, schedule_desc: str) -> str:
+MAX_CONVERSATION_CHARS = 8000
+
+def _generate_routine_context_sync(
+    name: str, message: str, schedule_desc: str,
+    conversation_history: Optional[str] = None,
+) -> str:
     """Call the LLM to expand a brief task description into comprehensive routine context."""
     from app.mods.workspace_mod import _get_llm_client, _get_router_api_key, _get_router_model
 
@@ -170,14 +176,28 @@ def _generate_routine_context_sync(name: str, message: str, schedule_desc: str) 
         logger.warning("No LLM API key for routine context generation, using fallback")
         return fallback
 
+    conversation_block = ""
+    if conversation_history:
+        truncated = conversation_history[:MAX_CONVERSATION_CHARS]
+        conversation_block = (
+            "\n\nRecent conversation history (use this to understand the full context "
+            "behind the task — what was discussed, any specific details, URLs, tools, "
+            "or preferences mentioned):\n"
+            "---\n"
+            f"{truncated}\n"
+            "---\n"
+        )
+
     prompt = (
         "You are helping set up a recurring automated task for an AI agent in a workspace. "
-        "Based on the task description below, write comprehensive instructions that the agent "
-        "will receive each time this routine fires. The instructions should be clear, specific, "
-        "and actionable.\n\n"
+        "Based on the task description and conversation context below, write comprehensive "
+        "instructions that the agent will receive each time this routine fires. The instructions "
+        "should be clear, specific, and actionable. Incorporate relevant details from the "
+        "conversation history if available.\n\n"
         f"Task name: {name}\n"
         f"Task description: {message}\n"
-        f"Schedule: {schedule_desc}\n\n"
+        f"Schedule: {schedule_desc}"
+        f"{conversation_block}\n"
         "Write the routine context (2-4 paragraphs). Be specific about what the agent should do, "
         "what to check, and what format to use for any output. "
         "Do not include any preamble — just the context instructions."
@@ -313,6 +333,7 @@ async def create_routine(
         schedule_desc = _describe_schedule(body.hour, body.minute, body.days, body.interval_minutes)
         body.context = await asyncio.to_thread(
             _generate_routine_context_sync, body.name, body.message, schedule_desc,
+            body.conversation_history,
         )
 
     import uuid as _uuid_mod

@@ -117,6 +117,7 @@ interface WorkspaceContextValue {
     minute?: number;
     days?: number[];
     interval_minutes?: number;
+    conversation_history?: string;
   }) => Promise<void>;
   notifications: NotificationItem[];
   unreadNotificationCount: number;
@@ -637,6 +638,7 @@ export function WorkspaceProvider({
     minute?: number;
     days?: number[];
     interval_minutes?: number;
+    conversation_history?: string;
   }) => {
     await workspaceApi.createRoutine(params);
     await refreshRoutines();

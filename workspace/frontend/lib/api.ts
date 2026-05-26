@@ -807,6 +807,7 @@ class WorkspaceApi {
     minute?: number;
     days?: number[];
     interval_minutes?: number;
+    conversation_history?: string;
   }): Promise<import('./types').RoutineItem> {
     const raw = await this.request<Record<string, unknown>>('/v1/routines', {
       method: 'POST',
