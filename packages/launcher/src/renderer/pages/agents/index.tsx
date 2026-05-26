@@ -12,6 +12,7 @@ import { TopBar } from "../../components/TopBar"
 import type { Agent, CatalogEntry, EnvField, HealthCheck } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 import { cn } from "../../lib/utils"
+import { capture } from "../../lib/analytics"
 import { workspaceWebBaseUrl } from "../../lib/workspace-urls"
 
 function formatHealthLabel(health: HealthCheck | null): string {
@@ -103,6 +104,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
     try {
       const isRunning = ["online", "running", "idle"].includes(agent.state)
       if (isRunning) {
+        capture("agent_stopped", { agent_name: agent.name, agent_type: agent.type })
         await window.api.stopAgent(agent.name)
         showToast(`Stopping ${agent.name}...`, "info")
         // Fast initial polls — the daemon now processes stop commands within
@@ -119,6 +121,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           refresh()
         }
       } else {
+        capture("agent_started", { agent_name: agent.name, agent_type: agent.type })
         await window.api.startAgent(agent.name)
         showToast(`Starting ${agent.name}...`, "info")
         const startWaits = [
@@ -624,6 +627,7 @@ function ConfigureDialog({
     setTestResult(null)
     try {
       const result = await window.api.testLLM(values)
+      capture("llm_test_run", { success: result.success, model: result.model || null })
       if (result.success) {
         setTestStatus("ok")
         setTestResult(
@@ -806,6 +810,7 @@ function ConnectWorkspaceDialog({
     try {
       showToast(`Connecting ${agentName} to workspace...`, "info")
       await window.api.connectWorkspace(agentName, slug)
+      capture("workspace_connected", { agent_name: agentName })
       window.api.signalReload()
       showToast(`Connected to ${slug}`, "success")
       onConnected()
@@ -824,6 +829,7 @@ function ConnectWorkspaceDialog({
     try {
       showToast(`Creating workspace '${name}'...`, "info")
       const result = await window.api.createWorkspace(name)
+      capture("workspace_created", { source: "agents_page" })
       showToast(`Workspace '${name}' created`, "success")
       if (result && result.token && agentName) {
         await window.api.connectWorkspace(agentName, result.token)

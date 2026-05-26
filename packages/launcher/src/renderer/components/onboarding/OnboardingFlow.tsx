@@ -20,6 +20,7 @@ import { useAgentsStore } from "../../store/agents"
 import type { CatalogEntry, EnvField } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 import { cn } from "../../lib/utils"
+import { capture } from "../../lib/analytics"
 
 const ONBOARDING_KEY = "onboarding_completed"
 const STEP_KEY = "onboarding_step"
@@ -216,6 +217,7 @@ export function OnboardingFlow({
   const close = useCallback(
     (markComplete = false) => {
       if (markComplete) {
+        capture("onboarding_completed")
         try {
           localStorage.setItem(ONBOARDING_KEY, "true")
           localStorage.removeItem(STEP_KEY)
@@ -244,6 +246,7 @@ export function OnboardingFlow({
     setTestResult(null)
     try {
       const r = await window.api.testLLM(config.values)
+      capture("llm_test_run", { success: r.success, model: r.model || null })
       if (r.success) {
         setTestResult({
           ok: true,
@@ -319,6 +322,7 @@ export function OnboardingFlow({
       //    silent-catch implementation lied about success and left the
       //    Workspaces tab empty.
       const ws = await window.api.createWorkspace(name)
+      capture("workspace_created", { source: "onboarding" })
 
       // 2. Create the agent instance. addAgent throws "already exists" if
       //    the user re-runs onboarding with the same agent name — the

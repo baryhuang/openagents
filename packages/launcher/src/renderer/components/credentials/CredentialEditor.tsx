@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
+import { capture } from "../../lib/analytics"
 import { Modal, ModalActions } from "../ui/Modal"
 import { Button } from "../ui/Button"
 import { Input } from "../ui/Input"
@@ -210,6 +211,7 @@ export function CredentialEditor({
         scopes: draft.scopes,
       })
       if (res.ok && res.record) {
+        capture("credential_saved", { provider: draft.provider, kind: draft.kind, is_update: !!draft.id })
         onSaved(res.record)
         showToast(draft.id ? "Credential updated" : "Credential added", "success")
         onClose()

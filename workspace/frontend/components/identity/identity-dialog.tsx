@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { User } from 'lucide-react';
+import { capture } from '@/lib/analytics';
 import {
   Dialog,
   DialogContent,
@@ -23,6 +24,7 @@ export function IdentityDialog({ open, onSubmit }: IdentityDialogProps) {
   const handleSubmit = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
+    capture('identity_set');
     onSubmit(trimmed);
   };
 

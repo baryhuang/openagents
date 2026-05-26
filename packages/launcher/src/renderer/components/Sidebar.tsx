@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { cn } from "../lib/utils"
+import { capture } from "../lib/analytics"
 import { useUiStore } from "../store/ui"
 import { useAgentsStore, useDaemonStatus } from "../store/agents"
 import { useInstallStore } from "../store/install"
@@ -131,11 +132,12 @@ export default function Sidebar(): React.JSX.Element {
                     <li key={item.id} className="m-0">
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          capture("tab_switched", { tab: item.id })
                           item.id === "install"
                             ? goToInstallList()
                             : setCurrentTab(item.id)
-                        }
+                        }}
                         className={cn(
                           "group w-full flex items-center gap-2.5 px-2.5 py-2 mb-px",
                           "rounded-md text-[13px] font-medium text-left cursor-pointer",

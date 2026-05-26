@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi } from './api';
+import { capture } from './analytics';
 import { useOpenAgentsAuth } from './openagents-auth-context';
 import { generateUserId, getStoredIdentity, storeIdentity } from './identity';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
@@ -895,6 +896,7 @@ export function WorkspaceProvider({
       participants,
       resumeFrom: opts?.resumeFrom,
     });
+    capture('thread_created', { participant_count: participants.length, has_resume: !!opts?.resumeFrom });
     setSessions((prev) => [session, ...prev]);
     setCurrentSessionId(session.sessionId);
     return session;

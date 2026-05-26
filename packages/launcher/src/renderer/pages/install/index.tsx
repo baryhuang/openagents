@@ -24,6 +24,7 @@ import { InstallConfirmModal } from "../../components/agent-detail/InstallConfir
 import { TopBar } from "../../components/TopBar"
 import { FeaturedBanner } from "../../components/install/FeaturedBanner"
 import { installErrorMessage, throwIfInstallFailed } from "../../utils/installErrors"
+import { capture } from "../../lib/analytics"
 
 interface InstallProps {
   showToast: (msg: string, type?: ToastType) => void
@@ -158,6 +159,7 @@ export default function Install({
       try {
         const result = await window.api.installAgentTypeStreaming(entry.name)
         throwIfInstallFailed(result)
+        capture("agent_installed", { agent_type: entry.name, verb })
         showToast(
           `${entry.label || entry.name} ${verb === "update" ? "updated" : "installed"}`,
           "success",
@@ -193,6 +195,7 @@ export default function Install({
         .startJob({ agent: entry.name, verb: "uninstall" })
       try {
         await window.api.uninstallAgentTypeStreaming(entry.name)
+        capture("agent_uninstalled", { agent_type: entry.name, wipe_env: wipeEnv })
         if (wipeEnv) {
           try {
             await window.api.deleteAgentEnv(entry.name)

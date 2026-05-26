@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { capture, identify } from './analytics';
 
 interface OpenAgentsUser {
   email: string;
@@ -73,12 +74,15 @@ export function OpenAgentsAuthProvider({ children }: { children: React.ReactNode
     const { signInWithGoogle, getIdToken } = await import('./firebase');
     const firebaseUser = await signInWithGoogle();
     const token = await getIdToken();
+    const email = firebaseUser.email || '';
     setUser({
-      email: firebaseUser.email || '',
-      displayName: firebaseUser.displayName || firebaseUser.email || '',
+      email,
+      displayName: firebaseUser.displayName || email,
       photoURL: firebaseUser.photoURL,
     });
     setIdToken(token);
+    if (email) identify(email, { display_name: firebaseUser.displayName || email });
+    capture('sign_in', { method: 'google' });
   }, []);
 
   const signOut = useCallback(async () => {

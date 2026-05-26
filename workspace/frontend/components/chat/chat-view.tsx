@@ -9,6 +9,7 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { useComposingSignal } from '@/hooks/use-composing-signal';
 import { workspaceApi } from '@/lib/api';
+import { capture } from '@/lib/analytics';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,7 +18,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe, Share2 } from 'lucide-react';
+import { ShareDialog } from './share-dialog';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
@@ -375,6 +377,11 @@ export function ChatView() {
           attachments,
           currentUser.id,
         );
+        capture('message_sent', {
+          has_attachments: (attachments?.length ?? 0) > 0,
+          has_mentions: mentions.length > 0,
+          attachment_count: attachments?.length ?? 0,
+        });
         forceRefresh();
       } catch {
         // Error is visible via missing message
