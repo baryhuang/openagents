@@ -276,6 +276,18 @@ async def list_workspaces(
 
 
 # ---------------------------------------------------------------------------
+# GET /v1/workspaces/skill-catalog  (static — no auth required)
+# Must be defined before /{workspace_id} to avoid path capture.
+# ---------------------------------------------------------------------------
+
+@router.get("/skill-catalog")
+async def skill_catalog():
+    """Return the full skill catalog (public, static data)."""
+    from app.skill_catalog import get_catalog
+    return success_response(get_catalog())
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/workspaces/{workspace_id} — Get workspace
 # ---------------------------------------------------------------------------
 
@@ -772,14 +784,3 @@ async def remove_collaborator(
     db.delete(collab)
     db.commit()
     return success_response({"email": email_lower, "removed": True})
-
-
-# ---------------------------------------------------------------------------
-# GET /v1/workspaces/skill-catalog  (static — no auth required)
-# ---------------------------------------------------------------------------
-
-@router.get("/skill-catalog")
-async def skill_catalog():
-    """Return the full skill catalog (public, static data)."""
-    from app.skill_catalog import get_catalog
-    return success_response(get_catalog())
