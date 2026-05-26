@@ -221,7 +221,7 @@ export function SidebarContent() {
           </div>
 
           {/* Agents */}
-          <div className="px-2.5">
+          <div className="px-2.5 flex flex-col min-h-full">
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5">
               Agents ({onlineCount}/{recentAgents.length})
             </p>
@@ -277,6 +277,7 @@ export function SidebarContent() {
               <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
             </div>
 
+            <div className="flex-1" />
             <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
           </div>
         </ScrollArea>
