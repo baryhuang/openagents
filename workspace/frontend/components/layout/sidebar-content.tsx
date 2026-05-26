@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Plus, MessageSquare, FileText, Globe, PlusSquare,
+  Plus, MessageSquare, FileText, Globe, PlusSquare, Sparkles,
   Settings, Copy, Check, ListTodo, CalendarClock, Inbox,
   LogIn, LogOut, Shield, Moon, Sun, KeyRound, Share2, X, Crown, Users,
 } from 'lucide-react';
@@ -275,6 +275,7 @@ export function SidebarContent() {
               <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
               <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="Inbox" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
               <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+              <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
             </div>
 
             {/* Actions */}

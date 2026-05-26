@@ -14,6 +14,7 @@ import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 import { MonitorGrid } from '@/components/monitor/monitor-grid';
 import { TasksView } from '@/components/tasks/tasks-view';
 import { RoutinesView } from '@/components/routines/routines-view';
+import { SkillsView } from '@/components/skills/skills-view';
 import { InboxView } from '@/components/inbox/inbox-view';
 import { useWorkspace } from '@/lib/workspace-context';
 
@@ -43,6 +44,10 @@ export function Wrapper() {
           ) : viewMode === 'inbox' ? (
             <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
               <InboxView />
+            </div>
+          ) : viewMode === 'skills' ? (
+            <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+              <SkillsView />
             </div>
           ) : mobilePane === 'list' ? (
             /* List pane — full width */
@@ -133,6 +138,7 @@ export function Wrapper() {
                   {viewMode === 'tasks' && <TasksView />}
                   {viewMode === 'routines' && <RoutinesView />}
                   {viewMode === 'inbox' && <InboxView />}
+                  {viewMode === 'skills' && <SkillsView />}
 
                   {/* Agent profile slide-over */}
                   {isAgentPanelOpen && <AgentProfilePanel />}
