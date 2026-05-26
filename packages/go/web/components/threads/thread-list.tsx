@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Pencil, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Loader2 } from 'lucide-react';
-import { RoutinesDisclosure } from './routines-disclosure';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
@@ -397,15 +396,6 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
               )}
             </div>
           )}
-
-          {/* Routines disclosure — mirrors Swift's collapsible
-              `DisclosureGroup` for `routines:*` channels. Hidden during
-              search so search results don't get split across two
-              sections. The Swift app doesn't surface Agent DMs or an
-              archived-chats disclosure in ThreadListView; archive +
-              unarchive are reached through the per-row context menu
-              only, so both are dropped here too. */}
-          {!isSearching && <RoutinesDisclosure />}
         </div>
       </div>
     </div>
