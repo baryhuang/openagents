@@ -9,8 +9,8 @@ import { ThreadList } from '@/components/threads/thread-list';
 import { InboxList, useInboxUnreadCount } from '@/components/threads/inbox-list';
 import { SidebarHeader } from './sidebar-header';
 import { cn } from '@/lib/utils';
+import { isRoutineChannel } from '@/lib/helpers';
 
-const ROUTINE_PREFIX = 'routines:';
 type SidebarTab = 'chats' | 'inbox';
 
 // The whole sidebar = workspace header + search + tab switcher + the
@@ -35,7 +35,7 @@ export function SidebarContent() {
   // the tab that owns it. Don't auto-flip back to Chats on its own —
   // the user picks Chats explicitly.
   useEffect(() => {
-    if (currentSessionId?.startsWith(ROUTINE_PREFIX)) {
+    if (isRoutineChannel(currentSessionId)) {
       setActiveTab('inbox');
     }
   }, [currentSessionId]);
