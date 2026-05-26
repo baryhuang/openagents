@@ -17,7 +17,7 @@ const { execSync, spawnSync } = require('child_process');
 
 const PKG_NAME = '@openagents-org/agent-launcher';
 const CACHE_FILE = path.join(os.homedir(), '.openagents', '.update-check.json');
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function currentVersion() {
   return require('../package.json').version;
@@ -161,8 +161,8 @@ function promptYes(question, timeoutMs = 30000) {
 }
 
 /**
- * Check, notify, and offer to update. Exits the process on successful update.
- * Safe to call at the top of any user-facing CLI command.
+ * Check and print a warning if a newer version is available.
+ * Never prompts or auto-updates — users run `agn update` explicitly.
  */
 async function notifyAndMaybeUpdate() {
   let info;
@@ -170,29 +170,9 @@ async function notifyAndMaybeUpdate() {
   if (!info || !info.isNewer) return;
 
   process.stderr.write(
-    `\n[launcher] Update available: ${info.current} → ${info.latest}\n`
+    `\n[launcher] Update available: ${info.current} → ${info.latest}\n` +
+    '[launcher] Run `agn update` to upgrade.\n\n'
   );
-
-  const interactive = process.stdin.isTTY && process.stdout.isTTY;
-  if (!interactive) {
-    process.stderr.write(
-      '[launcher] Run `agn update` (or re-run install.sh) to upgrade.\n\n'
-    );
-    return;
-  }
-
-  const accepted = await promptYes('[launcher] Update now? [Y/n] ');
-  if (!accepted) {
-    process.stderr.write('[launcher] Skipped. Run `agn update` later to upgrade.\n\n');
-    return;
-  }
-
-  const ok = runUpdate();
-  if (ok) {
-    process.stderr.write(`[launcher] Updated to ${info.latest}. Re-run your command.\n`);
-    process.exit(0);
-  }
-  process.stderr.write('[launcher] Update failed — continuing with current version.\n\n');
 }
 
 module.exports = {
