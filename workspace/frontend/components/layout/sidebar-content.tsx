@@ -277,21 +277,16 @@ export function SidebarContent() {
               <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
             </div>
 
-            {/* Connect Agent */}
-            <div className="space-y-0.5 mt-6">
-              <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
-            </div>
           </div>
         </ScrollArea>
 
         {/* Bottom section — pinned to bottom */}
-        <div className="shrink-0 border-t border-border px-2.5 py-3 space-y-0.5">
-          {/* OpenAgents login/user section */}
-          {isOpenAgentsDomain && !user && (
-            <NavButton icon={<LogIn className="size-[15px]" />} label="Sign in" onClick={signIn} />
-          )}
+        <div className="shrink-0 border-t border-border px-2.5 py-2.5 space-y-1">
+          <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
+
+          {/* Logged-in user details */}
           {isOpenAgentsDomain && user && (
-            <div className="px-2 py-2 space-y-2">
+            <div className="px-2 py-1.5 space-y-2">
               <div className="flex items-center gap-2">
                 <div className="size-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-bold shrink-0">
                   {user.email[0].toUpperCase()}
@@ -318,8 +313,26 @@ export function SidebarContent() {
               )}
             </div>
           )}
-          <div className="flex items-center gap-1 px-2">
-            <NavButton icon={isDark ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={isDark ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
+
+          {/* Bottom row: Sign in (left) + icon buttons (right) */}
+          <div className="flex items-center gap-1 px-1">
+            {isOpenAgentsDomain && !user && (
+              <button
+                onClick={signIn}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <LogIn className="size-[15px]" />
+                <span className="text-xs">Sign in</span>
+              </button>
+            )}
+            <div className="flex-1" />
+            <button
+              onClick={toggleTheme}
+              className="size-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+              title={isDark ? 'Light Mode' : 'Dark Mode'}
+            >
+              {isDark ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />}
+            </button>
             {token && (
               <button
                 onClick={handleCopyToken}
