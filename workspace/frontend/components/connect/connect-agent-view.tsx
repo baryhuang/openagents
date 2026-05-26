@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider } from '@/lib/types';
+import { AgentIcon, ProviderIcon } from '@/components/icons/agent-icons';
 
 // ---------------------------------------------------------------------------
 // Brand colors for local agents and cloud providers
@@ -337,8 +338,8 @@ function LocalAgentsTab({
                   : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30',
               )}
             >
-              <div className={cn('size-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0', brand.bg, brand.text)}>
-                {entry.label[0]}
+              <div className="size-8 shrink-0 flex items-center justify-center">
+                <AgentIcon name={entry.name} size={32} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-medium leading-tight truncate">{entry.label}</div>
@@ -358,8 +359,8 @@ function LocalAgentsTab({
           {/* Header */}
           <div className="px-4 py-3 border-b bg-background">
             <div className="flex items-center gap-3">
-              <div className={cn('size-9 rounded-lg flex items-center justify-center text-sm font-bold', getAgentBrand(selectedEntry.name).bg, getAgentBrand(selectedEntry.name).text)}>
-                {selectedEntry.label[0]}
+              <div className="size-9 flex items-center justify-center shrink-0">
+                <AgentIcon name={selectedEntry.name} size={36} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -531,8 +532,8 @@ function CloudAgentsTab({
                   : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30',
               )}
             >
-              <div className={cn('size-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0', brand.bg, brand.text)}>
-                {p.label[0]}
+              <div className="size-9 shrink-0 flex items-center justify-center">
+                <ProviderIcon name={p.name} size={32} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-medium leading-tight">{p.label}</div>
@@ -553,8 +554,8 @@ function CloudAgentsTab({
         <div className="rounded-lg border bg-zinc-50/50 dark:bg-zinc-900/50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="px-4 py-3 border-b bg-background">
             <div className="flex items-center gap-2.5">
-              <div className={cn('size-8 rounded-lg flex items-center justify-center text-sm font-bold', getProviderBrand(selectedProviderInfo.name).bg, getProviderBrand(selectedProviderInfo.name).text)}>
-                {selectedProviderInfo.label[0]}
+              <div className="size-8 flex items-center justify-center shrink-0">
+                <ProviderIcon name={selectedProviderInfo.name} size={32} />
               </div>
               <div>
                 <h3 className="text-sm font-semibold">{selectedProviderInfo.label}</h3>
@@ -706,8 +707,8 @@ function CloudAgentsTab({
                 key={agent.agentName}
                 className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-background"
               >
-                <div className={cn('size-7 rounded-md flex items-center justify-center text-xs font-bold shrink-0', brand.bg, brand.text)}>
-                  {agent.provider[0].toUpperCase()}
+                <div className="size-7 flex items-center justify-center shrink-0">
+                  <ProviderIcon name={agent.provider} size={28} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
