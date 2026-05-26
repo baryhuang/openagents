@@ -798,7 +798,13 @@ export function WorkspaceProvider({
         if (cancelled) return;
 
         setWorkspace(ws);
-        setAgents(discovery.agents.map(networkAgentToWorkspaceAgent));
+        const wsAgents = discovery.agents.map(networkAgentToWorkspaceAgent);
+        setAgents(wsAgents);
+        capture('workspace_opened', {
+          workspace_id: workspaceId,
+          agent_count: wsAgents.length,
+          agent_types: wsAgents.map((a) => a.agentName),
+        });
 
         const channelSessions = discovery.channels.map((ch) =>
           networkChannelToSession(ch, workspaceId)
