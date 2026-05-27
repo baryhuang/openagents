@@ -10,16 +10,16 @@ under the old design no longer receive new fires; archive them so they
 drop out of the Chats / Inbox surfaces while preserving message
 history for forensics.
 
-Revision ID: 018
-Revises: 017
+Revision ID: 022
+Revises: 021
 Create Date: 2026-05-26
 """
 
 from alembic import op
 
 
-revision = "018"
-down_revision = "017"
+revision = "022"
+down_revision = "021"
 branch_labels = None
 depends_on = None
 
