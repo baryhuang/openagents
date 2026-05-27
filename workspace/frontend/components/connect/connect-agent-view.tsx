@@ -589,51 +589,19 @@ function CloudAgentsTab({
     { label: 'Custom', names: ['custom'] },
   ];
 
-  return (
-    <div className="p-4 space-y-3">
-      {providerGroups.map((group) => {
-        const groupProviders = group.names
-          .map((n) => providers.find((p) => p.name === n))
-          .filter(Boolean) as typeof providers;
-        if (groupProviders.length === 0) return null;
-        return (
-          <div key={group.label}>
-            <div className="flex items-center gap-2 mb-1.5 px-0.5">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{group.label}</span>
-              <div className="flex-1 border-t" />
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              {groupProviders.map((p) => {
-                const brand = getProviderBrand(p.name);
-                const isSelected = selectedProvider === p.name;
-                return (
-                  <button
-                    key={p.name}
-                    onClick={() => onSelectProvider(isSelected ? null : p.name)}
-                    className={cn(
-                      'flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all',
-                      isSelected
-                        ? `${brand.accent} bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-foreground/10`
-                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30',
-                    )}
-                  >
-                    <div className="size-6 shrink-0 flex items-center justify-center">
-                      <ProviderIcon name={p.name} size={22} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium leading-tight truncate">{p.label}</div>
-                      <div className="text-[9px] text-muted-foreground">{p.models.length} models</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+  // When a provider is selected, show config view instead of grid
+  if (selectedProviderInfo) {
+    return (
+      <div className="p-4 space-y-4">
+        {/* Back button */}
+        <button
+          onClick={() => onSelectProvider(null)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronRight className="size-3 rotate-180" />
+          All providers
+        </button>
 
-      {/* Inline config for selected provider */}
-      {selectedProviderInfo && (
         <div className="rounded-lg border bg-zinc-50/50 dark:bg-zinc-900/50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="px-4 py-3 border-b bg-background">
             <div className="flex items-center gap-2.5">
@@ -786,14 +754,47 @@ function CloudAgentsTab({
             </Button>
           </div>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {/* Hint when nothing selected */}
-      {!selectedProviderInfo && cloudAgents.length === 0 && (
-        <p className="text-center text-xs text-muted-foreground py-4">
-          Select a provider to configure a cloud agent
-        </p>
-      )}
+  // Grid view — no provider selected
+  return (
+    <div className="p-4 space-y-3">
+      {providerGroups.map((group) => {
+        const groupProviders = group.names
+          .map((n) => providers.find((p) => p.name === n))
+          .filter(Boolean) as typeof providers;
+        if (groupProviders.length === 0) return null;
+        return (
+          <div key={group.label}>
+            <div className="flex items-center gap-2 mb-1.5 px-0.5">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{group.label}</span>
+              <div className="flex-1 border-t" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {groupProviders.map((p) => {
+                const brand = getProviderBrand(p.name);
+                return (
+                  <button
+                    key={p.name}
+                    onClick={() => onSelectProvider(p.name)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 text-left transition-all"
+                  >
+                    <div className="size-6 shrink-0 flex items-center justify-center">
+                      <ProviderIcon name={p.name} size={22} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium leading-tight truncate">{p.label}</div>
+                      <div className="text-[9px] text-muted-foreground">{p.models.length} models</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Connected cloud agents */}
       {cloudAgents.length > 0 && (
@@ -802,34 +803,31 @@ function CloudAgentsTab({
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Connected</span>
             <div className="flex-1 border-t" />
           </div>
-          {cloudAgents.map((agent) => {
-            const brand = getProviderBrand(agent.provider);
-            return (
-              <div
-                key={agent.agentName}
-                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-background"
-              >
-                <div className="size-7 flex items-center justify-center shrink-0">
-                  <ProviderIcon name={agent.provider} size={28} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium">@{agent.agentName}</span>
-                    <CategoryIcon category={agent.category} className="size-2.5" />
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">{agent.model}</div>
-                </div>
-                <span className="text-[10px] text-muted-foreground font-mono">{agent.apiKeyMasked}</span>
-                <button
-                  onClick={() => onRemove(agent.agentName)}
-                  className="size-6 flex items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 transition-colors"
-                  title="Remove"
-                >
-                  <Trash2 className="size-3" />
-                </button>
+          {cloudAgents.map((agent) => (
+            <div
+              key={agent.agentName}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-background"
+            >
+              <div className="size-7 flex items-center justify-center shrink-0">
+                <ProviderIcon name={agent.provider} size={28} />
               </div>
-            );
-          })}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium">@{agent.agentName}</span>
+                  <CategoryIcon category={agent.category} className="size-2.5" />
+                </div>
+                <div className="text-[10px] text-muted-foreground">{agent.model}</div>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-mono">{agent.apiKeyMasked}</span>
+              <button
+                onClick={() => onRemove(agent.agentName)}
+                className="size-6 flex items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 transition-colors"
+                title="Remove"
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
