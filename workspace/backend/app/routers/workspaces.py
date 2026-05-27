@@ -552,6 +552,99 @@ async def update_member(
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/workspaces/{workspace_id}/members/{agent_name}/skills/install
+# DELETE /v1/workspaces/{workspace_id}/members/{agent_name}/skills/uninstall
+# ---------------------------------------------------------------------------
+
+class SkillInstallRequest(BaseModel):
+    skill_id: str
+
+
+@router.post("/{workspace_id}/members/{agent_name}/skills/install")
+async def install_skill(
+    workspace_id: str,
+    agent_name: str,
+    body: SkillInstallRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Install a third-party skill for an agent."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not member:
+        return json_response(ResponseCode.NOT_FOUND, "Member not found")
+
+    skills_data = dict(member.enabled_skills or {})
+    installed = list(skills_data.get("installed", []))
+    if body.skill_id not in installed:
+        installed.append(body.skill_id)
+    skills_data["installed"] = installed
+    member.enabled_skills = skills_data
+    db.commit()
+
+    return success_response({
+        "agentName": agent_name,
+        "skillId": body.skill_id,
+        "action": "installed",
+        "installedSkills": installed,
+    })
+
+
+@router.post("/{workspace_id}/members/{agent_name}/skills/uninstall")
+async def uninstall_skill(
+    workspace_id: str,
+    agent_name: str,
+    body: SkillInstallRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Uninstall a third-party skill from an agent."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not member:
+        return json_response(ResponseCode.NOT_FOUND, "Member not found")
+
+    skills_data = dict(member.enabled_skills or {})
+    installed = [s for s in skills_data.get("installed", []) if s != body.skill_id]
+    skills_data["installed"] = installed
+    member.enabled_skills = skills_data
+    db.commit()
+
+    return success_response({
+        "agentName": agent_name,
+        "skillId": body.skill_id,
+        "action": "uninstalled",
+        "installedSkills": installed,
+    })
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/workspaces/{workspace_id}/channels/{channel_name}
 # ---------------------------------------------------------------------------
 

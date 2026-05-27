@@ -1,8 +1,12 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Sparkles, Search, ExternalLink, Star, ArrowRight } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { Sparkles, Search, ExternalLink, Star, ArrowRight, Check, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useWorkspace } from '@/lib/workspace-context';
+import { workspaceApi } from '@/lib/api';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { toast } from 'sonner';
 
 // ---------------------------------------------------------------------------
 // Skill data
@@ -171,11 +175,47 @@ function SkillCard({ skill, onSelect }: { skill: Skill; onSelect: (s: Skill) => 
 
 function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) {
   const ghUrl = `https://github.com/${skill.sourceRepo}/tree/main/${skill.sourcePath}`;
+  const { agents, refreshWorkspace } = useWorkspace();
+  const [installing, setInstalling] = useState<string | null>(null);
+
+  const handleInstall = useCallback(async (agentName: string) => {
+    setInstalling(agentName);
+    try {
+      await workspaceApi.installSkill(agentName, skill.id);
+      await refreshWorkspace();
+      toast.success(`${skill.name} added to ${agentName}`);
+    } catch {
+      toast.error('Failed to install skill');
+    } finally {
+      setInstalling(null);
+    }
+  }, [skill, refreshWorkspace]);
+
+  const handleUninstall = useCallback(async (agentName: string) => {
+    setInstalling(agentName);
+    try {
+      await workspaceApi.uninstallSkill(agentName, skill.id);
+      await refreshWorkspace();
+      toast.success(`${skill.name} removed from ${agentName}`);
+    } catch {
+      toast.error('Failed to remove skill');
+    } finally {
+      setInstalling(null);
+    }
+  }, [skill, refreshWorkspace]);
+
+  const isInstalled = (agentName: string) => {
+    const agent = agents.find(a => a.agentName === agentName);
+    const installed: string[] = (agent?.enabledSkills as Record<string, unknown>)?.installed as string[] || [];
+    return installed.includes(skill.id);
+  };
+
+  const onlineAgents = agents.filter(a => a.status === 'online');
 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
-      <div className="fixed inset-x-4 top-[10%] bottom-[10%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[480px] bg-background rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden border border-border">
+      <div className="fixed inset-x-4 top-[5%] bottom-[5%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[480px] bg-background rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden border border-border">
         <div className="px-5 pt-5 pb-3 border-b border-border">
           <div className="flex items-start gap-3">
             <div className="size-12 rounded-xl bg-muted/60 flex items-center justify-center shrink-0">
@@ -200,6 +240,45 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {/* Add to Agent */}
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <div className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-2">Add to Agent</div>
+            {onlineAgents.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No online agents. Connect an agent to install skills.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {onlineAgents.map(agent => {
+                  const installed = isInstalled(agent.agentName);
+                  return (
+                    <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
+                      <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
+                      <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
+                      {installed ? (
+                        <button
+                          onClick={() => handleUninstall(agent.agentName)}
+                          disabled={installing === agent.agentName}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-red-500/10 hover:text-red-600 transition-colors"
+                        >
+                          <Check className="size-3" />
+                          {installing === agent.agentName ? 'Removing...' : 'Installed'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleInstall(agent.agentName)}
+                          disabled={installing === agent.agentName}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          <Plus className="size-3" />
+                          {installing === agent.agentName ? 'Adding...' : 'Add'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg border border-border p-2.5">
               <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Category</div>
@@ -219,7 +298,7 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
           </div>
 
           <div className="rounded-lg border border-border p-3 bg-muted/30">
-            <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Install</div>
+            <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">CLI Install</div>
             <code className="text-[11px] font-mono block bg-background rounded-md p-2.5 border border-border select-all break-all">
               npx @anthropic-ai/skills install {skill.sourceRepo}/{skill.sourcePath}
             </code>

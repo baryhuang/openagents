@@ -117,6 +117,20 @@ class WorkspaceApi {
     return this.request<import('./types').SkillCatalogEntry[]>('/v1/workspaces/skill-catalog');
   }
 
+  async installSkill(agentName: string, skillId: string): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}/skills/install`, {
+      method: 'POST',
+      body: JSON.stringify({ skill_id: skillId }),
+    });
+  }
+
+  async uninstallSkill(agentName: string, skillId: string): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}/skills/uninstall`, {
+      method: 'POST',
+      body: JSON.stringify({ skill_id: skillId }),
+    });
+  }
+
   async updateChannel(channelName: string, updates: { title?: string; status?: string; starred?: boolean }): Promise<unknown> {
     return this.request(`/v1/workspaces/${this.workspaceId}/channels/${channelName}`, {
       method: 'PATCH',
