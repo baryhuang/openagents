@@ -132,6 +132,66 @@ describe('Installer', () => {
     assert.ok(!fs.existsSync(path.join(tmpDir, 'installed', 'testpkg')));
   });
 
+  it('getInstallInfo returns installed=true via marker when binary is not detected', () => {
+    // Reproduces the Cursor regression: install succeeds → marker written →
+    // _whichBinary can't find the binary yet (cache lag or PATH gap) →
+    // previously getInstallInfo would delete the marker and report
+    // not-installed. Now it must trust the marker.
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => null; // simulate detection miss
+    inst._markInstalled('cursor');
+    const info = inst.getInstallInfo('cursor');
+    assert.equal(info.installed, true);
+    assert.equal(info.location, 'marker');
+    // Marker must survive the call — previous code destructively unlinked it.
+    assert.ok(inst._hasMarker('cursor'));
+    assert.ok(fs.existsSync(path.join(tmpDir, 'installed', 'cursor')));
+  });
+
+  it('getInstallInfo returns installed=false when no marker and no binary', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => null;
+    const info = inst.getInstallInfo('cursor');
+    assert.equal(info.installed, false);
+    assert.equal(info.location, null);
+  });
+
+  it('_markInstalled invalidates the paths whichBinary cache', () => {
+    const { whichBinary, clearBinaryLookupCache } = require('../src/paths');
+    const fakeName = `_oa_installer_test_${process.pid}_${Date.now()}`;
+    const inst = new Installer(mockRegistry, tmpDir);
+    try {
+      clearBinaryLookupCache();
+      // Prime the cache with a null (binary genuinely doesn't exist).
+      assert.equal(whichBinary(fakeName), null);
+
+      // Create a real binary in a fresh dir and put it on PATH — but without
+      // a cache invalidation, the previously-cached null would still be
+      // returned for `fakeName` even though it now resolves.
+      const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inst-cache-'));
+      const ext = process.platform === 'win32' ? '.cmd' : '';
+      const binFile = path.join(stagingDir, fakeName + ext);
+      fs.writeFileSync(binFile, process.platform === 'win32' ? '@echo ok' : '#!/bin/sh\necho ok', 'utf-8');
+      if (process.platform !== 'win32') fs.chmodSync(binFile, 0o755);
+
+      const origPATH = process.env.PATH;
+      try {
+        process.env.PATH = stagingDir + (process.platform === 'win32' ? ';' : ':') + (origPATH || '');
+        // _markInstalled must clear the cache so the next lookup sees the
+        // freshly-installed binary.
+        inst._markInstalled('testpkg');
+        const resolved = whichBinary(fakeName);
+        assert.ok(resolved, 'expected whichBinary to find the freshly-installed binary after _markInstalled cleared the cache');
+      } finally {
+        process.env.PATH = origPATH;
+        try { fs.unlinkSync(binFile); } catch {}
+        try { fs.rmdirSync(stagingDir); } catch {}
+      }
+    } finally {
+      clearBinaryLookupCache();
+    }
+  });
+
   it('_deriveUninstallCommand handles npm', () => {
     const inst = new Installer(mockRegistry, tmpDir);
     assert.equal(

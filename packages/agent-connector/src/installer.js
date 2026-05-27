@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execSync, exec } = require('child_process');
-const { whichBinary, getEnhancedEnv, getRuntimePrefix } = require('./paths');
+const { whichBinary, getEnhancedEnv, getRuntimePrefix, clearBinaryLookupCache } = require('./paths');
 const { EnvManager } = require('./env');
 
 const STATUS_CACHE_TTL_MS = 10000;
@@ -90,7 +90,15 @@ class Installer {
     // Fallback: check if binary exists on PATH (system install)
     const binaryPath = this._whichBinary(agentType);
     if (!binaryPath) {
-      try { fs.unlinkSync(path.join(this.markersDir, agentType)); } catch {}
+      // If a successful install wrote a marker, surface installed=true even
+      // when binary detection can't (yet) see the freshly-installed CLI —
+      // e.g. PATH caches not yet picking up a brand-new ~/.cursor/bin. The
+      // marker is the ground truth of what we just installed; UI was
+      // silently showing "not installed" right after a successful install
+      // because earlier code aggressively deleted the marker here.
+      if (this._hasMarker(agentType)) {
+        return { installed: true, managed: true, location: 'marker' };
+      }
       return { installed: false, managed: false, location: null };
     }
 
@@ -712,6 +720,12 @@ class Installer {
       fs.mkdirSync(this.markersDir, { recursive: true });
       fs.writeFileSync(path.join(this.markersDir, agentType), '', 'utf-8');
     } catch {}
+
+    // Drop the 30s PATH/whichBinary caches so the very next getInstallInfo
+    // sees the freshly-created bin dir (e.g. ~/.cursor/bin) instead of the
+    // pre-install snapshot. Without this, install completes but UI keeps
+    // showing "not installed" until the cache expires.
+    try { clearBinaryLookupCache(); } catch {}
   }
 
   _markUninstalled(agentType) {
@@ -731,6 +745,9 @@ class Installer {
       const markerFile = path.join(this.markersDir, agentType);
       if (fs.existsSync(markerFile)) fs.unlinkSync(markerFile);
     } catch {}
+
+    // Symmetric with _markInstalled: invalidate so detection re-runs cleanly.
+    try { clearBinaryLookupCache(); } catch {}
   }
 
   // -- Shell env + exec --
