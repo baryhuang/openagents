@@ -272,6 +272,7 @@ export function SidebarContent() {
               <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
               <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
               <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
+              <NavButton active={viewMode === 'knowledge'} icon={<BookOpen className="size-[15px]" />} label="Knowledge" count={knowledge.length} onClick={() => setViewMode('knowledge')} />
               <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
               <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="Inbox" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
               <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
