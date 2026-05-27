@@ -244,7 +244,9 @@ def validate_provider_model(provider: str, model: str) -> Optional[ModelInfo]:
     for m in prov.models:
         if m.id == model:
             return m
-    return None
+    # Known providers accept any model — the registry list is curated suggestions,
+    # not a hard restriction. Users may use newer or older model IDs.
+    return ModelInfo(model, "chat", model)
 
 
 def providers_catalog() -> list[dict]:
