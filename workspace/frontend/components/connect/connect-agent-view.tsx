@@ -581,44 +581,56 @@ function CloudAgentsTab({
   onAdd: () => void;
   onRemove: (name: string) => void;
 }) {
+  const providerGroups = [
+    { label: 'Chat Models', names: ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'mistral'] },
+    { label: 'Search & Agents', names: ['perplexity', 'manus'] },
+    { label: 'Fast Inference', names: ['groq', 'together', 'fireworks', 'openrouter', 'sambanova', 'cerebras'] },
+    { label: 'Image & Media', names: ['stability', 'replicate', 'fal', 'elevenlabs'] },
+    { label: 'Custom', names: ['custom'] },
+  ];
+
   return (
-    <div className="p-4 space-y-4">
-      {/* Provider grid */}
-      <div className="grid grid-cols-2 gap-2">
-        {providers.map((p) => {
-          const brand = getProviderBrand(p.name);
-          const isSelected = selectedProvider === p.name;
-          const modelCount = p.models.length;
-          const hasChat = p.models.some((m) => m.category === 'chat');
-          const hasImage = p.models.some((m) => m.category === 'image');
-          return (
-            <button
-              key={p.name}
-              onClick={() => onSelectProvider(isSelected ? null : p.name)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-3.5 rounded-lg border text-left transition-all',
-                isSelected
-                  ? `${brand.accent} bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-foreground/10`
-                  : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30',
-              )}
-            >
-              <div className="size-9 shrink-0 flex items-center justify-center">
-                <ProviderIcon name={p.name} size={32} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium leading-tight">{p.label}</div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] text-muted-foreground">{modelCount} models</span>
-                  {hasChat && <MessageSquare className="size-2.5 text-muted-foreground/60" />}
-                  {hasImage && <ImageIcon className="size-2.5 text-muted-foreground/60" />}
-                  {p.models.some((m) => m.category === 'audio') && <Volume2 className="size-2.5 text-muted-foreground/60" />}
-                </div>
-              </div>
-              {isSelected && <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />}
-            </button>
-          );
-        })}
-      </div>
+    <div className="p-4 space-y-3">
+      {providerGroups.map((group) => {
+        const groupProviders = group.names
+          .map((n) => providers.find((p) => p.name === n))
+          .filter(Boolean) as typeof providers;
+        if (groupProviders.length === 0) return null;
+        return (
+          <div key={group.label}>
+            <div className="flex items-center gap-2 mb-1.5 px-0.5">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{group.label}</span>
+              <div className="flex-1 border-t" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {groupProviders.map((p) => {
+                const brand = getProviderBrand(p.name);
+                const isSelected = selectedProvider === p.name;
+                return (
+                  <button
+                    key={p.name}
+                    onClick={() => onSelectProvider(isSelected ? null : p.name)}
+                    className={cn(
+                      'flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all',
+                      isSelected
+                        ? `${brand.accent} bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-foreground/10`
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30',
+                    )}
+                  >
+                    <div className="size-6 shrink-0 flex items-center justify-center">
+                      <ProviderIcon name={p.name} size={22} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium leading-tight truncate">{p.label}</div>
+                      <div className="text-[9px] text-muted-foreground">{p.models.length} models</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Inline config for selected provider */}
       {selectedProviderInfo && (
