@@ -385,6 +385,53 @@ function buildToolDefs(disabledModules) {
     );
   }
 
+  // -- Knowledge Base --
+  if (!disabledModules.has('knowledge')) {
+    tools.push(
+      {
+        name: 'workspace_list_knowledge',
+        description: 'List knowledge base entries shared in the workspace.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workspace_read_knowledge',
+        description: 'Read a knowledge base entry by ID or slug. Returns the full markdown content.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            entry_id: { type: 'string', description: 'Knowledge entry ID' },
+            slug: { type: 'string', description: 'Knowledge entry slug (alternative to entry_id)' },
+          },
+        },
+      },
+      {
+        name: 'workspace_write_knowledge',
+        description: 'Create or update a knowledge base entry. Knowledge entries are workspace-global markdown documents accessible to all agents via @knowledge:slug mentions.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Entry title' },
+            content: { type: 'string', description: 'Markdown content of the knowledge entry' },
+            description: { type: 'string', description: 'Short summary (optional)' },
+            entry_id: { type: 'string', description: 'Existing entry ID to update (omit to create new)' },
+          },
+          required: ['title', 'content'],
+        },
+      },
+      {
+        name: 'workspace_delete_knowledge',
+        description: 'Delete a knowledge base entry by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            entry_id: { type: 'string', description: 'Knowledge entry ID to delete' },
+          },
+          required: ['entry_id'],
+        },
+      },
+    );
+  }
+
   return tools;
 }
 
@@ -878,6 +925,54 @@ class McpServer {
           return `- ${readStatus}${prio} ${n.title}: ${n.message.slice(0, 80)}${n.message.length > 80 ? '...' : ''} (${n.created_at})`;
         });
         return text(lines.join('\n'));
+      }
+
+      // ── Knowledge Base ──
+
+      case 'workspace_list_knowledge': {
+        const data = await this.ws.listKnowledge(this.workspaceId, this.token);
+        const entries = (data && data.entries) || [];
+        if (!entries.length) return text('No knowledge entries yet.');
+        const lines = entries.map((e) =>
+          `- ${e.title} (slug: ${e.slug}, id: ${e.id})`
+        );
+        return text(lines.join('\n'));
+      }
+
+      case 'workspace_read_knowledge': {
+        let data;
+        if (args.slug) {
+          data = await this.ws.getKnowledgeBySlug(this.workspaceId, this.token, args.slug);
+        } else if (args.entry_id) {
+          data = await this.ws.getKnowledge(this.workspaceId, this.token, args.entry_id);
+        } else {
+          throw new Error('Either entry_id or slug is required');
+        }
+        return text(`# ${data.title}\n\n${data.content || '(empty)'}`);
+      }
+
+      case 'workspace_write_knowledge': {
+        let result;
+        if (args.entry_id) {
+          result = await this.ws.updateKnowledge(
+            this.workspaceId, this.token, args.entry_id,
+            { title: args.title, content: args.content, description: args.description,
+              source: `openagents:${this.agentName}` },
+          );
+          return text(`Knowledge updated: "${result.title}" (slug: ${result.slug})`);
+        } else {
+          result = await this.ws.createKnowledge(
+            this.workspaceId, this.token,
+            { title: args.title, content: args.content, description: args.description,
+              source: `openagents:${this.agentName}` },
+          );
+          return text(`Knowledge created: "${result.title}" (slug: ${result.slug}, id: ${result.id})`);
+        }
+      }
+
+      case 'workspace_delete_knowledge': {
+        await this.ws.deleteKnowledge(this.workspaceId, this.token, args.entry_id);
+        return text(`Knowledge entry deleted: ${args.entry_id}`);
       }
 
       default:

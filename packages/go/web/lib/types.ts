@@ -4,7 +4,13 @@ export interface Workspace {
   name: string;
   creatorEmail: string | null;
   settings: Record<string, unknown>;
-  browserfabricApiKey: string | null;
+  /**
+   * Workspace-scoped toggle for the Browser Fabric viewer in clients.
+   * Backed by `settings.browser_enabled` but surfaced as a typed
+   * top-level field for ergonomics. Older backends omit it — default to
+   * false when reading.
+   */
+  browserEnabled?: boolean;
   status: string;
   createdAt: string | null;
   lastActivityAt: string | null;
@@ -18,21 +24,9 @@ export interface WorkspaceAgent {
   serverHost: string | null;
   workingDir: string | null;
   description: string | null;
-  enabledSkills: Record<string, boolean> | null;
   status: string;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
-}
-
-export interface SkillCatalogEntry {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  icon: string;
-  source_repo: string;
-  source_path: string;
-  author: string;
 }
 
 export interface WorkspaceSession {
@@ -51,7 +45,6 @@ export interface WorkspaceSession {
 export interface WorkspaceMessage {
   messageId: string;
   sessionId: string;
-  senderId?: string | null;
   senderType: string;
   senderName: string;
   content: string;
@@ -60,19 +53,21 @@ export interface WorkspaceMessage {
   messageType: string;
   metadata: Record<string, unknown>;
   createdAt: string | null;
-}
-
-export interface WorkspaceIdentity {
-  id: string;
-  name: string;
-  isAuthenticated: boolean;
-}
-
-export interface OnlineUser {
-  id: string;
-  name: string;
-  status: 'online';
-  lastSeen: number;
+  /**
+   * Optional A2UI spec emitted by the agent — a JSON tree of
+   * `{ type, props, children?, action? }` nodes. When present, the chat
+   * bubble renders it inline below the markdown content (mirrors the
+   * Swift `A2UIRendererView` placement). Lives on `payload.spec` in the
+   * source ONM event.
+   */
+  spec?: Record<string, unknown> | null;
+  /**
+   * Tool-call id correlating an A2UI spec back to the originating
+   * `render_ui` invocation. Sent back upstream as part of the
+   * workspace.tool_result event when the user interacts with the spec.
+   * Lives on `payload.spec_tool_call_id` in the source event.
+   */
+  specToolCallId?: string | null;
 }
 
 export interface WorkspaceCollaborator {
@@ -104,19 +99,6 @@ export interface WorkspaceFile {
   createdAt: string | null;
 }
 
-export interface KnowledgeEntry {
-  id: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  contentSize: number | null;
-  createdBy: string;
-  updatedBy: string | null;
-  status: string;
-  createdAt: string | null;
-  updatedAt: string | null;
-}
-
 export interface BrowserTab {
   id: string;
   url: string;
@@ -140,36 +122,6 @@ export interface BrowserPersistentContext {
   sharedWith: string[];
   createdAt: string | null;
   lastUsedAt: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Shared conversation snapshots
-// ---------------------------------------------------------------------------
-
-export interface SharedSnapshotMessage {
-  sender_name: string;
-  sender_type: string;
-  content: string;
-  created_at: string | null;
-}
-
-export interface SharedSnapshot {
-  id: string;
-  title: string | null;
-  messages: SharedSnapshotMessage[];
-  messageCount: number;
-  createdAt: string | null;
-}
-
-export interface ShareSummary {
-  id: string;
-  workspaceId: string;
-  channelName: string;
-  title: string | null;
-  shareToken: string;
-  messageCount: number;
-  status: string;
-  createdAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,11 +156,9 @@ export interface RoutineItem {
   id: string;
   name: string;
   message: string;
-  context: string | null;
   scheduleHour: number;
   scheduleMinute: number;
   scheduleDays: number[] | null;
-  scheduleIntervalMinutes: number | null;
   timezone: string;
   nextFiresAt: string;
   lastFiredAt: string | null;
@@ -216,25 +166,6 @@ export interface RoutineItem {
   createdBy: string;
   channelName: string;
   createdAt: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Inbox / Notifications
-// ---------------------------------------------------------------------------
-
-export interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  priority: 'low' | 'normal' | 'high';
-  isRead: boolean;
-  createdBy: string;
-  channelName: string | null;
-  threadId: string | null;
-  linkUrl: string | null;
-  status: string;
-  createdAt: string | null;
-  readAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -249,35 +180,6 @@ export interface AgentCatalogEntry {
   homepage: string;
   tags: string[];
   builtin: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Cloud agents
-// ---------------------------------------------------------------------------
-
-export interface CloudAgentProvider {
-  name: string;
-  label: string;
-  models: CloudAgentModel[];
-}
-
-export interface CloudAgentModel {
-  id: string;
-  category: 'chat' | 'image' | 'audio';
-  label: string;
-}
-
-export interface CloudAgentConfig {
-  agentName: string;
-  provider: string;
-  model: string;
-  category: 'chat' | 'image' | 'audio';
-  apiKeyMasked: string;
-  baseUrl: string | null;
-  systemPrompt: string | null;
-  maxTokens: number | null;
-  status: string;
-  createdAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +212,6 @@ export interface NetworkAgent {
   server_host: string | null;
   working_dir: string | null;
   description: string | null;
-  enabled_skills: Record<string, boolean> | null;
   last_heartbeat_at: string | null;
   joined_at: string | null;
 }
@@ -385,12 +286,27 @@ export interface DMConversation {
 /** Convert an ONM event to a WorkspaceMessage for the chat UI. */
 export function eventToMessage(event: ONMEvent): WorkspaceMessage {
   const isHuman = event.source.startsWith('human:');
+  const senderName = event.source.replace(/^(openagents:|human:)/, '');
   const payload = (event.payload || {}) as Record<string, unknown>;
-  const senderName = (payload.sender_name as string) || event.source.replace(/^(openagents:|human:)/, '');
+
+  // Pull the A2UI spec off the payload when present — agents can include
+  // an inline JSON object (preferred) or a pre-serialized string. Accept
+  // both so the backend isn't pinned to one encoding.
+  let spec: Record<string, unknown> | null = null;
+  const rawSpec = payload.spec;
+  if (rawSpec && typeof rawSpec === 'object') {
+    spec = rawSpec as Record<string, unknown>;
+  } else if (typeof rawSpec === 'string' && rawSpec.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawSpec);
+      if (parsed && typeof parsed === 'object') spec = parsed as Record<string, unknown>;
+    } catch {
+      // Malformed spec — leave null, renderer falls back to plain content.
+    }
+  }
 
   return {
     messageId: event.id,
-    senderId: (payload.sender_id as string) || null,
     sessionId: event.target.replace(/^channel\//, ''),
     senderType: isHuman ? 'human' : 'agent',
     senderName,
@@ -404,6 +320,8 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
       ...(payload.todos ? { todos: payload.todos } : {}),
     },
     createdAt: new Date(event.timestamp).toISOString(),
+    spec,
+    specToolCallId: (payload.spec_tool_call_id as string) ?? null,
   };
 }
 
@@ -416,7 +334,6 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
     serverHost: agent.server_host || null,
     workingDir: agent.working_dir || null,
     description: agent.description || null,
-    enabledSkills: agent.enabled_skills || null,
     status: agent.status,
     lastHeartbeatAt: agent.last_heartbeat_at || null,
     joinedAt: agent.joined_at || null,

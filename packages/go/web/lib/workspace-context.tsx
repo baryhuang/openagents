@@ -1,45 +1,10 @@
 'use client';
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { workspaceApi } from './api';
-import { capture } from './analytics';
-import { useOpenAgentsAuth } from './openagents-auth-context';
-import { generateUserId, getStoredIdentity, storeIdentity } from './identity';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, KnowledgeEntry, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
-
-function useWorkspaceIdentity() {
-  const { user } = useOpenAgentsAuth();
-  const [localIdentity, setLocalIdentity] = useState<WorkspaceIdentity>(() => {
-    const stored = typeof window !== 'undefined' ? getStoredIdentity() : null;
-    const id = stored?.id || (typeof window !== 'undefined' ? generateUserId() : '');
-    return { id, name: stored?.name || '', isAuthenticated: false };
-  });
-
-  useEffect(() => {
-    if (!user && localIdentity.id && localIdentity.name) {
-      storeIdentity(localIdentity.id, localIdentity.name);
-    }
-  }, [user, localIdentity.id, localIdentity.name]);
-
-  const setUserName = useCallback((name: string) => {
-    setLocalIdentity((prev) => {
-      const id = prev.id || generateUserId();
-      storeIdentity(id, name);
-      return { id, name, isAuthenticated: false };
-    });
-  }, []);
-
-  if (user) {
-    const name = (user.displayName || user.email || '').trim();
-    return {
-      currentUser: { id: user.email || name, name, isAuthenticated: true } as WorkspaceIdentity,
-      setUserName: () => {},
-    };
-  }
-
-  return { currentUser: localIdentity, setUserName };
-}
+import type { BrowserPersistentContext, BrowserTab, DMConversation, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -51,9 +16,6 @@ interface WorkspaceContextValue {
   workspace: Workspace | null;
   token: string;
   agents: WorkspaceAgent[];
-  currentUser: WorkspaceIdentity;
-  setUserName: (name: string) => void;
-  onlineUsers: OnlineUser[];
   sessions: WorkspaceSession[];
   files: WorkspaceFile[];
   selectedFileId: string | null;
@@ -84,6 +46,12 @@ interface WorkspaceContextValue {
   addParticipant: (sessionId: string, agentName: string) => Promise<void>;
   removeParticipant: (sessionId: string, agentName: string) => Promise<void>;
   renameWorkspace: (name: string) => Promise<void>;
+  /**
+   * Flip the workspace-scoped Browser Fabric viewer toggle. Optimistic
+   * local flip + debounced PATCH to /v1/workspaces/{id}; rolls back on
+   * error.
+   */
+  setBrowserEnabled: (enabled: boolean) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   refreshAgents: () => Promise<void>;
   refreshFiles: () => Promise<void>;
@@ -109,27 +77,6 @@ interface WorkspaceContextValue {
   refreshTodos: () => Promise<void>;
   routines: RoutineItem[];
   refreshRoutines: () => Promise<void>;
-  createRoutine: (params: {
-    name: string;
-    message: string;
-    source: string;
-    hour?: number;
-    minute?: number;
-    days?: number[];
-    interval_minutes?: number;
-    conversation_history?: string;
-  }) => Promise<void>;
-  knowledge: KnowledgeEntry[];
-  refreshKnowledge: () => Promise<void>;
-  createKnowledge: (params: { title: string; content: string; description?: string }) => Promise<KnowledgeEntry>;
-  updateKnowledge: (entryId: string, params: { title?: string; content?: string; description?: string }) => Promise<KnowledgeEntry>;
-  deleteKnowledge: (entryId: string) => Promise<void>;
-  notifications: NotificationItem[];
-  unreadNotificationCount: number;
-  refreshNotifications: () => Promise<void>;
-  markNotificationRead: (id: string) => Promise<void>;
-  markAllNotificationsRead: () => Promise<void>;
-  dismissNotification: (id: string) => Promise<void>;
   notificationSound: boolean;
   setNotificationSound: (enabled: boolean) => void;
 }
@@ -155,10 +102,6 @@ export function WorkspaceProvider({
 }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
-  const { currentUser, setUserName } = useWorkspaceIdentity();
-  const currentUserRef = useRef(currentUser);
-  currentUserRef.current = currentUser;
-  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
   const [currentSessionId, _setCurrentSessionId] = useState<string | null>(null);
   // Set by setCurrentSessionId({ skipFocus: true }) and consumed by ChatView's
@@ -200,9 +143,6 @@ export function WorkspaceProvider({
   const [dmConversations, setDMConversations] = useState<DMConversation[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [routines, setRoutines] = useState<RoutineItem[]>([]);
-  const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
 
   // Auto-select browser tabs for split browser view:
@@ -246,71 +186,6 @@ export function WorkspaceProvider({
     _setNotificationSound(enabled);
     try { localStorage.setItem('oa_notification_sound', String(enabled)); } catch {}
   }, []);
-
-  // Presence heartbeat
-  useEffect(() => {
-    if (!currentUser.id || !currentUser.name.trim()) return;
-
-    let cancelled = false;
-    const sendPresence = (type: string) =>
-      workspaceApi.sendEvent({
-        type,
-        source: `human:${currentUser.id}`,
-        target: 'core',
-        payload: { user_id: currentUser.id, user_name: currentUser.name, sender_type: 'human' },
-        visibility: 'network',
-      }).catch(() => {});
-
-    const applyPresenceEvents = async () => {
-      try {
-        const result = await workspaceApi.pollEvents({ type: 'workspace.user', sort: 'desc', limit: 200 });
-        if (cancelled) return;
-        const cutoff = Date.now() - 45_000;
-        const map = new Map<string, OnlineUser>();
-        for (const event of [...result.events].reverse()) {
-          const payload = (event.payload || {}) as Record<string, string>;
-          const userId = payload.user_id || payload.sender_id;
-          if (!userId) continue;
-          if (event.type === 'workspace.user.left') {
-            map.delete(userId);
-            continue;
-          }
-          const userName = payload.user_name || payload.sender_name || 'User';
-          map.set(userId, { id: userId, name: userName, status: 'online', lastSeen: event.timestamp });
-        }
-        const users = Array.from(map.values())
-          .filter((u) => u.id === currentUserRef.current.id || u.lastSeen >= cutoff)
-          .sort((a, b) => {
-            if (a.id === currentUserRef.current.id) return -1;
-            if (b.id === currentUserRef.current.id) return 1;
-            return a.name.localeCompare(b.name);
-          });
-        setOnlineUsers(users);
-      } catch {
-        // non-critical
-      }
-    };
-
-    void sendPresence('workspace.user.joined');
-    void applyPresenceEvents();
-
-    const heartbeat = window.setInterval(() => {
-      void sendPresence('workspace.user.heartbeat');
-      void applyPresenceEvents();
-    }, 15_000);
-
-    const handlePageHide = () => void sendPresence('workspace.user.left');
-    window.addEventListener('pagehide', handlePageHide);
-    window.addEventListener('beforeunload', handlePageHide);
-
-    return () => {
-      cancelled = true;
-      clearInterval(heartbeat);
-      window.removeEventListener('pagehide', handlePageHide);
-      window.removeEventListener('beforeunload', handlePageHide);
-      void sendPresence('workspace.user.left');
-    };
-  }, [currentUser.id, currentUser.name]);
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string, isStatus?: boolean) => {
     if (!isStatus || /stopped|stopping failed/i.test(content)) {
@@ -423,10 +298,22 @@ export function WorkspaceProvider({
       setWorkspace(ws);
       setAgents(ws.agents);
       setError(null);
+      // Drop a record into local history so the workspace switcher
+      // popover can list this workspace as a recent. Mirrors Swift's
+      // `WorkspaceHistory.shared.add(...)` on connect.
+      if (typeof window !== 'undefined' && ws.slug && token) {
+        import('./workspace-history').then(({ WorkspaceHistory }) => {
+          WorkspaceHistory.record({
+            workspaceId: ws.slug,
+            workspaceToken: token,
+            name: ws.name,
+          });
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load workspace');
     }
-  }, []);
+  }, [token]);
 
   // Track last known event timestamps per channel for change detection
   const lastKnownEventAtRef = React.useRef<Record<string, number | null>>({});
@@ -511,7 +398,7 @@ export function WorkspaceProvider({
               // If agent is actively working, show the status; otherwise show last chat
               const pick = isAgentWorking ? latest : (lastChat || latest);
               const payload = pick.payload as Record<string, string>;
-              const sender = payload?.sender_name || pick.source.replace(/^(openagents:|human:)/, '');
+              const sender = pick.source.replace(/^(openagents:|human:)/, '');
               const content = payload?.content || '';
               const msgType = payload?.message_type || 'chat';
               const isStatus = msgType === 'status' || msgType === 'thinking';
@@ -597,11 +484,6 @@ export function WorkspaceProvider({
       workspaceApi.listConversations().then((c) => setDMConversations(c)).catch(() => {});
       workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {});
       workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {});
-      workspaceApi.listKnowledge().then((r) => setKnowledge(r.entries)).catch(() => {});
-      workspaceApi.listNotifications().then((r) => {
-        setNotifications(r.notifications);
-        setUnreadNotificationCount(r.unreadCount);
-      }).catch(() => {});
     } catch {
       // Non-critical — keep existing state
     }
@@ -635,87 +517,6 @@ export function WorkspaceProvider({
     } catch {
       // Non-critical
     }
-  }, []);
-
-  const createRoutine = useCallback(async (params: {
-    name: string;
-    message: string;
-    source: string;
-    hour?: number;
-    minute?: number;
-    days?: number[];
-    interval_minutes?: number;
-    conversation_history?: string;
-  }) => {
-    await workspaceApi.createRoutine(params);
-    await refreshRoutines();
-  }, [refreshRoutines]);
-
-  const refreshNotifications = useCallback(async () => {
-    try {
-      const result = await workspaceApi.listNotifications();
-      setNotifications(result.notifications);
-      setUnreadNotificationCount(result.unreadCount);
-    } catch {
-      // Non-critical
-    }
-  }, []);
-
-  const markNotificationRead = useCallback(async (id: string) => {
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
-    setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
-    try {
-      await workspaceApi.markNotificationRead(id);
-    } catch {
-      await refreshNotifications();
-    }
-  }, [refreshNotifications]);
-
-  const markAllNotificationsRead = useCallback(async () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    setUnreadNotificationCount(0);
-    try {
-      await workspaceApi.markAllNotificationsRead();
-    } catch {
-      await refreshNotifications();
-    }
-  }, [refreshNotifications]);
-
-  const dismissNotification = useCallback(async (id: string) => {
-    const wasUnread = notifications.find((n) => n.id === id && !n.isRead);
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-    if (wasUnread) setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
-    try {
-      await workspaceApi.dismissNotification(id);
-    } catch {
-      await refreshNotifications();
-    }
-  }, [notifications, refreshNotifications]);
-
-  const refreshKnowledge = useCallback(async () => {
-    try {
-      const result = await workspaceApi.listKnowledge();
-      setKnowledge(result.entries);
-    } catch {
-      // Non-critical
-    }
-  }, []);
-
-  const createKnowledge = useCallback(async (params: { title: string; content: string; description?: string }) => {
-    const entry = await workspaceApi.createKnowledge(params);
-    await refreshKnowledge();
-    return entry;
-  }, [refreshKnowledge]);
-
-  const updateKnowledge = useCallback(async (entryId: string, params: { title?: string; content?: string; description?: string }) => {
-    const entry = await workspaceApi.updateKnowledge(entryId, params);
-    await refreshKnowledge();
-    return entry;
-  }, [refreshKnowledge]);
-
-  const deleteKnowledge = useCallback(async (entryId: string) => {
-    await workspaceApi.deleteKnowledge(entryId);
-    setKnowledge((prev) => prev.filter((k) => k.id !== entryId));
   }, []);
 
   const uploadFile = useCallback(async (file: File) => {
@@ -825,22 +626,11 @@ export function WorkspaceProvider({
           workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {}),
           workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {}),
           workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {}),
-          workspaceApi.listKnowledge().then((r) => setKnowledge(r.entries)).catch(() => {}),
-          workspaceApi.listNotifications().then((r) => {
-            setNotifications(r.notifications);
-            setUnreadNotificationCount(r.unreadCount);
-          }).catch(() => {}),
         ]);
         if (cancelled) return;
 
         setWorkspace(ws);
-        const wsAgents = discovery.agents.map(networkAgentToWorkspaceAgent);
-        setAgents(wsAgents);
-        capture('workspace_opened', {
-          workspace_id: workspaceId,
-          agent_count: wsAgents.length,
-          agent_types: wsAgents.map((a) => a.agentName),
-        });
+        setAgents(discovery.agents.map(networkAgentToWorkspaceAgent));
 
         const channelSessions = discovery.channels.map((ch) =>
           networkChannelToSession(ch, workspaceId)
@@ -873,7 +663,7 @@ export function WorkspaceProvider({
             const batch: Record<string, LastMessageInfo> = {};
             for (const [channelName, event] of Object.entries(bulk.channels)) {
               const payload = event.payload as Record<string, string>;
-              const sender = payload?.sender_name || event.source.replace(/^(openagents:|human:)/, '');
+              const sender = event.source.replace(/^(openagents:|human:)/, '');
               const content = payload?.content || '';
               const msgType = payload?.message_type || 'chat';
               const isStatus = msgType === 'status' || msgType === 'thinking';
@@ -938,7 +728,6 @@ export function WorkspaceProvider({
       participants,
       resumeFrom: opts?.resumeFrom,
     });
-    capture('thread_created', { participant_count: participants.length, has_resume: !!opts?.resumeFrom });
     setSessions((prev) => [session, ...prev]);
     setCurrentSessionId(session.sessionId);
     return session;
@@ -950,6 +739,23 @@ export function WorkspaceProvider({
       await workspaceApi.updateWorkspace({ name });
     } catch {
       // Best-effort — local update already applied
+    }
+  }, []);
+
+  const setBrowserEnabled = useCallback(async (enabled: boolean) => {
+    // Optimistic local flip — UI updates immediately.
+    setWorkspace((prev) => (prev ? { ...prev, browserEnabled: enabled } : prev));
+    try {
+      const updated = await workspaceApi.setBrowserEnabled(enabled);
+      // Reconcile with the authoritative server response (typically a
+      // no-op, but covers cases where the backend coerces / merges with
+      // other settings keys).
+      setWorkspace((prev) => (prev ? { ...prev, ...updated } : updated));
+    } catch (err) {
+      // Roll back optimistic flip and surface the failure.
+      setWorkspace((prev) => (prev ? { ...prev, browserEnabled: !enabled } : prev));
+      toast.error(err instanceof Error ? err.message : 'Failed to update browser setting');
+      throw err;
     }
   }, []);
 
@@ -1080,9 +886,6 @@ export function WorkspaceProvider({
         workspace,
         token,
         agents,
-        currentUser,
-        setUserName,
-        onlineUsers,
         sessions,
         files,
         selectedFileId,
@@ -1112,6 +915,7 @@ export function WorkspaceProvider({
         addParticipant,
         removeParticipant,
         renameWorkspace,
+        setBrowserEnabled,
         refreshWorkspace,
         refreshAgents,
         refreshFiles,
@@ -1137,18 +941,6 @@ export function WorkspaceProvider({
         refreshTodos,
         routines,
         refreshRoutines,
-        createRoutine,
-        knowledge,
-        refreshKnowledge,
-        createKnowledge,
-        updateKnowledge,
-        deleteKnowledge,
-        notifications,
-        unreadNotificationCount,
-        refreshNotifications,
-        markNotificationRead,
-        markAllNotificationsRead,
-        dismissNotification,
         notificationSound,
         setNotificationSound,
       }}

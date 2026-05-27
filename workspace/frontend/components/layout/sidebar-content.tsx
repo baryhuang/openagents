@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Plus, MessageSquare, FileText, Globe, PlusSquare, Sparkles,
+  Plus, MessageSquare, FileText, Globe, PlusSquare, Sparkles, BookOpen,
   Settings, Copy, Check, ListTodo, CalendarClock, Inbox,
   LogIn, LogOut, Shield, Moon, Sun, KeyRound, X, Crown, Users,
 } from 'lucide-react';
@@ -71,7 +71,7 @@ function NavButton({
 
 export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
-  const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace, todos, routines, currentUser, onlineUsers, unreadNotificationCount } = useWorkspace();
+  const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace, todos, routines, knowledge, currentUser, onlineUsers, unreadNotificationCount } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -268,12 +268,12 @@ export function SidebarContent() {
               Collaboration
             </p>
             <div className="space-y-0.5">
-              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.length} onClick={() => setViewMode('threads')} />
+              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
               <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
-              <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
-              <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
-              <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="Inbox" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
               <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+              <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
+              <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
+              <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="Inbox" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
               <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
             </div>
 
@@ -394,11 +394,13 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   const [collabAdding, setCollabAdding] = useState(false);
   const [collaborators, setCollaborators] = useState<WorkspaceCollaborator[]>([]);
   const [collabOwner, setCollabOwner] = useState<string | null>(null);
+  const [bfApiKey, setBfApiKey] = useState('');
 
   useEffect(() => {
     if (open && workspace) {
       setName(workspace.name);
       setMonitorMode(!!(workspace.settings?.monitorMode));
+      setBfApiKey('');
       workspaceApi.listCollaborators().then((d) => {
         setCollaborators(d.collaborators);
         setCollabOwner(d.owner);
@@ -416,7 +418,9 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await workspaceApi.updateWorkspace({ name: name.trim(), settings: { ...workspace.settings, monitorMode } });
+      const wsUpdates: Record<string, unknown> = { name: name.trim(), settings: { ...workspace.settings, monitorMode } };
+      if (bfApiKey.trim()) wsUpdates.browserfabric_api_key = bfApiKey.trim();
+      await workspaceApi.updateWorkspace(wsUpdates);
       await refreshWorkspace();
       toast.success('Settings saved');
       onOpenChange(false);
@@ -570,6 +574,28 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Browser Fabric API Key */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Globe className="size-4 text-muted-foreground" />
+              <Label>Browser Fabric API Key</Label>
+            </div>
+            {workspace.browserfabricApiKey && (
+              <p className="text-xs text-muted-foreground font-mono">
+                Current: {workspace.browserfabricApiKey}
+              </p>
+            )}
+            <Input
+              value={bfApiKey}
+              onChange={(e) => setBfApiKey(e.target.value)}
+              placeholder={workspace.browserfabricApiKey ? 'Enter new key to replace' : 'bf_... (optional — auto-provisioned if empty)'}
+              className="text-xs font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              Each workspace gets a free-tier key automatically. Set a custom key to use your own BrowserFabric account.
+            </p>
           </div>
 
         </div>

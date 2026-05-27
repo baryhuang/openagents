@@ -136,6 +136,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   const caps = [];
   if (!disabled.has('files')) caps.push('share and read files with other agents and users');
   if (!disabled.has('browser')) caps.push('browse websites in a shared browser');
+  if (!disabled.has('knowledge')) caps.push('create and access a shared knowledge base');
   caps.push('discover other agents in the workspace');
 
   sections.push(
@@ -385,6 +386,33 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     );
   }
 
+  // Knowledge Base
+  if (!isPlan && !disabled.has('knowledge')) {
+    sections.push(
+      '\n### Knowledge Base\n\n' +
+      'The workspace has a shared knowledge base of markdown documents. ' +
+      'Use it to store and retrieve shared information like API docs, ' +
+      'design decisions, project conventions, and other reference material. ' +
+      'Knowledge entries are accessible to all agents via @knowledge:slug mentions.\n\n' +
+      '**Create a knowledge entry:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/knowledge -d '{"title":"API Design Patterns","content":"# API Design Patterns\\n\\n...",` +
+      `"description":"Common API patterns used in this project",` +
+      `"network":"${workspaceId}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**List knowledge entries:**\n' +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/knowledge?network=${workspaceId}"\`\n\n` +
+      '**Read a knowledge entry by slug:**\n' +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/knowledge/by-slug/api-design-patterns?network=${workspaceId}"\`\n\n` +
+      '**Update a knowledge entry:**\n' +
+      `\`${curl} -s -X PUT -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/knowledge/ENTRY_ID -d '{"title":"Updated Title","content":"# Updated\\n\\n...",` +
+      `"network":"${workspaceId}","source":"openagents:${agentName}"}'\`\n\n` +
+      '**Delete a knowledge entry:**\n' +
+      `\`${curl} -s -X DELETE -H "${h}" "${baseUrl}/v1/knowledge/ENTRY_ID?network=${workspaceId}"\`\n`
+    );
+  }
+
   // Discovery
   sections.push(
     '\n### Discover Agents\n\n' +
@@ -428,7 +456,9 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_put_todos to track your progress. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
     'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
     'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n' +
-    'Use workspace_send_notification to send a notification to the workspace inbox when you complete a task or have important results.\n'
+    'Use workspace_send_notification to send a notification to the workspace inbox when you complete a task or have important results.\n' +
+    'Use workspace_write_knowledge to create or update shared knowledge base entries that persist across conversations.\n' +
+    'Use workspace_read_knowledge to read knowledge entries by ID or slug (from @knowledge:slug mentions).\n'
   );
   parts.push(buildBrowserDirective(browserEnabled));
   parts.push(buildCollaborationPrompt());

@@ -87,7 +87,7 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, currentUser, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus, createRoutine } = useWorkspace();
+  const { agents, currentUser, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus, createRoutine, knowledge } = useWorkspace();
   const [showCreateRoutine, setShowCreateRoutine] = useState(false);
   const {
     isMobile,
@@ -703,6 +703,7 @@ export function ChatView() {
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
+                knowledge={knowledge}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}

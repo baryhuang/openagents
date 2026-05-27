@@ -1,192 +1,343 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Sparkles,
-  FileText,
-  Globe,
+  Search,
+  ExternalLink,
+  Brain,
+  Link,
+  Plug,
+  Wand2,
+  Cpu,
+  Layout,
+  Triangle,
+  Hexagon,
+  Flame,
+  Paintbrush,
+  Palette,
+  Eye,
+  Zap,
+  Server,
+  FlaskConical,
+  Share2,
+  ArrowLeftRight,
+  Route,
+  Loader,
+  Mail,
+  Activity,
+  Shield,
+  Database,
+  Leaf,
+  Layers,
+  Box,
+  GitBranch,
+  Terminal,
   Cloud,
-  CheckSquare,
-  Timer,
-  Repeat,
-  MessageSquare,
-  Lock,
-  ChevronDown,
-  ChevronUp,
-  Users,
+  Bug,
+  BarChart2,
+  CheckCircle,
+  Monitor,
+  MonitorCheck,
+  Split,
+  ShieldAlert,
+  Table,
+  BookOpen,
+  Ticket,
+  CircleDot,
+  CreditCard,
+  Phone,
+  Send,
+  ShoppingBag,
+  FileText,
+  ShoppingCart,
+  LayoutGrid,
+  Workflow,
+  LineChart,
+  Table2,
+  Presentation,
+  File,
+  PenTool,
+  type LucideIcon,
 } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
-import { AgentAvatar } from '@/components/agents/agent-avatar';
-import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import type { WorkspaceAgent, SkillCatalogEntry } from '@/lib/types';
+import type { SkillCatalogEntry } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
-// Icon + color mapping
+// Icon registry
 // ---------------------------------------------------------------------------
 
-const SKILL_THEME: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
-  'workspace-core': { icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-  files:            { icon: FileText,      color: 'text-amber-500', bg: 'bg-amber-500/10' },
-  browser:          { icon: Globe,         color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  tunnel:           { icon: Cloud,         color: 'text-sky-500', bg: 'bg-sky-500/10' },
-  todos:            { icon: CheckSquare,   color: 'text-violet-500', bg: 'bg-violet-500/10' },
-  timers:           { icon: Timer,         color: 'text-orange-500', bg: 'bg-orange-500/10' },
-  routines:         { icon: Repeat,        color: 'text-pink-500', bg: 'bg-pink-500/10' },
+const ICON_MAP: Record<string, LucideIcon> = {
+  brain: Brain,
+  sparkles: Sparkles,
+  link: Link,
+  plug: Plug,
+  'wand-2': Wand2,
+  cpu: Cpu,
+  layout: Layout,
+  triangle: Triangle,
+  hexagon: Hexagon,
+  flame: Flame,
+  paintbrush: Paintbrush,
+  palette: Palette,
+  eye: Eye,
+  zap: Zap,
+  server: Server,
+  'flask-conical': FlaskConical,
+  'share-2': Share2,
+  'arrow-left-right': ArrowLeftRight,
+  route: Route,
+  loader: Loader,
+  mail: Mail,
+  activity: Activity,
+  shield: Shield,
+  database: Database,
+  leaf: Leaf,
+  layers: Layers,
+  box: Box,
+  'git-branch': GitBranch,
+  terminal: Terminal,
+  cloud: Cloud,
+  bug: Bug,
+  'bar-chart-2': BarChart2,
+  'check-circle': CheckCircle,
+  monitor: Monitor,
+  'monitor-check': MonitorCheck,
+  split: Split,
+  'shield-alert': ShieldAlert,
+  table: Table,
+  'book-open': BookOpen,
+  ticket: Ticket,
+  'circle-dot': CircleDot,
+  'credit-card': CreditCard,
+  phone: Phone,
+  send: Send,
+  'shopping-bag': ShoppingBag,
+  'file-text': FileText,
+  'shopping-cart': ShoppingCart,
+  'layout-grid': LayoutGrid,
+  workflow: Workflow,
+  'line-chart': LineChart,
+  'table-2': Table2,
+  presentation: Presentation,
+  file: File,
+  'pen-tool': PenTool,
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-  core: 'Core',
-  collaboration: 'Collaboration',
-  productivity: 'Productivity',
-  integration: 'Integrations',
+// ---------------------------------------------------------------------------
+// Category config
+// ---------------------------------------------------------------------------
+
+const CATEGORIES = [
+  { id: 'all', label: 'All' },
+  { id: 'ai-ml', label: 'AI & ML' },
+  { id: 'frontend', label: 'Frontend' },
+  { id: 'backend', label: 'Backend' },
+  { id: 'database', label: 'Database' },
+  { id: 'devops', label: 'DevOps' },
+  { id: 'testing', label: 'Testing' },
+  { id: 'security', label: 'Security' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'documents', label: 'Documents' },
+];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'ai-ml': 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+  frontend: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  backend: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  database: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  devops: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+  testing: 'bg-green-500/10 text-green-600 dark:text-green-400',
+  security: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  integrations: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
+  documents: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
 };
 
-const CATEGORY_ORDER = ['core', 'collaboration', 'productivity', 'integration'];
+const ICON_COLORS: Record<string, string> = {
+  'ai-ml': 'text-violet-500',
+  frontend: 'text-blue-500',
+  backend: 'text-emerald-500',
+  database: 'text-amber-500',
+  devops: 'text-cyan-500',
+  testing: 'text-green-500',
+  security: 'text-red-500',
+  integrations: 'text-pink-500',
+  documents: 'text-orange-500',
+};
 
-function groupByCategory(catalog: SkillCatalogEntry[]) {
-  const groups: Record<string, SkillCatalogEntry[]> = {};
-  for (const entry of catalog) {
-    const cat = entry.category || 'other';
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(entry);
-  }
-  return CATEGORY_ORDER
-    .filter((c) => groups[c]?.length)
-    .map((c) => ({ category: c, label: CATEGORY_LABELS[c] || c, skills: groups[c] }));
-}
-
-function getAgentSkillState(agent: WorkspaceAgent, skillId: string, defaultEnabled: boolean): boolean {
-  if (agent.enabledSkills && agent.enabledSkills[skillId] !== undefined) {
-    return agent.enabledSkills[skillId];
-  }
-  return defaultEnabled;
-}
+const ICON_BG: Record<string, string> = {
+  'ai-ml': 'bg-violet-500/10',
+  frontend: 'bg-blue-500/10',
+  backend: 'bg-emerald-500/10',
+  database: 'bg-amber-500/10',
+  devops: 'bg-cyan-500/10',
+  testing: 'bg-green-500/10',
+  security: 'bg-red-500/10',
+  integrations: 'bg-pink-500/10',
+  documents: 'bg-orange-500/10',
+};
 
 // ---------------------------------------------------------------------------
 // Skill Card
 // ---------------------------------------------------------------------------
 
-interface SkillCardProps {
+function SkillCard({
+  skill,
+  onSelect,
+}: {
   skill: SkillCatalogEntry;
-  agents: WorkspaceAgent[];
-  isExpanded: boolean;
-  onToggleExpand: () => void;
-  onToggleAgent: (agentName: string, skillId: string, enabled: boolean) => void;
-  savingAgent: string | null;
-}
-
-function SkillCard({ skill, agents, isExpanded, onToggleExpand, onToggleAgent, savingAgent }: SkillCardProps) {
-  const theme = SKILL_THEME[skill.id] || { icon: Sparkles, color: 'text-muted-foreground', bg: 'bg-muted' };
-  const Icon = theme.icon;
-
-  const enabledAgents = agents.filter((a) => getAgentSkillState(a, skill.id, skill.default_enabled));
-  const enabledCount = skill.toggleable ? enabledAgents.length : agents.length;
+  onSelect: (skill: SkillCatalogEntry) => void;
+}) {
+  const Icon = ICON_MAP[skill.icon] || Sparkles;
+  const iconColor = ICON_COLORS[skill.category] || 'text-muted-foreground';
+  const iconBg = ICON_BG[skill.category] || 'bg-muted';
 
   return (
-    <div className={cn(
-      'rounded-xl border border-border bg-card overflow-hidden transition-all duration-200',
-      isExpanded && 'ring-1 ring-primary/20',
-    )}>
-      {/* Card header — clickable */}
-      <button
-        className="w-full text-left px-4 pt-4 pb-3 focus:outline-none group"
-        onClick={onToggleExpand}
-      >
-        <div className="flex items-start gap-3">
-          {/* Icon */}
-          <div className={cn('size-10 rounded-lg flex items-center justify-center shrink-0', theme.bg)}>
-            <Icon className={cn('size-5', theme.color)} />
+    <button
+      className="text-left rounded-xl border border-border bg-card p-4 transition-all duration-150 hover:shadow-md hover:border-border/80 hover:-translate-y-0.5 group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      onClick={() => onSelect(skill)}
+    >
+      {/* Icon */}
+      <div className={cn('size-10 rounded-lg flex items-center justify-center mb-3', iconBg)}>
+        <Icon className={cn('size-5', iconColor)} />
+      </div>
+
+      {/* Name + Author */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <h3 className="text-sm font-semibold leading-tight truncate">{skill.name}</h3>
+        {skill.author === 'Anthropic' && (
+          <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold uppercase tracking-wide">
+            Official
+          </span>
+        )}
+      </div>
+
+      {/* Description */}
+      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+        {skill.description}
+      </p>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border/50">
+        <span className={cn(
+          'text-[10px] font-medium px-2 py-0.5 rounded-full',
+          CATEGORY_COLORS[skill.category] || 'bg-muted text-muted-foreground',
+        )}>
+          {CATEGORIES.find(c => c.id === skill.category)?.label || skill.category}
+        </span>
+        <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+          View <ExternalLink className="size-2.5" />
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Skill Detail Modal
+// ---------------------------------------------------------------------------
+
+function SkillDetail({
+  skill,
+  onClose,
+}: {
+  skill: SkillCatalogEntry;
+  onClose: () => void;
+}) {
+  const Icon = ICON_MAP[skill.icon] || Sparkles;
+  const iconColor = ICON_COLORS[skill.category] || 'text-muted-foreground';
+  const iconBg = ICON_BG[skill.category] || 'bg-muted';
+  const ghUrl = `https://github.com/${skill.source_repo}/tree/main/${skill.source_path}`;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
+      {/* Panel */}
+      <div className="fixed inset-x-4 top-[10%] bottom-[10%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[520px] bg-background rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden border border-border">
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b border-border">
+          <div className="flex items-start gap-4">
+            <div className={cn('size-14 rounded-xl flex items-center justify-center shrink-0', iconBg)}>
+              <Icon className={cn('size-7', iconColor)} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-lg font-bold">{skill.name}</h2>
+                {skill.author === 'Anthropic' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold uppercase tracking-wide">
+                    Official
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{skill.description}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {/* Info grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Category</div>
+              <div className="text-sm font-medium">
+                {CATEGORIES.find(c => c.id === skill.category)?.label || skill.category}
+              </div>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Author</div>
+              <div className="text-sm font-medium">{skill.author}</div>
+            </div>
           </div>
 
-          {/* Text */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold leading-tight">{skill.name}</h3>
-              {!skill.toggleable && (
-                <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-                  <Lock className="size-2.5" />
-                  Always on
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              {skill.description}
+          {/* Source */}
+          <div className="rounded-lg border border-border p-3">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Source</div>
+            <a
+              href={ghUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline flex items-center gap-1"
+            >
+              {skill.source_repo}/{skill.source_path}
+              <ExternalLink className="size-3" />
+            </a>
+          </div>
+
+          {/* Install instructions */}
+          <div className="rounded-lg border border-border p-4 bg-muted/30">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Install</div>
+            <code className="text-xs font-mono block bg-background rounded-md p-3 border border-border select-all break-all">
+              npx @anthropic-ai/skills install {skill.source_repo}/{skill.source_path}
+            </code>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Or copy the SKILL.md file into your agent&apos;s <code className="text-[10px] bg-background px-1 py-0.5 rounded border">~/.claude/skills/{skill.id}/</code> directory.
             </p>
           </div>
-
-          {/* Expand chevron */}
-          {skill.toggleable && (
-            <div className="shrink-0 mt-1 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors">
-              {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-            </div>
-          )}
         </div>
 
-        {/* Agent usage strip */}
-        <div className="flex items-center gap-2 mt-3 ml-[52px]">
-          {enabledAgents.length > 0 ? (
-            <>
-              <div className="flex -space-x-1.5">
-                {enabledAgents.slice(0, 5).map((a) => (
-                  <AgentAvatar key={a.agentName} name={a.agentName} size={18} className="ring-2 ring-card" />
-                ))}
-              </div>
-              <span className="text-[11px] text-muted-foreground">
-                {enabledCount} {enabledCount === 1 ? 'agent' : 'agents'}
-              </span>
-            </>
-          ) : (
-            <span className="text-[11px] text-muted-foreground/50 flex items-center gap-1">
-              <Users className="size-3" />
-              No agents
-            </span>
-          )}
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-border flex items-center justify-between">
+          <button
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Close
+          </button>
+          <a
+            href={ghUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            View on GitHub
+            <ExternalLink className="size-3.5" />
+          </a>
         </div>
-      </button>
-
-      {/* Expanded detail: per-agent toggles */}
-      {isExpanded && skill.toggleable && (
-        <div className="border-t border-border">
-          <div className="px-4 py-2 bg-muted/20">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Manage per agent
-            </span>
-          </div>
-          <div className="divide-y divide-border">
-            {agents.map((agent) => {
-              const enabled = getAgentSkillState(agent, skill.id, skill.default_enabled);
-              const isSaving = savingAgent === agent.agentName;
-
-              return (
-                <div key={agent.agentName} className="flex items-center gap-3 px-4 py-2.5">
-                  <AgentAvatar name={agent.agentName} size={22} status={agent.status} showStatus />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[13px] font-medium truncate block">{agent.agentName}</span>
-                    {agent.agentType && (
-                      <span className="text-[10px] text-muted-foreground capitalize">{agent.agentType}</span>
-                    )}
-                  </div>
-                  <Switch
-                    checked={enabled}
-                    onCheckedChange={(checked) => onToggleAgent(agent.agentName, skill.id, checked)}
-                    disabled={isSaving}
-                    className="scale-[0.85]"
-                  />
-                </div>
-              );
-            })}
-            {agents.length === 0 && (
-              <div className="px-4 py-4 text-center text-xs text-muted-foreground">
-                No agents connected to this workspace
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -195,56 +346,80 @@ function SkillCard({ skill, agents, isExpanded, onToggleExpand, onToggleAgent, s
 // ---------------------------------------------------------------------------
 
 export function SkillsView() {
-  const { agents, refreshWorkspace } = useWorkspace();
   const [catalog, setCatalog] = useState<SkillCatalogEntry[]>([]);
-  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
-  const [savingAgent, setSavingAgent] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [selectedSkill, setSelectedSkill] = useState<SkillCatalogEntry | null>(null);
 
   useEffect(() => {
     workspaceApi.getSkillCatalog().then(setCatalog).catch(() => {});
   }, []);
 
-  const handleToggleAgent = useCallback(
-    async (agentName: string, skillId: string, enabled: boolean) => {
-      const agent = agents.find((a) => a.agentName === agentName);
-      if (!agent) return;
+  const filtered = useMemo(() => {
+    let result = catalog;
+    if (activeCategory !== 'all') {
+      result = result.filter(s => s.category === activeCategory);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        s.description.toLowerCase().includes(q) ||
+        s.id.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [catalog, search, activeCategory]);
 
-      const defaults: Record<string, boolean> = {};
-      for (const s of catalog) {
-        if (s.toggleable) defaults[s.id] = s.default_enabled;
-      }
-
-      const current = agent.enabledSkills || {};
-      const merged = { ...defaults, ...current, [skillId]: enabled };
-
-      setSavingAgent(agentName);
-      try {
-        await workspaceApi.updateMember(agentName, { enabled_skills: merged });
-        await refreshWorkspace();
-        const skillName = catalog.find((s) => s.id === skillId)?.name || skillId;
-        toast.success(`${skillName} ${enabled ? 'enabled' : 'disabled'} for ${agentName}`);
-      } catch {
-        toast.error('Failed to update skill');
-      } finally {
-        setSavingAgent(null);
-      }
-    },
-    [agents, catalog, refreshWorkspace],
-  );
-
-  const groups = groupByCategory(catalog);
-  const toggleableCount = catalog.filter((s) => s.toggleable).length;
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: catalog.length };
+    for (const s of catalog) {
+      counts[s.category] = (counts[s.category] || 0) + 1;
+    }
+    return counts;
+  }, [catalog]);
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Sparkles className="size-4 text-amber-500" />
-          <h2 className="text-sm font-semibold">Skill Hub</h2>
-          {toggleableCount > 0 && (
-            <span className="text-xs text-muted-foreground">{catalog.length} available</span>
-          )}
+      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="size-4 text-amber-500" />
+            <h2 className="text-sm font-semibold">Skill Hub</h2>
+            <span className="text-xs text-muted-foreground">{catalog.length} skills</span>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search skills..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg bg-muted/50 border border-input placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+
+        {/* Category pills */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-none">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={cn(
+                'shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
+                activeCategory === cat.id
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {cat.label}
+              {categoryCounts[cat.id] ? ` (${categoryCounts[cat.id]})` : ''}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -255,36 +430,32 @@ export function SkillsView() {
             <Sparkles className="size-8 opacity-30" />
             <p className="text-sm">Loading skills...</p>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
+            <Search className="size-8 opacity-30" />
+            <p className="text-sm">No skills match your search</p>
+            <button
+              onClick={() => { setSearch(''); setActiveCategory('all'); }}
+              className="text-xs text-primary hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
         ) : (
-          <div className="p-4 space-y-6">
-            {groups.map(({ category, label, skills }) => (
-              <div key={category}>
-                <div className="flex items-center gap-2 mb-3">
-                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {label}
-                  </h3>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                  {skills.map((skill) => (
-                    <SkillCard
-                      key={skill.id}
-                      skill={skill}
-                      agents={agents}
-                      isExpanded={expandedSkill === skill.id}
-                      onToggleExpand={() =>
-                        setExpandedSkill(expandedSkill === skill.id ? null : skill.id)
-                      }
-                      onToggleAgent={handleToggleAgent}
-                      savingAgent={savingAgent}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="p-4">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+              {filtered.map(skill => (
+                <SkillCard key={skill.id} skill={skill} onSelect={setSelectedSkill} />
+              ))}
+            </div>
           </div>
         )}
       </div>
+
+      {/* Detail modal */}
+      {selectedSkill && (
+        <SkillDetail skill={selectedSkill} onClose={() => setSelectedSkill(null)} />
+      )}
     </div>
   );
 }
