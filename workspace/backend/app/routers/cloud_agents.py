@@ -324,7 +324,7 @@ from fastapi.responses import RedirectResponse
 
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-_GOOGLE_SCOPES = "https://www.googleapis.com/auth/generative-language"
+_GOOGLE_SCOPES = "https://www.googleapis.com/auth/generative-language.retriever https://www.googleapis.com/auth/cloud-platform"
 
 _oauth_states: dict[str, dict] = {}
 
