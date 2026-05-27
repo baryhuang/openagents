@@ -51,6 +51,13 @@ export function RoutineList() {
     [routines],
   );
 
+  // Auto-select the first routine when entering the routines view
+  useEffect(() => {
+    if (activeRoutines.length > 0 && (!currentSessionId || !currentSessionId.startsWith('routine'))) {
+      setCurrentSessionId(activeRoutines[0].channelName);
+    }
+  }, [activeRoutines, currentSessionId, setCurrentSessionId]);
+
   const handleSelect = (channelName: string) => {
     setCurrentSessionId(channelName);
     if (isMobile) openMobileDetail();
