@@ -5,7 +5,7 @@ import { Pencil, Star, Archive, Trash2, MoreVertical, ArchiveRestore, Wrench, Lo
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
-import { timeAgo } from '@/lib/helpers';
+import { timeAgo, isRoutineChannel } from '@/lib/helpers';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { workspaceApi } from '@/lib/api';
 import type { WorkspaceAgent } from '@/lib/types';
@@ -123,11 +123,11 @@ export function ThreadList({ externalSearchQuery }: ThreadListProps = {}) {
       return bTime - aTime;
     });
 
-  // Routine channels (sessionId starts with `routines:`) live in their own
-  // collapsible disclosure group at the bottom — same pattern as Swift's
-  // ThreadListView. Strip them from the main active list.
+  // Routine channels live in their own Inbox tab — strip them from the
+  // Chats list. Two prefixes coexist server-side: legacy `routines:<agent>`
+  // and current `routine:<id>`; the helper accepts both.
   const activeSessions = sortedSessions.filter(
-    (s) => s.status === 'active' && !s.sessionId.startsWith('routines:'),
+    (s) => s.status === 'active' && !isRoutineChannel(s.sessionId),
   );
   // Archived sessions are reachable via per-row "Unarchive" only; Swift
   // doesn't surface them in the list and neither do we anymore.

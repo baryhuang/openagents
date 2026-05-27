@@ -5,11 +5,10 @@ import AppKit
 import UIKit
 #endif
 
-/// Channels whose name starts with this prefix are per-agent routine
-/// queues — each agent gets one routine channel per workspace, and every
-/// routine the agent owns fires into it. We group these into a separate
-/// collapsible "Routines" section at the bottom of the thread list so they
-/// don't clutter regular conversations.
+/// Per-agent routine queues — each agent gets one channel
+/// (`routines:<agent>`) per workspace, and every routine the agent owns
+/// fires into it. These live in the Inbox tab; everything else lives
+/// in Chats.
 private let routineChannelPrefix = "routines:"
 
 extension Session {
@@ -20,15 +19,86 @@ extension Session {
     }
 }
 
+/// Tracks the last "read" timestamp for routine (Inbox) channels per
+/// workspace. Persisted in `UserDefaults` so unread state survives app
+/// restarts. Mirrors the web frontend's `localStorage` map at
+/// `inbox-read:<workspaceId>` — same key format, same shape:
+/// `sessionId → lastReadAt (unix ms)`. A routine session is "unread"
+/// when its `lastEventAt > lastReadAt`.
+@MainActor
+final class InboxReadStore: ObservableObject {
+    static let shared = InboxReadStore()
+
+    @Published private var maps: [String: [String: Int64]] = [:]
+
+    private init() {}
+
+    private static func defaultsKey(workspaceId: String) -> String {
+        "inbox-read:\(workspaceId)"
+    }
+
+    private func loadIfNeeded(workspaceId: String) {
+        guard maps[workspaceId] == nil else { return }
+        let key = Self.defaultsKey(workspaceId: workspaceId)
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode([String: Int64].self, from: data) {
+            maps[workspaceId] = decoded
+        } else {
+            maps[workspaceId] = [:]
+        }
+    }
+
+    private func persist(workspaceId: String) {
+        guard let map = maps[workspaceId] else { return }
+        let key = Self.defaultsKey(workspaceId: workspaceId)
+        if let data = try? JSONEncoder().encode(map) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    func lastReadAt(workspaceId: String, sessionId: String) -> Int64 {
+        loadIfNeeded(workspaceId: workspaceId)
+        return maps[workspaceId]?[sessionId] ?? 0
+    }
+
+    func markRead(workspaceId: String, sessionId: String, timestamp: Int64?) {
+        guard let ts = timestamp, ts > 0 else { return }
+        loadIfNeeded(workspaceId: workspaceId)
+        var map = maps[workspaceId] ?? [:]
+        if (map[sessionId] ?? 0) >= ts { return }
+        map[sessionId] = ts
+        maps[workspaceId] = map
+        persist(workspaceId: workspaceId)
+    }
+
+    func isUnread(workspaceId: String, sessionId: String, lastEventAt: Int64?) -> Bool {
+        guard let ts = lastEventAt, ts > 0 else { return false }
+        return ts > lastReadAt(workspaceId: workspaceId, sessionId: sessionId)
+    }
+}
+
+private enum SidebarTab: String, Hashable, CaseIterable {
+    case chats
+    case inbox
+
+    var label: String {
+        switch self {
+        case .chats: return "Chats"
+        case .inbox: return "Inbox"
+        }
+    }
+}
+
 struct ThreadListView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(AppRouter.self) private var router
+    @StateObject private var inboxRead = InboxReadStore.shared
 
     @State private var searchText: String = ""
     @State private var newThreadOpen: Bool = false
     @State private var renamingSession: Session?
     @State private var renameDraft: String = ""
-    @State private var routinesExpanded: Bool = false
+    @State private var activeTab: SidebarTab = .chats
 
     private var filteredSessions: [Session] {
         let sessions = store.activeSessions
@@ -42,7 +112,30 @@ struct ThreadListView: View {
     }
 
     private var routineSessions: [Session] {
-        filteredSessions.filter { $0.isRoutineChannel }
+        filteredSessions
+            .filter { $0.isRoutineChannel }
+            .sorted { ($0.lastEventAt ?? 0) > ($1.lastEventAt ?? 0) }
+    }
+
+    private var inboxUnreadCount: Int {
+        routineSessions.filter {
+            inboxRead.isUnread(
+                workspaceId: store.workspaceId,
+                sessionId: $0.sessionId,
+                lastEventAt: $0.lastEventAt,
+            )
+        }.count
+    }
+
+    private var visibleSessions: [Session] {
+        // Search spans both tabs (current behavior was searching the whole
+        // session list); when the user is searching, fall back to the
+        // chats tab presentation rather than splitting hits across two
+        // surfaces.
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            return filteredSessions
+        }
+        return activeTab == .chats ? regularSessions : routineSessions
     }
 
     var body: some View {
@@ -54,6 +147,9 @@ struct ThreadListView: View {
             workspaceHeader
             Divider()
             #endif
+            if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                tabPicker
+            }
             list
         }
         #if os(macOS)
@@ -69,12 +165,6 @@ struct ThreadListView: View {
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar {
             #if os(iOS)
-            // iPhone has no in-content workspace header (that's macOS-only),
-            // and CommandMenu / keyboard shortcuts don't surface on touch, so
-            // without this toolbar item there's no way to leave the current
-            // workspace from the chat list. The workspace name lives in the
-            // same button so the whole pill is the switch affordance — same
-            // pattern Slack / Discord use on iOS.
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     router.switchWorkspace()
@@ -90,9 +180,6 @@ struct ThreadListView: View {
                 }
                 .accessibilityLabel("Switch workspace")
             }
-            // iOS gets the browser toggle on the trailing principal slot so
-            // it sits in the same row as the workspace name pill but doesn't
-            // shove the refresh / new-chat buttons over.
             ToolbarItem(placement: .topBarTrailing) {
                 browserToggleButton
             }
@@ -149,6 +236,37 @@ struct ThreadListView: View {
                 }
             }
         }
+        // Auto-flip to the Inbox tab whenever the user navigates into a
+        // routine session by any means (CLI deep link, keyboard, mobile),
+        // and mark that session read on the way in.
+        .onChange(of: store.currentSessionId) { _, newValue in
+            guard let id = newValue,
+                  let session = store.sessions.first(where: { $0.sessionId == id }),
+                  session.isRoutineChannel else { return }
+            if activeTab != .inbox { activeTab = .inbox }
+            inboxRead.markRead(
+                workspaceId: store.workspaceId,
+                sessionId: id,
+                timestamp: session.lastEventAt,
+            )
+        }
+    }
+
+    private var tabPicker: some View {
+        // Segmented picker carries an unread badge in the Inbox label so
+        // the count is glanceable without committing pixels to a second
+        // widget. SwiftUI's `.segmented` style happily renders a Text
+        // composed via interpolation.
+        let inboxLabel: String = inboxUnreadCount > 0
+            ? "Inbox (\(inboxUnreadCount))"
+            : "Inbox"
+        return Picker("View", selection: $activeTab) {
+            Text("Chats").tag(SidebarTab.chats)
+            Text(inboxLabel).tag(SidebarTab.inbox)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 
     #if os(macOS)
@@ -211,110 +329,96 @@ struct ThreadListView: View {
         if store.isLoading && filteredSessions.isEmpty {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if filteredSessions.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: searchText.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.tertiary)
-                Text(searchText.isEmpty ? "No chats yet" : "No matches")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                if searchText.isEmpty {
-                    Text(store.onlineAgents.isEmpty
-                         ? "Connect an agent to start a conversation."
-                         : "Tap \(Image(systemName: "square.and.pencil")) to start one.")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if visibleSessions.isEmpty {
+            emptyState
         } else {
             List(selection: Binding<String?>(
                 get: { store.currentSessionId },
                 set: { id in store.selectSession(id) },
             )) {
-                ForEach(regularSessions) { session in
-                    ThreadRow(
-                        session: session,
-                        agents: store.agents,
-                        lastMessage: store.lastMessageBySession[session.sessionId],
-                    )
-                    .tag(session.sessionId)
-                    #if !os(macOS)
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            Task { await store.toggleStar(sessionId: session.sessionId) }
-                        } label: {
-                            Label(session.starred ? "Unstar" : "Star",
-                                  systemImage: session.starred ? "star.slash" : "star")
+                ForEach(visibleSessions) { session in
+                    if session.isRoutineChannel {
+                        RoutineThreadRow(
+                            session: session,
+                            lastMessage: store.lastMessageBySession[session.sessionId],
+                            isUnread: inboxRead.isUnread(
+                                workspaceId: store.workspaceId,
+                                sessionId: session.sessionId,
+                                lastEventAt: session.lastEventAt,
+                            ),
+                        )
+                        .tag(session.sessionId)
+                        #if !os(macOS)
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                inboxRead.markRead(
+                                    workspaceId: store.workspaceId,
+                                    sessionId: session.sessionId,
+                                    timestamp: session.lastEventAt,
+                                )
+                            } label: {
+                                Label("Mark Read", systemImage: "envelope.open")
+                            }
+                            .tint(.blue)
                         }
-                        .tint(.yellow)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            Task { await store.setStatus(sessionId: session.sessionId, status: "deleted") }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                        #endif
+                    } else {
+                        ThreadRow(
+                            session: session,
+                            agents: store.agents,
+                            lastMessage: store.lastMessageBySession[session.sessionId],
+                        )
+                        .tag(session.sessionId)
+                        #if !os(macOS)
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                Task { await store.toggleStar(sessionId: session.sessionId) }
+                            } label: {
+                                Label(session.starred ? "Unstar" : "Star",
+                                      systemImage: session.starred ? "star.slash" : "star")
+                            }
+                            .tint(.yellow)
                         }
-                        Button {
-                            Task { await store.setStatus(sessionId: session.sessionId, status: "archived") }
-                        } label: {
-                            Label("Archive", systemImage: "archivebox")
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                Task { await store.setStatus(sessionId: session.sessionId, status: "deleted") }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                Task { await store.setStatus(sessionId: session.sessionId, status: "archived") }
+                            } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            .tint(.gray)
                         }
-                        .tint(.gray)
-                    }
-                    #endif
-                    .contextMenu {
-                        Button {
-                            renamingSession = session
-                            renameDraft = session.title
-                        } label: {
-                            Label("Rename…", systemImage: "pencil")
-                        }
-                        Button {
-                            Task { await store.toggleStar(sessionId: session.sessionId) }
-                        } label: {
-                            Label(
-                                session.starred ? "Unstar" : "Star",
-                                systemImage: session.starred ? "star.slash" : "star",
-                            )
-                        }
-                        Button {
-                            Task { await store.setStatus(sessionId: session.sessionId, status: "archived") }
-                        } label: {
-                            Label("Archive", systemImage: "archivebox")
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            Task { await store.setStatus(sessionId: session.sessionId, status: "deleted") }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
-
-                if !routineSessions.isEmpty {
-                    DisclosureGroup(isExpanded: $routinesExpanded) {
-                        ForEach(routineSessions) { session in
-                            RoutineThreadRow(
-                                session: session,
-                                lastMessage: store.lastMessageBySession[session.sessionId],
-                            )
-                            .tag(session.sessionId)
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "calendar.badge.clock")
-                                .foregroundStyle(.secondary)
-                            Text("Routines")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Text("(\(routineSessions.count))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                            Spacer()
+                        #endif
+                        .contextMenu {
+                            Button {
+                                renamingSession = session
+                                renameDraft = session.title
+                            } label: {
+                                Label("Rename…", systemImage: "pencil")
+                            }
+                            Button {
+                                Task { await store.toggleStar(sessionId: session.sessionId) }
+                            } label: {
+                                Label(
+                                    session.starred ? "Unstar" : "Star",
+                                    systemImage: session.starred ? "star.slash" : "star",
+                                )
+                            }
+                            Button {
+                                Task { await store.setStatus(sessionId: session.sessionId, status: "archived") }
+                            } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            Divider()
+                            Button(role: .destructive) {
+                                Task { await store.setStatus(sessionId: session.sessionId, status: "deleted") }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
@@ -328,6 +432,51 @@ struct ThreadListView: View {
                 }
             }
         }
+    }
+
+    private var emptyState: some View {
+        let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+        let isInbox = activeTab == .inbox && !isSearching
+        let icon: String = {
+            if isSearching { return "magnifyingglass" }
+            return isInbox ? "tray" : "bubble.left.and.bubble.right"
+        }()
+        let title: String = {
+            if isSearching { return "No matches" }
+            return isInbox ? "Inbox is empty" : "No chats yet"
+        }()
+        let subtitle: String? = {
+            if isSearching { return nil }
+            if isInbox {
+                return "Routine activity from your agents will appear here."
+            }
+            if store.onlineAgents.isEmpty {
+                return "Connect an agent to start a conversation."
+            }
+            return nil
+        }()
+        return VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 40))
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            } else if !isInbox && !isSearching {
+                Text("Tap \(Image(systemName: "square.and.pencil")) to start one.")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -399,12 +548,14 @@ private struct ThreadRow: View {
     }
 }
 
-/// Row variant used inside the "Routines" disclosure group. Shows the
-/// agent name (the bit after `routines:`) with a calendar icon, plus the
-/// last activity time and the most recent fire's preview line.
+/// Row variant rendered inside the Inbox tab. Shows the agent name (the
+/// bit after `routines:`) with a calendar icon, the last activity time,
+/// the most recent fire's preview line, and an unread dot in the leading
+/// gutter when the session has new activity since it was last opened.
 private struct RoutineThreadRow: View {
     let session: Session
     let lastMessage: Message?
+    let isUnread: Bool
 
     private var agentName: String { session.routineAgentName ?? session.title }
 
@@ -426,16 +577,28 @@ private struct RoutineThreadRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 8) {
+            // Fixed-width unread gutter so rows align whether dotted or not.
+            ZStack {
+                if isUnread {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 8, height: 8)
+                }
+            }
+            .frame(width: 10)
+            .padding(.top, 14)
+
             Image(systemName: "calendar.badge.clock")
                 .font(.system(size: 18))
                 .foregroundStyle(.secondary)
-                .frame(width: 36, height: 36)
+                .frame(width: 32, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(agentName)
                         .font(.body)
+                        .fontWeight(isUnread ? .semibold : .regular)
                         .lineLimit(1)
                     Spacer()
                     Text(lastActivityLabel)

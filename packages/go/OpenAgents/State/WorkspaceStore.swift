@@ -903,12 +903,11 @@ final class WorkspaceStore {
             logWarn("routines", "no session for id=\(sessionId)")
             return
         }
-        let routinePrefix = "routines:"
         let sessionAgents: [Agent]
         if let owner = session.routineAgentName,
            let ownerAgent = agents.first(where: { $0.agentName == owner }) {
             sessionAgents = [ownerAgent]
-        } else if session.sessionId.hasPrefix(routinePrefix) {
+        } else if session.isRoutineChannel {
             logWarn("routines", "owner agent not online for \(sessionId)")
             return
         } else {

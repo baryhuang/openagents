@@ -78,3 +78,21 @@ export function getAgentColor(agentName: string, allAgentNames: string[]): Agent
   const index = allAgentNames.indexOf(agentName);
   return AGENT_COLORS[(index >= 0 ? index : 0) % AGENT_COLORS.length];
 }
+
+// ── Routine channel detection ──
+//
+// Routine channels are per-agent job queues: `routines:<agent-name>`.
+// One channel per agent per workspace — every routine the agent owns
+// fires into it. These belong in the Inbox tab and must be excluded
+// from the Chats list.
+
+export const ROUTINE_CHANNEL_PREFIX = 'routines:';
+
+export function isRoutineChannel(sessionId: string | null | undefined): boolean {
+  return !!sessionId && sessionId.startsWith(ROUTINE_CHANNEL_PREFIX);
+}
+
+export function routineAgentName(sessionId: string): string | null {
+  if (!sessionId.startsWith(ROUTINE_CHANNEL_PREFIX)) return null;
+  return sessionId.slice(ROUTINE_CHANNEL_PREFIX.length) || null;
+}
