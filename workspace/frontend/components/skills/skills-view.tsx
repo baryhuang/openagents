@@ -136,9 +136,9 @@ function SkillCard({ skill, onSelect }: { skill: Skill; onSelect: (s: Skill) => 
       onClick={() => onSelect(skill)}
     >
       {/* Logo */}
-      <div className="mb-2.5">
+      <div className="mb-3 flex items-center justify-center size-11 rounded-xl bg-muted/60">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={skill.logo} alt={skill.name} className="h-7 w-7 object-contain dark:invert" />
+        <img src={skill.logo} alt={skill.name} className="h-6 w-6 object-contain dark:invert" />
       </div>
 
       {/* Name + badge */}
