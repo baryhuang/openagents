@@ -684,6 +684,50 @@ class WorkspaceClient {
     return data.data || data;
   }
 
+  // ── Knowledge Base ──
+
+  async listKnowledge(workspaceId, token, { limit = 100 } = {}) {
+    const params = new URLSearchParams({
+      network: workspaceId,
+      limit: String(limit),
+    });
+    const data = await this._get(`/v1/knowledge?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async getKnowledge(workspaceId, token, entryId) {
+    const params = new URLSearchParams({ network: workspaceId });
+    const data = await this._get(`/v1/knowledge/${entryId}?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async getKnowledgeBySlug(workspaceId, token, slug) {
+    const params = new URLSearchParams({ network: workspaceId });
+    const data = await this._get(`/v1/knowledge/by-slug/${slug}?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async createKnowledge(workspaceId, token, { title, content, description, source } = {}) {
+    const body = { title, content, network: workspaceId, source: source || 'openagents:unknown' };
+    if (description) body.description = description;
+    const data = await this._post('/v1/knowledge', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async updateKnowledge(workspaceId, token, entryId, { title, content, description, source } = {}) {
+    const body = { network: workspaceId, source: source || 'openagents:unknown' };
+    if (title !== undefined) body.title = title;
+    if (content !== undefined) body.content = content;
+    if (description !== undefined) body.description = description;
+    const data = await this._put(`/v1/knowledge/${entryId}`, body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async deleteKnowledge(workspaceId, token, entryId) {
+    const data = await this._delete(`/v1/knowledge/${entryId}`, this._wsHeaders(token), workspaceId);
+    return data.data || data;
+  }
+
   // ── Internal helpers ──
 
   /**

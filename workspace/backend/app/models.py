@@ -197,6 +197,33 @@ class WorkspaceCollaborator(Base):
 
 
 # ---------------------------------------------------------------------------
+# Shared knowledge base
+# ---------------------------------------------------------------------------
+
+class KnowledgeEntry(Base):
+    """A knowledge base entry — workspace-global markdown document."""
+    __tablename__ = "knowledge_entries"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    slug = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    storage_key = Column(Text, nullable=True)
+    content_size = Column(Integer, nullable=True)
+    created_by = Column(Text, nullable=False)
+    updated_by = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    updated_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_knowledge_workspace_slug"),
+        Index("idx_knowledge_workspace_status", "workspace_id", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Shared file storage
 # ---------------------------------------------------------------------------
 

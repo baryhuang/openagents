@@ -78,6 +78,16 @@ const SKILL_CATALOG = [
     defaultEnabled: true,
     toggleable: true,
   },
+  {
+    id: 'knowledge',
+    name: 'Knowledge Base',
+    description: 'Create, read, and share knowledge base entries across workspace agents',
+    category: 'collaboration',
+    icon: 'book-open',
+    moduleKey: 'knowledge',
+    defaultEnabled: true,
+    toggleable: true,
+  },
 ];
 
 const _TOGGLEABLE = SKILL_CATALOG.filter(s => s.toggleable);
