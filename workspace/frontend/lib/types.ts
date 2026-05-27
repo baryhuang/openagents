@@ -104,6 +104,19 @@ export interface WorkspaceFile {
   createdAt: string | null;
 }
 
+export interface KnowledgeEntry {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  contentSize: number | null;
+  createdBy: string;
+  updatedBy: string | null;
+  status: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface BrowserTab {
   id: string;
   url: string;
@@ -250,7 +263,7 @@ export interface CloudAgentProvider {
 
 export interface CloudAgentModel {
   id: string;
-  category: 'chat' | 'image';
+  category: 'chat' | 'image' | 'audio';
   label: string;
 }
 
@@ -258,7 +271,7 @@ export interface CloudAgentConfig {
   agentName: string;
   provider: string;
   model: string;
-  category: 'chat' | 'image';
+  category: 'chat' | 'image' | 'audio';
   apiKeyMasked: string;
   baseUrl: string | null;
   systemPrompt: string | null;

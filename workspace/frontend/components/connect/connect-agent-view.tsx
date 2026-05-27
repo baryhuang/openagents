@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Copy, Check, ExternalLink, Loader2, Terminal, Cloud, Trash2, MessageSquare, Image as ImageIcon, Key, ChevronRight } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, Loader2, Terminal, Cloud, Trash2, MessageSquare, Image as ImageIcon, Volume2, Key, ChevronRight } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
@@ -46,6 +46,12 @@ function getAgentBrand(name: string) {
 
 function getProviderBrand(name: string) {
   return PROVIDER_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white', accent: 'border-zinc-300' };
+}
+
+function CategoryIcon({ category, className }: { category: string; className?: string }) {
+  if (category === 'image') return <ImageIcon className={cn('text-violet-500', className)} />;
+  if (category === 'audio') return <Volume2 className={cn('text-amber-500', className)} />;
+  return <MessageSquare className={cn('text-blue-500', className)} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -602,6 +608,7 @@ function CloudAgentsTab({
                   <span className="text-[10px] text-muted-foreground">{modelCount} models</span>
                   {hasChat && <MessageSquare className="size-2.5 text-muted-foreground/60" />}
                   {hasImage && <ImageIcon className="size-2.5 text-muted-foreground/60" />}
+                  {p.models.some((m) => m.category === 'audio') && <Volume2 className="size-2.5 text-muted-foreground/60" />}
                 </div>
               </div>
               {isSelected && <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />}
@@ -670,11 +677,7 @@ function CloudAgentsTab({
                           : 'border-transparent hover:bg-background/60',
                       )}
                     >
-                      {m.category === 'image' ? (
-                        <ImageIcon className="size-3.5 text-violet-500 shrink-0" />
-                      ) : (
-                        <MessageSquare className="size-3.5 text-blue-500 shrink-0" />
-                      )}
+                      <CategoryIcon category={m.category} className="size-3.5 shrink-0" />
                       <span className="font-medium flex-1">{m.label}</span>
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
                         {m.category}
@@ -774,11 +777,7 @@ function CloudAgentsTab({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-medium">@{agent.agentName}</span>
-                    {agent.category === 'image' ? (
-                      <ImageIcon className="size-2.5 text-violet-500" />
-                    ) : (
-                      <MessageSquare className="size-2.5 text-blue-500" />
-                    )}
+                    <CategoryIcon category={agent.category} className="size-2.5" />
                   </div>
                   <div className="text-[10px] text-muted-foreground">{agent.model}</div>
                 </div>

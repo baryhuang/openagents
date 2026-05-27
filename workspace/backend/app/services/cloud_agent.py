@@ -18,7 +18,7 @@ from sqlalchemy import select
 from app.config import config
 from app.database import SessionLocal
 from app.models import CloudAgentConfig, EventRecord, FileRecord, Workspace
-from app.services.cloud_providers import chat_completion, image_generation
+from app.services.cloud_providers import audio_generation, chat_completion, image_generation
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,8 @@ async def _invoke_single(
 
     if cloud_config.category == "image":
         await _invoke_image_agent(db, workspace_id, event_data, cloud_config)
+    elif cloud_config.category == "audio":
+        await _invoke_audio_agent(db, workspace_id, event_data, cloud_config)
     else:
         await _invoke_chat_agent(db, workspace_id, event_data, cloud_config, depth)
 
@@ -170,6 +172,50 @@ async def _invoke_image_agent(
             "filename": filename,
             "content_type": content_type,
             "size": len(image_bytes),
+        }],
+    )
+
+
+async def _invoke_audio_agent(
+    db, workspace_id: str, event_data: dict,
+    cloud_config: CloudAgentConfig,
+) -> None:
+    """Invoke a text-to-speech cloud agent."""
+    channel_target = event_data.get("target", "")
+    agent_name = cloud_config.agent_name
+    text = event_data.get("payload", {}).get("content", "")
+
+    if not text:
+        return
+
+    logger.info(
+        "cloud_agent: generating audio with %s (%s/%s)",
+        agent_name, cloud_config.provider, cloud_config.model,
+    )
+
+    audio_bytes, audio_format = await audio_generation(
+        api_key=cloud_config.api_key,
+        provider=cloud_config.provider,
+        model=cloud_config.model,
+        text=text,
+    )
+
+    file_id = await _upload_image(
+        db, workspace_id, channel_target, agent_name,
+        audio_bytes, audio_format, text,
+    )
+
+    filename = f"speech_{file_id[:8]}.{audio_format}"
+
+    await _post_response(
+        db, workspace_id, channel_target, agent_name,
+        f"Generated speech for: *{text[:100]}*",
+        depth=0,
+        attachments=[{
+            "file_id": file_id,
+            "filename": filename,
+            "content_type": f"audio/{audio_format}",
+            "size": len(audio_bytes),
         }],
     )
 
