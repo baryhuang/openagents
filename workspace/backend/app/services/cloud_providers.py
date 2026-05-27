@@ -42,13 +42,13 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="OpenAI",
         base_url=None,
         models=[
-            ModelInfo("gpt-4.1", "chat", "GPT-4.1"),
-            ModelInfo("gpt-4.1-mini", "chat", "GPT-4.1 Mini"),
-            ModelInfo("gpt-4.1-nano", "chat", "GPT-4.1 Nano"),
+            ModelInfo("gpt-5.5-pro", "chat", "GPT-5.5 Pro"),
+            ModelInfo("gpt-5.5", "chat", "GPT-5.5"),
+            ModelInfo("gpt-5.4", "chat", "GPT-5.4"),
+            ModelInfo("gpt-5.4-mini", "chat", "GPT-5.4 Mini"),
+            ModelInfo("gpt-5.4-image-2", "image", "GPT-5.4 Image"),
             ModelInfo("o3", "chat", "o3"),
             ModelInfo("o4-mini", "chat", "o4 Mini"),
-            ModelInfo("gpt-4o", "chat", "GPT-4o"),
-            ModelInfo("gpt-image-1", "image", "GPT Image"),
         ],
     ),
     "anthropic": ProviderInfo(
@@ -129,6 +129,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
             ModelInfo("openai/gpt-oss-120b", "chat", "GPT-OSS 120B"),
             ModelInfo("llama-3.3-70b-versatile", "chat", "Llama 3.3 70B"),
             ModelInfo("meta-llama/llama-4-scout-17b-16e-instruct", "chat", "Llama 4 Scout"),
+            ModelInfo("qwen/qwen3-32b", "chat", "Qwen3 32B"),
         ],
     ),
     "together": ProviderInfo(
@@ -156,8 +157,8 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="OpenRouter",
         base_url="https://openrouter.ai/api/v1",
         models=[
+            ModelInfo("openai/gpt-5.5-pro", "chat", "GPT-5.5 Pro"),
             ModelInfo("anthropic/claude-opus-4-7", "chat", "Claude Opus 4.7"),
-            ModelInfo("openai/gpt-4.1", "chat", "GPT-4.1"),
             ModelInfo("google/gemini-3.5-flash", "chat", "Gemini 3.5 Flash"),
             ModelInfo("x-ai/grok-4.3", "chat", "Grok 4.3"),
         ],
