@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Sparkles, Search, ExternalLink } from 'lucide-react';
+import { Sparkles, Search, ExternalLink, Star, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
-// Skill data (embedded — matches openagents.org/skills catalog)
+// Skill data
 // ---------------------------------------------------------------------------
 
 interface Skill {
@@ -18,25 +18,26 @@ interface Skill {
   sourceRepo: string;
   sourcePath: string;
   author: string;
+  featured?: boolean;
 }
 
 const SI = 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons';
 
 const SKILLS: Skill[] = [
   // AI & ML
-  { id: 'claude-api', name: 'Claude API', description: 'Build, debug, and optimize Claude API / Anthropic SDK apps with prompt caching', category: 'ai-ml', logo: `${SI}/anthropic.svg`, tags: ['sdk', 'llm', 'caching'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/claude-api', author: 'Anthropic' },
+  { id: 'claude-api', name: 'Claude API', description: 'Build, debug, and optimize Claude API / Anthropic SDK apps with prompt caching', category: 'ai-ml', logo: `${SI}/anthropic.svg`, tags: ['sdk', 'llm', 'caching'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/claude-api', author: 'Anthropic', featured: true },
   { id: 'openai-sdk', name: 'OpenAI SDK', description: 'Integrate OpenAI APIs — GPT, embeddings, function calling, DALL-E, Whisper', category: 'ai-ml', logo: `${SI}/openai.svg`, tags: ['gpt', 'embeddings', 'vision'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/openai-sdk', author: 'Community' },
   { id: 'langchain', name: 'LangChain', description: 'Build LLM-powered apps — RAG pipelines, agents, chains, vector stores', category: 'ai-ml', logo: `${SI}/langchain.svg`, tags: ['rag', 'agents', 'chains'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/langchain', author: 'Community' },
-  { id: 'mcp-builder', name: 'MCP Builder', description: 'Create MCP servers that enable LLMs to interact with external services', category: 'ai-ml', logo: `${SI}/anthropic.svg`, tags: ['mcp', 'tools', 'protocol'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/mcp-builder', author: 'Anthropic' },
+  { id: 'mcp-builder', name: 'MCP Builder', description: 'Create MCP servers that enable LLMs to interact with external services', category: 'ai-ml', logo: `${SI}/anthropic.svg`, tags: ['mcp', 'tools', 'protocol'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/mcp-builder', author: 'Anthropic', featured: true },
   { id: 'skill-creator', name: 'Skill Creator', description: 'Create, modify, and benchmark agent skills with eval-driven iteration', category: 'ai-ml', logo: `${SI}/anthropic.svg`, tags: ['meta', 'evals', 'authoring'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/skill-creator', author: 'Anthropic' },
   { id: 'ai-sdk', name: 'Vercel AI SDK', description: 'Build AI-powered apps with the Vercel AI SDK — streaming, tool use, RAG', category: 'ai-ml', logo: `${SI}/vercel.svg`, tags: ['streaming', 'react', 'rag'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/ai-sdk', author: 'Community' },
   // Frontend
-  { id: 'nextjs', name: 'Next.js', description: 'Production-grade React apps with App Router, Server Components, and Server Actions', category: 'frontend', logo: `${SI}/nextdotjs.svg`, tags: ['react', 'ssr', 'app-router'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/nextjs', author: 'Community' },
+  { id: 'nextjs', name: 'Next.js', description: 'Production-grade React apps with App Router, Server Components, and Server Actions', category: 'frontend', logo: `${SI}/nextdotjs.svg`, tags: ['react', 'ssr', 'app-router'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/nextjs', author: 'Community', featured: true },
   { id: 'angular', name: 'Angular', description: 'TypeScript-based frontend framework — components, DI, RxJS, routing, forms', category: 'frontend', logo: `${SI}/angular.svg`, tags: ['typescript', 'spa', 'rxjs'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/angular', author: 'Community' },
   { id: 'vue', name: 'Vue.js', description: 'Progressive JavaScript framework — Composition API, reactive refs, SFCs', category: 'frontend', logo: `${SI}/vuedotjs.svg`, tags: ['composition-api', 'reactive', 'sfc'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/vue', author: 'Community' },
   { id: 'svelte', name: 'Svelte', description: 'Svelte 5 and SvelteKit 2 — runes, snippets, stores, compiled to vanilla JS', category: 'frontend', logo: `${SI}/svelte.svg`, tags: ['compiler', 'runes', 'sveltekit'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/svelte', author: 'Community' },
   { id: 'tailwindcss', name: 'Tailwind CSS', description: 'Utility-first CSS v4 — layout, spacing, typography, responsive design tokens', category: 'frontend', logo: `${SI}/tailwindcss.svg`, tags: ['css', 'utility', 'responsive'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/tailwindcss', author: 'Community' },
-  { id: 'frontend-design', name: 'Frontend Design', description: 'Create distinctive, production-grade UIs that avoid generic AI aesthetics', category: 'frontend', logo: `${SI}/anthropic.svg`, tags: ['ui', 'design', 'creative'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/frontend-design', author: 'Anthropic' },
+  { id: 'frontend-design', name: 'Frontend Design', description: 'Create distinctive, production-grade UIs that avoid generic AI aesthetics', category: 'frontend', logo: `${SI}/anthropic.svg`, tags: ['ui', 'design', 'creative'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/frontend-design', author: 'Anthropic', featured: true },
   { id: 'accessibility-auditor', name: 'Accessibility Auditor', description: 'Audit web pages for WCAG 2.2 — contrast, keyboard nav, screen readers', category: 'frontend', logo: `${SI}/w3c.svg`, tags: ['wcag', 'a11y', 'audit'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/accessibility-auditor', author: 'Community' },
   // Backend
   { id: 'fastapi', name: 'FastAPI', description: 'Modern Python API framework — type hints, Pydantic, async, auto OpenAPI docs', category: 'backend', logo: `${SI}/fastapi.svg`, tags: ['python', 'async', 'pydantic'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/fastapi', author: 'Community' },
@@ -50,14 +51,14 @@ const SKILLS: Skill[] = [
   { id: 'kafka', name: 'Apache Kafka', description: 'Event-driven streaming — pub/sub, event sourcing, real-time data pipelines', category: 'backend', logo: `${SI}/apachekafka.svg`, tags: ['streaming', 'events', 'pubsub'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/kafka', author: 'Community' },
   { id: 'rate-limiter', name: 'Rate Limiter', description: 'API rate limiting — token bucket, sliding window, Redis-backed distributed counters', category: 'backend', logo: `${SI}/cloudflare.svg`, tags: ['security', 'throttle', 'redis'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/rate-limiter', author: 'Community' },
   // Database
-  { id: 'postgresql', name: 'PostgreSQL', description: 'Schema design, queries, JSONB, full-text search, RLS, performance tuning', category: 'database', logo: `${SI}/postgresql.svg`, tags: ['sql', 'jsonb', 'rls'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/postgresql', author: 'Community' },
+  { id: 'postgresql', name: 'PostgreSQL', description: 'Schema design, queries, JSONB, full-text search, RLS, performance tuning', category: 'database', logo: `${SI}/postgresql.svg`, tags: ['sql', 'jsonb', 'rls'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/postgresql', author: 'Community', featured: true },
   { id: 'mongodb', name: 'MongoDB', description: 'Document schemas, aggregation pipelines, indexes, Atlas Search, vector search', category: 'database', logo: `${SI}/mongodb.svg`, tags: ['nosql', 'aggregation', 'vector'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/mongodb', author: 'Community' },
   { id: 'redis', name: 'Redis', description: 'In-memory data store — caching, pub/sub, streams, rate limiting, leaderboards', category: 'database', logo: `${SI}/redis.svg`, tags: ['cache', 'pubsub', 'streams'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/redis', author: 'Community' },
   { id: 'prisma', name: 'Prisma', description: 'TypeScript ORM — declarative schema, type-safe client, zero-downtime migrations', category: 'database', logo: `${SI}/prisma.svg`, tags: ['orm', 'typescript', 'migrations'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/prisma', author: 'Community' },
   { id: 'supabase', name: 'Supabase', description: 'Postgres backend — auth, real-time subscriptions, storage, edge functions, RLS', category: 'database', logo: `${SI}/supabase.svg`, tags: ['auth', 'realtime', 'storage'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/supabase', author: 'Community' },
   { id: 'firebase', name: 'Firebase', description: "Google's app platform — Firestore, auth, Cloud Functions, hosting, analytics", category: 'database', logo: `${SI}/firebase.svg`, tags: ['firestore', 'auth', 'functions'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/firebase', author: 'Community' },
   // DevOps
-  { id: 'github-actions', name: 'GitHub Actions', description: 'CI/CD pipelines — workflows, matrix builds, caching, secrets, reusable workflows', category: 'devops', logo: `${SI}/githubactions.svg`, tags: ['ci-cd', 'automation', 'workflows'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/github-actions', author: 'Community' },
+  { id: 'github-actions', name: 'GitHub Actions', description: 'CI/CD pipelines — workflows, matrix builds, caching, secrets, reusable workflows', category: 'devops', logo: `${SI}/githubactions.svg`, tags: ['ci-cd', 'automation', 'workflows'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/github-actions', author: 'Community', featured: true },
   { id: 'ansible', name: 'Ansible', description: 'Configuration management — playbooks, inventory, roles, Vault, multi-server deployments', category: 'devops', logo: `${SI}/ansible.svg`, tags: ['automation', 'playbooks', 'vault'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/ansible', author: 'Community' },
   { id: 'nginx', name: 'Nginx', description: 'Web server, reverse proxy, load balancer — TLS, caching, rate limiting, headers', category: 'devops', logo: `${SI}/nginx.svg`, tags: ['proxy', 'tls', 'load-balancer'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/nginx', author: 'Community' },
   { id: 'cloudflare', name: 'Cloudflare', description: 'CDN, DDoS protection, DNS, SSL, WAF, Workers — protect and accelerate sites', category: 'devops', logo: `${SI}/cloudflare.svg`, tags: ['cdn', 'dns', 'workers'], sourceRepo: 'TerminalSkills/skills', sourcePath: 'skills/cloudflare', author: 'Community' },
@@ -94,70 +95,58 @@ const SKILLS: Skill[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Category config
+// Categories
 // ---------------------------------------------------------------------------
 
 const CATEGORIES = [
-  { id: 'all', label: 'All' },
-  { id: 'ai-ml', label: 'AI & ML' },
-  { id: 'frontend', label: 'Frontend' },
-  { id: 'backend', label: 'Backend' },
-  { id: 'database', label: 'Database' },
-  { id: 'devops', label: 'DevOps' },
-  { id: 'testing', label: 'Testing' },
-  { id: 'security', label: 'Security' },
-  { id: 'integrations', label: 'Integrations' },
-  { id: 'documents', label: 'Documents' },
+  { id: 'all', label: 'All', icon: '🔥' },
+  { id: 'ai-ml', label: 'AI & ML', icon: '🧠' },
+  { id: 'frontend', label: 'Frontend', icon: '🎨' },
+  { id: 'backend', label: 'Backend', icon: '⚙️' },
+  { id: 'database', label: 'Database', icon: '🗄️' },
+  { id: 'devops', label: 'DevOps', icon: '🚀' },
+  { id: 'testing', label: 'Testing', icon: '🧪' },
+  { id: 'security', label: 'Security', icon: '🔒' },
+  { id: 'integrations', label: 'Integrations', icon: '🔗' },
+  { id: 'documents', label: 'Documents', icon: '📄' },
 ];
-
-const CATEGORY_COLORS: Record<string, string> = {
-  'ai-ml': 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-  frontend: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  backend: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  database: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  devops: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-  testing: 'bg-green-500/10 text-green-600 dark:text-green-400',
-  security: 'bg-red-500/10 text-red-600 dark:text-red-400',
-  integrations: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
-  documents: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-};
 
 // ---------------------------------------------------------------------------
 // Skill Card
 // ---------------------------------------------------------------------------
 
 function SkillCard({ skill, onSelect }: { skill: Skill; onSelect: (s: Skill) => void }) {
-  const catLabel = CATEGORIES.find(c => c.id === skill.category)?.label || skill.category;
-  const catColor = CATEGORY_COLORS[skill.category] || 'bg-muted text-muted-foreground';
-
   return (
     <button
-      className="text-left rounded-xl border border-border bg-card p-4 transition-all duration-150 hover:shadow-md hover:border-border/80 hover:-translate-y-0.5 group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="text-left rounded-xl border border-border bg-card p-4 transition-all duration-150 hover:shadow-lg hover:border-primary/30 hover:-translate-y-0.5 group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       onClick={() => onSelect(skill)}
     >
-      {/* Logo */}
-      <div className="mb-3 flex items-center justify-center size-11 rounded-xl bg-muted/60">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={skill.logo} alt={skill.name} className="h-6 w-6 object-contain dark:invert" />
-      </div>
+      <div className="flex items-start gap-3">
+        {/* Logo */}
+        <div className="size-10 rounded-lg bg-muted/60 flex items-center justify-center shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={skill.logo} alt="" className="h-5 w-5 object-contain dark:invert" />
+        </div>
 
-      {/* Name + badge */}
-      <div className="flex items-center gap-1.5 mb-1">
-        <h3 className="text-[13px] font-semibold leading-tight truncate">{skill.name}</h3>
-        {skill.author === 'Anthropic' && (
-          <span className="shrink-0 text-[8px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold uppercase tracking-wide">
-            Official
-          </span>
-        )}
+        <div className="flex-1 min-w-0">
+          {/* Name + badge */}
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-[13px] font-semibold leading-tight truncate">{skill.name}</h3>
+            {skill.author === 'Anthropic' && (
+              <span className="shrink-0 text-[8px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold uppercase">
+                Official
+              </span>
+            )}
+          </div>
+          {/* Description */}
+          <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 mt-0.5">
+            {skill.description}
+          </p>
+        </div>
       </div>
-
-      {/* Description */}
-      <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 mb-2">
-        {skill.description}
-      </p>
 
       {/* Tags */}
-      <div className="flex flex-wrap gap-1 mb-2.5">
+      <div className="flex flex-wrap gap-1 mt-2.5 ml-[52px]">
         {skill.tags.map(tag => (
           <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
             {tag}
@@ -166,12 +155,10 @@ function SkillCard({ skill, onSelect }: { skill: Skill; onSelect: (s: Skill) => 
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-2 border-t border-border/50">
-        <span className={cn('text-[9px] font-medium px-2 py-0.5 rounded-full', catColor)}>
-          {catLabel}
-        </span>
-        <span className="text-[9px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-          View <ExternalLink className="size-2.5" />
+      <div className="flex items-center justify-between mt-2.5 ml-[52px]">
+        <span className="text-[9px] text-muted-foreground">{skill.sourceRepo.split('/')[0]}</span>
+        <span className="text-[10px] text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+          View <ArrowRight className="size-2.5" />
         </span>
       </div>
     </button>
@@ -184,37 +171,39 @@ function SkillCard({ skill, onSelect }: { skill: Skill; onSelect: (s: Skill) => 
 
 function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) {
   const ghUrl = `https://github.com/${skill.sourceRepo}/tree/main/${skill.sourcePath}`;
-  const catLabel = CATEGORIES.find(c => c.id === skill.category)?.label || skill.category;
 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
       <div className="fixed inset-x-4 top-[10%] bottom-[10%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[480px] bg-background rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden border border-border">
-        {/* Header */}
         <div className="px-5 pt-5 pb-3 border-b border-border">
           <div className="flex items-start gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={skill.logo} alt={skill.name} className="h-10 w-10 object-contain shrink-0 dark:invert" />
+            <div className="size-12 rounded-xl bg-muted/60 flex items-center justify-center shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={skill.logo} alt="" className="h-7 w-7 object-contain dark:invert" />
+            </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold">{skill.name}</h2>
                 {skill.author === 'Anthropic' && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold uppercase tracking-wide">
-                    Official
-                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold uppercase">Official</span>
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-1">{skill.description}</p>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {skill.tags.map(tag => (
+                  <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">{tag}</span>
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg border border-border p-2.5">
               <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Category</div>
-              <div className="text-xs font-medium">{catLabel}</div>
+              <div className="text-xs font-medium">{CATEGORIES.find(c => c.id === skill.category)?.label}</div>
             </div>
             <div className="rounded-lg border border-border p-2.5">
               <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Author</div>
@@ -234,23 +223,23 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
             <code className="text-[11px] font-mono block bg-background rounded-md p-2.5 border border-border select-all break-all">
               npx @anthropic-ai/skills install {skill.sourceRepo}/{skill.sourcePath}
             </code>
-            <p className="text-[10px] text-muted-foreground mt-1.5">
-              Or copy SKILL.md into <code className="text-[9px] bg-background px-1 py-0.5 rounded border">~/.claude/skills/{skill.id}/</code>
-            </p>
+          </div>
+
+          <div className="rounded-lg border border-border p-2.5">
+            <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Compatible With</div>
+            <div className="flex flex-wrap gap-1.5">
+              {['Claude Code', 'Codex', 'Cursor', 'Gemini CLI', 'OpenCode', 'VS Code', 'Roo Code'].map(a => (
+                <span key={a} className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{a}</span>
+              ))}
+              <span className="text-[10px] text-muted-foreground">+10 more</span>
+            </div>
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-3 border-t border-border flex items-center justify-between">
-          <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            Close
-          </button>
-          <a
-            href={ghUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
-          >
+          <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+          <a href={ghUrl} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90">
             View on GitHub <ExternalLink className="size-3" />
           </a>
         </div>
@@ -260,7 +249,7 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
 }
 
 // ---------------------------------------------------------------------------
-// Main SkillsView
+// Main
 // ---------------------------------------------------------------------------
 
 export function SkillsView() {
@@ -270,65 +259,61 @@ export function SkillsView() {
 
   const filtered = useMemo(() => {
     let result = SKILLS;
-    if (activeCategory !== 'all') {
-      result = result.filter(s => s.category === activeCategory);
-    }
+    if (activeCategory !== 'all') result = result.filter(s => s.category === activeCategory);
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(s =>
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.id.toLowerCase().includes(q) ||
-        s.tags.some(t => t.toLowerCase().includes(q))
+        s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) ||
+        s.id.toLowerCase().includes(q) || s.tags.some(t => t.includes(q))
       );
     }
     return result;
   }, [search, activeCategory]);
 
+  const featured = useMemo(() => SKILLS.filter(s => s.featured), []);
+
   const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: SKILLS.length };
-    for (const s of SKILLS) {
-      counts[s.category] = (counts[s.category] || 0) + 1;
-    }
-    return counts;
+    const c: Record<string, number> = { all: SKILLS.length };
+    for (const s of SKILLS) c[s.category] = (c[s.category] || 0) + 1;
+    return c;
   }, []);
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-border space-y-3">
+      <div className="shrink-0 px-5 pt-4 pb-3 border-b border-border space-y-3">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-amber-500" />
           <h2 className="text-sm font-semibold">Skill Hub</h2>
           <span className="text-xs text-muted-foreground">{SKILLS.length} skills</span>
         </div>
 
-        {/* Search */}
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search skills..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg bg-muted/50 border border-input placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-muted/50 border border-input placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
 
-        {/* Category pills */}
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-none">
+        {/* Category grid */}
+        <div className="grid grid-cols-5 gap-1.5">
           {CATEGORIES.map(cat => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
               className={cn(
-                'shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
+                'flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] font-medium transition-colors',
                 activeCategory === cat.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+                  ? 'bg-primary/10 text-primary'
+                  : 'hover:bg-muted text-muted-foreground hover:text-foreground',
               )}
             >
-              {cat.label} ({categoryCounts[cat.id] || 0})
+              <span className="text-sm">{cat.icon}</span>
+              <span className="truncate max-w-full px-0.5">{cat.label}</span>
             </button>
           ))}
         </div>
@@ -340,28 +325,44 @@ export function SkillsView() {
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
             <Search className="size-8 opacity-30" />
             <p className="text-sm">No skills match your search</p>
-            <button
-              onClick={() => { setSearch(''); setActiveCategory('all'); }}
-              className="text-xs text-primary hover:underline"
-            >
-              Clear filters
-            </button>
+            <button onClick={() => { setSearch(''); setActiveCategory('all'); }} className="text-xs text-primary hover:underline">Clear filters</button>
           </div>
         ) : (
-          <div className="p-4">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-              {filtered.map(skill => (
-                <SkillCard key={skill.id} skill={skill} onSelect={setSelectedSkill} />
-              ))}
+          <div className="p-4 space-y-5">
+            {/* Featured — only when showing all */}
+            {activeCategory === 'all' && !search && (
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Star className="size-3.5 text-amber-500 fill-amber-500" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Featured</h3>
+                </div>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+                  {featured.map(skill => (
+                    <SkillCard key={skill.id} skill={skill} onSelect={setSelectedSkill} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* All skills */}
+            <div>
+              {activeCategory === 'all' && !search && (
+                <div className="flex items-center gap-2 mb-2.5">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">All Skills</h3>
+                  <span className="text-[10px] text-muted-foreground">({categoryCounts.all})</span>
+                </div>
+              )}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+                {filtered.map(skill => (
+                  <SkillCard key={skill.id} skill={skill} onSelect={setSelectedSkill} />
+                ))}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Detail modal */}
-      {selectedSkill && (
-        <SkillDetail skill={selectedSkill} onClose={() => setSelectedSkill(null)} />
-      )}
+      {selectedSkill && <SkillDetail skill={selectedSkill} onClose={() => setSelectedSkill(null)} />}
     </div>
   );
 }
