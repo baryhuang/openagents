@@ -394,11 +394,13 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   const [collabAdding, setCollabAdding] = useState(false);
   const [collaborators, setCollaborators] = useState<WorkspaceCollaborator[]>([]);
   const [collabOwner, setCollabOwner] = useState<string | null>(null);
+  const [bfApiKey, setBfApiKey] = useState('');
 
   useEffect(() => {
     if (open && workspace) {
       setName(workspace.name);
       setMonitorMode(!!(workspace.settings?.monitorMode));
+      setBfApiKey('');
       workspaceApi.listCollaborators().then((d) => {
         setCollaborators(d.collaborators);
         setCollabOwner(d.owner);
@@ -416,7 +418,9 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await workspaceApi.updateWorkspace({ name: name.trim(), settings: { ...workspace.settings, monitorMode } });
+      const wsUpdates: Record<string, unknown> = { name: name.trim(), settings: { ...workspace.settings, monitorMode } };
+      if (bfApiKey.trim()) wsUpdates.browserfabric_api_key = bfApiKey.trim();
+      await workspaceApi.updateWorkspace(wsUpdates);
       await refreshWorkspace();
       toast.success('Settings saved');
       onOpenChange(false);
@@ -570,6 +574,28 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Browser Fabric API Key */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Globe className="size-4 text-muted-foreground" />
+              <Label>Browser Fabric API Key</Label>
+            </div>
+            {workspace.browserfabricApiKey && (
+              <p className="text-xs text-muted-foreground font-mono">
+                Current: {workspace.browserfabricApiKey}
+              </p>
+            )}
+            <Input
+              value={bfApiKey}
+              onChange={(e) => setBfApiKey(e.target.value)}
+              placeholder={workspace.browserfabricApiKey ? 'Enter new key to replace' : 'bf_... (optional — auto-provisioned if empty)'}
+              className="text-xs font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              Each workspace gets a free-tier key automatically. Set a custom key to use your own BrowserFabric account.
+            </p>
           </div>
 
         </div>
