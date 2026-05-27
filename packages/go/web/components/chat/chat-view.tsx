@@ -80,10 +80,6 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 export function ChatView() {
   const { agents, humans, currentSessionId, sessions, updateLastMessage, setSessionActive, updateAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, consumeSkipFocus } = useWorkspace();
   const { user: googleUser } = useOpenAgentsAuth();
-  // Tag every outgoing chat with the signed-in user so other participants
-  // see a real name (not "user") and the backend can resolve `@bary` to
-  // bary's device tokens for mention pushes. Falls back to "user" when no
-  // Google session (token-only visitors stay anonymous).
   const senderName = (googleUser?.displayName || googleUser?.email || 'user').trim();
   const senderEmail = googleUser?.email?.trim().toLowerCase();
   const senderDisplayName = googleUser?.displayName?.trim();

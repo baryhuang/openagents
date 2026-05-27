@@ -17,7 +17,7 @@ interface OpenAgentsAuthContextValue {
   signOut: () => Promise<void>;
 }
 
-const OPENAGENTS_HOSTNAMES = ['workspace.openagents.org', 'localhost'];
+const OPENAGENTS_HOSTNAMES = ['workspace.openagents.org', 'agents.caremojo.app', 'localhost'];
 
 const OpenAgentsAuthContext = createContext<OpenAgentsAuthContextValue | null>(null);
 
