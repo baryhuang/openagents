@@ -265,6 +265,21 @@ def providers_catalog() -> list[dict]:
 # API client
 # ---------------------------------------------------------------------------
 
+async def _refresh_google_token(refresh_token: str) -> str:
+    """Refresh a Google OAuth access token using the refresh token."""
+    import httpx
+    from app.config import config
+    async with httpx.AsyncClient(timeout=30) as http:
+        r = await http.post("https://oauth2.googleapis.com/token", data={
+            "client_id": config.GOOGLE_OAUTH_CLIENT_ID,
+            "client_secret": config.GOOGLE_OAUTH_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        })
+        r.raise_for_status()
+        return r.json()["access_token"]
+
+
 def _make_client(api_key: str, provider: str, base_url_override: Optional[str] = None) -> AsyncOpenAI:
     if base_url_override:
         base_url = base_url_override.rstrip("/")
@@ -293,7 +308,13 @@ async def chat_completion(
     if provider == "manus":
         return await _manus_chat(api_key, messages, system_prompt)
 
-    client = _make_client(api_key, provider, base_url_override=base_url)
+    effective_key = api_key
+    if base_url and base_url.startswith("oauth_refresh:"):
+        refresh_token = base_url[len("oauth_refresh:"):]
+        effective_key = await _refresh_google_token(refresh_token)
+        base_url = None
+
+    client = _make_client(effective_key, provider, base_url_override=base_url)
 
     api_messages = []
     if system_prompt:
