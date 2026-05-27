@@ -138,6 +138,29 @@ async def _timer_loop():
                     if not workspace:
                         continue
                     agent_name = routine.created_by.replace("openagents:", "")
+
+                    # Skip if the agent hasn't responded to the previous fire yet
+                    last_msg = db.execute(
+                        select(EventRecord)
+                        .where(
+                            EventRecord.network_id == workspace.id,
+                            EventRecord.target == f"channel/{routine.channel_name}",
+                            EventRecord.type == "workspace.message.posted",
+                        )
+                        .order_by(EventRecord.timestamp.desc())
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    if last_msg and last_msg.source == "system:routine":
+                        # Previous fire still pending — skip, just advance schedule
+                        from app.routers.routines import _compute_next_fires_at
+                        routine.next_fires_at = _compute_next_fires_at(
+                            routine.schedule_hour,
+                            routine.schedule_minute,
+                            routine.schedule_days,
+                            routine.schedule_interval_minutes,
+                        )
+                        continue
+
                     ctx = PipelineContext(
                         network_id=str(workspace.id),
                         agent_address=routine.created_by,
