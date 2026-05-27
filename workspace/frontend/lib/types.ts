@@ -30,9 +30,9 @@ export interface SkillCatalogEntry {
   description: string;
   category: string;
   icon: string;
-  module_key: string | null;
-  default_enabled: boolean;
-  toggleable: boolean;
+  source_repo: string;
+  source_path: string;
+  author: string;
 }
 
 export interface WorkspaceSession {
