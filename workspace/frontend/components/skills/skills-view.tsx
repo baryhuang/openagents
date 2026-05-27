@@ -379,20 +379,20 @@ export function SkillsView() {
         </div>
 
         {/* Category grid */}
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
           {CATEGORIES.map(cat => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
               className={cn(
-                'flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] font-medium transition-colors',
+                'shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors',
                 activeCategory === cat.id
                   ? 'bg-primary/10 text-primary'
                   : 'hover:bg-muted text-muted-foreground hover:text-foreground',
               )}
             >
-              <span className="text-sm">{cat.icon}</span>
-              <span className="truncate max-w-full px-0.5">{cat.label}</span>
+              <span className="text-xs">{cat.icon}</span>
+              <span>{cat.label}</span>
             </button>
           ))}
         </div>
