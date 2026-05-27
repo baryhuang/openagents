@@ -42,11 +42,13 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="OpenAI",
         base_url=None,
         models=[
+            ModelInfo("gpt-4.1", "chat", "GPT-4.1"),
+            ModelInfo("gpt-4.1-mini", "chat", "GPT-4.1 Mini"),
+            ModelInfo("gpt-4.1-nano", "chat", "GPT-4.1 Nano"),
+            ModelInfo("o3", "chat", "o3"),
+            ModelInfo("o4-mini", "chat", "o4 Mini"),
             ModelInfo("gpt-4o", "chat", "GPT-4o"),
-            ModelInfo("gpt-4o-mini", "chat", "GPT-4o Mini"),
-            ModelInfo("o3-mini", "chat", "o3 Mini"),
             ModelInfo("gpt-image-1", "image", "GPT Image"),
-            ModelInfo("dall-e-3", "image", "DALL-E 3"),
         ],
     ),
     "anthropic": ProviderInfo(
@@ -54,9 +56,9 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="Anthropic",
         base_url=None,  # uses custom adapter
         models=[
+            ModelInfo("claude-opus-4-7", "chat", "Claude Opus 4.7"),
             ModelInfo("claude-sonnet-4-6", "chat", "Claude Sonnet 4.6"),
             ModelInfo("claude-haiku-4-5", "chat", "Claude Haiku 4.5"),
-            ModelInfo("claude-opus-4-6", "chat", "Claude Opus 4.6"),
         ],
     ),
     "google": ProviderInfo(
@@ -64,9 +66,10 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="Google AI",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         models=[
-            ModelInfo("gemini-2.0-flash", "chat", "Gemini 2.0 Flash"),
-            ModelInfo("gemini-2.5-flash", "chat", "Gemini 2.5 Flash"),
+            ModelInfo("gemini-3.5-flash", "chat", "Gemini 3.5 Flash"),
             ModelInfo("gemini-2.5-pro", "chat", "Gemini 2.5 Pro"),
+            ModelInfo("gemini-2.5-flash", "chat", "Gemini 2.5 Flash"),
+            ModelInfo("gemini-2.5-flash-image", "image", "Gemini Image"),
         ],
     ),
     "xai": ProviderInfo(
@@ -74,8 +77,9 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="xAI",
         base_url="https://api.x.ai/v1",
         models=[
+            ModelInfo("grok-4.3", "chat", "Grok 4.3"),
             ModelInfo("grok-3", "chat", "Grok 3"),
-            ModelInfo("grok-3-mini", "chat", "Grok 3 Mini"),
+            ModelInfo("grok-imagine-image", "image", "Grok Image"),
         ],
     ),
     "deepseek": ProviderInfo(
@@ -83,8 +87,8 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="DeepSeek",
         base_url="https://api.deepseek.com",
         models=[
-            ModelInfo("deepseek-chat", "chat", "DeepSeek Chat"),
-            ModelInfo("deepseek-reasoner", "chat", "DeepSeek Reasoner"),
+            ModelInfo("deepseek-v4-pro", "chat", "DeepSeek V4 Pro"),
+            ModelInfo("deepseek-v4-flash", "chat", "DeepSeek V4 Flash"),
         ],
     ),
     "mistral": ProviderInfo(
@@ -92,12 +96,13 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="Mistral AI",
         base_url="https://api.mistral.ai/v1",
         models=[
-            ModelInfo("mistral-large-latest", "chat", "Mistral Large"),
-            ModelInfo("mistral-small-latest", "chat", "Mistral Small"),
+            ModelInfo("mistral-medium-latest", "chat", "Mistral Medium 3.5"),
+            ModelInfo("mistral-small-latest", "chat", "Mistral Small 4"),
+            ModelInfo("mistral-large-latest", "chat", "Mistral Large 3"),
             ModelInfo("codestral-latest", "chat", "Codestral"),
         ],
     ),
-    # ── Tier 2: Research & search ─────────────────────────────────────
+    # ── Tier 2: Research & agentic platforms ──────────────────────────
     "perplexity": ProviderInfo(
         name="perplexity",
         label="Perplexity",
@@ -107,15 +112,23 @@ PROVIDERS: dict[str, ProviderInfo] = {
             ModelInfo("sonar", "chat", "Sonar"),
         ],
     ),
+    "manus": ProviderInfo(
+        name="manus",
+        label="Manus",
+        base_url=None,  # uses custom adapter
+        models=[
+            ModelInfo("manus-agent", "chat", "Manus Agent"),
+        ],
+    ),
     # ── Tier 3: Inference platforms ───────────────────────────────────
     "groq": ProviderInfo(
         name="groq",
         label="Groq",
         base_url="https://api.groq.com/openai/v1",
         models=[
+            ModelInfo("openai/gpt-oss-120b", "chat", "GPT-OSS 120B"),
             ModelInfo("llama-3.3-70b-versatile", "chat", "Llama 3.3 70B"),
-            ModelInfo("llama-3.1-8b-instant", "chat", "Llama 3.1 8B"),
-            ModelInfo("gemma2-9b-it", "chat", "Gemma 2 9B"),
+            ModelInfo("meta-llama/llama-4-scout-17b-16e-instruct", "chat", "Llama 4 Scout"),
         ],
     ),
     "together": ProviderInfo(
@@ -126,7 +139,6 @@ PROVIDERS: dict[str, ProviderInfo] = {
             ModelInfo("meta-llama/Llama-3.3-70B-Instruct-Turbo", "chat", "Llama 3.3 70B"),
             ModelInfo("Qwen/Qwen2.5-72B-Instruct-Turbo", "chat", "Qwen 2.5 72B"),
             ModelInfo("deepseek-ai/DeepSeek-R1", "chat", "DeepSeek R1"),
-            ModelInfo("mistralai/Mixtral-8x22B-Instruct-v0.1", "chat", "Mixtral 8x22B"),
         ],
     ),
     "fireworks": ProviderInfo(
@@ -144,10 +156,10 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="OpenRouter",
         base_url="https://openrouter.ai/api/v1",
         models=[
-            ModelInfo("anthropic/claude-sonnet-4", "chat", "Claude Sonnet 4"),
-            ModelInfo("openai/gpt-4o", "chat", "GPT-4o"),
-            ModelInfo("google/gemini-2.5-pro", "chat", "Gemini 2.5 Pro"),
-            ModelInfo("meta-llama/llama-3.3-70b-instruct", "chat", "Llama 3.3 70B"),
+            ModelInfo("anthropic/claude-opus-4-7", "chat", "Claude Opus 4.7"),
+            ModelInfo("openai/gpt-4.1", "chat", "GPT-4.1"),
+            ModelInfo("google/gemini-3.5-flash", "chat", "Gemini 3.5 Flash"),
+            ModelInfo("x-ai/grok-4.3", "chat", "Grok 4.3"),
         ],
     ),
     "sambanova": ProviderInfo(
@@ -278,6 +290,8 @@ async def chat_completion(
         return await _anthropic_chat(api_key, model, messages, system_prompt, max_tokens)
     if provider == "perplexity":
         return await _perplexity_chat(api_key, model, messages, system_prompt, max_tokens)
+    if provider == "manus":
+        return await _manus_chat(api_key, messages, system_prompt)
 
     client = _make_client(api_key, provider, base_url_override=base_url)
 
@@ -352,6 +366,48 @@ async def _perplexity_chat(
         if citations:
             content += "\n\n**Sources:**\n" + "\n".join(f"- {c}" for c in citations[:5])
         return content
+
+
+async def _manus_chat(
+    api_key: str, messages: list[dict],
+    system_prompt: Optional[str] = None,
+) -> str:
+    """Call Manus API — create a task, poll for completion, return result."""
+    import httpx
+    import asyncio
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    prompt = messages[-1].get("content", "") if messages else ""
+    if system_prompt:
+        prompt = f"{system_prompt}\n\n{prompt}"
+
+    async with httpx.AsyncClient(timeout=300) as http:
+        r = await http.post(
+            "https://api.manus.im/v2/tasks",
+            headers=headers,
+            json={"prompt": prompt},
+        )
+        r.raise_for_status()
+        task = r.json()
+        task_id = task.get("task_id") or task.get("id")
+        if not task_id:
+            return task.get("result", {}).get("text", str(task))
+
+        for _ in range(90):
+            await asyncio.sleep(5)
+            r = await http.get(f"https://api.manus.im/v2/tasks/{task_id}", headers=headers)
+            r.raise_for_status()
+            data = r.json()
+            status = data.get("status", "")
+            if status in ("completed", "done", "finished"):
+                result = data.get("result", {})
+                return result.get("text", "") or result.get("content", "") or str(result)
+            if status in ("failed", "error", "cancelled"):
+                return f"[Manus task {status}]: {data.get('error', 'Unknown error')}"
+
+        return "[Manus task timed out after 7.5 minutes]"
 
 
 async def image_generation(
