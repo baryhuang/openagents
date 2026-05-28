@@ -36,6 +36,8 @@ class ClaudeAdapter extends BaseAdapter {
     this._channelSessions = {}; // channel → Claude CLI session_id
     this._channelProcesses = {}; // channel → child process
     this._stoppingChannels = new Set();
+    this._persistentProcs = {}; // channel → { proc, lineBuffer, pendingLines, idleTimer, messageResolve }
+    this._IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
     this._sessionsFile = path.join(
       os.homedir(), '.openagents', 'sessions',
       `${this.workspaceId}_${this.agentName}.json`
@@ -157,6 +159,9 @@ class ClaudeAdapter extends BaseAdapter {
    * 5s to actually finish the cleanup before the parent exits.
    */
   stop() {
+    for (const channel of Object.keys(this._persistentProcs)) {
+      this._killPersistentProc(channel);
+    }
     this._stopAllProcesses(
       'Task interrupted — daemon restarting. Send another message to continue.'
     ).catch(() => {});
@@ -250,6 +255,9 @@ class ClaudeAdapter extends BaseAdapter {
   }
 
   async _stopAllProcesses(completionMessage = 'Execution stopped.') {
+    for (const channel of Object.keys(this._persistentProcs)) {
+      this._killPersistentProc(channel);
+    }
     const entries = Object.entries(this._channelProcesses);
     if (!entries.length) return;
     this._log(`Stopping ${entries.length} running process(es)...`);
@@ -258,9 +266,6 @@ class ClaudeAdapter extends BaseAdapter {
       await this._stopProcess(proc);
       delete this._channelProcesses[channel];
       delete this._channelQueues[channel];
-      // Post as a chat message (not status) so the channel's last event
-      // type is non-status — the workspace UI then transitions out of
-      // "agent is working" state instead of shimmering forever.
       try {
         await this.sendResponse(channel, completionMessage);
       } catch {}
@@ -567,6 +572,231 @@ class ClaudeAdapter extends BaseAdapter {
     return { cmd, mcpConfigFile: mcpFile };
   }
 
+  /**
+   * Kill a persistent process for a channel and clean up its idle timer.
+   */
+  _killPersistentProc(channel) {
+    const pp = this._persistentProcs[channel];
+    if (!pp) return;
+    if (pp.idleTimer) clearTimeout(pp.idleTimer);
+    this._stopProcess(pp.proc).catch(() => {});
+    delete this._persistentProcs[channel];
+  }
+
+  /**
+   * Reset the idle timer for a persistent process. Kills the process
+   * after _IDLE_TIMEOUT_MS of inactivity.
+   */
+  _resetIdleTimer(channel) {
+    const pp = this._persistentProcs[channel];
+    if (!pp) return;
+    if (pp.idleTimer) clearTimeout(pp.idleTimer);
+    pp.idleTimer = setTimeout(() => {
+      this._log(`Persistent process idle for ${this._IDLE_TIMEOUT_MS / 60000}min, releasing ${channel}`);
+      this._killPersistentProc(channel);
+    }, this._IDLE_TIMEOUT_MS);
+  }
+
+  /**
+   * Spawn a persistent Claude process for a channel that accepts messages
+   * via stdin (--input-format stream-json). Returns the persistent proc entry.
+   */
+  _spawnPersistentProc(channel, cmd, cleanEnv) {
+    // Remove -p and its argument from cmd — prompts go via stdin
+    const filteredCmd = [];
+    for (let i = 0; i < cmd.length; i++) {
+      if (cmd[i] === '-p' || cmd[i] === '--print') {
+        // -p in stream-json mode is just a flag (no argument to skip)
+        // but _buildClaudeCmd passes [-p, prompt] — skip both
+        if (i + 1 < cmd.length && !cmd[i + 1].startsWith('-')) {
+          i++; // skip the prompt argument
+        }
+        continue;
+      }
+      filteredCmd.push(cmd[i]);
+    }
+    // Add stdin streaming flags
+    filteredCmd.push('--input-format', 'stream-json');
+    // Ensure -p is present (required for stream-json)
+    if (!filteredCmd.includes('-p') && !filteredCmd.includes('--print')) {
+      filteredCmd.splice(1, 0, '-p');
+    }
+
+    const resolved = this._resolveToNodeCmd(filteredCmd[0]);
+    let finalCmd = filteredCmd;
+    if (resolved) {
+      finalCmd = [resolved[0], resolved[1], ...filteredCmd.slice(1)];
+    } else if (IS_WINDOWS && filteredCmd[0].toLowerCase().endsWith('.cmd')) {
+      finalCmd = ['cmd.exe', '/c', ...filteredCmd];
+    }
+
+    const proc = spawn(finalCmd[0], finalCmd.slice(1), {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: cleanEnv,
+      cwd: this.workingDir,
+      detached: !IS_WINDOWS,
+      windowsHide: true,
+    });
+
+    const pp = {
+      proc,
+      lineBuffer: '',
+      pendingLines: Promise.resolve(),
+      idleTimer: null,
+      messageResolve: null,
+      msgChannel: channel,
+      lastResponseText: [],
+      hasToolUseSinceLastText: false,
+      postedThinking: false,
+      everPostedAnything: false,
+      stderrBuf: '',
+      alive: true,
+    };
+
+    if (proc.stderr) {
+      proc.stderr.on('data', (chunk) => { pp.stderrBuf += chunk.toString('utf-8'); });
+    }
+
+    const processLine = async (line) => {
+      line = line.trim();
+      if (!line) return;
+      let event;
+      try { event = JSON.parse(line); } catch { return; }
+      const eventType = event.type;
+
+      if (eventType === 'assistant') {
+        const blocks = (event.message || {}).content || [];
+        for (const block of blocks) {
+          if (block.type === 'text' && block.text && block.text.trim()) {
+            if (pp.hasToolUseSinceLastText) {
+              pp.lastResponseText.length = 0;
+              pp.hasToolUseSinceLastText = false;
+            }
+            pp.lastResponseText.push(block.text.trim());
+            pp.postedThinking = true;
+            pp.everPostedAnything = true;
+            try { await this.sendThinking(pp.msgChannel, block.text.trim()); } catch {}
+          } else if (block.type === 'tool_use') {
+            pp.hasToolUseSinceLastText = true;
+            pp.postedThinking = false;
+            pp.lastResponseText.length = 0;
+            const toolName = block.name || '';
+            if (toolName === 'TodoWrite' && block.input && block.input.todos) {
+              try {
+                const wsTodos = block.input.todos.map((t) => ({
+                  content: t.content, status: t.status || 'pending', assignee: t.assignee,
+                }));
+                await this.sendTodos(pp.msgChannel, wsTodos);
+              } catch {}
+            }
+            let inputPreview = '';
+            if (block.input && typeof block.input === 'object') {
+              const inp = block.input;
+              if (inp.command) inputPreview = inp.command;
+              else if (inp.file_path || inp.path) inputPreview = inp.file_path || inp.path;
+              else if (inp.pattern) inputPreview = inp.pattern;
+              else if (inp.query) inputPreview = inp.query;
+              else if (inp.url) inputPreview = inp.url;
+              else if (inp.content) inputPreview = inp.content.slice(0, 100);
+              else inputPreview = JSON.stringify(inp).slice(0, 150);
+            } else {
+              inputPreview = String(block.input || '').slice(0, 150);
+            }
+            await this.sendStatus(pp.msgChannel, `${toolName} › ${inputPreview}`);
+            pp.everPostedAnything = true;
+          }
+        }
+      } else if (eventType === 'result') {
+        const sessionId = event.session_id;
+        if (sessionId) {
+          this._channelSessions[pp.msgChannel] = sessionId;
+          this._saveSessions();
+        }
+        if (event.is_error) {
+          this._log(`Claude error: ${String(event.result || '').slice(0, 200)}`);
+        }
+        if (pp.messageResolve) {
+          pp.messageResolve({ resultEvent: event });
+          pp.messageResolve = null;
+        }
+      } else if (eventType === 'system') {
+        const subtype = event.subtype || '';
+        const message = event.message || '';
+        if (subtype.includes('compact') || String(message).toLowerCase().includes('compact')) {
+          await this.sendStatus(pp.msgChannel, String(message) || 'Compacting conversation...');
+        }
+      } else if (eventType === 'rate_limit_event') {
+        this._log(`Rate limited: ${JSON.stringify(event).slice(0, 200)}`);
+      }
+    };
+
+    proc.stdout.on('data', (chunk) => {
+      pp.lineBuffer += chunk.toString('utf-8');
+      const lines = pp.lineBuffer.split('\n');
+      pp.lineBuffer = lines.pop();
+      for (const line of lines) {
+        pp.pendingLines = pp.pendingLines.then(() => processLine(line)).catch(() => {});
+      }
+    });
+
+    proc.on('exit', (code) => {
+      this._log(`Persistent process exited: channel=${channel} code=${code}`);
+      pp.alive = false;
+      if (pp.idleTimer) clearTimeout(pp.idleTimer);
+      if (pp.messageResolve) {
+        pp.messageResolve({ exited: true, code });
+        pp.messageResolve = null;
+      }
+      delete this._persistentProcs[channel];
+      delete this._channelProcesses[channel];
+    });
+
+    proc.on('error', (err) => {
+      this._log(`Persistent process error: ${err.message}`);
+      pp.alive = false;
+      if (pp.messageResolve) {
+        pp.messageResolve({ exited: true, error: err });
+        pp.messageResolve = null;
+      }
+      delete this._persistentProcs[channel];
+    });
+
+    this._persistentProcs[channel] = pp;
+    this._channelProcesses[channel] = proc;
+    this._resetIdleTimer(channel);
+    return pp;
+  }
+
+  /**
+   * Send a user message to a persistent process via stdin and wait for
+   * the result event. Returns { resultEvent } on success or { exited, code }
+   * if the process dies mid-message.
+   */
+  _sendToPersistentProc(pp, content) {
+    pp.lastResponseText = [];
+    pp.hasToolUseSinceLastText = false;
+    pp.postedThinking = false;
+    pp.everPostedAnything = false;
+
+    const stdinMsg = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: content }],
+      },
+    }) + '\n';
+
+    return new Promise((resolve) => {
+      pp.messageResolve = resolve;
+      try {
+        pp.proc.stdin.write(stdinMsg);
+      } catch (e) {
+        this._log(`stdin write failed: ${e.message}`);
+        resolve({ exited: true, error: e });
+      }
+    });
+  }
+
   async _handleMessage(msg) {
     let content = (msg.content || '').trim();
     const attachments = msg.attachments || [];
@@ -588,7 +818,6 @@ class ClaudeAdapter extends BaseAdapter {
       this._titledSessions.add(msgChannel);
       try {
         const info = await this.client.getSession(this.workspaceId, msgChannel, this.token);
-        // Resume from a previous channel's Claude session if specified
         const resumeFrom = info.resumeFrom;
         if (resumeFrom && !this._channelSessions[msgChannel]) {
           const sourceSession = this._channelSessions[resumeFrom];
@@ -598,7 +827,6 @@ class ClaudeAdapter extends BaseAdapter {
             this._log(`Resuming channel ${msgChannel} from ${resumeFrom}`);
           }
         }
-        // Auto-title
         const title = generateSessionTitle(content);
         if (title && !info.titleManuallySet && SESSION_DEFAULT_RE.test(info.title || '')) {
           await this.client.updateSession(
@@ -610,6 +838,41 @@ class ClaudeAdapter extends BaseAdapter {
     }
 
     await this.sendStatus(msgChannel, 'thinking...');
+
+    // ── Persistent process fast-path ──
+    // If we have a living persistent process for this channel, send via stdin
+    // instead of spawning a new CLI (saves ~2s startup time).
+    const existingPP = this._persistentProcs[msgChannel];
+    if (existingPP && existingPP.alive) {
+      this._log(`Reusing persistent process for ${msgChannel}`);
+      this._resetIdleTimer(msgChannel);
+      existingPP.msgChannel = msgChannel;
+      const result = await this._sendToPersistentProc(existingPP, content);
+      if (result.resultEvent) {
+        const fullResponse = existingPP.lastResponseText.join('\n').trim();
+        if (fullResponse) {
+          try { await this.sendResponse(msgChannel, fullResponse); } catch {}
+        }
+        this._resetIdleTimer(msgChannel);
+        if (!msg._todoNudge) {
+          try {
+            const remaining = await this.getRemainingTodos(msgChannel);
+            if (remaining.length > 0) {
+              const items = remaining.map((t) => `- ${t.content}`).join('\n');
+              const nudge = `You have ${remaining.length} remaining task(s) from your plan:\n${items}\n\nPlease continue working on them.`;
+              if (!this._channelQueues[msgChannel]) this._channelQueues[msgChannel] = [];
+              this._channelQueues[msgChannel].push({
+                content: nudge, senderType: 'system', senderName: 'system:todos',
+                sessionId: msgChannel, messageType: 'chat', _todoNudge: true,
+              });
+            }
+          } catch {}
+        }
+        return;
+      }
+      // Process died mid-message — fall through to spawn a fresh one
+      this._log(`Persistent process died, falling back to fresh spawn for ${msgChannel}`);
+    }
 
     let mcpConfigFile = null;
     let cmd;
@@ -632,17 +895,13 @@ class ClaudeAdapter extends BaseAdapter {
       }
     }
 
-    // Run up to 2 attempts: first with session resume, then fresh if stale session detected
-    let _shouldRetry = false;
+    // Spawn a persistent process and send the first message via stdin
     let effectiveContent = content;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (mcpConfigFile) { try { fs.unlinkSync(mcpConfigFile); } catch {} mcpConfigFile = null; }
 
-      // On the retry pass after a stale --resume, the spawned `claude`
-      // starts a brand-new session with no memory of prior turns. Replay
-      // the channel's recent chat history so the agent at least has a
-      // recap instead of saying "I don't see any previous messages."
       if (attempt > 0) {
+        this._killPersistentProc(msgChannel);
         try {
           const recap = await this._buildChannelRecap(msgChannel, content);
           if (recap) effectiveContent = `${recap}\n\n---\n\n${content}`;
@@ -662,284 +921,85 @@ class ClaudeAdapter extends BaseAdapter {
         return;
       }
 
-    try {
-      // Always resolve shim/symlink to node + JS entry point.
-      // On Windows: .cmd shims need cmd.exe which creates visible windows.
-      // On macOS/Linux: #!/usr/bin/env node fails when node isn't on system PATH.
-      const resolved = this._resolveToNodeCmd(cmd[0]);
-      if (resolved) {
-        cmd = [resolved[0], resolved[1], ...cmd.slice(1)];
-      } else if (IS_WINDOWS && cmd[0].toLowerCase().endsWith('.cmd')) {
-        cmd = ['cmd.exe', '/c', ...cmd];
-      }
+      try {
+        const pp = this._spawnPersistentProc(msgChannel, cmd, cleanEnv);
+        this._log(`Spawned persistent process for ${msgChannel} (attempt ${attempt + 1})`);
 
-      const proc = spawn(cmd[0], cmd.slice(1), {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: cleanEnv,
-        cwd: this.workingDir,
-        detached: !IS_WINDOWS,
-        windowsHide: true,
-      });
-      this._channelProcesses[msgChannel] = proc;
+        const result = await this._sendToPersistentProc(pp, effectiveContent);
 
-      const lastResponseText = [];
-      let hasToolUseSinceLastText = false;
-      let postedThinking = false;
-      let everPostedAnything = false;
-      let stderrBuf = '';
-      let lineBuffer = '';
-      let _pendingLines = Promise.resolve(); // chain of in-flight processLine calls
-
-      // Capture stderr for diagnostics
-      if (proc.stderr) {
-        proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString('utf-8'); });
-      }
-
-      _shouldRetry = await new Promise((resolve, reject) => {
-        let consecutiveTimeouts = 0;
-        let lastDataTime = Date.now();
-        let timeoutTimer = null;
-
-        const resetTimeout = () => {
-          consecutiveTimeouts = 0;
-          lastDataTime = Date.now();
-        };
-
-        // 15-second idle timeout monitoring
-        const startTimeoutMonitor = () => {
-          timeoutTimer = setInterval(async () => {
-            const elapsed = Date.now() - lastDataTime;
-            if (elapsed >= 15000) {
-              consecutiveTimeouts++;
-              lastDataTime = Date.now(); // reset for next interval
-              if (consecutiveTimeouts === 2) {
-                try { await this.sendStatus(msgChannel, 'Compacting conversation...'); } catch {}
-              }
-              // Kill after 20 consecutive timeouts (~5 minutes of no output)
-              if (consecutiveTimeouts >= 20) {
-                this._log(`Process idle for ${consecutiveTimeouts * 15}s, killing...`);
-                await this._stopProcess(proc);
-              }
-            }
-          }, 15000);
-        };
-        startTimeoutMonitor();
-
-        const processLine = async (line) => {
-          line = line.trim();
-          if (!line) return;
-          resetTimeout();
-
-          let event;
-          try { event = JSON.parse(line); } catch { return; }
-
-          const eventType = event.type;
-
-          if (eventType === 'assistant') {
-            const blocks = (event.message || {}).content || [];
-            for (const block of blocks) {
-              if (block.type === 'text' && block.text && block.text.trim()) {
-                if (hasToolUseSinceLastText) {
-                  lastResponseText.length = 0;
-                  hasToolUseSinceLastText = false;
-                }
-                lastResponseText.push(block.text.trim());
-                postedThinking = true;
-                everPostedAnything = true;
-                // Stream text in real-time as "thinking" (same as Python adapter)
-                try { await this.sendThinking(msgChannel, block.text.trim()); } catch {}
-              } else if (block.type === 'tool_use') {
-                hasToolUseSinceLastText = true;
-                postedThinking = false;
-                lastResponseText.length = 0;
-                const toolName = block.name || '';
-
-                // Intercept TodoWrite: forward to workspace API so it emits a chat event
-                if (toolName === 'TodoWrite' && block.input && block.input.todos) {
-                  try {
-                    const wsTodos = block.input.todos.map((t) => ({
-                      content: t.content,
-                      status: t.status || 'pending',
-                      assignee: t.assignee,
-                    }));
-                    await this.sendTodos(msgChannel, wsTodos);
-                  } catch {}
-                }
-
-                // Format tool input as readable text
-                let inputPreview = '';
-                if (block.input && typeof block.input === 'object') {
-                  // Extract key fields for common tools
-                  const inp = block.input;
-                  if (inp.command) inputPreview = inp.command;
-                  else if (inp.file_path || inp.path) inputPreview = inp.file_path || inp.path;
-                  else if (inp.pattern) inputPreview = inp.pattern;
-                  else if (inp.query) inputPreview = inp.query;
-                  else if (inp.url) inputPreview = inp.url;
-                  else if (inp.content) inputPreview = inp.content.slice(0, 100);
-                  else inputPreview = JSON.stringify(inp).slice(0, 150);
-                } else {
-                  inputPreview = String(block.input || '').slice(0, 150);
-                }
-                await this.sendStatus(msgChannel, `${toolName} › ${inputPreview}`);
-                everPostedAnything = true;
-              }
-            }
-          } else if (eventType === 'result') {
-            const sessionId = event.session_id;
-            if (sessionId) {
-              this._channelSessions[msgChannel] = sessionId;
-              this._saveSessions();
-            }
-            if (event.is_error) {
-              this._log(`Claude error: ${String(event.result || '').slice(0, 200)}`);
-            }
-          } else if (eventType === 'system') {
-            const subtype = event.subtype || '';
-            const message = event.message || '';
-            if (subtype.includes('compact') || String(message).toLowerCase().includes('compact')) {
-              await this.sendStatus(msgChannel, String(message) || 'Compacting conversation...');
-            }
-          } else if (eventType === 'rate_limit_event') {
-            this._log(`Rate limited: ${JSON.stringify(event).slice(0, 200)}`);
-          }
-        };
-
-        proc.on('exit', async (code) => {
-          if (timeoutTimer) clearInterval(timeoutTimer);
-
-          // Wait for all in-flight processLine calls to complete
-          try { await _pendingLines; } catch {}
-
-          // Process remaining buffer
-          const lines = lineBuffer.split('\n');
-          for (const line of lines) {
-            try { await processLine(line); } catch {}
-          }
-
-          delete this._channelProcesses[msgChannel];
-
-          const stoppedByUser = this._stoppingChannels.has(msgChannel);
-
-          if (stoppedByUser) {
-            // User explicitly stopped — cancel all remaining todos
-            try { await this.cleanupTodos(msgChannel); } catch {}
-          } else if (!msg._todoNudge) {
-            // Normal exit (not already a nudge) — check for remaining pending todos
-            try {
-              const remaining = await this.getRemainingTodos(msgChannel);
-              if (remaining.length > 0) {
-                const items = remaining.map((t) => `- ${t.content}`).join('\n');
-                const nudge = `You have ${remaining.length} remaining task(s) from your plan:\n${items}\n\nPlease continue working on them.`;
-                if (!this._channelQueues[msgChannel]) this._channelQueues[msgChannel] = [];
-                this._channelQueues[msgChannel].push({
-                  content: nudge,
-                  senderType: 'system',
-                  senderName: 'system:todos',
-                  sessionId: msgChannel,
-                  messageType: 'chat',
-                  _todoNudge: true,
-                });
-              }
-            } catch {}
-          } else {
-            // Nudge response finished but todos still pending — cancel to avoid infinite loop
-            try { await this.cleanupTodos(msgChannel); } catch {}
-          }
-          if (stoppedByUser) {
-            this._stoppingChannels.delete(msgChannel);
-            resolve(false);
-            return;
-          }
-
-          this._log(`CLI exited: code=${code}, lastResponseText=${lastResponseText.length} items, everPosted=${everPostedAnything}, hasSession=${!!this._channelSessions[msgChannel]}`);
-          if (code !== 0) {
-            if (stderrBuf.trim()) {
-              this._log(`stderr: ${stderrBuf.trim().slice(0, 500)}`);
-            }
-          }
-
-          // In plan mode, read the plan file and include it in the response
-          if (this._mode === 'plan') {
-            try {
-              const planDir = path.join(this.workingDir || process.cwd(), '.claude', 'plans');
-              if (fs.existsSync(planDir)) {
-                const planFiles = fs.readdirSync(planDir)
-                  .filter((f) => f.endsWith('.md'))
-                  .map((f) => ({ name: f, mtime: fs.statSync(path.join(planDir, f)).mtimeMs }))
-                  .sort((a, b) => b.mtime - a.mtime);
-                if (planFiles.length > 0) {
-                  const planContent = fs.readFileSync(path.join(planDir, planFiles[0].name), 'utf-8').trim();
-                  if (planContent) {
-                    lastResponseText.push('\n\n---\n\n**Plan:**\n\n' + planContent);
-                  }
-                }
-              }
-            } catch (e) {
-              this._log(`Failed to read plan file: ${e.message}`);
-            }
-          }
-
-          if (lastResponseText.length > 0) {
-            const fullResponse = lastResponseText.join('\n').trim();
-            // "Prompt is too long" means the resumed session's context
-            // exceeded the model's limit. Clear the session and retry
-            // fresh with a bounded recap instead of the full history.
-            if (/prompt is too long/i.test(fullResponse) && this._channelSessions[msgChannel]) {
-              this._log(`Prompt too long with resumed session for ${msgChannel}, clearing and retrying`);
-              delete this._channelSessions[msgChannel];
-              this._saveSessions();
-              resolve(true);
-            } else if (fullResponse) {
-              try { await this.sendResponse(msgChannel, fullResponse); } catch {}
-              resolve(false);
-            } else {
-              resolve(false);
-            }
-          } else if (this._channelSessions[msgChannel] && !everPostedAnything) {
-            // No output + had a resume session → likely stale session, retry fresh.
-            // Covers both error exits (code !== 0) and silent success (code === 0)
-            // where Claude produced no text output on a resumed conversation.
-            this._log(`Stale session detected for ${msgChannel}, clearing and retrying without resume`);
+        if (result.exited) {
+          this._log(`Process exited during first message (attempt ${attempt + 1})`);
+          if (attempt === 0 && this._channelSessions[msgChannel]) {
+            this._log(`Stale session detected, retrying without resume`);
             delete this._channelSessions[msgChannel];
             this._saveSessions();
-            resolve(true); // retry=true
-          } else {
-            if (!everPostedAnything) {
-              try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
+            continue;
+          }
+          if (!pp.everPostedAnything) {
+            try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
+          }
+          break;
+        }
+
+        // Success — post final response
+        const fullResponse = pp.lastResponseText.join('\n').trim();
+
+        if (this._mode === 'plan') {
+          try {
+            const planDir = path.join(this.workingDir || process.cwd(), '.claude', 'plans');
+            if (fs.existsSync(planDir)) {
+              const planFiles = fs.readdirSync(planDir)
+                .filter((f) => f.endsWith('.md'))
+                .map((f) => ({ name: f, mtime: fs.statSync(path.join(planDir, f)).mtimeMs }))
+                .sort((a, b) => b.mtime - a.mtime);
+              if (planFiles.length > 0) {
+                const planContent = fs.readFileSync(path.join(planDir, planFiles[0].name), 'utf-8').trim();
+                if (planContent) pp.lastResponseText.push('\n\n---\n\n**Plan:**\n\n' + planContent);
+              }
             }
-            resolve(false);
-          }
-        });
+          } catch {}
+        }
 
-        proc.on('error', (err) => {
-          if (timeoutTimer) clearInterval(timeoutTimer);
-          reject(err);
-        });
+        const finalResponse = pp.lastResponseText.join('\n').trim();
+        if (/prompt is too long/i.test(finalResponse) && this._channelSessions[msgChannel]) {
+          this._log(`Prompt too long, clearing session and retrying`);
+          delete this._channelSessions[msgChannel];
+          this._saveSessions();
+          this._killPersistentProc(msgChannel);
+          continue;
+        }
 
-        // Process lines as they arrive (chained to preserve order)
-        proc.stdout.on('data', (chunk) => {
-          lineBuffer += chunk.toString('utf-8');
-          resetTimeout();
-          const lines = lineBuffer.split('\n');
-          lineBuffer = lines.pop(); // keep incomplete line
-          for (const line of lines) {
-            _pendingLines = _pendingLines.then(() => processLine(line)).catch(() => {});
-          }
-        });
-      });
-    } catch (e) {
-      this._log(`Error handling message: ${e.message}`);
-      await this.sendError(msgChannel, `Error processing message: ${e.message}`);
-      break; // no retry on spawn error
+        if (finalResponse) {
+          try { await this.sendResponse(msgChannel, finalResponse); } catch {}
+        }
+
+        this._resetIdleTimer(msgChannel);
+
+        if (!msg._todoNudge) {
+          try {
+            const remaining = await this.getRemainingTodos(msgChannel);
+            if (remaining.length > 0) {
+              const items = remaining.map((t) => `- ${t.content}`).join('\n');
+              const nudge = `You have ${remaining.length} remaining task(s) from your plan:\n${items}\n\nPlease continue working on them.`;
+              if (!this._channelQueues[msgChannel]) this._channelQueues[msgChannel] = [];
+              this._channelQueues[msgChannel].push({
+                content: nudge, senderType: 'system', senderName: 'system:todos',
+                sessionId: msgChannel, messageType: 'chat', _todoNudge: true,
+              });
+            }
+          } catch {}
+        }
+        break;
+      } catch (e) {
+        this._log(`Error handling message: ${e.message}`);
+        await this.sendError(msgChannel, `Error processing message: ${e.message}`);
+        break;
+      }
     }
-    if (!_shouldRetry) break; // exit loop if no retry needed
-    } // end for attempt
 
     if (mcpConfigFile) {
       try { fs.unlinkSync(mcpConfigFile); } catch {}
     }
-    delete this._channelProcesses[msgChannel];
   }
 }
 
