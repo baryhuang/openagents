@@ -447,6 +447,7 @@ function WorkspaceCard({ workspace }: { workspace: WorkspaceSummary }) {
 
 function Dashboard() {
   const { user, logout } = useAuth();
+  const { user: googleUser, signOut: googleSignOut } = useOpenAgentsAuth();
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -479,8 +480,23 @@ function Dashboard() {
             <h1 className="font-semibold">Workspaces</h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground hidden sm:inline">{user?.email}</span>
-            <Button variant="ghost" size="sm" onClick={logout}>
+            {googleUser?.photoURL ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={googleUser.photoURL}
+                alt={googleUser.displayName || googleUser.email}
+                referrerPolicy="no-referrer"
+                className="size-7 rounded-full object-cover"
+              />
+            ) : (googleUser || user) ? (
+              <div className="size-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-bold">
+                {((googleUser?.email || user?.email) ?? '?')[0].toUpperCase()}
+              </div>
+            ) : null}
+            <span className="text-sm text-muted-foreground hidden sm:inline">
+              {googleUser?.displayName || googleUser?.email || user?.email}
+            </span>
+            <Button variant="ghost" size="sm" onClick={googleUser ? googleSignOut : logout}>
               <LogOut className="size-4" />
             </Button>
           </div>
