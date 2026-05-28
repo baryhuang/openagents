@@ -14,10 +14,11 @@ logged at debug level only — the backend must still serve requests when
 Redis is down.
 """
 
+import asyncio
 import json
 import logging
 import os
-from typing import Any, Callable, Optional
+from typing import Any, AsyncGenerator, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -104,3 +105,69 @@ def json_read_through(
         # Not JSON-serializable — skip caching but still return the value
         logger.debug("Skip cache for %s (not JSON-serializable): %s", key, e)
     return value
+
+
+# ---------------------------------------------------------------------------
+# Pub/Sub — used by SSE streaming
+# ---------------------------------------------------------------------------
+
+def publish_event(channel: str, data: bytes) -> None:
+    """Publish event data to a Redis pub/sub channel. Silent on failure."""
+    c = _lazy_client()
+    if c is None:
+        return
+    try:
+        c.publish(channel, data)
+    except Exception as e:
+        logger.debug("Redis PUBLISH failed for %s: %s", channel, e)
+
+
+_async_redis = None
+
+
+async def _lazy_async_client():
+    """Initialize an async Redis client for pub/sub subscriptions."""
+    global _async_redis
+    if _disabled:
+        return None
+    if _async_redis is not None:
+        return _async_redis
+    try:
+        import redis.asyncio as aioredis
+        _async_redis = aioredis.from_url(
+            _REDIS_URL,
+            socket_timeout=5.0,
+            socket_connect_timeout=5.0,
+            decode_responses=False,
+        )
+        await _async_redis.ping()
+        logger.info("Redis async pub/sub: connected")
+    except Exception as e:
+        logger.warning("Redis async pub/sub disabled: %s", e)
+        _async_redis = None
+    return _async_redis
+
+
+async def subscribe_events(channel: str) -> AsyncGenerator[bytes, None]:
+    """Async generator that yields messages from a Redis pub/sub channel.
+    Yields raw bytes. Caller is responsible for cleanup."""
+    client = await _lazy_async_client()
+    if client is None:
+        return
+    pubsub = client.pubsub()
+    try:
+        await pubsub.subscribe(channel)
+        while True:
+            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if msg and msg["type"] == "message":
+                yield msg["data"]
+            else:
+                await asyncio.sleep(0.05)
+    except Exception as e:
+        logger.debug("Redis subscribe error on %s: %s", channel, e)
+    finally:
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception:
+            pass

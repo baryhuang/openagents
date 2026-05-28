@@ -56,6 +56,15 @@ class WorkspaceApi {
     this.bearerToken = bearerToken;
   }
 
+  getSSEUrl(channelName: string): string {
+    const params = new URLSearchParams({
+      network: this.workspaceId,
+      channel: channelName,
+    });
+    if (this.token) params.set('token', this.token);
+    return `${API_URL}/v1/events/stream?${params}`;
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const authHeaders: Record<string, string> = {};
     if (this.token) {

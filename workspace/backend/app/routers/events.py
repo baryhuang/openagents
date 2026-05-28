@@ -6,11 +6,14 @@ POST /v1/events    Send any event into the mod pipeline
 GET  /v1/events    Poll events (filter by after, target, channel, type)
 """
 
+import asyncio
 import hashlib
+import json as _json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, case, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
@@ -139,6 +142,14 @@ async def send_event(
         "timestamp": result.timestamp,
     }
     background_tasks.add_task(fanout_for_event, str(workspace.id), event_snapshot)
+
+    try:
+        cache.publish_event(
+            f"ws:{workspace.id}:events",
+            _json.dumps(event_snapshot, default=str, separators=(",", ":")).encode(),
+        )
+    except Exception:
+        pass
 
     # Invoke cloud agents if any are targeted by this message.
     if result.type == "workspace.message.posted":
@@ -583,3 +594,67 @@ async def latest_per_channel(
         }
 
     return success_response({"channels": channels})
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/events/stream — Server-Sent Events
+# ---------------------------------------------------------------------------
+
+@router.get("/events/stream")
+async def stream_events(
+    request: Request,
+    network: str = Query(...),
+    channel: Optional[str] = Query(None),
+    token: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Stream new events via Server-Sent Events (SSE).
+
+    Uses Redis pub/sub under the hood. Falls back gracefully — if Redis
+    is unavailable the connection closes and the client should fall back
+    to polling.
+    """
+    effective_token = x_workspace_token or token
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(network))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, effective_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    workspace_id = str(workspace.id)
+    target_prefix = f"channel/{channel}" if channel else None
+
+    async def event_generator():
+        keepalive_interval = 30
+        last_keepalive = asyncio.get_event_loop().time()
+
+        async for data in cache.subscribe_events(f"ws:{workspace_id}:events"):
+            if await request.is_disconnected():
+                break
+            try:
+                event = _json.loads(data)
+                if target_prefix and event.get("target", "") != target_prefix:
+                    continue
+                event_id = event.get("id", "")
+                yield f"id: {event_id}\ndata: {data.decode()}\n\n"
+            except Exception:
+                continue
+
+            now = asyncio.get_event_loop().time()
+            if now - last_keepalive >= keepalive_interval:
+                yield ": keepalive\n\n"
+                last_keepalive = now
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
