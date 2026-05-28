@@ -28,7 +28,7 @@ async def _timer_loop():
     from datetime import timedelta
     from sqlalchemy import select, update
     from app.database import SessionLocal
-    from app.models import NotificationRecord, RoutineRecord, TimerRecord, TodoRecord, Workspace
+    from app.models import EventRecord, NotificationRecord, RoutineRecord, TimerRecord, TodoRecord, Workspace
     from app.pipeline_factory import pipeline
     from openagents.core.onm_events import Event
     from openagents.core.onm_mods import PipelineContext
