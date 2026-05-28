@@ -9,6 +9,7 @@ import PhotosUI
 struct ChatView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(AppRouter.self) private var router
+    @EnvironmentObject private var auth: AuthStore
 
     @State private var draftsBySession: [String: String] = [:]
     @State private var pendingAttachments: [PendingAttachment] = []
@@ -835,7 +836,8 @@ struct ChatView: View {
         logInfo("ui", "send() invoked, chars=\(trimmed.count) attachments=\(attachments.count)")
         draft.wrappedValue = ""
         pendingAttachments = []
-        Task { await store.sendMessage(trimmed, attachments: attachments) }
+        let senderName = auth.senderName
+        Task { await store.sendMessage(trimmed, senderName: senderName, attachments: attachments) }
     }
 
     /// Parse a typed slash command (the leading "/" plus optional args) and

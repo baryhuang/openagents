@@ -39,7 +39,7 @@ final class PushSink {
     /// device has connected to so notifications from any of them reach us.
     func handleFCMToken(_ token: String) {
         lastFCMToken = token
-        let bundleId = Bundle.main.bundleIdentifier ?? "com.openagents.go"
+        let bundleId = Bundle.main.bundleIdentifier ?? "org.openagents.workspace"
         let entries = WorkspaceHistory.shared.entries()
         guard !entries.isEmpty else {
             logInfo("push", "FCM token ready but no workspaces in history yet — will register on next connect")

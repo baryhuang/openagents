@@ -520,7 +520,7 @@ final class WorkspaceStore {
         }
     }
 
-    func sendMessage(_ content: String, attachments: [PendingAttachment] = []) async {
+    func sendMessage(_ content: String, senderName: String = "user", attachments: [PendingAttachment] = []) async {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             logWarn("send", "ignored — empty content and no attachments")
@@ -532,7 +532,7 @@ final class WorkspaceStore {
         }
 
         let preview = trimmed.count > 60 ? String(trimmed.prefix(60)) + "…" : trimmed
-        logInfo("send", "→ channel=\(channel) chars=\(trimmed.count) attachments=\(attachments.count) text=\"\(preview)\"")
+        logInfo("send", "→ channel=\(channel) chars=\(trimmed.count) attachments=\(attachments.count) sender=\"\(senderName)\" text=\"\(preview)\"")
 
         // Optimistic insert *before* the network request so the bubble appears instantly.
         // Pending attachments are shown as 📎 lines so the user sees them immediately.
@@ -547,7 +547,7 @@ final class WorkspaceStore {
             messageId: optimisticId,
             sessionId: channel,
             senderType: "human",
-            senderName: "You",
+            senderName: senderName,
             content: optimisticContent,
             mentions: [],
             messageType: "chat",
@@ -582,7 +582,7 @@ final class WorkspaceStore {
                 return parts.joined(separator: "\n\n")
             }()
 
-            let event = try await api.sendMessage(channel: channel, content: finalContent)
+            let event = try await api.sendMessage(channel: channel, content: finalContent, senderName: senderName)
             logInfo("send", "✓ backend ack id=\(event.id) ts=\(event.timestamp)")
 
             // Replace the optimistic placeholder's content in-place with the
