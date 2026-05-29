@@ -92,6 +92,43 @@ def mark_installed(agent_name: str) -> None:
         logger.warning("Failed to save install marker file for %s: %s", agent_name, e)
 
 
+def _find_in_known_install_dirs(binary_names: list) -> Optional[str]:
+    """Search well-known install dirs that may be absent from PATH.
+
+    Parity with the JS engine's extra-bin-dir handling
+    (packages/agent-connector/src/paths.js). The important case is Cursor:
+    its native installer (``curl https://cursor.com/install | bash``) drops
+    ``cursor-agent`` into ``~/.cursor/bin`` but only edits the *interactive*
+    shell profile, so a GUI- or daemon-spawned ``openagents`` process never
+    sees it via ``shutil.which``. Without this the Python CLI reports Cursor
+    as "not installed" while the Launcher reports it installed.
+
+    Returns the first matching executable path, or ``None``.
+    """
+    home = Path.home()
+    extra_dirs = [
+        home / ".cursor" / "bin",   # Cursor CLI native installer
+        home / ".local" / "bin",    # pipx / user installs
+    ]
+    is_windows = platform.system() == "Windows"
+    # Windows shims carry an extension (.exe/.cmd/.bat); Unix binaries don't.
+    exts = (".exe", ".cmd", ".bat", "") if is_windows else ("",)
+    for directory in extra_dirs:
+        for name in binary_names:
+            for ext in exts:
+                candidate = directory / (name + ext)
+                try:
+                    if not candidate.is_file():
+                        continue
+                    # On Windows a known shim extension is enough; on Unix
+                    # require the executable bit.
+                    if is_windows or os.access(candidate, os.X_OK):
+                        return str(candidate)
+                except OSError:
+                    continue
+    return None
+
+
 def get_current_platform() -> str:
     """Return the current platform key: 'macos', 'linux', or 'windows'."""
     system = platform.system().lower()
@@ -324,7 +361,9 @@ def _make_plugin_from_yaml(data: dict):
                                     return _candidate
                 except Exception:
                     pass
-                return None
+                # Fallback: well-known install dirs not on PATH (e.g. Cursor's
+                # ~/.cursor/bin, written by its native installer).
+                return _find_in_known_install_dirs(binary_names)
             for name in binary_names:
                 found = shutil.which(name)
                 if found:
@@ -352,7 +391,10 @@ def _make_plugin_from_yaml(data: dict):
                 volta_bin = home / ".volta" / "bin" / name
                 if volta_bin.is_file() and os.access(volta_bin, os.X_OK):
                     return str(volta_bin)
-            return None
+            # Fallback: well-known install dirs not on PATH (e.g. Cursor's
+            # ~/.cursor/bin, written by its native installer but only exported
+            # to interactive shells).
+            return _find_in_known_install_dirs(binary_names)
 
         def is_installed(self) -> bool:
             if self._which_binary() is not None:
