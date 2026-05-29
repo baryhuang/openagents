@@ -8,3 +8,7 @@ tests/
 *.md
 .pytest_cache
 .mypy_cache
+
+# APNs auth keys
+secrets/
+*.p8
