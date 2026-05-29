@@ -37,15 +37,19 @@ _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite or _is_pgbouncer
     # Direct-PG mode (port 5432): keep a bounded per-worker pool.
-    # Sized for Railway Postgres max_connections=200 at 2 replicas × 2
-    # workers (WEB_CONCURRENCY=2): 2 × 2 × (40 + 8) = 192 max DB conns,
-    # leaves 8 for admin/migrations. Multiple workers per replica keep
-    # event-loop parallelism — one slow query on worker A doesn't stall
-    # /health on worker B.
+    # Sized for InsForge Postgres nano (max_connections ~100) shared
+    # with InsForge's own services (auth, postgREST, dashboard). At 1
+    # replica × 1 worker (WEB_CONCURRENCY=1): 1 × 1 × (8 + 2) = 10 max
+    # DB conns from us, leaves ~90 for InsForge. Override
+    # WEB_CONCURRENCY upward only when you've verified Postgres
+    # max_connections headroom.
+    # pool_recycle=60 so idle conns release within a minute instead of
+    # holding the budget for 5 — under low traffic the pool would
+    # otherwise stay warm at full pool_size forever.
     # pool_timeout is short (2s) because SQLAlchemy sync calls inside
     # FastAPI async handlers block the event loop — a longer queue
     # wait would stall every request on that worker.
-    else {"pool_pre_ping": True, "pool_size": 40, "max_overflow": 8, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
+    else {"pool_pre_ping": True, "pool_size": 8, "max_overflow": 2, "pool_recycle": 60, "pool_timeout": 2, "poolclass": QueuePool}
 )
 
 # Keep the TCP connection alive to survive NAT / firewall idle timeouts
