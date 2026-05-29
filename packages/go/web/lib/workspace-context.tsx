@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { workspaceApi } from './api';
+import { useOpenAgentsAuth } from './openagents-auth-context';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
 import type { BrowserPersistentContext, BrowserTab, DMConversation, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceCollaborator, WorkspaceFile, WorkspaceSession } from './types';
 
@@ -104,6 +105,7 @@ export function WorkspaceProvider({
   bearerToken?: string;
   children: React.ReactNode;
 }) {
+  const { user: googleUser } = useOpenAgentsAuth();
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
   const [humans, setHumans] = useState<WorkspaceCollaborator[]>([]);
@@ -330,12 +332,25 @@ export function WorkspaceProvider({
     try {
       const discovery = await workspaceApi.discover();
       setAgents(discovery.agents.map(networkAgentToWorkspaceAgent));
-      // Best-effort collaborators refresh — feeds the @-mention picker so
-      // signed-in humans show up alongside agents. Older backends without
-      // the endpoint silently 404; swallow so the chat list still loads.
-      workspaceApi.listCollaborators()
-        .then((res) => setHumans(res.collaborators))
-        .catch(() => { /* ignored */ });
+      // Self-register the signed-in user first so the GET that follows
+      // includes them in the roster on their very first refresh, then
+      // refresh the @-mention list. Older backends without the endpoint
+      // silently 404; swallow so the chat list still loads.
+      (async () => {
+        if (googleUser?.email) {
+          try {
+            await workspaceApi.recordPresence(googleUser.email, googleUser.displayName);
+          } catch {
+            /* ignored */
+          }
+        }
+        try {
+          const res = await workspaceApi.listCollaborators();
+          setHumans(res.collaborators);
+        } catch {
+          /* ignored */
+        }
+      })();
 
       const updated = discovery.channels.map((ch) =>
         networkChannelToSession(ch, workspaceId)
@@ -498,7 +513,7 @@ export function WorkspaceProvider({
     } catch {
       // Non-critical — keep existing state
     }
-  }, [workspaceId, stoppingSessionIds]);
+  }, [workspaceId, stoppingSessionIds, googleUser?.email, googleUser?.displayName]);
 
   // Alias for backward compat
   const refreshAgents = refreshDiscovery;

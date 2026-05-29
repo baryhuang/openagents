@@ -76,8 +76,15 @@ final class AuthStore: ObservableObject {
         let trimmed = email.trimmingCharacters(in: .whitespaces).lowercased()
         if trimmed.isEmpty {
             UserDefaults.standard.removeObject(forKey: "pushSink.lastUserEmail")
+            UserDefaults.standard.removeObject(forKey: "pushSink.lastUserDisplayName")
         } else {
             UserDefaults.standard.set(trimmed, forKey: "pushSink.lastUserEmail")
+            let trimmedDisplay = displayName.trimmingCharacters(in: .whitespaces)
+            if trimmedDisplay.isEmpty {
+                UserDefaults.standard.removeObject(forKey: "pushSink.lastUserDisplayName")
+            } else {
+                UserDefaults.standard.set(trimmedDisplay, forKey: "pushSink.lastUserDisplayName")
+            }
         }
     }
 

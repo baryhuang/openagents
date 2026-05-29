@@ -115,6 +115,25 @@ actor WorkspaceAPI {
         return response.collaborators
     }
 
+    /// Self-register the signed-in user as a workspace collaborator so
+    /// they show up in everyone's @-mention picker without having to
+    /// post a message first. Fire-and-forget from `WorkspaceStore`.
+    func recordPresence(senderEmail: String, senderDisplayName: String?) async throws {
+        struct Body: Encodable {
+            let senderEmail: String
+            let senderDisplayName: String?
+        }
+        let bodyData = try JSONEncoder().encode(
+            Body(senderEmail: senderEmail, senderDisplayName: senderDisplayName)
+        )
+        let request = try makeRequest(
+            path: "/v1/workspaces/\(workspaceId)/presence",
+            method: "POST",
+            body: bodyData,
+        )
+        _ = try await send(request, as: Collaborator.self)
+    }
+
     /// Flip the workspace-level Browser Fabric viewer toggle. The backend
     /// accepts a typed top-level `browser_enabled` on `PATCH /v1/workspaces/{id}`
     /// (added in this release) and merges it into the `settings` JSONB

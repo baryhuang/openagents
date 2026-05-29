@@ -104,6 +104,11 @@ class CollaboratorAddRequest(BaseModel):
     role: str = Field(default="editor", pattern=r"^(editor|viewer)$")
 
 
+class PresencePingRequest(BaseModel):
+    senderEmail: str
+    senderDisplayName: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -787,6 +792,50 @@ async def list_collaborators(
         "collaborators": collabs,
         "owner": workspace.creator_email,
     })
+
+
+@router.post("/{workspace_id}/presence")
+async def record_presence(
+    workspace_id: str,
+    body: PresencePingRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Self-register the calling human as a workspace collaborator.
+
+    Called by the web/Swift clients on workspace open once the user is
+    signed in. The mention picker reads from `workspace_collaborators`,
+    so this is what makes a freshly-logged-in human show up in @-picker
+    rows without having to post a message first.
+    """
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    email = (body.senderEmail or "").strip().lower()
+    if not email or "@" not in email:
+        return json_response(ResponseCode.BAD_REQUEST, "Invalid email address")
+
+    from app.mods.workspace_mod import _upsert_human_collaborator
+    _upsert_human_collaborator(
+        workspace,
+        {"sender_email": email, "sender_display_name": body.senderDisplayName},
+        db,
+    )
+    db.commit()
+
+    existing = db.execute(
+        select(WorkspaceCollaborator).where(
+            WorkspaceCollaborator.workspace_id == str(workspace.id),
+            WorkspaceCollaborator.email == email,
+        )
+    ).scalar_one_or_none()
+    return success_response(_format_collaborator(existing) if existing else {"email": email})
 
 
 @router.post("/{workspace_id}/collaborators")

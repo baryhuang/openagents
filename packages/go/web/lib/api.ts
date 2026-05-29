@@ -531,6 +531,16 @@ class WorkspaceApi {
     });
   }
 
+  /** Self-register the signed-in user as a workspace collaborator so they
+   * appear in the @-mention picker without needing to post a message first.
+   * Called by `workspace-context.refreshDiscovery` after Google sign-in. */
+  async recordPresence(senderEmail: string, senderDisplayName?: string | null): Promise<void> {
+    await this.request<unknown>(`/v1/workspaces/${this.workspaceId}/presence`, {
+      method: 'POST',
+      body: JSON.stringify({ senderEmail, senderDisplayName: senderDisplayName ?? null }),
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Low-level ONM event API
   // ---------------------------------------------------------------------------

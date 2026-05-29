@@ -266,7 +266,17 @@ final class WorkspaceStore {
             // merges these with `agents`. Older backends without the
             // collaborators endpoint will 404; swallow so the chat list
             // doesn't fail.
+            //
+            // Self-register the signed-in user as a collaborator first so
+            // the GET that follows includes them — otherwise a freshly-
+            // logged-in human wouldn't appear in their own picker on the
+            // first refresh after sign-in.
             Task {
+                let email = UserDefaults.standard.string(forKey: "pushSink.lastUserEmail")
+                let displayName = UserDefaults.standard.string(forKey: "pushSink.lastUserDisplayName")
+                if let email, !email.isEmpty {
+                    try? await api.recordPresence(senderEmail: email, senderDisplayName: displayName)
+                }
                 if let collabs = try? await api.listCollaborators() {
                     self.humans = collabs
                 }
