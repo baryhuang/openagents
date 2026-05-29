@@ -214,11 +214,16 @@ struct ChatView: View {
                 inputHeight = maxInputHeight
             }
         }
-        .onChange(of: store.currentSessionId) { _, _ in
+        .onChange(of: store.currentSessionId) { _, newId in
             inputFocused = true
             // Drafts are per-session, but pending uploads aren't — clear them on switch.
             pendingAttachments.removeAll()
             drainExternalAttachments()
+            #if os(macOS)
+            // Tell MacNotifier which channel is on screen so it suppresses
+            // redundant banners.
+            MacNotifier.shared.currentVisibleChannel = newId
+            #endif
         }
         .onChange(of: router.pendingExternalAttachments.count) { _, _ in
             drainExternalAttachments()
@@ -227,6 +232,19 @@ struct ChatView: View {
             // Catches the cold-launch case: app opened via "Open in…", router
             // received URL, then chat view mounted with attachments waiting.
             drainExternalAttachments()
+            #if os(macOS)
+            MacNotifier.shared.currentVisibleChannel = store.currentSessionId
+            #endif
+        }
+        .onDisappear {
+            #if os(macOS)
+            // The chat view is gone (window closed / view replaced) — clear so
+            // future banners don't get suppressed for a channel nobody is
+            // actually watching.
+            if MacNotifier.shared.currentVisibleChannel == store.currentSessionId {
+                MacNotifier.shared.currentVisibleChannel = nil
+            }
+            #endif
         }
         .onChange(of: store.browserAutoFocusToken) { _, _ in
             // A browser session just appeared while the workspace toggle is
@@ -837,7 +855,17 @@ struct ChatView: View {
         draft.wrappedValue = ""
         pendingAttachments = []
         let senderName = auth.senderName
-        Task { await store.sendMessage(trimmed, senderName: senderName, attachments: attachments) }
+        let senderEmail = auth.user?.email
+        let senderDisplayName = auth.user?.displayName
+        Task {
+            await store.sendMessage(
+                trimmed,
+                senderName: senderName,
+                senderEmail: senderEmail,
+                senderDisplayName: senderDisplayName,
+                attachments: attachments,
+            )
+        }
     }
 
     /// Parse a typed slash command (the leading "/" plus optional args) and

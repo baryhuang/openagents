@@ -69,6 +69,16 @@ final class AuthStore: ObservableObject {
             : nil
         user = AuthUser(email: email, displayName: displayName, photoURL: photoURL)
         idToken = googleUser.idToken?.tokenString
+        // PushSink (iOS) and WorkspaceStore.bootstrap (both platforms)
+        // read this UserDefaults key when registering device tokens, so
+        // mention pushes can be scoped to "@me". Empty email clears it
+        // — happens on sign-out via the no-user branch in apply(user:).
+        let trimmed = email.trimmingCharacters(in: .whitespaces).lowercased()
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "pushSink.lastUserEmail")
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: "pushSink.lastUserEmail")
+        }
     }
 
     // MARK: — Sign in
@@ -155,6 +165,7 @@ final class AuthStore: ObservableObject {
         GIDSignIn.sharedInstance.signOut()
         user = nil
         idToken = nil
+        UserDefaults.standard.removeObject(forKey: "pushSink.lastUserEmail")
     }
 
     // MARK: — Helpers

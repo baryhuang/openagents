@@ -17,7 +17,6 @@
 		1672E6DEB621720AA88DCC47 /* BrowserTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D0E86BD5F5D0145E686A534 /* BrowserTab.swift */; };
 		21B8A36DF9F40292036E1855 /* WorkspaceAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE66E2EFD9113C2A2F91F4D /* WorkspaceAPI.swift */; };
 		22346DF03BD939DB25E90183 /* FileChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F64D81367061DABBA5EC83 /* FileChipView.swift */; };
-		25AFCD33B25544F88BF2094D /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 61AFC404B631FCEF5138C2D2 /* FirebaseMessaging */; };
 		25D03A8503F9816CB2AA5CB4 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31EBC1F1766D711824BD98EA /* WebView.swift */; };
 		28372656D9D547CA11989334 /* FileDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD72E57A63E8F9DFBF6B6FC3 /* FileDetailView.swift */; };
 		285B357EF4CEB51AB9BEB3E6 /* NewThreadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48682F70E0BBB65BE50CF69 /* NewThreadSheet.swift */; };
@@ -67,8 +66,10 @@
 		8503302A20C920B299CEDA87 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86415FE67D6C1C2F1DDBA257 /* Message.swift */; };
 		8621786ABFF955DFC5703895 /* AuthorizedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C106C643D23BFCF5DF3B1349 /* AuthorizedAsyncImage.swift */; };
 		8C454300847DC97E37484267 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 4A954C8B88565F15681A0384 /* GoogleSignIn */; };
+		8D4B4CAD969C272BE30629C1 /* MacNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AD4944B30ADB7219AC0583 /* MacNotifier.swift */; };
 		9093372B766D9F35E4552730 /* ContentSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9FA26EFFAD4DCF035A141B3 /* ContentSidebar.swift */; };
 		97D555D7DF9512094DA6E87E /* ContentSidebarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA032E023FE142F032BD6BC /* ContentSidebarController.swift */; };
+		99FB4143A2EC8B91A164A810 /* MacNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AD4944B30ADB7219AC0583 /* MacNotifier.swift */; };
 		9F71FF770F7CC4CBA766C90F /* ThreadListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F49A1295D6A71CF2F15A8BBA /* ThreadListView.swift */; };
 		A2CD5A2CB225F7792DC53C66 /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12A6515B7075FE8EAE5A481 /* Workspace.swift */; };
 		A3C18161FE398E035D71F5BB /* PushSink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31485CDEBC641234F7197935 /* PushSink.swift */; };
@@ -159,6 +160,7 @@
 		92304DB3994D8DFC7CFCD7B0 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LoginView.swift; path = OpenAgents/Views/LoginView.swift; sourceTree = SOURCE_ROOT; };
 		9A271EBE7C65A7FB702EAB8A /* FullscreenHTMLSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenHTMLSheet.swift; sourceTree = "<group>"; };
 		9C711AA33A030CA030F2B428 /* A2UIRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A2UIRendererView.swift; sourceTree = "<group>"; };
+		A1AD4944B30ADB7219AC0583 /* MacNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MacNotifier.swift; path = OpenAgents/Notifications/MacNotifier.swift; sourceTree = SOURCE_ROOT; };
 		B12A6515B7075FE8EAE5A481 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		B2D1A314CF8BC692761F6F63 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		B8BEF28DD556E8D6004C2BC2 /* StepParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepParser.swift; sourceTree = "<group>"; };
@@ -198,7 +200,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				B6529A1C4C517B0D91163E46 /* FirebaseCore in Frameworks */,
-				25AFCD33B25544F88BF2094D /* FirebaseMessaging in Frameworks */,
 				FACFD5EC0A0A67CDD735CD57 /* SwiftUIJSONRender in Frameworks */,
 				2EDA49D886DB22A62638370F /* FirebaseAuth in Frameworks */,
 				8C454300847DC97E37484267 /* GoogleSignIn in Frameworks */,
@@ -278,6 +279,7 @@
 				D476D796F5F151440069AC0A /* Products */,
 				8AD143B99C2A9640D0B4B15E /* AuthStore.swift */,
 				92304DB3994D8DFC7CFCD7B0 /* LoginView.swift */,
+				A1AD4944B30ADB7219AC0583 /* MacNotifier.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -392,7 +394,6 @@
 			name = OpenAgentsGo_iOS;
 			packageProductDependencies = (
 				A0AA091EAC84A3FD2AC24C00 /* FirebaseCore */,
-				61AFC404B631FCEF5138C2D2 /* FirebaseMessaging */,
 				A7CB0643B35BD65B65983D5D /* SwiftUIJSONRender */,
 				651A4C7A975188CD2574F138 /* FirebaseAuth */,
 				4A954C8B88565F15681A0384 /* GoogleSignIn */,
@@ -519,6 +520,7 @@
 				43B89996E8ACA9EA853B1C2D /* WorkspaceView.swift in Sources */,
 				DD0E4D1F8C0466A3911D2CF2 /* AuthStore.swift in Sources */,
 				F90C427D8AD10FF834F96B44 /* LoginView.swift in Sources */,
+				99FB4143A2EC8B91A164A810 /* MacNotifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -575,6 +577,7 @@
 				C055A0B798112D791BEC8148 /* WorkspaceView.swift in Sources */,
 				ADA7485FBB75A048789FF0A7 /* AuthStore.swift in Sources */,
 				57AC4A33B15AE4C46F27AC86 /* LoginView.swift in Sources */,
+				8D4B4CAD969C272BE30629C1 /* MacNotifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -889,11 +892,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6F501275FB3611BB98A1B2F3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseCore;
-		};
-		61AFC404B631FCEF5138C2D2 /* FirebaseMessaging */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6F501275FB3611BB98A1B2F3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseMessaging;
 		};
 		651A4C7A975188CD2574F138 /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;

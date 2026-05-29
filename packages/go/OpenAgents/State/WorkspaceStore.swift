@@ -83,6 +83,31 @@ final class WorkspaceStore {
         }
         isLoading = false
         startPolling()
+
+        // Reinstall flow: APNs delivered the device token before any
+        // workspace was in history, so `PushSink.handleAPNsToken` early-
+        // returned without calling /v1/devices/register. Now that we're
+        // bootstrapped against a real workspace, re-register with the
+        // cached token so push delivery starts working without forcing
+        // the user to restart the app. `lastUserEmail` is written by
+        // AuthStore on sign-in so mention pushes can scope to this user.
+        #if os(iOS)
+        if let token = UserDefaults.standard.string(forKey: "pushSink.lastAPNsToken"),
+           !token.isEmpty {
+            let bundleId = Bundle.main.bundleIdentifier ?? "org.openagents.workspace"
+            let userEmail = UserDefaults.standard.string(forKey: "pushSink.lastUserEmail")
+            do {
+                try await api.registerDeviceToken(
+                    fcmToken: token,
+                    bundleId: bundleId,
+                    userEmail: userEmail,
+                )
+                logInfo("push", "re-registered cached APNs token after bootstrap (\(token.prefix(12))…)")
+            } catch {
+                logInfo("push", "post-bootstrap APNs re-register failed: \(error.localizedDescription)")
+            }
+        }
+        #endif
     }
 
     /// Stop background tasks. Called when the user switches workspaces or signs out.
@@ -463,6 +488,22 @@ final class WorkspaceStore {
                 page.messages.append(contentsOf: newOnes)
                 if let last = newOnes.last { page.newestId = last.messageId }
                 if let last = newOnes.last { lastMessageBySession[channel] = last }
+
+                // macOS local notification banner — mirrors the iOS push
+                // filter for agent chat. MacNotifier suppresses banners
+                // for the channel the user is already viewing.
+                #if os(macOS)
+                for msg in newOnes where !msg.isFromUser && msg.messageType == "chat" {
+                    let preview = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if preview.isEmpty { continue }
+                    MacNotifier.shared.present(
+                        channel: channel,
+                        title: msg.senderName,
+                        body: preview,
+                        eventId: msg.messageId,
+                    )
+                }
+                #endif
                 // Clear the stopping flag if the latest agent status is terminal.
                 if let last = newOnes.last, last.isStatus, !last.isFromUser,
                    Self.isTerminalStatus(last.content) {
@@ -520,7 +561,13 @@ final class WorkspaceStore {
         }
     }
 
-    func sendMessage(_ content: String, senderName: String = "user", attachments: [PendingAttachment] = []) async {
+    func sendMessage(
+        _ content: String,
+        senderName: String = "user",
+        senderEmail: String? = nil,
+        senderDisplayName: String? = nil,
+        attachments: [PendingAttachment] = [],
+    ) async {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             logWarn("send", "ignored — empty content and no attachments")
@@ -582,7 +629,13 @@ final class WorkspaceStore {
                 return parts.joined(separator: "\n\n")
             }()
 
-            let event = try await api.sendMessage(channel: channel, content: finalContent, senderName: senderName)
+            let event = try await api.sendMessage(
+                channel: channel,
+                content: finalContent,
+                senderName: senderName,
+                senderEmail: senderEmail,
+                senderDisplayName: senderDisplayName,
+            )
             logInfo("send", "✓ backend ack id=\(event.id) ts=\(event.timestamp)")
 
             // Replace the optimistic placeholder's content in-place with the

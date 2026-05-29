@@ -393,12 +393,33 @@ actor WorkspaceAPI {
         return response.channels
     }
 
-    func sendMessage(channel: String, content: String, senderName: String = "user") async throws -> ONMEvent {
-        try await sendEvent(
+    func sendMessage(
+        channel: String,
+        content: String,
+        senderName: String = "user",
+        senderEmail: String? = nil,
+        senderDisplayName: String? = nil,
+    ) async throws -> ONMEvent {
+        // `sender_email` + `sender_display_name` are how the backend
+        // auto-creates the WorkspaceCollaborator + ChannelHumanMember
+        // rows on first post — they're optional for back-compat with
+        // anonymous (token-only) clients but should be passed whenever
+        // the user is signed in via Google.
+        var payload: [String: any Encodable & Sendable] = [
+            "content": content,
+            "sender_type": "human",
+        ]
+        if let senderEmail, !senderEmail.isEmpty {
+            payload["sender_email"] = senderEmail
+        }
+        if let senderDisplayName, !senderDisplayName.isEmpty {
+            payload["sender_display_name"] = senderDisplayName
+        }
+        return try await sendEvent(
             type: "workspace.message.posted",
             source: "human:\(senderName)",
             target: "channel/\(channel)",
-            payload: ["content": content, "sender_type": "human"],
+            payload: payload,
             visibility: "channel",
         )
     }
@@ -448,24 +469,34 @@ actor WorkspaceAPI {
 
     // MARK: - Push notifications
 
-    /// Register this device's FCM token with the workspace backend so it can receive
-    /// pushes for events posted on this workspace. Idempotent on (workspace, token).
+    /// Register this device's APNs token with the workspace backend so it
+    /// can receive pushes for events posted on this workspace. Idempotent
+    /// on (workspace, token).
+    ///
+    /// `userEmail` is optional but should be the signed-in Google email
+    /// when available — the backend stores it on the device row and uses
+    /// it to scope @-mention pushes to just this user's devices. Anonymous
+    /// (token-only) registrations still work; they just won't receive
+    /// mention-targeted notifications.
     func registerDeviceToken(
         fcmToken: String,
         deviceType: String = "ios",
         bundleId: String,
+        userEmail: String? = nil,
     ) async throws {
         struct Body: Encodable {
             let network: String
             let device_type: String
             let fcm_token: String
             let bundle_id: String
+            let user_email: String?
         }
         let body = try JSONEncoder().encode(Body(
             network: workspaceId,
             device_type: deviceType,
             fcm_token: fcmToken,
             bundle_id: bundleId,
+            user_email: userEmail,
         ))
         let request = try makeRequest(
             path: "/v1/devices/register",

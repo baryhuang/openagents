@@ -44,6 +44,14 @@ struct OpenAgentsApp: App {
                     pushSink.router = router
                 }
                 #endif
+                #if os(macOS)
+                .task {
+                    // Lazy first-time UNUserNotificationCenter prompt — only
+                    // surfaces once the SwiftUI graph is on screen so the
+                    // dialog isn't a launch-time surprise.
+                    MacNotifier.shared.requestPermission()
+                }
+                #endif
                 .onOpenURL { url in
                     // Google Sign-In callbacks come back here when the user
                     // completes (or cancels) the OAuth flow in the system
