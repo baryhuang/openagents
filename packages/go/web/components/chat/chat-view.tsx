@@ -7,6 +7,7 @@ import { ChatInput, type PendingFile } from './chat-input';
 import { ThreadStatusBar } from './thread-status-bar';
 import { EmptyState } from './empty-state';
 import { useWorkspace } from '@/lib/workspace-context';
+import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
 import { MessageSquare, ChevronLeft, Globe, PanelRight } from 'lucide-react';
@@ -78,6 +79,14 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 
 export function ChatView() {
   const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, updateAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, consumeSkipFocus } = useWorkspace();
+  const { user: googleUser } = useOpenAgentsAuth();
+  // Tag every outgoing chat with the signed-in user so other participants
+  // see a real name (not "user") and the backend can resolve `@bary` to
+  // bary's device tokens for mention pushes. Falls back to "user" when no
+  // Google session (token-only visitors stay anonymous).
+  const senderName = (googleUser?.displayName || googleUser?.email || 'user').trim();
+  const senderEmail = googleUser?.email?.trim().toLowerCase();
+  const senderDisplayName = googleUser?.displayName?.trim();
   const {
     isMobile,
     openMobileList,
@@ -298,7 +307,7 @@ export function ChatView() {
       const userOptimisticMsg: WorkspaceMessage = {
         messageId: `optimistic-user-${timestamp}`,
         sessionId: currentSessionId,
-        senderName: 'You',
+        senderName,
         senderType: 'user',
         content: userContent,
         messageType: 'chat',
@@ -342,9 +351,11 @@ export function ChatView() {
         await workspaceApi.sendMessage(
           currentSessionId,
           content || (attachments ? attachments.map((a) => a.filename).join(', ') : ''),
-          'user',
+          senderName,
           mentions.length > 0 ? mentions : undefined,
           attachments,
+          senderEmail,
+          senderDisplayName,
         );
         forceRefresh();
       } catch {
@@ -353,7 +364,7 @@ export function ChatView() {
         setOptimisticMessages([]);
       }
     },
-    [currentSessionId, forceRefresh, agents]
+    [currentSessionId, forceRefresh, agents, senderName, senderEmail, senderDisplayName]
   );
 
   if (!currentSessionId) {
