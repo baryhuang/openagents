@@ -29,6 +29,12 @@ final class WorkspaceStore {
 
     var workspace: Workspace?
     var agents: [Agent] = []
+    /// Human collaborators in the workspace. Populated by the backend's
+    /// auto-upsert on every human chat post, refreshed alongside agents
+    /// on poll. Drives the @-mention picker (`bary` matches when a
+    /// human with displayName "Bary Huang" — or email "bary@…" — is in
+    /// the workspace).
+    var humans: [WorkspaceAPI.Collaborator] = []
     var sessions: [Session] = []
     var currentSessionId: String?
     /// Per-session message page state with cursor info.
@@ -256,6 +262,15 @@ final class WorkspaceStore {
             let discovery = try await api.discover()
             self.agents = discovery.agents.map { $0.toAgent() }
             self.sessions = discovery.channels.map { $0.toSession(workspaceId: workspaceId) }
+            // Refresh the human roster in parallel — the @-mention picker
+            // merges these with `agents`. Older backends without the
+            // collaborators endpoint will 404; swallow so the chat list
+            // doesn't fail.
+            Task {
+                if let collabs = try? await api.listCollaborators() {
+                    self.humans = collabs
+                }
+            }
             // Drop stale current selection if the session no longer exists
             if let id = currentSessionId, !sessions.contains(where: { $0.sessionId == id }) {
                 currentSessionId = activeSessions.first?.sessionId

@@ -95,6 +95,26 @@ actor WorkspaceAPI {
         return try await send(request, as: Workspace.self)
     }
 
+    /// Email-based collaborators (humans) in this workspace. Backend
+    /// auto-populates these on first human chat post via the workspace
+    /// mod, so the mention picker can include real signed-in users
+    /// alongside agents.
+    struct Collaborator: Decodable, Sendable, Equatable {
+        let email: String
+        let displayName: String?
+        let role: String?
+    }
+
+    private struct CollaboratorsResponse: Decodable, Sendable {
+        let collaborators: [Collaborator]
+    }
+
+    func listCollaborators() async throws -> [Collaborator] {
+        let request = try makeRequest(path: "/v1/workspaces/\(workspaceId)/collaborators")
+        let response = try await send(request, as: CollaboratorsResponse.self)
+        return response.collaborators
+    }
+
     /// Flip the workspace-level Browser Fabric viewer toggle. The backend
     /// accepts a typed top-level `browser_enabled` on `PATCH /v1/workspaces/{id}`
     /// (added in this release) and merges it into the `settings` JSONB

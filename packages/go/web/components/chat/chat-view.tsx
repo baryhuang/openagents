@@ -78,7 +78,7 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, updateAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, consumeSkipFocus } = useWorkspace();
+  const { agents, humans, currentSessionId, sessions, updateLastMessage, setSessionActive, updateAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, consumeSkipFocus } = useWorkspace();
   const { user: googleUser } = useOpenAgentsAuth();
   // Tag every outgoing chat with the signed-in user so other participants
   // see a real name (not "user") and the backend can resolve `@bary` to
@@ -483,6 +483,7 @@ export function ChatView() {
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
+                humans={humans}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 focusKey={focusKey}

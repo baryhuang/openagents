@@ -759,6 +759,7 @@ async def delete_workspace(
 def _format_collaborator(c: WorkspaceCollaborator) -> dict:
     return {
         "email": c.email,
+        "displayName": c.display_name,
         "role": c.role,
         "addedBy": c.added_by,
         "addedAt": c.added_at.isoformat() if c.added_at else None,

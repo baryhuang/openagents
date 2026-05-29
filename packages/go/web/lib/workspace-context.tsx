@@ -4,7 +4,7 @@ import React, { createContext, useContext, useCallback, useEffect, useRef, useSt
 import { toast } from 'sonner';
 import { workspaceApi } from './api';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, DMConversation, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceCollaborator, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -16,6 +16,10 @@ interface WorkspaceContextValue {
   workspace: Workspace | null;
   token: string;
   agents: WorkspaceAgent[];
+  /** Email-based human collaborators in this workspace, populated by the
+   *  backend's auto-upsert on first human chat post. Drives the @-mention
+   *  picker so `@bary` works alongside agent mentions. */
+  humans: WorkspaceCollaborator[];
   sessions: WorkspaceSession[];
   files: WorkspaceFile[];
   selectedFileId: string | null;
@@ -102,6 +106,7 @@ export function WorkspaceProvider({
 }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
+  const [humans, setHumans] = useState<WorkspaceCollaborator[]>([]);
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
   const [currentSessionId, _setCurrentSessionId] = useState<string | null>(null);
   // Set by setCurrentSessionId({ skipFocus: true }) and consumed by ChatView's
@@ -325,6 +330,12 @@ export function WorkspaceProvider({
     try {
       const discovery = await workspaceApi.discover();
       setAgents(discovery.agents.map(networkAgentToWorkspaceAgent));
+      // Best-effort collaborators refresh — feeds the @-mention picker so
+      // signed-in humans show up alongside agents. Older backends without
+      // the endpoint silently 404; swallow so the chat list still loads.
+      workspaceApi.listCollaborators()
+        .then((res) => setHumans(res.collaborators))
+        .catch(() => { /* ignored */ });
 
       const updated = discovery.channels.map((ch) =>
         networkChannelToSession(ch, workspaceId)
@@ -886,6 +897,7 @@ export function WorkspaceProvider({
         workspace,
         token,
         agents,
+        humans,
         sessions,
         files,
         selectedFileId,
