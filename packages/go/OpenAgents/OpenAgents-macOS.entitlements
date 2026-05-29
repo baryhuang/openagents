@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  App Sandbox is disabled for the macOS DMG build. GoogleSignIn's
-	  keychain caching needs `keychain-access-groups`, which in turn
-	  requires a Developer ID provisioning profile (regulated entitlement).
-	  Disabling sandbox sidesteps both — keychain access just works, and
-	  no profile dance is needed for ad-hoc Developer ID distribution.
-	  Most non-MAS Developer ID apps (Slack, Chrome, etc.) ship without
-	  sandbox; this app talks to local shells / agent processes anyway,
-	  which sandbox would block.
+	  App Sandbox is required for Mac App Store distribution. The MAS
+	  provisioning profile Xcode auto-generates also embeds the
+	  keychain-access-groups entitlement, so GoogleSignIn's keychain
+	  caching works inside sandbox. The Developer ID DMG path
+	  (build-signed-dmg.sh) keeps sandbox on too — Xcode's distribution
+	  flow handles the profile in both cases.
 	-->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 	<key>com.apple.security.network.client</key>

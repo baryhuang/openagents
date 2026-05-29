@@ -598,6 +598,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				DEVELOPMENT_TEAM = AP69DBR725;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.openagents.workspace;
 				PRODUCT_NAME = "OpenAgents Go";
@@ -624,6 +625,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				DEVELOPMENT_TEAM = AP69DBR725;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.openagents.workspace;
 				PRODUCT_NAME = "OpenAgents Go";
