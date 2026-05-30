@@ -161,28 +161,6 @@ class ChannelMember(Base):
     )
 
 
-class ChannelHumanMember(Base):
-    """Per-channel human participant — Slack-style thread membership.
-
-    Lives alongside `ChannelMember` (agents only) rather than mixing
-    `agent_name` + `user_email` into one row, which would muddy the
-    existing agent routing queries. Auto-populated by the workspace mod
-    on first human post in a channel; consulted by `services/push.py` to
-    decide whose devices get a banner for non-mention chat messages.
-    Mentions still wake the mentioned human regardless of membership.
-    """
-    __tablename__ = "channel_human_members"
-
-    channel_id = Column(UUID(as_uuid=False), ForeignKey("channels.id", ondelete="CASCADE"), nullable=False)
-    user_email = Column(Text, nullable=False)               # normalized lowercase
-    joined_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
-
-    __table_args__ = (
-        PrimaryKeyConstraint("channel_id", "user_email"),
-        Index("idx_channel_human_members_email", "user_email"),
-    )
-
-
 class Invitation(Base):
     """Workspace invitation."""
     __tablename__ = "invitations"
@@ -208,10 +186,6 @@ class WorkspaceCollaborator(Base):
     role = Column(Text, default="editor")               # editor | viewer
     added_by = Column(Text, nullable=True)              # email of who added
     added_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
-    # Google `displayName` captured the first time the human posted in
-    # this workspace. Mention picker shows it; push.py uses it (along
-    # with the email local-part) to resolve "@bary" → device tokens.
-    display_name = Column(Text, nullable=True)
 
     workspace = relationship("Workspace", back_populates="collaborators")
 
@@ -376,19 +350,12 @@ class DeviceToken(Base):
     fcm_token = Column(Text, nullable=False)
     device_type = Column(Text, nullable=False)            # "ios" | future: "android" | "macos"
     bundle_id = Column(Text, nullable=True)               # e.g. "com.openagents.go"
-    # Google email of the signed-in user on the device that registered.
-    # NULL for older clients without a user identity; populated by builds
-    # that started sending `userEmail` with /v1/devices/register. The push
-    # fan-out filters by this column when a @-mention resolves to a human
-    # collaborator so only that specific human's devices get woken up.
-    user_email = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
     last_seen_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "fcm_token", name="uq_device_token_workspace_fcm"),
         Index("idx_device_tokens_workspace", "workspace_id"),
-        Index("idx_device_tokens_workspace_user", "workspace_id", "user_email"),
     )
 
 

@@ -19,13 +19,12 @@ final class PushSink {
     /// when the user taps a banner.
     weak var router: AppRouter?
 
-    /// Last APNs device token (hex string) we successfully handed to a backend
-    /// — persisted so we can re-register on workspace history changes without
-    /// waiting for APNs to resurface the token (it normally only re-emits on
-    /// restore-from-backup or reinstall).
-    private let tokenKey = "pushSink.lastAPNsToken"
+    /// Last FCM token we successfully handed to a backend — persisted so we can
+    /// re-register on workspace history changes without waiting for FCM to
+    /// resurface the token.
+    private let tokenKey = "pushSink.lastFCMToken"
 
-    var lastAPNsToken: String? {
+    var lastFCMToken: String? {
         get { UserDefaults.standard.string(forKey: tokenKey) }
         set {
             if let newValue {
@@ -36,37 +35,14 @@ final class PushSink {
         }
     }
 
-    /// The signed-in Google email is cached in UserDefaults the same way
-    /// the APNs token is. PushSink lives outside the auth flow, so both
-    /// values come in via side channels (AppDelegate for the token,
-    /// AuthStore for the email — see `pushSink.lastUserEmail = ...`
-    /// after sign-in) and get replayed together on workspace registration.
-    private let userEmailKey = "pushSink.lastUserEmail"
-
-    var lastUserEmail: String? {
-        get { UserDefaults.standard.string(forKey: userEmailKey) }
-        set {
-            if let newValue, !newValue.isEmpty {
-                UserDefaults.standard.set(newValue, forKey: userEmailKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: userEmailKey)
-            }
-        }
-    }
-
-    /// `didRegisterForRemoteNotificationsWithDeviceToken` has handed us the
-    /// raw APNs token bytes. Convert to APNs' hex wire format (lowercase, no
-    /// separators) and fan out to every workspace this device has connected
-    /// to so notifications from any of them reach us.
-    func handleAPNsToken(_ deviceToken: Data) {
-        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
-        logInfo("push", "APNs token received (\(hex.prefix(12))…)")
-        lastAPNsToken = hex
-        let bundleId = Bundle.main.bundleIdentifier ?? "org.openagents.workspace"
-        let userEmail = lastUserEmail
+    /// FCM SDK has handed us a token — fan it out to every workspace this
+    /// device has connected to so notifications from any of them reach us.
+    func handleFCMToken(_ token: String) {
+        lastFCMToken = token
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.openagents.go"
         let entries = WorkspaceHistory.shared.entries()
         guard !entries.isEmpty else {
-            logInfo("push", "APNs token ready but no workspaces in history yet — will register on next connect")
+            logInfo("push", "FCM token ready but no workspaces in history yet — will register on next connect")
             return
         }
         Task.detached {
@@ -78,11 +54,7 @@ final class PushSink {
                     baseURL: entry.resolvedAPIURL,
                 )
                 do {
-                    try await api.registerDeviceToken(
-                        fcmToken: hex,
-                        bundleId: bundleId,
-                        userEmail: userEmail,
-                    )
+                    try await api.registerDeviceToken(fcmToken: token, bundleId: bundleId)
                     logInfo("push", "registered device with workspace \(entry.workspaceId) at \(entry.resolvedAPIURL.host ?? "?")")
                 } catch {
                     // Older backends won't have /v1/devices/register and will 404 —

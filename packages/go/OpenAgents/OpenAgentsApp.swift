@@ -1,7 +1,5 @@
 import SwiftUI
 import SwiftUIJSONRender
-import FirebaseCore
-import GoogleSignIn
 
 @main
 struct OpenAgentsApp: App {
@@ -12,21 +10,12 @@ struct OpenAgentsApp: App {
         // placeholders for everything. Force the init here so Stack / Button
         // / Heading / etc. resolve.
         SwiftUIJSONRender.initializeJSONRender()
-
-        // iOS already calls FirebaseApp.configure() from AppDelegate (for
-        // push notifications). macOS has no AppDelegate, so configure here.
-        #if os(macOS)
-        if FirebaseApp.app() == nil {
-            FirebaseApp.configure()
-        }
-        #endif
     }
 
     #if os(iOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var pushSink = PushSink()
     #endif
-    @StateObject private var authStore = AuthStore()
     @State private var router = AppRouter()
     @State private var debugLogOpen: Bool = false
     @State private var settingsOpen: Bool = false
@@ -36,7 +25,6 @@ struct OpenAgentsApp: App {
         WindowGroup {
             RootView()
                 .environment(router)
-                .environmentObject(authStore)
                 #if os(iOS)
                 .environment(pushSink)
                 .task {
@@ -44,21 +32,7 @@ struct OpenAgentsApp: App {
                     pushSink.router = router
                 }
                 #endif
-                #if os(macOS)
-                .task {
-                    // Lazy first-time UNUserNotificationCenter prompt — only
-                    // surfaces once the SwiftUI graph is on screen so the
-                    // dialog isn't a launch-time surprise.
-                    MacNotifier.shared.requestPermission()
-                }
-                #endif
                 .onOpenURL { url in
-                    // Google Sign-In callbacks come back here when the user
-                    // completes (or cancels) the OAuth flow in the system
-                    // browser. GIDSignIn.handle returns true when it owns
-                    // the URL; only forward to the file ingester otherwise.
-                    if GIDSignIn.sharedInstance.handle(url) { return }
-
                     // Triggered when another app hands us a file via iOS
                     // "Open in…" / Share Sheet, macOS "Open With", or
                     // drag-onto-dock-icon. The router buffers it until the
@@ -71,7 +45,6 @@ struct OpenAgentsApp: App {
                 .sheet(isPresented: $settingsOpen) {
                     SettingsSheet(isPresented: $settingsOpen)
                         .environment(router)
-                        .environmentObject(authStore)
                 }
                 .onAppCommand(.openDebugLog) {
                     debugLogOpen = true

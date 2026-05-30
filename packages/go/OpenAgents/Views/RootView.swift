@@ -2,24 +2,8 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppRouter.self) private var router
-    @EnvironmentObject private var auth: AuthStore
 
     var body: some View {
-        Group {
-            if auth.loading {
-                ProgressView()
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if auth.user == nil {
-                LoginView()
-            } else {
-                workspaceContent
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var workspaceContent: some View {
         switch router.route {
         case .selector:
             WorkspaceSelectorView()

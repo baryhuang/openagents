@@ -72,10 +72,6 @@ export interface WorkspaceMessage {
 
 export interface WorkspaceCollaborator {
   email: string;
-  /** Google displayName captured the first time the human posted in the
-   *  workspace. Used by the @-mention picker so we can render "Bary Huang"
-   *  instead of just "bary@peakmojo.com". Older rows may have null. */
-  displayName?: string | null;
   role: 'editor' | 'viewer';
   addedBy: string | null;
   addedAt: string | null;

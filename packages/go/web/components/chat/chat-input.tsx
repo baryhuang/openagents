@@ -25,21 +25,11 @@ export interface PendingFile {
   preview?: string; // data URL for images
 }
 
-interface HumanCandidate {
-  email: string;
-  displayName?: string | null;
-}
-
 interface ChatInputProps {
   onSend: (content: string, mentions: string[], files: PendingFile[]) => void;
   disabled?: boolean;
   className?: string;
   agents?: WorkspaceAgent[];
-  /** Human collaborators in the workspace — shown alongside agents in the
-   *  @-mention picker. Backend's auto-upsert on first human post keeps
-   *  this fresh; the picker uses each human's first-name slug (or email
-   *  local-part) as the mention token. */
-  humans?: HumanCandidate[];
   draft?: string;
   onDraftChange?: (draft: string) => void;
   /** Auto-focus the textarea when mounted or when this key changes. */
@@ -62,7 +52,7 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-export function ChatInput({ onSend, disabled, className, agents = [], humans = [], draft, onDraftChange, focusKey, onSlashCommand, isWorking, isStopping, onStop }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange, focusKey, onSlashCommand, isWorking, isStopping, onStop }: ChatInputProps) {
   const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
@@ -102,58 +92,20 @@ export function ChatInput({ onSend, disabled, className, agents = [], humans = [
     }
   }, [focusKey]);
 
-  // Slug a human display name into a mention token. Mirrors the
-  // backend's `_workspace_human_keys` (push.py): first whitespace-split
-  // word lowercased, fallback to the email's local part.
-  const humanToken = (h: HumanCandidate): string => {
-    const dn = (h.displayName ?? '').trim();
-    if (dn) {
-      const first = dn.split(/\s+/)[0] ?? dn;
-      const cleaned = first.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
-      if (cleaned) return cleaned;
-    }
-    return (h.email.split('@')[0] || h.email).toLowerCase();
-  };
+  const agentNames = agents.map((a) => a.agentName);
 
-  type Candidate = {
-    id: string;
-    kind: 'agent' | 'human';
-    label: string;
-    subtitle?: string;
-    token: string;     // what gets inserted after `@`
-  };
-
-  const allCandidates: Candidate[] = [
-    ...agents.filter((a) => a.status === 'online').map((a) => ({
-      id: `agent:${a.agentName}`,
-      kind: 'agent' as const,
-      label: a.agentName,
-      subtitle: 'online',
-      token: a.agentName,
-    })),
-    ...humans.map((h) => ({
-      id: `human:${h.email}`,
-      kind: 'human' as const,
-      label: h.displayName || h.email,
-      subtitle: h.email,
-      token: humanToken(h),
-    })),
-  ];
-  const allMentionTokens = new Set(allCandidates.map((c) => c.token));
-
-  // Extract @mentions from message text — match against the merged set
-  // of agent names AND human display-name slugs / email local-parts.
+  // Extract @mentions from message text
   const extractMentions = (text: string): string[] => {
     const matches = text.match(/@([\w-]+)/g) || [];
     return matches
       .map((m) => m.slice(1))
-      .filter((name) => allMentionTokens.has(name));
+      .filter((name) => agentNames.includes(name));
   };
 
-  // Filter the merged list as the user types after `@`.
-  const filteredAgents = allCandidates.filter((c) =>
-    c.label.toLowerCase().includes(mentionFilter.toLowerCase())
-      || c.token.toLowerCase().includes(mentionFilter.toLowerCase())
+  // Only suggest online agents — mentioning offline ones never resolves and
+  // just clutters the picker on long-lived workspaces.
+  const filteredAgents = agents.filter(
+    (a) => a.status === 'online' && a.agentName.toLowerCase().includes(mentionFilter.toLowerCase())
   );
 
   const addFiles = React.useCallback((files: FileList | File[]) => {
@@ -275,7 +227,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], humans = [
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        insertMention(filteredAgents[mentionIndex].token);
+        insertMention(filteredAgents[mentionIndex].agentName);
         return;
       }
       if (e.key === 'Escape') {
@@ -428,35 +380,35 @@ export function ChatInput({ onSend, disabled, className, agents = [], humans = [
         </div>
       )}
 
-      {/* @mention autocomplete dropdown — merged agents + humans */}
+      {/* @mention autocomplete dropdown */}
       {showMentions && filteredAgents.length > 0 && (
         <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden">
-          {filteredAgents.map((cand, i) => (
+          {filteredAgents.map((agent, i) => (
               <button
-                key={cand.id}
+                key={agent.agentName}
                 className={cn(
                   'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-accent transition-colors',
                   i === mentionIndex && 'bg-accent'
                 )}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  insertMention(cand.token);
+                  insertMention(agent.agentName);
                 }}
               >
-                {cand.kind === 'agent' ? (
-                  <AgentAvatar name={cand.label} size={24} status="online" showStatus />
-                ) : (
-                  <div className="size-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                    {cand.label[0]?.toUpperCase() ?? '?'}
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{cand.label}</div>
-                  {cand.subtitle && (
-                    <div className="text-[11px] text-muted-foreground truncate">{cand.subtitle}</div>
-                  )}
-                </div>
-                <span className="text-[11px] font-mono text-muted-foreground ml-auto">@{cand.token}</span>
+                <AgentAvatar name={agent.agentName} size={24} status={agent.status} showStatus />
+                <span className="font-medium">{agent.agentName}</span>
+                <span className={cn(
+                  'text-[10px] px-1.5 py-0.5 rounded-full ml-auto',
+                  agent.role === 'master'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                )}>
+                  {agent.role}
+                </span>
+                <span className={cn(
+                  'size-2 rounded-full',
+                  agent.status === 'online' ? 'bg-green-500' : 'bg-zinc-400'
+                )} />
               </button>
           ))}
         </div>

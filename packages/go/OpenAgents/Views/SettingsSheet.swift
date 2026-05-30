@@ -1,41 +1,8 @@
 import SwiftUI
 
-private struct AccountAvatar: View {
-    let user: AuthUser?
-
-    var body: some View {
-        let initial = (user?.displayName.first ?? user?.email.first).map { String($0).uppercased() } ?? "?"
-        if let url = user?.photoURL {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                default:
-                    fallback(initial: initial)
-                }
-            }
-            .frame(width: 40, height: 40)
-            .clipShape(Circle())
-        } else {
-            fallback(initial: initial)
-                .frame(width: 40, height: 40)
-        }
-    }
-
-    private func fallback(initial: String) -> some View {
-        ZStack {
-            Circle().fill(Color.accentColor)
-            Text(initial)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.white)
-        }
-    }
-}
-
 struct SettingsSheet: View {
     @Binding var isPresented: Bool
     @Environment(AppRouter.self) private var router
-    @EnvironmentObject private var auth: AuthStore
 
     @State private var appURLDraft: String = ""
     @State private var apiURLDraft: String = ""
@@ -69,9 +36,6 @@ struct SettingsSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if auth.user != nil {
-                        accountSection
-                    }
                     if currentEntry != nil {
                         currentWorkspaceURLs
                     }
@@ -216,35 +180,6 @@ struct SettingsSheet: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-            }
-            .padding(12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        }
-    }
-
-    private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("ACCOUNT")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 4)
-            HStack(spacing: 12) {
-                AccountAvatar(user: auth.user)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(auth.user?.displayName ?? "")
-                        .font(.callout.weight(.medium))
-                        .lineLimit(1)
-                    Text(auth.user?.email ?? "")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Button("Sign Out") {
-                    auth.signOut()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
             .padding(12)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))

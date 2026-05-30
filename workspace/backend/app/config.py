@@ -26,20 +26,6 @@ class Config:
     # Optional: Firebase service account credentials as JSON string
     FIREBASE_CREDENTIALS_JSON: str = os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
 
-    # APNs (Apple Push Notification service) — direct, no FCM in between.
-    # Token-based auth via a .p8 key generated at
-    # developer.apple.com/account/resources/authkeys/list.
-    # APNS_AUTH_KEY contains the raw PEM body ("-----BEGIN PRIVATE KEY-----\n...");
-    # for local dev set APNS_AUTH_KEY_PATH instead to point at the .p8 file on disk.
-    APNS_AUTH_KEY: str = os.environ.get("APNS_AUTH_KEY", "")
-    APNS_AUTH_KEY_PATH: str = os.environ.get("APNS_AUTH_KEY_PATH", "")
-    APNS_KEY_ID: str = os.environ.get("APNS_KEY_ID", "")
-    APNS_TEAM_ID: str = os.environ.get("APNS_TEAM_ID", "")
-    APNS_BUNDLE_ID: str = os.environ.get("APNS_BUNDLE_ID", "org.openagents.workspace")
-    # "sandbox" for TestFlight / dev builds, "production" for App Store.
-    # One Apple key works for both; this picks which APNs host to hit.
-    APNS_ENVIRONMENT: str = os.environ.get("APNS_ENVIRONMENT", "production")
-
     # Identity mode: "standalone" (own agent table) or "shared" (external agent_ids)
     IDENTITY_MODE: str = os.environ.get("IDENTITY_MODE", "standalone")
 

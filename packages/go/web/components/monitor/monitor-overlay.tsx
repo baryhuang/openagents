@@ -9,7 +9,6 @@ import {
 import { ChatMessages } from '@/components/chat/chat-messages';
 import { ChatInput, type PendingFile } from '@/components/chat/chat-input';
 import { useWorkspace } from '@/lib/workspace-context';
-import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
 import { Square } from 'lucide-react';
@@ -26,8 +25,6 @@ interface MonitorOverlayProps {
 
 export function MonitorOverlay({ sessionId, session, initialMessages, open, onOpenChange }: MonitorOverlayProps) {
   const { agents, activeSessionIds, stoppingSessionIds, stopAllAgents, renameSession } = useWorkspace();
-  const { user: authUser } = useOpenAgentsAuth();
-  const senderName = (authUser?.displayName || authUser?.email || 'user').trim();
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -159,7 +156,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
         await workspaceApi.sendMessage(
           sessionId,
           content || (attachments ? attachments.map((a) => a.filename).join(', ') : ''),
-          senderName,
+          'user',
           mentions.length > 0 ? mentions : undefined,
           attachments,
         );
@@ -168,7 +165,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
         setOptimisticMessages([]);
       }
     },
-    [sessionId, forceRefresh, agents, senderName]
+    [sessionId, forceRefresh, agents]
   );
 
   return (

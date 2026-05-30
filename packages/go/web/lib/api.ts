@@ -205,23 +205,13 @@ class WorkspaceApi {
   // Messages — via ONM events
   // ---------------------------------------------------------------------------
 
-  /** Send a chat message by emitting a workspace.message.posted event.
-   *
-   * `senderEmail` + `senderDisplayName` are optional but should be passed
-   * for signed-in human users — the backend uses them to auto-create a
-   * `WorkspaceCollaborator` row the first time, so @-mention pushes can
-   * later resolve "@bary" → bary's device tokens. Anonymous (token-only)
-   * visitors leave them empty; mention-targeted pushes simply won't reach
-   * those users until they sign in.
-   */
+  /** Send a chat message by emitting a workspace.message.posted event. */
   async sendMessage(
     channelName: string,
     content: string,
     senderName = 'user',
     mentions?: string[],
     attachments?: { fileId: string; filename: string; contentType: string; url: string }[],
-    senderEmail?: string,
-    senderDisplayName?: string,
   ): Promise<ONMEvent> {
     return this.sendEvent({
       type: 'workspace.message.posted',
@@ -230,8 +220,6 @@ class WorkspaceApi {
       payload: {
         content,
         sender_type: 'human',
-        ...(senderEmail ? { sender_email: senderEmail } : {}),
-        ...(senderDisplayName ? { sender_display_name: senderDisplayName } : {}),
         ...(mentions && mentions.length > 0 ? { mentions } : {}),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       },
@@ -528,16 +516,6 @@ class WorkspaceApi {
   async removeCollaborator(email: string): Promise<void> {
     await this.request<unknown>(`/v1/workspaces/${this.workspaceId}/collaborators/${encodeURIComponent(email)}`, {
       method: 'DELETE',
-    });
-  }
-
-  /** Self-register the signed-in user as a workspace collaborator so they
-   * appear in the @-mention picker without needing to post a message first.
-   * Called by `workspace-context.refreshDiscovery` after Google sign-in. */
-  async recordPresence(senderEmail: string, senderDisplayName?: string | null): Promise<void> {
-    await this.request<unknown>(`/v1/workspaces/${this.workspaceId}/presence`, {
-      method: 'POST',
-      body: JSON.stringify({ senderEmail, senderDisplayName: senderDisplayName ?? null }),
     });
   }
 

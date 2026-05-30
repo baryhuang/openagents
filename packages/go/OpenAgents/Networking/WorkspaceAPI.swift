@@ -95,45 +95,6 @@ actor WorkspaceAPI {
         return try await send(request, as: Workspace.self)
     }
 
-    /// Email-based collaborators (humans) in this workspace. Backend
-    /// auto-populates these on first human chat post via the workspace
-    /// mod, so the mention picker can include real signed-in users
-    /// alongside agents.
-    struct Collaborator: Decodable, Sendable, Equatable {
-        let email: String
-        let displayName: String?
-        let role: String?
-    }
-
-    private struct CollaboratorsResponse: Decodable, Sendable {
-        let collaborators: [Collaborator]
-    }
-
-    func listCollaborators() async throws -> [Collaborator] {
-        let request = try makeRequest(path: "/v1/workspaces/\(workspaceId)/collaborators")
-        let response = try await send(request, as: CollaboratorsResponse.self)
-        return response.collaborators
-    }
-
-    /// Self-register the signed-in user as a workspace collaborator so
-    /// they show up in everyone's @-mention picker without having to
-    /// post a message first. Fire-and-forget from `WorkspaceStore`.
-    func recordPresence(senderEmail: String, senderDisplayName: String?) async throws {
-        struct Body: Encodable {
-            let senderEmail: String
-            let senderDisplayName: String?
-        }
-        let bodyData = try JSONEncoder().encode(
-            Body(senderEmail: senderEmail, senderDisplayName: senderDisplayName)
-        )
-        let request = try makeRequest(
-            path: "/v1/workspaces/\(workspaceId)/presence",
-            method: "POST",
-            body: bodyData,
-        )
-        _ = try await send(request, as: Collaborator.self)
-    }
-
     /// Flip the workspace-level Browser Fabric viewer toggle. The backend
     /// accepts a typed top-level `browser_enabled` on `PATCH /v1/workspaces/{id}`
     /// (added in this release) and merges it into the `settings` JSONB
@@ -432,33 +393,12 @@ actor WorkspaceAPI {
         return response.channels
     }
 
-    func sendMessage(
-        channel: String,
-        content: String,
-        senderName: String = "user",
-        senderEmail: String? = nil,
-        senderDisplayName: String? = nil,
-    ) async throws -> ONMEvent {
-        // `sender_email` + `sender_display_name` are how the backend
-        // auto-creates the WorkspaceCollaborator + ChannelHumanMember
-        // rows on first post — they're optional for back-compat with
-        // anonymous (token-only) clients but should be passed whenever
-        // the user is signed in via Google.
-        var payload: [String: any Encodable & Sendable] = [
-            "content": content,
-            "sender_type": "human",
-        ]
-        if let senderEmail, !senderEmail.isEmpty {
-            payload["sender_email"] = senderEmail
-        }
-        if let senderDisplayName, !senderDisplayName.isEmpty {
-            payload["sender_display_name"] = senderDisplayName
-        }
-        return try await sendEvent(
+    func sendMessage(channel: String, content: String, senderName: String = "user") async throws -> ONMEvent {
+        try await sendEvent(
             type: "workspace.message.posted",
             source: "human:\(senderName)",
             target: "channel/\(channel)",
-            payload: payload,
+            payload: ["content": content, "sender_type": "human"],
             visibility: "channel",
         )
     }
@@ -508,34 +448,24 @@ actor WorkspaceAPI {
 
     // MARK: - Push notifications
 
-    /// Register this device's APNs token with the workspace backend so it
-    /// can receive pushes for events posted on this workspace. Idempotent
-    /// on (workspace, token).
-    ///
-    /// `userEmail` is optional but should be the signed-in Google email
-    /// when available — the backend stores it on the device row and uses
-    /// it to scope @-mention pushes to just this user's devices. Anonymous
-    /// (token-only) registrations still work; they just won't receive
-    /// mention-targeted notifications.
+    /// Register this device's FCM token with the workspace backend so it can receive
+    /// pushes for events posted on this workspace. Idempotent on (workspace, token).
     func registerDeviceToken(
         fcmToken: String,
         deviceType: String = "ios",
         bundleId: String,
-        userEmail: String? = nil,
     ) async throws {
         struct Body: Encodable {
             let network: String
             let device_type: String
             let fcm_token: String
             let bundle_id: String
-            let user_email: String?
         }
         let body = try JSONEncoder().encode(Body(
             network: workspaceId,
             device_type: deviceType,
             fcm_token: fcmToken,
             bundle_id: bundleId,
-            user_email: userEmail,
         ))
         let request = try makeRequest(
             path: "/v1/devices/register",

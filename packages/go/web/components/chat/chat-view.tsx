@@ -7,7 +7,6 @@ import { ChatInput, type PendingFile } from './chat-input';
 import { ThreadStatusBar } from './thread-status-bar';
 import { EmptyState } from './empty-state';
 import { useWorkspace } from '@/lib/workspace-context';
-import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { workspaceApi } from '@/lib/api';
 import { MessageSquare, ChevronLeft, Globe, PanelRight } from 'lucide-react';
@@ -78,11 +77,7 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, humans, currentSessionId, sessions, updateLastMessage, setSessionActive, updateAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, consumeSkipFocus } = useWorkspace();
-  const { user: googleUser } = useOpenAgentsAuth();
-  const senderName = (googleUser?.displayName || googleUser?.email || 'user').trim();
-  const senderEmail = googleUser?.email?.trim().toLowerCase();
-  const senderDisplayName = googleUser?.displayName?.trim();
+  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, updateAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, consumeSkipFocus } = useWorkspace();
   const {
     isMobile,
     openMobileList,
@@ -303,7 +298,7 @@ export function ChatView() {
       const userOptimisticMsg: WorkspaceMessage = {
         messageId: `optimistic-user-${timestamp}`,
         sessionId: currentSessionId,
-        senderName,
+        senderName: 'You',
         senderType: 'user',
         content: userContent,
         messageType: 'chat',
@@ -347,11 +342,9 @@ export function ChatView() {
         await workspaceApi.sendMessage(
           currentSessionId,
           content || (attachments ? attachments.map((a) => a.filename).join(', ') : ''),
-          senderName,
+          'user',
           mentions.length > 0 ? mentions : undefined,
           attachments,
-          senderEmail,
-          senderDisplayName,
         );
         forceRefresh();
       } catch {
@@ -360,7 +353,7 @@ export function ChatView() {
         setOptimisticMessages([]);
       }
     },
-    [currentSessionId, forceRefresh, agents, senderName, senderEmail, senderDisplayName]
+    [currentSessionId, forceRefresh, agents]
   );
 
   if (!currentSessionId) {
@@ -479,7 +472,6 @@ export function ChatView() {
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
-                humans={humans}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 focusKey={focusKey}
