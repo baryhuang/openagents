@@ -264,6 +264,9 @@ function _addUnixPaths(dirs) {
 
   // cargo
   _push(dirs, path.join(HOME, '.cargo', 'bin'));
+
+  // Cursor CLI native installer (curl https://cursor.com/install | bash)
+  _push(dirs, path.join(HOME, '.cursor', 'bin'));
 }
 
 // ---- macOS-specific ----
@@ -336,11 +339,23 @@ function getCorePrefix() {
   return path.join(HOME, '.openagents', 'core');
 }
 
+/**
+ * Reset the two 30s caches that back binary detection. Call this after
+ * install / uninstall so a freshly-created bin dir (e.g. ~/.cursor/bin)
+ * isn't masked by a pre-install snapshot of getExtraBinDirs(), and so a
+ * `whichBinary(name) === null` cached before install doesn't survive.
+ */
+function clearBinaryLookupCache() {
+  extraBinDirsCache = { value: null, at: 0, path: '' };
+  whichBinaryCache.clear();
+}
+
 module.exports = {
   getExtraBinDirs,
   getEnhancedPATH,
   getEnhancedEnv,
   whichBinary,
+  clearBinaryLookupCache,
   getRuntimePrefix,
   getCorePrefix,
   IS_WINDOWS,
