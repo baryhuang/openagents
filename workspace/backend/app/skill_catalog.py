@@ -647,14 +647,6 @@ def get_catalog() -> List[dict]:
     return list(SKILL_CATALOG)
 
 
-def find_skill(skill_id: str) -> Optional[dict]:
-    """Look up a catalog entry by id. Returns ``None`` if unknown."""
-    for entry in SKILL_CATALOG:
-        if entry.get("id") == skill_id:
-            return entry
-    return None
-
-
 def get_skill_defaults() -> Dict[str, bool]:
     """Return ``{module: True}`` for all workspace modules (backward compat)."""
     return {m: True for m in _WORKSPACE_MODULES}
