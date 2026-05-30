@@ -58,6 +58,10 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} bg-zinc-100 dark:bg-zinc-900`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+          <div className="w-full bg-amber-500 text-black px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 sticky top-0 z-[9999]">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            <span>We are currently experiencing a service outage. Our team is actively working on a fix. Some features may be unavailable.</span>
+          </div>
           <AuthProvider>
             <OpenAgentsAuthProvider>
               {children}
