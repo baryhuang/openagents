@@ -92,6 +92,7 @@ private enum SidebarTab: String, Hashable, CaseIterable {
 struct ThreadListView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(AppRouter.self) private var router
+    @EnvironmentObject private var auth: AuthStore
     @StateObject private var inboxRead = InboxReadStore.shared
 
     @State private var searchText: String = ""
@@ -151,6 +152,10 @@ struct ThreadListView: View {
                 tabPicker
             }
             list
+            if auth.user != nil {
+                Divider()
+                accountFooter
+            }
         }
         #if os(macOS)
         .navigationTitle(store.workspace?.name ?? "Workspace")
@@ -249,6 +254,62 @@ struct ThreadListView: View {
                 sessionId: id,
                 timestamp: session.lastEventAt,
             )
+        }
+    }
+
+    private var accountFooter: some View {
+        HStack(spacing: 8) {
+            avatarView
+            VStack(alignment: .leading, spacing: 1) {
+                Text(auth.user?.displayName ?? "")
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Text(auth.user?.email ?? "")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Button {
+                auth.signOut()
+            } label: {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Sign out")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var avatarView: some View {
+        let initial = (auth.user?.displayName.first ?? auth.user?.email.first).map { String($0).uppercased() } ?? "?"
+        if let url = auth.user?.photoURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                default:
+                    avatarFallback(initial: initial)
+                }
+            }
+            .frame(width: 24, height: 24)
+            .clipShape(Circle())
+        } else {
+            avatarFallback(initial: initial)
+                .frame(width: 24, height: 24)
+        }
+    }
+
+    private func avatarFallback(initial: String) -> some View {
+        ZStack {
+            Circle().fill(Color.accentColor)
+            Text(initial)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white)
         }
     }
 

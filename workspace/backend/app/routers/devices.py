@@ -33,6 +33,11 @@ class RegisterDeviceRequest(BaseModel):
     fcm_token: str
     device_type: str = "ios"
     bundle_id: Optional[str] = None
+    # Google email of the signed-in user. Optional for back-compat with
+    # older clients; required for @-mention push targeting to scope
+    # notifications to "just bary's devices" instead of fanning out to
+    # the whole workspace.
+    user_email: Optional[str] = None
 
 
 class DeregisterDeviceRequest(BaseModel):
@@ -71,11 +76,15 @@ async def register_device(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
+    normalized_email = (body.user_email or "").strip().lower() or None
+
     if existing:
         existing.last_seen_at = now
         existing.device_type = body.device_type
         if body.bundle_id is not None:
             existing.bundle_id = body.bundle_id
+        if normalized_email is not None:
+            existing.user_email = normalized_email
         device_id = existing.id
     else:
         token = DeviceToken(
@@ -83,6 +92,7 @@ async def register_device(
             fcm_token=body.fcm_token,
             device_type=body.device_type,
             bundle_id=body.bundle_id,
+            user_email=normalized_email,
             created_at=now,
             last_seen_at=now,
         )

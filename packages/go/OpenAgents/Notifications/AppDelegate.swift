@@ -1,14 +1,15 @@
 #if os(iOS)
 import FirebaseCore
-import FirebaseMessaging
 import UIKit
 import UserNotifications
 
-/// iOS-only push notification plumbing. Owns `FirebaseApp.configure()`,
-/// permission prompts, APNs↔FCM token bridging, and the foreground /
-/// tap delegate callbacks. All app-state interaction routes through
-/// `pushSink` so this stays UIKit-flavored and the SwiftUI side stays
-/// observable.
+/// iOS-only push notification plumbing. Owns `FirebaseApp.configure()`
+/// (still needed for FirebaseCore.options.clientID consumed by
+/// GoogleSignIn), permission prompts, raw APNs device-token registration,
+/// and the foreground / tap delegate callbacks. Push delivery goes
+/// straight through Apple's APNs — no Firebase Messaging intermediary.
+/// All app-state interaction routes through `pushSink` so this stays
+/// UIKit-flavored and the SwiftUI side stays observable.
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
 
@@ -21,7 +22,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil,
     ) -> Bool {
         FirebaseApp.configure()
-        Messaging.messaging().delegate = self
         UNUserNotificationCenter.current().delegate = self
 
         UNUserNotificationCenter.current().requestAuthorization(
@@ -45,9 +45,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data,
     ) {
-        // FCM SDK absorbs the APNs token; the FCM token arrives via
-        // MessagingDelegate.
-        Messaging.messaging().apnsToken = deviceToken
+        // Apple often surfaces a cached APNs token very early in the launch
+        // sequence — before SwiftUI's WindowGroup task has wired
+        // `appDelegate.pushSink`. Persist the hex token to UserDefaults
+        // first so even when `pushSink` is still nil (the race), the
+        // workspace bootstrap path can replay it into /v1/devices/register
+        // later. The pushSink call below is a no-op when pushSink is nil.
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        UserDefaults.standard.set(hex, forKey: "pushSink.lastAPNsToken")
+        logInfo("push", "APNs token cached in UserDefaults (\(hex.prefix(12))…)")
+        pushSink?.handleAPNsToken(deviceToken)
     }
 
     func application(
@@ -67,14 +74,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             self.pushSink?.handleRemotePush(channelHint: channel)
             completionHandler(.newData)
         }
-    }
-}
-
-extension AppDelegate: @preconcurrency MessagingDelegate {
-    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        guard let fcmToken else { return }
-        logInfo("push", "FCM token received (\(fcmToken.prefix(12))…)")
-        pushSink?.handleFCMToken(fcmToken)
     }
 }
 

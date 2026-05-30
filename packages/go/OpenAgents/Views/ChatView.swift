@@ -9,6 +9,7 @@ import PhotosUI
 struct ChatView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(AppRouter.self) private var router
+    @EnvironmentObject private var auth: AuthStore
 
     @State private var draftsBySession: [String: String] = [:]
     @State private var pendingAttachments: [PendingAttachment] = []
@@ -53,6 +54,9 @@ struct ChatView: View {
     /// `consumeSlashKey(_:)` instead of letting them produce normal text.
     @State private var slashSuggestionsOpen: Bool = false
     @State private var slashSuggestionIndex: Int = 0
+    @State private var mentionSuggestionsOpen: Bool = false
+    @State private var mentionSuggestionIndex: Int = 0
+    @State private var mentionFilter: String = ""
     @State private var membersSheetOpen: Bool = false
 
     private struct SlashCommand: Identifiable {
@@ -86,6 +90,68 @@ struct ChatView: View {
         let q = String(typed.dropFirst()).lowercased()
         if q.isEmpty { return Self.availableCommands }
         return Self.availableCommands.filter { $0.name.hasPrefix(q) }
+    }
+
+    /// A row in the @-mention popup: either an agent or a human collaborator.
+    /// `token` is what gets inserted after `@` — the backend's mention regex
+    /// matches `@[\w-]+`, so spaces are not allowed; we slug human display
+    /// names to match.
+    struct MentionCandidate: Identifiable, Equatable {
+        let id: String
+        let kind: Kind
+        let label: String          // shown in the row title
+        let subtitle: String?      // email or role, shown below
+        let token: String          // gets inserted as `@<token>`
+        enum Kind { case agent, human }
+    }
+
+    /// Slug a human display name for use as a mention token. Mirrors the
+    /// backend's `_workspace_human_keys` (push.py) — first word of display
+    /// name lowercased, fallback to the email local part.
+    private func mentionToken(forHuman c: WorkspaceAPI.Collaborator) -> String {
+        if let dn = c.displayName, !dn.trimmingCharacters(in: .whitespaces).isEmpty {
+            let first = dn.split(whereSeparator: { $0.isWhitespace }).first ?? Substring(dn)
+            let cleaned = first.lowercased()
+                .replacingOccurrences(of: #"[^a-z0-9-]+"#, with: "-", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+            if !cleaned.isEmpty { return cleaned }
+        }
+        return c.email.split(separator: "@").first.map(String.init) ?? c.email
+    }
+
+    /// The merged candidate list shown in the picker. Agents first
+    /// (active = online preferred order), then humans. The current
+    /// `mentionFilter` (what the user typed after `@`) narrows by
+    /// prefix on label / token.
+    private var mentionCandidates: [MentionCandidate] {
+        let q = mentionFilter.lowercased()
+        let agentRows: [MentionCandidate] = store.agents
+            .filter { q.isEmpty || $0.agentName.lowercased().hasPrefix(q) }
+            .map { agent in
+                MentionCandidate(
+                    id: "agent:" + agent.agentName,
+                    kind: .agent,
+                    label: agent.agentName,
+                    subtitle: agent.isOnline ? "online" : "offline",
+                    token: agent.agentName,
+                )
+            }
+        let humanRows: [MentionCandidate] = store.humans.map { c in
+            let token = mentionToken(forHuman: c)
+            return MentionCandidate(
+                id: "human:" + c.email,
+                kind: .human,
+                label: c.displayName ?? c.email,
+                subtitle: c.email,
+                token: token,
+            )
+        }.filter { row in
+            guard !q.isEmpty else { return true }
+            return row.token.lowercased().hasPrefix(q)
+                || row.label.lowercased().hasPrefix(q)
+        }
+        // Online agents first, then everyone else.
+        return agentRows + humanRows
     }
 
     private static let defaultInputHeight: CGFloat = 44
@@ -213,11 +279,16 @@ struct ChatView: View {
                 inputHeight = maxInputHeight
             }
         }
-        .onChange(of: store.currentSessionId) { _, _ in
+        .onChange(of: store.currentSessionId) { _, newId in
             inputFocused = true
             // Drafts are per-session, but pending uploads aren't — clear them on switch.
             pendingAttachments.removeAll()
             drainExternalAttachments()
+            #if os(macOS)
+            // Tell MacNotifier which channel is on screen so it suppresses
+            // redundant banners.
+            MacNotifier.shared.currentVisibleChannel = newId
+            #endif
         }
         .onChange(of: router.pendingExternalAttachments.count) { _, _ in
             drainExternalAttachments()
@@ -226,6 +297,19 @@ struct ChatView: View {
             // Catches the cold-launch case: app opened via "Open in…", router
             // received URL, then chat view mounted with attachments waiting.
             drainExternalAttachments()
+            #if os(macOS)
+            MacNotifier.shared.currentVisibleChannel = store.currentSessionId
+            #endif
+        }
+        .onDisappear {
+            #if os(macOS)
+            // The chat view is gone (window closed / view replaced) — clear so
+            // future banners don't get suppressed for a channel nobody is
+            // actually watching.
+            if MacNotifier.shared.currentVisibleChannel == store.currentSessionId {
+                MacNotifier.shared.currentVisibleChannel = nil
+            }
+            #endif
         }
         .onChange(of: store.browserAutoFocusToken) { _, _ in
             // A browser session just appeared while the workspace toggle is
@@ -530,14 +614,21 @@ struct ChatView: View {
                     .alignmentGuide(.top) { d in d[.bottom] + 8 }   // float above the bar
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                     .zIndex(1)
+            } else if mentionSuggestionsOpen && !mentionCandidates.isEmpty {
+                mentionSuggestionsPopup
+                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(1)
             }
         }
         .animation(.easeOut(duration: 0.12), value: slashSuggestionsOpen)
+        .animation(.easeOut(duration: 0.12), value: mentionSuggestionsOpen)
         .onChange(of: draft.wrappedValue) { _, newValue in
-            // Show the popup while the user is mid-command — `/`, `/r`, `/restart`.
-            // Vanishes the instant they type a space, newline, or anything that
-            // doesn't start with `/`. Keeps the popup anchored to single-line
-            // command tokens; multi-arg commands (none today) would relax this.
+            // Show the slash popup while the user is mid-command — `/`, `/r`,
+            // `/restart`. Vanishes the instant they type a space, newline, or
+            // anything that doesn't start with `/`. Keeps the popup anchored
+            // to single-line command tokens; multi-arg commands (none today)
+            // would relax this.
             let starts = newValue.hasPrefix("/")
                 && !newValue.contains(" ")
                 && !newValue.contains("\n")
@@ -546,6 +637,20 @@ struct ChatView: View {
                 slashSuggestionIndex = 0
             } else {
                 slashSuggestionIndex = min(slashSuggestionIndex, max(filteredSlashCommands.count - 1, 0))
+            }
+
+            // Mention detection: trailing `@<chars>` — if the user is mid-
+            // mention at the end of the draft, open the picker with the
+            // filter set to what they've typed. Closes the instant they
+            // type a space or newline. Mirrors the web behaviour where the
+            // popup tracks the active `@…` token.
+            let mentionMatch = Self.trailingMentionToken(in: newValue)
+            mentionFilter = mentionMatch ?? ""
+            mentionSuggestionsOpen = mentionMatch != nil && !mentionCandidates.isEmpty
+            if !mentionSuggestionsOpen {
+                mentionSuggestionIndex = 0
+            } else {
+                mentionSuggestionIndex = min(mentionSuggestionIndex, max(mentionCandidates.count - 1, 0))
             }
         }
         #if os(iOS)
@@ -685,6 +790,71 @@ struct ChatView: View {
     /// selects, Enter on an exact match sends, Esc dismisses. The matched
     /// prefix in each name is bolded so the user can see what's narrowing
     /// the list as they type.
+    /// Parses the trailing `@<chars>` token from the draft, if any. Returns
+    /// the token (without the `@`) so the picker can filter, or nil when
+    /// the user isn't mid-mention. Allows lowercase, digits, and `-` —
+    /// matches the backend's `_extract_mentions` regex.
+    private static func trailingMentionToken(in text: String) -> String? {
+        guard let atRange = text.range(of: "@", options: .backwards) else { return nil }
+        let after = text[atRange.upperBound...]
+        // Reject if there's a whitespace/newline between `@` and the cursor.
+        if after.contains(where: { $0.isWhitespace || $0.isNewline }) { return nil }
+        // Require either `@` at very start or whitespace immediately before.
+        let before = text[..<atRange.lowerBound]
+        if let last = before.last, !last.isWhitespace, !last.isNewline {
+            return nil
+        }
+        return String(after)
+    }
+
+    /// Replace the trailing `@<filter>` token with `@<token> ` and
+    /// dismiss the popup.
+    private func insertMention(_ token: String) {
+        let current = draft.wrappedValue
+        guard let atRange = current.range(of: "@", options: .backwards) else { return }
+        let prefix = current[..<atRange.lowerBound]
+        draft.wrappedValue = String(prefix) + "@\(token) "
+        mentionSuggestionsOpen = false
+        mentionFilter = ""
+        mentionSuggestionIndex = 0
+    }
+
+    private var mentionSuggestionsPopup: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(mentionCandidates.enumerated()), id: \.element.id) { idx, cand in
+                HStack(spacing: 10) {
+                    Image(systemName: cand.kind == .agent ? "cpu" : "person.crop.circle")
+                        .frame(width: 22)
+                        .foregroundStyle(cand.kind == .agent ? Color.accentColor : .secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(cand.label).font(.body)
+                        if let sub = cand.subtitle, !sub.isEmpty {
+                            Text(sub)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Text("@\(cand.token)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(idx == mentionSuggestionIndex ? Color.accentColor.opacity(0.15) : Color.clear)
+                .contentShape(Rectangle())
+                .onTapGesture { insertMention(cand.token) }
+            }
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.black.opacity(0.08), lineWidth: 0.5),
+        )
+        .frame(maxWidth: 360, alignment: .leading)
+        .padding(.horizontal, 12)
+    }
+
     private var slashSuggestionsPopup: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(filteredSlashCommands.enumerated()), id: \.element.id) { idx, cmd in
@@ -835,7 +1005,18 @@ struct ChatView: View {
         logInfo("ui", "send() invoked, chars=\(trimmed.count) attachments=\(attachments.count)")
         draft.wrappedValue = ""
         pendingAttachments = []
-        Task { await store.sendMessage(trimmed, attachments: attachments) }
+        let senderName = auth.senderName
+        let senderEmail = auth.user?.email
+        let senderDisplayName = auth.user?.displayName
+        Task {
+            await store.sendMessage(
+                trimmed,
+                senderName: senderName,
+                senderEmail: senderEmail,
+                senderDisplayName: senderDisplayName,
+                attachments: attachments,
+            )
+        }
     }
 
     /// Parse a typed slash command (the leading "/" plus optional args) and

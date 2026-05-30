@@ -100,9 +100,19 @@ export function SidebarContent() {
           )}
           {isOpenAgentsDomain && user && (
             <div className="flex items-center gap-1.5 px-1.5 py-1 min-w-0">
-              <div className="size-5 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[9px] font-bold shrink-0">
-                {user.email[0].toUpperCase()}
-              </div>
+              {user.photoURL ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.photoURL}
+                  alt={user.displayName || user.email}
+                  referrerPolicy="no-referrer"
+                  className="size-5 rounded-full shrink-0 object-cover"
+                />
+              ) : (
+                <div className="size-5 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[9px] font-bold shrink-0">
+                  {user.email[0].toUpperCase()}
+                </div>
+              )}
               <span className="text-[11px] text-muted-foreground truncate flex-1">
                 {user.email}
               </span>
