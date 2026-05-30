@@ -16,6 +16,8 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
@@ -37,6 +39,10 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.17.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -44,9 +50,11 @@
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
     "electron-vite": "^2.3.0",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.2",
-    "vite": "^5.4.8"
+    "vite": "^5.4.8",
+    "vitest": "^4.1.7"
   },
   "build": {
     "appId": "com.openagents.launcher",
