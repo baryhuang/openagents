@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 class EventVisibility(str, Enum):
     """Determines who can see an event, even if routing would otherwise deliver it."""
     PUBLIC = "public"       # Any agent in the network
+    NETWORK = "network"     # All members of the network
     CHANNEL = "channel"     # Only members of the target channel
     DIRECT = "direct"       # Only the target agent
     MOD_ONLY = "mod_only"   # Only mods in the pipeline (internal events)
