@@ -7,9 +7,11 @@ struct NewThreadSheet: View {
     @Environment(WorkspaceStore.self) private var store
 
     @State private var selected: Set<String> = []
+    @State private var selectedHumans: Set<String> = []
     @State private var master: String?
 
     private var onlineAgents: [Agent] { store.onlineAgents }
+    private var humans: [WorkspaceAPI.Collaborator] { store.humans }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +53,25 @@ struct NewThreadSheet: View {
                             setMaster: { master = agent.agentName },
                         )
                     }
+
+                    if !humans.isEmpty {
+                        // Humans get added to channel_human_members on the
+                        // backend so every message in this chat pushes to
+                        // their devices, not just @-mentions.
+                        Text("PEOPLE")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 12)
+                            .padding(.bottom, 2)
+                        ForEach(humans, id: \.email) { human in
+                            HumanRow(
+                                human: human,
+                                isSelected: selectedHumans.contains(human.email),
+                                toggle: { toggleHuman(human.email) },
+                            )
+                        }
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -65,7 +86,7 @@ struct NewThreadSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Start Chat") { createThread() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(selected.isEmpty)
+                    .disabled(selected.isEmpty && selectedHumans.isEmpty)
                     .keyboardShortcut(.defaultAction)
             }
             .padding(.horizontal, 20)
@@ -93,11 +114,89 @@ struct NewThreadSheet: View {
         }
     }
 
+    private func toggleHuman(_ email: String) {
+        if selectedHumans.contains(email) {
+            selectedHumans.remove(email)
+        } else {
+            selectedHumans.insert(email)
+        }
+    }
+
     private func createThread() {
-        guard let chosenMaster = master ?? selected.first else { return }
+        // Master only matters when at least one agent is selected. A
+        // human-only chat sends master="" which the backend ignores.
+        let chosenMaster = master ?? selected.first ?? ""
         let participants = Array(selected)
+        let humanParticipants = Array(selectedHumans)
+        if participants.isEmpty && humanParticipants.isEmpty { return }
         isPresented = false
-        Task { await store.createThread(master: chosenMaster, participants: participants) }
+        Task {
+            await store.createThread(
+                master: chosenMaster,
+                participants: participants,
+                humanParticipants: humanParticipants,
+            )
+        }
+    }
+}
+
+private struct HumanRow: View {
+    let human: WorkspaceAPI.Collaborator
+    let isSelected: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isSelected ? Color.blue : .clear)
+                        .frame(width: 18, height: 18)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(isSelected ? Color.blue : .secondary.opacity(0.5), lineWidth: 1.5),
+                        )
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                Circle()
+                    .fill(Color.gray.opacity(0.25))
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary),
+                    )
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(human.displayName ?? human.email)
+                        .font(.body)
+                        .lineLimit(1)
+                    if human.displayName != nil {
+                        Text(human.email)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.gray.opacity(0.12) : .clear),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.gray.opacity(isSelected ? 0.2 : 0.0), lineWidth: 1),
+            )
+            .contentShape(Rectangle())
+            .opacity(isSelected ? 1.0 : 0.65)
+        }
+        .buttonStyle(.plain)
     }
 }
 

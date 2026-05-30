@@ -151,6 +151,11 @@ class WorkspaceApi {
     title?: string;
     master?: string;
     participants?: string[];
+    /** Emails of humans to add as channel members. They'll receive a
+     *  push for every message in this channel (not just @-mentions) and
+     *  show up in everyone's @-mention picker via the workspace
+     *  collaborator upsert on the backend. */
+    humanParticipants?: string[];
     resumeFrom?: string;
   } = {}): Promise<WorkspaceSession> {
     const event = await this.sendEvent({
@@ -161,6 +166,9 @@ class WorkspaceApi {
         ...(opts.title && { title: opts.title }),
         ...(opts.master && { master: opts.master }),
         ...(opts.participants && { participants: opts.participants }),
+        ...(opts.humanParticipants && opts.humanParticipants.length > 0 && {
+          human_participants: opts.humanParticipants,
+        }),
         ...(opts.resumeFrom && { resume_from: opts.resumeFrom }),
       },
     });
