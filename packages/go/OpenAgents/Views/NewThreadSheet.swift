@@ -5,13 +5,19 @@ import SwiftUI
 struct NewThreadSheet: View {
     @Binding var isPresented: Bool
     @Environment(WorkspaceStore.self) private var store
+    @EnvironmentObject private var auth: AuthStore
 
     @State private var selected: Set<String> = []
     @State private var selectedHumans: Set<String> = []
     @State private var master: String?
 
     private var onlineAgents: [Agent] { store.onlineAgents }
-    private var humans: [WorkspaceAPI.Collaborator] { store.humans }
+    // Exclude the signed-in user from the People picker — they're the
+    // implicit creator of the chat, so picking themselves is meaningless.
+    private var humans: [WorkspaceAPI.Collaborator] {
+        let me = auth.user?.email.trimmingCharacters(in: .whitespaces).lowercased()
+        return store.humans.filter { $0.email.lowercased() != me }
+    }
 
     var body: some View {
         VStack(spacing: 0) {

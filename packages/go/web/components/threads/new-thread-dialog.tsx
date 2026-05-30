@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { History, Check, Star, User } from 'lucide-react';
 import type { WorkspaceAgent, WorkspaceCollaborator, WorkspaceSession } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 
 interface NewThreadDialogProps {
   open: boolean;
@@ -23,11 +24,15 @@ interface NewThreadDialogProps {
 }
 
 export function NewThreadDialog({ open, onOpenChange, agents, humans, sessions, onCreateThread }: NewThreadDialogProps) {
+  const { user: googleUser } = useOpenAgentsAuth();
   // Only show online agents in the picker
   const onlineAgents = agents.filter((a) => a.status === 'online');
   const agentNames = onlineAgents.map((a) => a.agentName);
   const defaultMaster = onlineAgents.find((a) => a.role === 'master')?.agentName || onlineAgents[0]?.agentName || '';
-  const humanList = humans || [];
+  // Exclude the signed-in user from the People picker — they're the
+  // implicit creator of the chat, so picking themselves is meaningless.
+  const selfEmail = googleUser?.email?.trim().toLowerCase();
+  const humanList = (humans || []).filter((h) => h.email.toLowerCase() !== selfEmail);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedHumans, setSelectedHumans] = useState<Set<string>>(new Set());
