@@ -227,8 +227,12 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if let session = store.currentSession {
+                    // Show only the agents actually in this channel. An
+                    // empty participants list is legitimate (humans-only
+                    // chat); falling back to "all workspace agents" used
+                    // to plaster every agent into the header avatar stack.
                     let sessionAgents = store.agents.filter {
-                        session.participants.isEmpty || session.participants.contains($0.agentName)
+                        session.participants.contains($0.agentName)
                     }
                     if !sessionAgents.isEmpty {
                         Button {
@@ -430,8 +434,10 @@ struct ChatView: View {
     #if os(macOS)
     private var macSubtitle: String {
         guard let session = store.currentSession else { return "" }
+        // Only actual channel participants — see toolbar comment above
+        // for why empty.participants no longer means "all agents".
         let names = store.agents
-            .filter { session.participants.isEmpty || session.participants.contains($0.agentName) }
+            .filter { session.participants.contains($0.agentName) }
             .map(\.agentName)
         return names.joined(separator: ", ")
     }
