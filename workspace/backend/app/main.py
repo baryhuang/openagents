@@ -206,14 +206,21 @@ async def _timer_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("LIFESPAN: starting")
     # Auto-create tables for SQLite (dev mode) — production uses Alembic.
-    from app.database import engine, Base, _is_sqlite
-    if _is_sqlite:
-        from app import models  # noqa: F401 — ensure all models are registered
-        Base.metadata.create_all(bind=engine)
-        logger.info("SQLite: auto-created tables")
+    try:
+        from app.database import engine, Base, _is_sqlite
+        logger.info("LIFESPAN: database imported, _is_sqlite=%s", _is_sqlite)
+        if _is_sqlite:
+            from app import models  # noqa: F401 — ensure all models are registered
+            Base.metadata.create_all(bind=engine)
+            logger.info("SQLite: auto-created tables")
+    except Exception as e:
+        logger.error("LIFESPAN: database import failed: %s", e)
 
+    logger.info("LIFESPAN: creating timer task")
     timer_task = asyncio.create_task(_timer_loop())
+    logger.info("LIFESPAN: yielding (startup complete)")
     yield
     timer_task.cancel()
     try:
