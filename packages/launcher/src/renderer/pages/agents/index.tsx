@@ -61,6 +61,10 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
   } | null>(null)
   const [connectWsOpen, setConnectWsOpen] = useState(false)
   const [connectWsAgent, setConnectWsAgent] = useState<string>("")
+  // When a brand-new agent is created we walk the user from Configure straight
+  // into Connect Workspace. This flag distinguishes that flow from configuring
+  // an existing agent (where closing Configure should not prompt to connect).
+  const [connectAfterConfigure, setConnectAfterConfigure] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
 
   useEffect(() => {
@@ -352,6 +356,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           refresh()
           setConfigureAgent({ name, type })
           setConfigureOpen(true)
+          setConnectAfterConfigure(true)
         }}
       />
 
@@ -360,7 +365,17 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           open={configureOpen}
           agentName={configureAgent.name}
           agentType={configureAgent.type}
-          onClose={() => setConfigureOpen(false)}
+          onClose={() => {
+            setConfigureOpen(false)
+            // For a freshly created agent, guide the user to connect it to a
+            // workspace. This step is skippable (Cancel) so local-only usage
+            // still works.
+            if (connectAfterConfigure) {
+              setConnectAfterConfigure(false)
+              setConnectWsAgent(configureAgent.name)
+              setConnectWsOpen(true)
+            }
+          }}
           showToast={showToast}
           onSaved={refresh}
         />
