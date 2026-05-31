@@ -13,8 +13,11 @@ DELETE /v1/workspaces/{id}         Delete workspace
 PATCH  /v1/workspaces/{id}/members/{name}  Update agent description/role
 """
 
+import json as _json
 import logging
 import secrets
+import time
+import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -560,6 +563,95 @@ class SkillInstallRequest(BaseModel):
     skill_id: str
 
 
+class SkillStatusRequest(BaseModel):
+    skill_id: str
+    state: str  # "installing" | "installed" | "failed" | "uninstalled"
+    path: Optional[str] = None
+    error: Optional[str] = None
+    partial: Optional[bool] = None  # SKILL.md fetched but bundled files missing
+
+
+_VALID_SKILL_STATES = {"installing", "installed", "failed", "uninstalled"}
+
+
+def _emit_agent_control_event(db, workspace, agent_name: str, action: str, payload: dict) -> None:
+    """Persist a ``workspace.agent.control`` event targeted at one agent and
+    publish it to the workspace's Redis pub/sub channel.
+
+    The launcher's per-agent control poller
+    (``GET /v1/events?type=workspace.agent.control&target=openagents:<name>``)
+    picks this up and dispatches the action to the adapter. We write the
+    EventRecord directly — mirroring mod/persistence — rather than running the
+    full event pipeline, because the caller has already verified workspace
+    access and there is no human/agent source to authenticate.
+    """
+    from app import cache
+    from app.models import EventRecord
+
+    event_id = str(uuid.uuid4())
+    timestamp = int(time.time() * 1000)
+    full_payload = {"action": action, **(payload or {})}
+    record = EventRecord(
+        id=event_id,
+        network_id=workspace.id,
+        type="workspace.agent.control",
+        source="human:system",
+        target=f"openagents:{agent_name}",
+        payload=full_payload,
+        metadata_={},
+        timestamp=timestamp,
+        visibility="direct",
+    )
+    db.add(record)
+    db.flush()
+
+    try:
+        snapshot = {
+            "id": event_id,
+            "type": "workspace.agent.control",
+            "source": "human:system",
+            "target": f"openagents:{agent_name}",
+            "payload": full_payload,
+            "metadata": {},
+            "timestamp": timestamp,
+        }
+        cache.publish_event(
+            f"ws:{workspace.id}:events",
+            _json.dumps(snapshot, default=str, separators=(",", ":")).encode(),
+        )
+    except Exception:
+        # Pub/sub is a fast-path optimization; the poller still finds the
+        # persisted event. Never fail the request on a cache hiccup.
+        logger.warning("install_skill: failed to publish control event to cache", exc_info=True)
+
+
+def _set_skill_status(skills_data: dict, skill_id: str, state: str,
+                      path: Optional[str] = None, error: Optional[str] = None,
+                      partial: Optional[bool] = None) -> dict:
+    """Update the per-skill status map inside an ``enabled_skills`` dict.
+
+    Keeps the legacy ``installed`` list in sync (only successfully-installed
+    skills appear there, so existing readers keep working) and stores richer
+    state under ``skill_status`` for the UI.
+    """
+    status_map = dict(skills_data.get("skill_status", {}))
+    entry = {"state": state, "updated_at": int(time.time() * 1000)}
+    if path:
+        entry["path"] = path
+    if error:
+        entry["error"] = error[:2000]
+    if partial:
+        entry["partial"] = True
+    status_map[skill_id] = entry
+    skills_data["skill_status"] = status_map
+
+    installed = [s for s in skills_data.get("installed", []) if s != skill_id]
+    if state == "installed":
+        installed.append(skill_id)
+    skills_data["installed"] = installed
+    return skills_data
+
+
 @router.post("/{workspace_id}/members/{agent_name}/skills/install")
 async def install_skill(
     workspace_id: str,
@@ -569,7 +661,84 @@ async def install_skill(
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ):
-    """Install a third-party skill for an agent."""
+    """Request installation of a third-party skill for an agent.
+
+    Marks the skill ``installing`` and emits a ``skill.install`` control event
+    so the launcher actually installs it into the agent's skills directory.
+    The agent reports back via ``/skills/status`` to flip the state to
+    ``installed`` or ``failed`` — the skill is NOT marked installed here.
+    """
+    from app.skill_catalog import find_skill
+
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not member:
+        return json_response(ResponseCode.NOT_FOUND, "Member not found")
+
+    skill = find_skill(body.skill_id)
+    if not skill:
+        return json_response(ResponseCode.NOT_FOUND, f"Unknown skill: {body.skill_id}")
+
+    skills_data = dict(member.enabled_skills or {})
+    skills_data = _set_skill_status(skills_data, body.skill_id, "installing")
+    member.enabled_skills = skills_data
+
+    # Carry the catalog metadata the launcher needs to fetch the skill.
+    _emit_agent_control_event(db, workspace, agent_name, "skill.install", {
+        "skill": {
+            "id": skill["id"],
+            "name": skill.get("name", skill["id"]),
+            "description": skill.get("description", ""),
+            "source_repo": skill.get("source_repo", ""),
+            "source_path": skill.get("source_path", ""),
+        },
+    })
+    db.commit()
+
+    logger.info(
+        "install_skill: queued install of '%s' for agent '%s' in workspace %s",
+        body.skill_id, agent_name, workspace.id,
+    )
+    return success_response({
+        "agentName": agent_name,
+        "skillId": body.skill_id,
+        "action": "installing",
+        "state": "installing",
+        "installedSkills": list(skills_data.get("installed", [])),
+        "skillStatus": skills_data.get("skill_status", {}),
+    })
+
+
+@router.post("/{workspace_id}/members/{agent_name}/skills/status")
+async def report_skill_status(
+    workspace_id: str,
+    agent_name: str,
+    body: SkillStatusRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Launcher → workspace callback reporting skill install progress/result.
+
+    Updates ``enabled_skills.skill_status`` so the Skill Hub UI can render
+    installing → installed / failed, and keeps the legacy ``installed`` list
+    in sync. Also re-publishes to the SSE channel for instant UI updates.
+    """
+    if body.state not in _VALID_SKILL_STATES:
+        return json_response(ResponseCode.BAD_REQUEST, f"Invalid state: {body.state}")
+
     workspace = db.execute(
         select(Workspace).where(_workspace_filter(workspace_id))
     ).scalar_one_or_none()
@@ -588,18 +757,66 @@ async def install_skill(
         return json_response(ResponseCode.NOT_FOUND, "Member not found")
 
     skills_data = dict(member.enabled_skills or {})
-    installed = list(skills_data.get("installed", []))
-    if body.skill_id not in installed:
-        installed.append(body.skill_id)
-    skills_data["installed"] = installed
+    if body.state == "uninstalled":
+        # Drop the status entry entirely on uninstall.
+        status_map = dict(skills_data.get("skill_status", {}))
+        status_map.pop(body.skill_id, None)
+        skills_data["skill_status"] = status_map
+        skills_data["installed"] = [
+            s for s in skills_data.get("installed", []) if s != body.skill_id
+        ]
+    else:
+        skills_data = _set_skill_status(
+            skills_data, body.skill_id, body.state, body.path, body.error, body.partial
+        )
     member.enabled_skills = skills_data
     db.commit()
+
+    if body.state == "failed":
+        logger.error(
+            "skill install FAILED: skill='%s' agent='%s' workspace=%s error=%s",
+            body.skill_id, agent_name, workspace.id, body.error,
+        )
+    elif body.state == "installed" and body.partial:
+        logger.warning(
+            "skill installed PARTIALLY (SKILL.md only, bundled files missing): "
+            "skill='%s' agent='%s'", body.skill_id, agent_name,
+        )
+    else:
+        logger.info(
+            "skill status: skill='%s' agent='%s' state='%s'",
+            body.skill_id, agent_name, body.state,
+        )
+
+    # Push a lightweight status event so SSE-connected UIs update instantly.
+    try:
+        from app import cache
+        snapshot = {
+            "id": str(uuid.uuid4()),
+            "type": "workspace.skill.status",
+            "source": f"openagents:{agent_name}",
+            "target": f"openagents:{agent_name}",
+            "payload": {
+                "skill_id": body.skill_id,
+                "state": body.state,
+                "error": body.error,
+            },
+            "metadata": {},
+            "timestamp": int(time.time() * 1000),
+        }
+        cache.publish_event(
+            f"ws:{workspace.id}:events",
+            _json.dumps(snapshot, default=str, separators=(",", ":")).encode(),
+        )
+    except Exception:
+        pass
 
     return success_response({
         "agentName": agent_name,
         "skillId": body.skill_id,
-        "action": "installed",
-        "installedSkills": installed,
+        "state": body.state,
+        "installedSkills": list(skills_data.get("installed", [])),
+        "skillStatus": skills_data.get("skill_status", {}),
     })
 
 
@@ -612,7 +829,14 @@ async def uninstall_skill(
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ):
-    """Uninstall a third-party skill from an agent."""
+    """Uninstall a third-party skill from an agent.
+
+    Removes it from the DB immediately (optimistic) and emits a
+    ``skill.uninstall`` control event so the launcher deletes the on-disk
+    skill directory.
+    """
+    from app.skill_catalog import find_skill
+
     workspace = db.execute(
         select(Workspace).where(_workspace_filter(workspace_id))
     ).scalar_one_or_none()
@@ -633,7 +857,20 @@ async def uninstall_skill(
     skills_data = dict(member.enabled_skills or {})
     installed = [s for s in skills_data.get("installed", []) if s != body.skill_id]
     skills_data["installed"] = installed
+    status_map = dict(skills_data.get("skill_status", {}))
+    status_map.pop(body.skill_id, None)
+    skills_data["skill_status"] = status_map
     member.enabled_skills = skills_data
+
+    skill = find_skill(body.skill_id) or {"id": body.skill_id}
+    _emit_agent_control_event(db, workspace, agent_name, "skill.uninstall", {
+        "skill": {
+            "id": skill["id"],
+            "name": skill.get("name", skill["id"]),
+            "source_repo": skill.get("source_repo", ""),
+            "source_path": skill.get("source_path", ""),
+        },
+    })
     db.commit()
 
     return success_response({
