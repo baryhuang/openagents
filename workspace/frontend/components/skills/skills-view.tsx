@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Sparkles, Search, ExternalLink, Star, ArrowRight, Check, Plus, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, Search, ExternalLink, Star, ArrowRight, Check, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
@@ -182,13 +182,10 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
     setInstalling(agentName);
     try {
       await workspaceApi.installSkill(agentName, skill.id);
-      // The request only queues the install; the launcher installs the skill
-      // and reports back. Server `skill_status` (installing → installed/failed)
-      // drives the badge from here, picked up by discovery polling.
       await refreshWorkspace();
-      toast.success(`Installing ${skill.name} on ${agentName}…`);
+      toast.success(`${skill.name} added to ${agentName}`);
     } catch {
-      toast.error('Failed to request skill install');
+      toast.error('Failed to install skill');
     } finally {
       setInstalling(null);
     }
@@ -207,19 +204,10 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
     }
   }, [skill, refreshWorkspace]);
 
-  // Resolve the install state for this skill on a given agent. Prefer the
-  // richer skill_status map (installing/installed/failed) the launcher reports
-  // back; fall back to the legacy `installed` list for older backends.
-  const getSkillState = (agentName: string): 'installing' | 'installed' | 'failed' | null => {
+  const isInstalled = (agentName: string) => {
     const agent = agents.find(a => a.agentName === agentName);
-    const skills = (agent?.enabledSkills as Record<string, unknown>) || {};
-    const statusMap = (skills.skill_status as Record<string, { state?: string }>) || {};
-    const entry = statusMap[skill.id];
-    if (entry?.state === 'installing' || entry?.state === 'failed' || entry?.state === 'installed') {
-      return entry.state;
-    }
-    const installed = (skills.installed as string[]) || [];
-    return installed.includes(skill.id) ? 'installed' : null;
+    const installed: string[] = (agent?.enabledSkills as Record<string, unknown>)?.installed as string[] || [];
+    return installed.includes(skill.id);
   };
 
   const onlineAgents = agents.filter(a => a.status === 'online');
@@ -260,69 +248,30 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
             ) : (
               <div className="space-y-1.5">
                 {onlineAgents.map(agent => {
-                  const serverState = getSkillState(agent.agentName);
-                  // Optimistic local state wins until the next discovery refresh
-                  // confirms the launcher's reported status.
-                  const pending = installing === agent.agentName;
-                  const state = pending ? 'installing' : serverState;
-
-                  if (state === 'installed') {
-                    return (
-                      <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
-                        <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
-                        <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
-                        <button
-                          onClick={() => handleUninstall(agent.agentName)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-red-500/10 hover:text-red-600 transition-colors"
-                        >
-                          <Check className="size-3" />
-                          Installed
-                        </button>
-                      </div>
-                    );
-                  }
-                  if (state === 'installing') {
-                    return (
-                      <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
-                        <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
-                        <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
-                        <button
-                          disabled
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-muted text-muted-foreground disabled:opacity-70"
-                        >
-                          <Loader2 className="size-3 animate-spin" />
-                          Installing…
-                        </button>
-                      </div>
-                    );
-                  }
-                  if (state === 'failed') {
-                    return (
-                      <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-red-500/30 px-3 py-2">
-                        <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
-                        <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
-                        <button
-                          onClick={() => handleInstall(agent.agentName)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors"
-                          title="Installation failed — click to retry"
-                        >
-                          <AlertCircle className="size-3" />
-                          Failed · Retry
-                        </button>
-                      </div>
-                    );
-                  }
+                  const installed = isInstalled(agent.agentName);
                   return (
                     <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
                       <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
                       <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
-                      <button
-                        onClick={() => handleInstall(agent.agentName)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                      >
-                        <Plus className="size-3" />
-                        Add
-                      </button>
+                      {installed ? (
+                        <button
+                          onClick={() => handleUninstall(agent.agentName)}
+                          disabled={installing === agent.agentName}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-red-500/10 hover:text-red-600 transition-colors"
+                        >
+                          <Check className="size-3" />
+                          {installing === agent.agentName ? 'Removing...' : 'Installed'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleInstall(agent.agentName)}
+                          disabled={installing === agent.agentName}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          <Plus className="size-3" />
+                          {installing === agent.agentName ? 'Adding...' : 'Add'}
+                        </button>
+                      )}
                     </div>
                   );
                 })}

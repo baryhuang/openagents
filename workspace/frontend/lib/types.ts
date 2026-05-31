@@ -18,21 +18,10 @@ export interface WorkspaceAgent {
   serverHost: string | null;
   workingDir: string | null;
   description: string | null;
-  // Workspace modules map to booleans; `installed` is a string[] of skill ids;
-  // `skill_status` maps skill id → install status. Hence the union value type.
-  enabledSkills: Record<string, unknown> | null;
+  enabledSkills: Record<string, boolean> | null;
   status: string;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
-}
-
-/** Per-skill install status stored under enabledSkills.skill_status[skillId]. */
-export type SkillState = 'installing' | 'installed' | 'failed' | 'uninstalled';
-export interface SkillStatusEntry {
-  state: SkillState;
-  updated_at?: number;
-  path?: string;
-  error?: string;
 }
 
 export interface SkillCatalogEntry {
@@ -321,7 +310,7 @@ export interface NetworkAgent {
   server_host: string | null;
   working_dir: string | null;
   description: string | null;
-  enabled_skills: Record<string, unknown> | null;
+  enabled_skills: Record<string, boolean> | null;
   last_heartbeat_at: string | null;
   joined_at: string | null;
 }
