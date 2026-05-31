@@ -764,6 +764,65 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
 _DEFAULT_TITLES = {"New Thread", "Session 1", None, ""}
 
 
+def _upsert_human_collaborator(workspace, payload: dict, db) -> None:
+    """First-write registration of a signed-in human into the workspace
+    roster, used downstream by the push fan-out to resolve `@bary` →
+    bary's device tokens. Reads `sender_email` and `sender_display_name`
+    from the event payload (web/Swift clients pass them on every human
+    chat post); does nothing if the email is missing — older clients
+    that don't yet identify themselves can't be mention-pushed.
+    """
+    email = (payload.get("sender_email") or "").strip().lower()
+    if not email:
+        return
+    display_name = (payload.get("sender_display_name") or "").strip() or None
+    from app.models import WorkspaceCollaborator
+    existing = db.execute(
+        select(WorkspaceCollaborator).where(
+            WorkspaceCollaborator.workspace_id == str(workspace.id),
+            WorkspaceCollaborator.email == email,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        # Keep display_name fresh in case the user renamed their Google
+        # profile since last post.
+        if display_name and existing.display_name != display_name:
+            existing.display_name = display_name
+        return
+    db.add(WorkspaceCollaborator(
+        workspace_id=str(workspace.id),
+        email=email,
+        display_name=display_name,
+        role="editor",
+        added_by=email,
+    ))
+    db.flush()
+
+
+def _join_channel_as_human(channel, payload: dict, db) -> None:
+    """Slack-style implicit join: the first time a human posts in a
+    channel, add them to `channel_human_members` so future chat in this
+    channel pushes to their devices. Idempotent — no-op when the row
+    already exists. Needs `sender_email` on the payload; anonymous
+    token-only visitors leave no membership trail and so don't get
+    pushed for non-mention chat.
+    """
+    email = (payload.get("sender_email") or "").strip().lower()
+    if not email or channel is None:
+        return
+    from app.models import ChannelHumanMember
+    existing = db.execute(
+        select(ChannelHumanMember).where(
+            ChannelHumanMember.channel_id == channel.id,
+            ChannelHumanMember.user_email == email,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return
+    db.add(ChannelHumanMember(channel_id=channel.id, user_email=email))
+    db.flush()
+
+
 def _auto_title_channel(channel, content: str, db) -> None:
     """Set channel title from message content if still using a default title."""
     if channel.title not in _DEFAULT_TITLES:
@@ -848,6 +907,12 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     # Auto-name channel from first human message if title is default/empty
     if event.source.startswith("human:") and channel:
         _auto_title_channel(channel, content, db)
+        # First post from a human → make sure they're in the workspace
+        # roster so @-mention pushes can find their device tokens later.
+        _upsert_human_collaborator(workspace, event.payload or {}, db)
+        # First post in *this* channel → auto-join so future non-mention
+        # chat in the channel pushes to this human's devices.
+        _join_channel_as_human(channel, event.payload or {}, db)
 
     # Skip non-human, non-agent sources
     if not event.source.startswith("human:") and not event.source.startswith("openagents:"):

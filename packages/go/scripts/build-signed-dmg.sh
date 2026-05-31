@@ -64,11 +64,25 @@ xcodebuild \
   -destination "generic/platform=macOS" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
-  CODE_SIGN_ENTITLEMENTS="OpenAgents/OpenAgents-macOS.entitlements" \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
   DEVELOPMENT_TEAM="$TEAM_ID" \
   OTHER_CODE_SIGN_FLAGS="--timestamp" \
   build
+
+# Re-sign with extended entitlements (keychain-access-groups) post-build.
+# Putting keychain-access-groups into the build-time entitlements file
+# triggers Xcode's provisioning-profile requirement; re-signing with
+# codesign --entitlements skips that validation while still embedding the
+# entitlement Firebase Auth needs for SecItemAdd. Hardened runtime + a
+# fresh timestamp are required for notarization later.
+RUNTIME_ENT="$ROOT/OpenAgents/OpenAgents-macOS-runtime.entitlements"
+if [[ -f "$RUNTIME_ENT" ]]; then
+  codesign --force --sign "$SIGN_IDENTITY" \
+    --entitlements "$RUNTIME_ENT" \
+    --options runtime \
+    --timestamp \
+    "$APP_PATH"
+fi
 
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 

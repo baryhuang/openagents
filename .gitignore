@@ -267,3 +267,7 @@ deploy/
 !sdk/src/**
 !sdk/studio/src/
 !sdk/studio/src/**
+---
+# APNs auth keys (Apple Push Notification service .p8 private keys)
+workspace/backend/secrets/
+*.p8

@@ -5,7 +5,7 @@ Push-notification fan-out for mobile clients (currently iOS only).
 Wired into `routers/events.py` via FastAPI BackgroundTasks:
 on every `POST /v1/events`, after the response is sent, this module decides
 whether the event warrants a push, looks up registered device tokens for the
-workspace, and dispatches via Firebase Admin → APNs.
+workspace, and dispatches via APNs directly (no Firebase intermediary).
 
 Filtering rules (see `_should_push`):
   - workspace.message.posted, type=chat, source=openagents:* → always push
@@ -16,19 +16,20 @@ Filtering rules (see `_should_push`):
     agent is a member of this workspace → push (mention)
   - everything else → skip
 
-Failure handling: tokens that FCM marks `UNREGISTERED` or `INVALID_ARGUMENT`
-are pruned from `device_tokens`. Send failures are logged but never raised
-back to the request that triggered them.
+Failure handling: tokens that APNs marks `Unregistered` / `BadDeviceToken`
+/ `DeviceTokenNotForTopic` are pruned from `device_tokens`. Send failures
+are logged but never raised back to the request that triggered them.
 """
 
+import asyncio
 import logging
 import re
-from typing import Any, Optional
 
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import DeviceToken, WorkspaceMember
+from app.models import ChannelHumanMember, DeviceToken, WorkspaceCollaborator, WorkspaceMember
+from app.services.apns_client import APNsAlert, send_push
 
 logger = logging.getLogger(__name__)
 
@@ -80,45 +81,61 @@ def _extract_mentions(content: str) -> set[str]:
     return {m.group(1).lower() for m in _MENTION_RE.finditer(content or "")}
 
 
-def _should_push(event: dict, workspace_agent_names: set[str]) -> tuple[bool, str]:
+def _should_push(
+    event: dict,
+    workspace_agent_names: set[str],
+    workspace_human_keys: dict[str, str] | None = None,
+) -> tuple[bool, str, str | None]:
     """Decide whether `event` warrants a push.
 
-    Returns (should_push, reason) — reason is a short tag used in the
-    notification's `data` payload so the iOS app can render different
-    sounds/categories later.
+    Returns (should_push, reason, mention_target_email). `reason` tags
+    the notification's `data` payload so the iOS app can render
+    different sounds/categories later. `mention_target_email` is set
+    only when a `@name` resolves to a specific human collaborator —
+    the fan-out then scopes its `device_tokens` query by that email so
+    we wake up just that person's devices, not the whole workspace.
+
+    `workspace_human_keys` maps lowercased mention candidates (display
+    name slug, email local-part) → that human's email.
     """
     if event.get("type") != "workspace.message.posted":
-        return False, ""
+        return False, "", None
 
     msg_type = _message_type_of(event)
     content = _content_of(event)
     source_kind = _source_kind(event)
 
-    # Mentions take priority — applies to both chat and status, agent or human.
+    # Mentions take priority — applies to both chat and status, agent or
+    # human. Agent-name match → broadcast within the workspace as before.
+    # Human-name match → scope to that human's device tokens.
     mentions = _extract_mentions(content)
-    if mentions and mentions & {n.lower() for n in workspace_agent_names}:
-        return True, "mention"
+    if mentions:
+        if mentions & {n.lower() for n in workspace_agent_names}:
+            return True, "mention", None
+        if workspace_human_keys:
+            for m in mentions:
+                if m in workspace_human_keys:
+                    return True, "mention", workspace_human_keys[m]
 
     if msg_type == "chat":
-        # Agent chat messages → push. Human chat → don't push to self.
-        if source_kind == "agent":
-            return True, "chat"
-        return False, ""
+        # Both agent and human chat reach the fan-out. The Slack-style
+        # channel-membership filter in `_fanout_impl` excludes the
+        # sender's own devices, so humans don't get pushed for their own
+        # messages while other channel members do.
+        return True, "chat", None
 
     if msg_type in ("status", "thinking"):
         # Per-decision: only push on TERMINAL state transitions so we don't
         # flood on every "thinking" heartbeat.
         if _is_terminal_status(content):
-            return True, "status"
-        return False, ""
+            return True, "status", None
+        return False, "", None
 
-    return False, ""
+    return False, "", None
 
 
-def _build_notification(event: dict, reason: str):
-    """Build a Firebase messaging.Notification — title + body."""
-    from firebase_admin import messaging
-
+def _build_alert(event: dict, reason: str) -> APNsAlert:
+    """Build the user-visible title + body for the APNs alert."""
     source = str(event.get("source") or "")
     sender_name = source.split(":", 1)[1] if ":" in source else source
 
@@ -135,13 +152,16 @@ def _build_notification(event: dict, reason: str):
     if not body:
         body = "(no content)"
 
-    return messaging.Notification(title=title, body=body)
+    target = str(event.get("target") or "")
+    channel = target[len("channel/"):] if target.startswith("channel/") else ""
+    return APNsAlert(title=title, body=body, thread_id=channel or None)
 
 
 def _build_data_payload(event: dict, reason: str) -> dict[str, str]:
-    """Build the FCM `data` dict — client receives this in userInfo.
-
-    All values MUST be strings (FCM requirement).
+    """Build the custom userInfo keys delivered alongside the alert.
+    APNs puts these as siblings of the `aps` key, where iOS surfaces them
+    in `UNNotification.request.content.userInfo`. All values stringified
+    to match the previous FCM contract.
     """
     target = str(event.get("target") or "")
     channel = target[len("channel/"):] if target.startswith("channel/") else ""
@@ -161,6 +181,47 @@ def _workspace_agent_names(db, workspace_id: str) -> set[str]:
     return set(rows)
 
 
+def _workspace_human_keys(db, workspace_id: str) -> dict[str, str]:
+    """Build the mention-resolution table for humans in this workspace.
+
+    Maps every plausible thing a person might type after `@` to that
+    human's email. Two keys are generated per collaborator:
+
+      • `email-local-part` — e.g. `bary@peakmojo.com` → "bary".
+      • `display_name_slug` — e.g. "Bary Huang" → "bary-huang",
+        falling back to "bary" (the first word lowercased) so the most
+        common shorthand also resolves.
+
+    Last write wins on key collisions, which is fine: the value points
+    at an email and that's all we need to scope device tokens.
+    """
+    keys: dict[str, str] = {}
+    rows = db.execute(
+        select(WorkspaceCollaborator.email, WorkspaceCollaborator.display_name)
+        .where(WorkspaceCollaborator.workspace_id == workspace_id)
+    ).all()
+    import re as _re
+    for email, display_name in rows:
+        if not email:
+            continue
+        email_l = email.strip().lower()
+        local = email_l.split("@", 1)[0]
+        if local:
+            keys[local] = email_l
+        if display_name:
+            cleaned = display_name.strip().lower()
+            if cleaned:
+                # Whole-name slug (spaces → hyphens, drop non-word/hyphen)
+                slug = _re.sub(r"[^a-z0-9]+", "-", cleaned).strip("-")
+                if slug:
+                    keys[slug] = email_l
+                # First word — most common shorthand ("@bary" for "Bary Huang")
+                first = cleaned.split()[0]
+                if first:
+                    keys[first] = email_l
+    return keys
+
+
 def fanout_for_event(workspace_id: str, event: dict) -> None:
     """Entry point for the BackgroundTasks hook. Opens its own DB session
     (the request's session is closed by the time this runs)."""
@@ -173,93 +234,113 @@ def fanout_for_event(workspace_id: str, event: dict) -> None:
         logger.warning("push: fanout failed for workspace=%s: %s", workspace_id, e)
 
 
+def _channel_name_from_target(event: dict) -> str:
+    target = str(event.get("target") or "")
+    return target[len("channel/"):] if target.startswith("channel/") else ""
+
+
+def _channel_human_emails(db, workspace_id: str, channel_name: str) -> set[str]:
+    """Return the lowercased emails of humans who have joined this channel.
+
+    The implicit-join hook in workspace_mod inserts a row the first time
+    someone with a `sender_email` posts in the channel, so a Slack-style
+    "you've participated → you're a member" model holds.
+    """
+    if not channel_name:
+        return set()
+    from app.models import Channel
+    rows = db.execute(
+        select(ChannelHumanMember.user_email)
+        .join(Channel, Channel.id == ChannelHumanMember.channel_id)
+        .where(
+            Channel.workspace_id == workspace_id,
+            Channel.name == channel_name,
+        )
+    ).scalars().all()
+    return {e for e in rows if e}
+
+
+def _sender_email_for(event: dict) -> str | None:
+    """The signed-in sender's email if they identified themselves on the
+    chat post — used to skip pushing back to their own devices.
+    """
+    payload = event.get("payload") or {}
+    email = str(payload.get("sender_email") or "").strip().lower()
+    return email or None
+
+
 def _fanout_impl(workspace_id: str, event: dict) -> None:
     db = SessionLocal()
     try:
         agent_names = _workspace_agent_names(db, workspace_id)
-        should, reason = _should_push(event, agent_names)
+        human_keys = _workspace_human_keys(db, workspace_id)
+        should, reason, mention_target_email = _should_push(
+            event, agent_names, human_keys,
+        )
         if not should:
             return
 
-        tokens: list[DeviceToken] = db.execute(
-            select(DeviceToken).where(DeviceToken.workspace_id == workspace_id)
-        ).scalars().all()
+        sender_email = _sender_email_for(event)
+        token_query = select(DeviceToken).where(DeviceToken.workspace_id == workspace_id)
+
+        if mention_target_email:
+            # Mention path — scope to the mentioned human, regardless of
+            # whether they're in this channel. One-off notification.
+            token_query = token_query.where(DeviceToken.user_email == mention_target_email)
+            scope_label = mention_target_email
+        else:
+            # Chat / status path — scope to humans who have joined *this*
+            # channel via implicit Slack-style membership. Skip the
+            # sender's own devices so they don't get notified about their
+            # own message.
+            channel_name = _channel_name_from_target(event)
+            channel_humans = _channel_human_emails(db, workspace_id, channel_name)
+            if sender_email:
+                channel_humans.discard(sender_email)
+            if not channel_humans:
+                logger.info(
+                    "push: skipped reason=%s workspace=%s — no channel members",
+                    reason, workspace_id,
+                )
+                return
+            token_query = token_query.where(DeviceToken.user_email.in_(channel_humans))
+            scope_label = f"#{channel_name}[{len(channel_humans)}]"
+
+        tokens: list[DeviceToken] = db.execute(token_query).scalars().all()
         if not tokens:
             return
 
-        # Lazy-init Firebase Admin — same path that firebase_auth uses, but
-        # the messaging module is available once init succeeds.
-        from app.firebase_auth import _init_firebase
-        if not _init_firebase():
-            logger.warning("push: firebase not configured, skipping fan-out")
-            return
-        from firebase_admin import messaging
-
-        notification = _build_notification(event, reason)
+        alert = _build_alert(event, reason)
         data = _build_data_payload(event, reason)
-        apns = messaging.APNSConfig(
-            payload=messaging.APNSPayload(
-                aps=messaging.Aps(
-                    alert=messaging.ApsAlert(
-                        title=notification.title,
-                        body=notification.body,
-                    ),
-                    sound="default",
-                    mutable_content=True,
-                    thread_id=data.get("channel") or None,
-                ),
-            ),
-        )
-        messages = [
-            messaging.Message(
-                token=t.fcm_token,
-                notification=notification,
-                data=data,
-                apns=apns,
-            )
-            for t in tokens
-        ]
 
-        response = messaging.send_each(messages)
-        _prune_invalid_tokens(db, tokens, response)
+        # aioapns is async; this hook runs from FastAPI BackgroundTasks which
+        # is sync, so we drive the coroutine on a private event loop.
+        token_strings = [t.fcm_token for t in tokens]
+        _, dead = asyncio.run(send_push(token_strings, alert, data))
+
+        if dead:
+            _prune_dead_tokens(db, tokens, dead)
         logger.info(
-            "push: sent reason=%s workspace=%s success=%d failure=%d",
-            reason, workspace_id, response.success_count, response.failure_count,
+            "push: sent reason=%s workspace=%s scope=%s tokens=%d dead=%d",
+            reason, workspace_id, scope_label, len(token_strings), len(dead),
         )
     finally:
         db.close()
 
 
-def _prune_invalid_tokens(db, tokens: list[DeviceToken], response) -> None:
-    """Delete rows whose FCM token is dead (UNREGISTERED or INVALID_ARGUMENT)."""
-    from firebase_admin import messaging as _fb_messaging
+def _prune_dead_tokens(db, tokens: list[DeviceToken], dead_token_strings: list[str]) -> None:
+    """Delete DeviceToken rows whose APNs token was rejected as dead.
 
-    invalid_ids: list[str] = []
-    for token, result in zip(tokens, response.responses):
-        if result.success:
-            continue
-        exc = result.exception
-        if exc is None:
-            continue
-        code = getattr(exc, "code", "") or ""
-        cause: Optional[Any] = getattr(exc, "cause", None)
-        code_str = str(code).upper()
-        # firebase-admin surfaces dead tokens via these:
-        # - UnregisteredError (code="registration-token-not-registered")
-        # - InvalidArgumentError on token shape
-        is_dead = (
-            isinstance(exc, getattr(_fb_messaging, "UnregisteredError", tuple()))
-            or "UNREGISTERED" in code_str
-            or "REGISTRATION-TOKEN-NOT-REGISTERED" in code_str
-            or "INVALID-ARGUMENT" in code_str
-            or "INVALID_ARGUMENT" in code_str
-        )
-        if is_dead:
-            invalid_ids.append(token.id)
-
-    if invalid_ids:
-        db.query(DeviceToken).filter(DeviceToken.id.in_(invalid_ids)).delete(
-            synchronize_session=False
-        )
-        db.commit()
-        logger.info("push: pruned %d dead token(s)", len(invalid_ids))
+    `dead_token_strings` is the subset returned by `apns_client.send_push`
+    that APNs flagged as `Unregistered` / `BadDeviceToken` / etc. — those
+    devices have uninstalled, opted out, or never had this app registered.
+    """
+    dead_set = set(dead_token_strings)
+    invalid_ids = [t.id for t in tokens if t.fcm_token in dead_set]
+    if not invalid_ids:
+        return
+    db.query(DeviceToken).filter(DeviceToken.id.in_(invalid_ids)).delete(
+        synchronize_session=False
+    )
+    db.commit()
+    logger.info("push: pruned %d dead token(s)", len(invalid_ids))
