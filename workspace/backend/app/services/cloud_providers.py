@@ -227,6 +227,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="SenseNova",
         base_url="https://token.sensenova.cn/v1",
         models=[
+            ModelInfo("sensenova-u1-fast", "chat", "SenseNova U1 Fast"),
             ModelInfo("sensenova-6.7-flash-lite", "chat", "SenseNova 6.7 Flash Lite"),
             ModelInfo("deepseek-v4-flash", "chat", "DeepSeek V4 Flash (SenseNova)"),
         ],
