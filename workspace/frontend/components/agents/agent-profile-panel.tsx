@@ -338,6 +338,12 @@ export function AgentProfilePanel() {
               'xlsx': { name: 'Spreadsheets', logo: `${SI}/microsoftexcel.svg` },
               'pptx': { name: 'Presentations', logo: `${SI}/microsoftpowerpoint.svg` },
               'pdf': { name: 'PDF Processing', logo: `${SI}/adobeacrobatreader.svg` },
+              'sn-deep-research': { name: 'SenseNova Deep Research', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-infographic': { name: 'SenseNova Infographic', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-ppt-entry': { name: 'SenseNova PPT', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-da-excel-workflow': { name: 'SenseNova Excel Analysis', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-image-base': { name: 'SenseNova Image Gen', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-md-to-html-report': { name: 'SenseNova HTML Report', logo: 'https://avatars.githubusercontent.com/u/215225587' },
             };
             return (
               <div className="rounded-lg border overflow-hidden">
