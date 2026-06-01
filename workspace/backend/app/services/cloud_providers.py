@@ -227,7 +227,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
         label="SenseNova",
         base_url="https://token.sensenova.cn/v1",
         models=[
-            ModelInfo("sensenova-u1-fast", "chat", "SenseNova U1 Fast"),
+            ModelInfo("sensenova-u1-fast", "image", "SenseNova U1 Fast"),
             ModelInfo("sensenova-6.7-flash-lite", "chat", "SenseNova 6.7 Flash Lite"),
             ModelInfo("deepseek-v4-flash", "chat", "DeepSeek V4 Flash (SenseNova)"),
         ],
@@ -468,7 +468,9 @@ async def image_generation(
 
     try:
         kwargs: dict = {"model": model, "prompt": prompt, "n": 1}
-        if model == "dall-e-3":
+        if provider == "sensenova":
+            kwargs["size"] = "2048x2048"
+        elif model == "dall-e-3":
             kwargs["size"] = "1024x1024"
             kwargs["response_format"] = "b64_json"
         elif model == "gpt-image-1":
