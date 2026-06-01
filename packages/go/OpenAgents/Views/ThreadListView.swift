@@ -266,7 +266,7 @@ struct ThreadListView: View {
                     .lineLimit(1)
                 Text(auth.user?.email ?? "")
                     .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -275,7 +275,7 @@ struct ThreadListView: View {
             } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
             }
             .buttonStyle(.plain)
             .help("Sign out")
@@ -306,7 +306,7 @@ struct ThreadListView: View {
 
     private func avatarFallback(initial: String) -> some View {
         ZStack {
-            Circle().fill(Color.accentColor)
+            Circle().fill(BrandColors.primary)
             Text(initial)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.white)
@@ -342,7 +342,7 @@ struct ThreadListView: View {
                     .truncationMode(.tail)
                 Text(slug)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -375,7 +375,7 @@ struct ThreadListView: View {
         } label: {
             Image(systemName: enabled ? "safari.fill" : "safari")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
+                .foregroundStyle(enabled ? BrandColors.primary : Color.secondary)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(enabled ? "Disable browser panel" : "Enable browser panel")
@@ -519,20 +519,20 @@ struct ThreadListView: View {
         return VStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 40))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandColors.inkFaint)
             Text(title)
                 .font(.headline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandColors.inkMuted)
             if let subtitle {
                 Text(subtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(BrandColors.inkFaint)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             } else if !isInbox && !isSearching {
                 Text("Tap \(Image(systemName: "square.and.pencil")) to start one.")
                     .font(.subheadline)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(BrandColors.inkFaint)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
@@ -596,11 +596,11 @@ private struct ThreadRow: View {
                     Spacer()
                     Text(lastActivityLabel)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                 }
                 Text(previewLine)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
                     .lineLimit(2)
                     .italic(lastMessage?.isStatus == true)
             }
@@ -643,7 +643,7 @@ private struct RoutineThreadRow: View {
             ZStack {
                 if isUnread {
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(BrandColors.primary)
                         .frame(width: 8, height: 8)
                 }
             }
@@ -652,7 +652,7 @@ private struct RoutineThreadRow: View {
 
             Image(systemName: "calendar.badge.clock")
                 .font(.system(size: 18))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandColors.inkMuted)
                 .frame(width: 32, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -664,12 +664,12 @@ private struct RoutineThreadRow: View {
                     Spacer()
                     Text(lastActivityLabel)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                 }
                 if !previewLine.isEmpty {
                     Text(previewLine)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .lineLimit(2)
                 }
             }
@@ -697,7 +697,7 @@ struct AvatarStack: View {
             .frame(width: 36, alignment: .center)
         } else {
             Circle()
-                .fill(.gray.opacity(0.2))
+                .fill(BrandColors.hairline)
                 .frame(width: 32, height: 32)
         }
     }
@@ -709,23 +709,24 @@ private struct AvatarTile: View {
     let fontSize: CGFloat
 
     var body: some View {
-        Circle()
-            .fill(AgentPalette.color(for: agent.agentName))
-            .frame(width: size, height: size)
-            .overlay(
-                Text(agent.initials)
-                    .font(.system(size: fontSize, weight: .bold))
-                    .foregroundStyle(.white),
-            )
-            .overlay(alignment: .bottomTrailing) {
-                if agent.isOnline {
-                    Circle()
-                        .fill(.green)
-                        .frame(width: size * 0.28, height: size * 0.28)
-                        .overlay(Circle().stroke(PlatformColors.windowBackground, lineWidth: 1.5))
-                        .offset(x: 1, y: 1)
-                }
+        let tint = AgentPalette.color(for: agent.agentName)
+        ZStack {
+            Circle().fill(tint.opacity(0.16))
+            Circle().strokeBorder(tint.opacity(0.32), lineWidth: 0.5)
+            Text(agent.initials)
+                .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+                .foregroundStyle(tint)
+        }
+        .frame(width: size, height: size)
+        .overlay(alignment: .bottomTrailing) {
+            if agent.isOnline {
+                Circle()
+                    .fill(BrandColors.success)
+                    .frame(width: size * 0.28, height: size * 0.28)
+                    .overlay(Circle().stroke(BrandColors.bg, lineWidth: 1.5))
+                    .offset(x: 1, y: 1)
             }
+        }
     }
 }
 

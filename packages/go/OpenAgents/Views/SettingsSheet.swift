@@ -24,7 +24,7 @@ private struct AccountAvatar: View {
 
     private func fallback(initial: String) -> some View {
         ZStack {
-            Circle().fill(Color.accentColor)
+            Circle().fill(BrandColors.primary)
             Text(initial)
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white)
@@ -56,7 +56,7 @@ struct SettingsSheet: View {
                     isPresented = false
                 } label: {
                     Image(systemName: "xmark")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .padding(8)
                 }
                 .buttonStyle(.plain)
@@ -110,12 +110,12 @@ struct SettingsSheet: View {
             HStack {
                 Text("ACTIVE WORKSPACE")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(BrandColors.inkFaint)
                 Spacer()
                 if let entry = currentEntry {
                     Text(entry.displayName)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -125,7 +125,7 @@ struct SettingsSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("App URL")
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(BrandColors.inkFaint)
                 TextField(WorkspaceURLs.defaultAppURL.absoluteString, text: $appURLDraft)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption.monospaced())
@@ -136,7 +136,7 @@ struct SettingsSheet: View {
 
                 Text("API URL")
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(BrandColors.inkFaint)
                     .padding(.top, 4)
                 TextField(WorkspaceURLs.defaultAPIURL.absoluteString, text: $apiURLDraft)
                     .textFieldStyle(.roundedBorder)
@@ -164,7 +164,7 @@ struct SettingsSheet: View {
                 }
                 Text("Saving reconnects to this workspace using the new URL pair, and persists the pair so future launches use it too.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
                     .padding(.top, 2)
             }
             .padding(12)
@@ -199,19 +199,19 @@ struct SettingsSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("DEFAULTS")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandColors.inkFaint)
                 .padding(.leading, 4)
             VStack(alignment: .leading, spacing: 6) {
                 LabeledContent("Default app URL") {
                     Text(WorkspaceURLs.defaultAppURL.absoluteString)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .font(.caption.monospaced())
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 LabeledContent("Default API URL") {
                     Text(WorkspaceURLs.defaultAPIURL.absoluteString)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .font(.caption.monospaced())
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -226,7 +226,7 @@ struct SettingsSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("ACCOUNT")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandColors.inkFaint)
                 .padding(.leading, 4)
             HStack(spacing: 12) {
                 AccountAvatar(user: auth.user)
@@ -236,7 +236,7 @@ struct SettingsSheet: View {
                         .lineLimit(1)
                     Text(auth.user?.email ?? "")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
@@ -255,20 +255,20 @@ struct SettingsSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("ABOUT")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandColors.inkFaint)
                 .padding(.leading, 4)
             VStack(alignment: .leading, spacing: 6) {
                 LabeledContent("Version") {
                     Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                 }
                 LabeledContent("Build") {
                     Text(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                 }
                 LabeledContent("Bundle ID") {
                     Text(Bundle.main.bundleIdentifier ?? "—")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .font(.caption.monospaced())
                 }
             }

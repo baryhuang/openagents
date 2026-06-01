@@ -30,7 +30,7 @@ struct NewThreadSheet: View {
                          ? "Pick which agents join this conversation."
                          : "Start a new conversation with your agent.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                 }
                 Spacer()
             }
@@ -45,7 +45,7 @@ struct NewThreadSheet: View {
                 VStack(spacing: 6) {
                     if onlineAgents.isEmpty {
                         Text("No agents are currently online.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(BrandColors.inkMuted)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 40)
                     }
@@ -66,7 +66,7 @@ struct NewThreadSheet: View {
                         // their devices, not just @-mentions.
                         Text("PEOPLE")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(BrandColors.inkMuted)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, 12)
                             .padding(.bottom, 2)
@@ -156,11 +156,11 @@ private struct HumanRow: View {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(isSelected ? Color.blue : .clear)
+                        .fill(isSelected ? BrandColors.primary : .clear)
                         .frame(width: 18, height: 18)
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(isSelected ? Color.blue : .secondary.opacity(0.5), lineWidth: 1.5),
+                                .stroke(isSelected ? BrandColors.primary : BrandColors.hairline, lineWidth: 1.5),
                         )
                     if isSelected {
                         Image(systemName: "checkmark")
@@ -169,12 +169,12 @@ private struct HumanRow: View {
                     }
                 }
                 Circle()
-                    .fill(Color.gray.opacity(0.25))
+                    .fill(BrandColors.hairline)
                     .frame(width: 28, height: 28)
                     .overlay(
                         Image(systemName: "person.fill")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary),
+                            .foregroundStyle(BrandColors.inkMuted),
                     )
                 VStack(alignment: .leading, spacing: 1) {
                     Text(human.displayName ?? human.email)
@@ -183,7 +183,7 @@ private struct HumanRow: View {
                     if human.displayName != nil {
                         Text(human.email)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(BrandColors.inkMuted)
                             .lineLimit(1)
                     }
                 }
@@ -193,7 +193,7 @@ private struct HumanRow: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.gray.opacity(0.12) : .clear),
+                    .fill(isSelected ? BrandColors.surfaceHi.opacity(0.6) : .clear),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -220,11 +220,11 @@ private struct AgentRow: View {
                 // Checkbox
                 ZStack {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(isSelected ? Color.blue : .clear)
+                        .fill(isSelected ? BrandColors.primary : .clear)
                         .frame(width: 18, height: 18)
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(isSelected ? Color.blue : .secondary.opacity(0.5), lineWidth: 1.5),
+                                .stroke(isSelected ? BrandColors.primary : BrandColors.hairline, lineWidth: 1.5),
                         )
                     if isSelected {
                         Image(systemName: "checkmark")
@@ -267,7 +267,7 @@ private struct AgentRow: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.gray.opacity(0.12) : .clear),
+                    .fill(isSelected ? BrandColors.surfaceHi.opacity(0.6) : .clear),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
