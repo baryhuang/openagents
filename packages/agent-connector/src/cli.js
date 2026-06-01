@@ -128,6 +128,16 @@ async function cmdCreate(connector, flags, positional) {
     // Signal daemon to pick up the new agent
     try { connector.sendDaemonCommand('reload'); } catch {}
 
+    // Newly created agents are local-only until connected to a workspace.
+    // Without a workspace connection they will not appear in the Workspace Dashboard.
+    const created = connector.config.getAgent(name);
+    if (created && !created.network) {
+      print('');
+      print(`Note: '${name}' is local-only and will not appear in the Workspace Dashboard.`);
+      print(`To make it visible, connect it to a workspace:`);
+      print(`  agn connect ${name} <workspace-token>`);
+    }
+
     if (!connector.isInstalled(type)) {
       if (!flags.install) {
         print(`Runtime '${type}' is not installed. Run: agn install ${type}`);
@@ -278,9 +288,30 @@ async function cmdRuntimes(connector) {
 
 async function cmdConnect(connector, flags, positional) {
   const name = positional[0];
-  const token = positional[1] || flags.token;
-  if (!name || !token) {
+  // Token resolution order: positional arg / --token flag, then env vars.
+  // OPENAGENTS_WORKSPACE_TOKEN is preferred; OA_WORKSPACE_TOKEN is supported
+  // for compatibility with the existing mcp-server env var.
+  const token = positional[1]
+    || flags.token
+    || process.env.OPENAGENTS_WORKSPACE_TOKEN
+    || process.env.OA_WORKSPACE_TOKEN;
+
+  if (!name) {
     print('Usage: agn connect <agent-name> <token>');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!token) {
+    // No token supplied and none in the environment. Never prompt — keep
+    // CI / non-interactive environments from hanging. Print a helpful error
+    // explaining why the agent stays invisible and how to fix it.
+    print(`Error: no workspace token provided for '${name}'.`);
+    print(`Without a token, '${name}' stays local-only and will not appear in the Workspace Dashboard.`);
+    print('Provide a token in one of these ways:');
+    print(`  agn connect ${name} <workspace-token>`);
+    print(`  OPENAGENTS_WORKSPACE_TOKEN=<workspace-token> agn connect ${name}`);
+    process.exitCode = 1;
     return;
   }
 
