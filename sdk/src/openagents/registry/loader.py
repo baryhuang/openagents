@@ -106,11 +106,18 @@ def _find_in_known_install_dirs(binary_names: list) -> Optional[str]:
     Returns the first matching executable path, or ``None``.
     """
     home = Path.home()
+    is_windows = platform.system() == "Windows"
     extra_dirs = [
-        home / ".cursor" / "bin",   # Cursor CLI native installer
+        home / ".cursor" / "bin",   # Cursor CLI native installer (curl|bash)
         home / ".local" / "bin",    # pipx / user installs
     ]
-    is_windows = platform.system() == "Windows"
+    if is_windows:
+        # The Windows installer (irm 'https://cursor.com/install?win32=true' | iex)
+        # drops cursor-agent.cmd / agent.cmd into %LOCALAPPDATA%\cursor-agent and
+        # only edits the registry PATH, so a daemon-spawned process can't see it
+        # via shutil.which. Mirror packages/agent-connector/src/paths.js.
+        local_app_data = os.environ.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
+        extra_dirs.insert(0, Path(local_app_data) / "cursor-agent")
     # Windows shims carry an extension (.exe/.cmd/.bat); Unix binaries don't.
     exts = (".exe", ".cmd", ".bat", "") if is_windows else ("",)
     for directory in extra_dirs:
