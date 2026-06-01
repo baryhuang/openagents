@@ -221,6 +221,16 @@ PROVIDERS: dict[str, ProviderInfo] = {
             ModelInfo("eleven_turbo_v2_5", "audio", "Turbo V2.5"),
         ],
     ),
+    # ── Chinese AI providers ────────────────────────────────────────
+    "sensenova": ProviderInfo(
+        name="sensenova",
+        label="SenseNova",
+        base_url="https://token.sensenova.cn/v1",
+        models=[
+            ModelInfo("sensenova-6.7-flash-lite", "chat", "SenseNova 6.7 Flash Lite"),
+            ModelInfo("deepseek-v4-flash", "chat", "DeepSeek V4 Flash (SenseNova)"),
+        ],
+    ),
     # ── Custom endpoint ───────────────────────────────────────────────
     "custom": ProviderInfo(
         name="custom",
@@ -330,7 +340,11 @@ async def chat_completion(
 
     try:
         response = await client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
+        msg = response.choices[0].message
+        text = msg.content or ""
+        if not text and hasattr(msg, "reasoning") and msg.reasoning:
+            text = msg.reasoning
+        return text
     finally:
         await client.close()
 

@@ -582,7 +582,7 @@ function CloudAgentsTab({
   onRemove: (name: string) => void;
 }) {
   const providerGroups = [
-    { label: 'Chat Models', names: ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'mistral'] },
+    { label: 'Chat Models', names: ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'mistral', 'sensenova'] },
     { label: 'Search & Agents', names: ['perplexity', 'manus'] },
     { label: 'Fast Inference', names: ['groq', 'together', 'fireworks', 'openrouter', 'sambanova', 'cerebras'] },
     { label: 'Image & Media', names: ['stability', 'replicate', 'fal', 'elevenlabs'] },
