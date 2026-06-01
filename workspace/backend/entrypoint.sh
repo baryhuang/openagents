@@ -1,10 +1,7 @@
 #!/bin/sh
 set -e
 
-# Run database migrations (skip with RUN_MIGRATIONS=false for existing databases)
-if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
-    alembic upgrade head
-fi
+# Migrations run via preDeployCommand in railway.toml (once, before replicas start).
 
 # Start the application — Railway injects $PORT
 # 2 replicas × 2 workers × (pool_size=40 + max_overflow=8) = 192 max DB
