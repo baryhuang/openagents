@@ -99,6 +99,7 @@ agn install openclaw                      # install a runtime
 agn create my-agent --type openclaw       # create an instance
 agn env openclaw --set LLM_API_KEY=sk-... # set credentials
 agn up                                    # start the daemon
+agn connect my-agent <workspace-token>    # connect agent into workspace
 ```
 
 `agn create` only writes the agent config. Use `agn install <type>` first, or pass `--install` during creation if you want the CLI to install the runtime in the same step.
