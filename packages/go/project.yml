@@ -103,7 +103,12 @@ targets:
         UILaunchScreen: {}
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openagents.go
+        # MUST match `APNS_BUNDLE_ID` on the backend (workspace/backend/app/
+        # config.py defaults to "org.openagents.workspace") AND the fallback
+        # in PushSink.swift. APNs routes by topic == bundle id; any drift
+        # silently drops every notification. xcodegen regen will overwrite
+        # this from project.yml — don't hand-edit the .pbxproj.
+        PRODUCT_BUNDLE_IDENTIFIER: org.openagents.workspace
         PRODUCT_NAME: "OpenAgents Go"
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": OpenAgents/OpenAgents-macOS.entitlements
         "CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]": OpenAgents/OpenAgents.entitlements
