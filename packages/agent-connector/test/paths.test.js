@@ -75,6 +75,34 @@ describe('Paths', () => {
     }
   });
 
+  it('getExtraBinDirs includes %LOCALAPPDATA%\\cursor-agent on Windows', () => {
+    // The Windows Cursor installer (irm 'https://cursor.com/install?win32=true' | iex)
+    // drops cursor-agent.cmd / agent.cmd into %LOCALAPPDATA%\cursor-agent and only
+    // edits the registry PATH, so a running launcher/daemon can't see it via `where`.
+    // The dir must be added to the enhanced PATH so detection + spawn succeed.
+    if (!IS_WINDOWS) return; // Windows-only layout; runs on the Windows CI runner
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'paths-lad-'));
+    const cursorAgentDir = path.join(tmp, 'cursor-agent');
+    fs.mkdirSync(cursorAgentDir, { recursive: true });
+    const originalLAD = process.env.LOCALAPPDATA;
+    try {
+      process.env.LOCALAPPDATA = tmp;
+      clearBinaryLookupCache();
+      const dirs = getExtraBinDirs();
+      assert.ok(
+        dirs.includes(cursorAgentDir),
+        `expected ${cursorAgentDir} in extra bin dirs, got: ${dirs.join(', ')}`,
+      );
+      // And it must be reflected in the enhanced PATH used to spawn/locate the CLI.
+      assert.ok(getEnhancedPATH().includes(cursorAgentDir));
+    } finally {
+      if (originalLAD === undefined) delete process.env.LOCALAPPDATA;
+      else process.env.LOCALAPPDATA = originalLAD;
+      try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
+      clearBinaryLookupCache();
+    }
+  });
+
   it('clearBinaryLookupCache lets whichBinary re-resolve after PATH changes', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'paths-cache-'));
     const fakeName = `_oa_test_bin_${process.pid}_${Date.now()}`;

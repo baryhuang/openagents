@@ -156,6 +156,70 @@ describe('Installer', () => {
     assert.equal(info.location, null);
   });
 
+  it('getInstallInfo reports installed (global) when agent.cmd is found in %LOCALAPPDATA%\\cursor-agent', () => {
+    // Windows: the native installer drops agent.cmd into %LOCALAPPDATA%\cursor-agent,
+    // outside ~/.openagents. Once the enhanced PATH can see that dir, _whichBinary
+    // resolves it and Cursor must read as installed (global/unmanaged, not "Install").
+    const inst = new Installer(mockRegistry, tmpDir);
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const agentCmd = path.join(localAppData, 'cursor-agent', 'agent.cmd');
+    inst._whichBinary = () => agentCmd;
+    const info = inst.getInstallInfo('cursor');
+    assert.equal(info.installed, true);
+    assert.equal(info.managed, false);
+    assert.equal(info.location, 'global');
+  });
+
+  it('getInstallInfo reports installed (global) when cursor-agent.cmd is found in %LOCALAPPDATA%\\cursor-agent', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const cursorAgentCmd = path.join(localAppData, 'cursor-agent', 'cursor-agent.cmd');
+    inst._whichBinary = () => cursorAgentCmd;
+    const info = inst.getInstallInfo('cursor');
+    assert.equal(info.installed, true);
+    assert.equal(info.managed, false);
+    assert.equal(info.location, 'global');
+  });
+
+  it('Cursor detection searches cursor-agent/agent, not the cursor editor binary', () => {
+    // The "cursor" CLI is the editor launcher (C:\cursor\resources\app\bin\cursor),
+    // NOT the agent runtime. Detection must key off cursor-agent / agent only, so a
+    // machine with only the editor present is correctly NOT treated as runtime-installed.
+    const entry = mockRegistry.getEntry('cursor');
+    const names = [entry.install.binary, ...(entry.install.binary_aliases || [])];
+    assert.deepEqual(names, ['cursor-agent', 'agent']);
+    assert.ok(!names.includes('cursor'), 'editor binary "cursor" must not be a detection name');
+
+    // Editor present but no cursor-agent/agent CLI → _whichBinary misses → not installed.
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => null;
+    const info = inst.getInstallInfo('cursor');
+    assert.equal(info.installed, false);
+  });
+
+  it('detection survives a non-ASCII home/config path (e.g. C:\\Users\\王思瑶)', () => {
+    // Regression guard: the reporting user is 王思瑶, installed under
+    // C:\Users\王思瑶\AppData\Local\cursor-agent. Path parsing / marker IO / the
+    // ~/.openagents prefix comparison must not throw or misclassify on non-ASCII.
+    const nonAsciiCfg = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-王思瑶-'));
+    try {
+      const inst = new Installer(mockRegistry, nonAsciiCfg);
+      const nonAsciiBin = path.join(nonAsciiCfg, 'AppData', 'Local', 'cursor-agent', 'agent.cmd');
+      inst._whichBinary = () => nonAsciiBin;
+      const info = inst.getInstallInfo('cursor');
+      assert.equal(info.installed, true);
+      assert.equal(info.managed, false);
+
+      // Marker write/read round-trips through the non-ASCII config dir.
+      inst._whichBinary = () => null;
+      inst._markInstalled('cursor');
+      assert.ok(inst._hasMarker('cursor'));
+      assert.equal(inst.getInstallInfo('cursor').installed, true);
+    } finally {
+      fs.rmSync(nonAsciiCfg, { recursive: true, force: true });
+    }
+  });
+
   it('_markInstalled invalidates the paths whichBinary cache', () => {
     const { whichBinary, clearBinaryLookupCache } = require('../src/paths');
     const fakeName = `_oa_installer_test_${process.pid}_${Date.now()}`;

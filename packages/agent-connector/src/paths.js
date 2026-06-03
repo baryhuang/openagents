@@ -179,8 +179,16 @@ function _addWindowsPaths(dirs) {
   // Portable Node.js installed by OpenAgents Launcher
   _push(dirs, path.join(HOME, '.openagents', 'nodejs'));
 
-  // Cursor CLI native installer
+  // Cursor CLI native installer.
+  //   - ~/.cursor/bin            : the curl|bash layout (also used by some setups)
+  //   - %LOCALAPPDATA%\cursor-agent : where the Windows installer
+  //     (irm 'https://cursor.com/install?win32=true' | iex) actually drops
+  //     cursor-agent.cmd / agent.cmd. The installer edits the *registry* PATH,
+  //     so an already-running launcher/daemon process never sees it via `where`
+  //     unless we add the dir here explicitly.
   _push(dirs, path.join(HOME, '.cursor', 'bin'));
+  if (localAppData) _push(dirs, path.join(localAppData, 'cursor-agent'));
+  _push(dirs, path.join(HOME, '.local', 'bin'));
 
   // Node.js install
   _push(dirs, path.join(programFiles, 'nodejs'));

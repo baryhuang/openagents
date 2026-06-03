@@ -205,7 +205,13 @@ class CursorAdapter extends BaseAdapter {
     }
 
     // Tier 3: Common install locations
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
     const candidates = IS_WINDOWS ? [
+      // Windows native installer (install?win32=true) drops the CLI here.
+      path.join(localAppData, 'cursor-agent', 'cursor-agent.cmd'),
+      path.join(localAppData, 'cursor-agent', 'cursor-agent.exe'),
+      path.join(localAppData, 'cursor-agent', 'agent.cmd'),
+      path.join(localAppData, 'cursor-agent', 'agent.exe'),
       path.join(home, '.cursor', 'bin', 'cursor-agent.cmd'),
       path.join(home, '.cursor', 'bin', 'cursor-agent.exe'),
       path.join(home, '.cursor', 'bin', 'cursor-agent'),
