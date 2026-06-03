@@ -488,8 +488,7 @@ private struct ThreadRow: View {
             .frame(width: 10)
             .padding(.top, Self.avatarSize / 2 - 4)
 
-            AvatarStack(agents: sessionAgents)
-                .frame(width: Self.avatarSize, height: Self.avatarSize)
+            AvatarStack(agents: sessionAgents, size: Self.avatarSize)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -520,14 +519,16 @@ private struct ThreadRow: View {
         .padding(.vertical, 8)
     }
 
-    /// Matches WhatsApp / iMessage list-row avatar size on each platform.
-    /// Kept as a static so `ThreadRow` and other row variants (currently
-    /// `RoutineThreadRow`) can share the same metric.
+    /// Chat-list avatar diameter. Sized down from the v0.6 first cut
+    /// in two passes (56/64 → 45/51 → 40/46) — the smaller circle still
+    /// reads as a "photo" without dominating the row. Shared between
+    /// `ThreadRow` and `RoutineThreadRow` so chats and inbox rows stay
+    /// coherent.
     static let avatarSize: CGFloat = {
         #if os(macOS)
-        return 56
+        return 46
         #else
-        return 52
+        return 40
         #endif
     }()
 }
@@ -651,49 +652,67 @@ private struct ChatListSearchField: View {
 
 struct AvatarStack: View {
     let agents: [Agent]
+    /// Visual diameter the stack should fill. Pass the same value the
+    /// parent reserves via `.frame(...)` so the tile actually occupies
+    /// the reserved space — earlier versions hardcoded 32pt and looked
+    /// undersized inside larger frames.
+    var size: CGFloat = 32
     var max: Int = 3
 
     var body: some View {
         let shown = Array(agents.prefix(max))
         if shown.count == 1, let agent = shown.first {
-            AvatarTile(agent: agent, size: 32, fontSize: 11)
+            AvatarTile(agent: agent, size: size)
         } else if shown.count > 1 {
+            // Stacked tiles scale proportionally with `size`: each tile
+            // is ~70% of the requested diameter so two fit side-by-side
+            // with a small overlap. Border thickness scales too so it
+            // reads at any size.
+            let tileSize = size * 0.7
+            let overlap = tileSize * 0.36
             ZStack {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { index, agent in
-                    AvatarTile(agent: agent, size: 22, fontSize: 8)
+                    AvatarTile(agent: agent, size: tileSize)
                         .overlay(Circle().stroke(PlatformColors.windowBackground, lineWidth: 2))
-                        .offset(x: CGFloat(index) * -8, y: 0)
+                        .offset(x: CGFloat(index) * -overlap, y: 0)
                 }
             }
-            .frame(width: 36, alignment: .center)
+            .frame(width: size, height: size, alignment: .center)
         } else {
             Circle()
                 .fill(BrandColors.hairline)
-                .frame(width: 32, height: 32)
+                .frame(width: size, height: size)
         }
     }
 }
 
+/// Solid-color circular avatar with white monogram — the iMessage /
+/// WhatsApp pattern. Earlier (pre-v0.6.1) this rendered as a 16%-opacity
+/// wash of the agent's tint, which read as "bloody" on the coral
+/// primary. Solid fill reads as confident and matches the chat-bubble
+/// glyph color used elsewhere in the brand system.
 private struct AvatarTile: View {
     let agent: Agent
     let size: CGFloat
-    let fontSize: CGFloat
+
+    /// Initials font scales with the tile so the monogram reads at any
+    /// size without hand-tuning per call site.
+    private var fontSize: CGFloat { size * 0.4 }
 
     var body: some View {
         let tint = AgentPalette.color(for: agent.agentName)
         ZStack {
-            Circle().fill(tint.opacity(0.16))
-            Circle().strokeBorder(tint.opacity(0.32), lineWidth: 0.5)
+            Circle().fill(tint)
             Text(agent.initials)
                 .font(.system(size: fontSize, weight: .semibold, design: .rounded))
-                .foregroundStyle(tint)
+                .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
         .overlay(alignment: .bottomTrailing) {
             if agent.isOnline {
                 Circle()
                     .fill(BrandColors.success)
-                    .frame(width: size * 0.28, height: size * 0.28)
+                    .frame(width: size * 0.26, height: size * 0.26)
                     .overlay(Circle().stroke(BrandColors.bg, lineWidth: 1.5))
                     .offset(x: 1, y: 1)
             }

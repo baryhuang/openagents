@@ -127,13 +127,10 @@ struct AgentAvatar: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(tint.opacity(0.16))
-            Circle()
-                .strokeBorder(tint.opacity(0.32), lineWidth: 0.5)
+            Circle().fill(tint)
             Text(initials)
                 .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
-                .foregroundStyle(tint)
+                .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
     }
