@@ -97,7 +97,7 @@ describe('CLI', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-cli-'));
     try {
       const createOut = runWithConfig(tmpDir, 'create', 'test-agent', '--type', 'claude');
-      assert.ok(createOut.includes("'test-agent' created"));
+      assert.ok(createOut.includes('Created local agent: test-agent'));
       assert.ok(!createOut.includes('Installing claude...'));
 
       const listOut = runWithConfig(tmpDir, 'list');
@@ -172,7 +172,7 @@ describe('CLI', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-cli-'));
     try {
       const out = runWithConfig(tmpDir, 'create', 'local-agent', '--type', 'kimi');
-      assert.ok(out.includes("'local-agent' created"));
+      assert.ok(out.includes('Created local agent: local-agent'));
       assert.ok(out.includes('local-only'));
       assert.ok(out.includes('Workspace Dashboard'));
       // Points the user at the next command, scoped to the new agent name.
@@ -193,7 +193,7 @@ describe('CLI', () => {
       // Token accepted: it proceeds to resolution rather than the
       // missing-token error path. (Resolution itself may fail offline.)
       assert.ok(stdout.includes('Resolving workspace token'));
-      assert.ok(!stdout.includes('no workspace token provided'));
+      assert.ok(!stdout.includes('Workspace token is required'));
       // The token value must never be printed.
       assert.ok(!stdout.includes('tok-explicit-123'));
     } finally {
@@ -211,7 +211,7 @@ describe('CLI', () => {
       );
       // Env token picked up: reaches resolution, not the missing-token error.
       assert.ok(stdout.includes('Resolving workspace token'));
-      assert.ok(!stdout.includes('no workspace token provided'));
+      assert.ok(!stdout.includes('Workspace token is required'));
       assert.ok(!stdout.includes('tok-from-env-456'));
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -228,9 +228,9 @@ describe('CLI', () => {
         'connect', 'noenv-agent', '--config', tmpDir,
       );
       assert.equal(code, 1);
-      assert.ok(stdout.includes('no workspace token provided'));
+      assert.ok(stdout.includes('Workspace token is required.'));
       assert.ok(stdout.includes('Workspace Dashboard'));
-      assert.ok(stdout.includes('OPENAGENTS_WORKSPACE_TOKEN'));
+      assert.ok(stdout.includes('agn connect noenv-agent <workspace-token>'));
       // It must not have started resolving (no token was available).
       assert.ok(!stdout.includes('Resolving workspace token'));
     } finally {

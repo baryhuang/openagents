@@ -123,7 +123,6 @@ async function cmdCreate(connector, flags, positional) {
 
   try {
     connector.addAgent({ name, type, role, path: flags.path || process.cwd() });
-    print(`Agent '${name}' created (type: ${type})`);
 
     // Signal daemon to pick up the new agent
     try { connector.sendDaemonCommand('reload'); } catch {}
@@ -132,10 +131,14 @@ async function cmdCreate(connector, flags, positional) {
     // Without a workspace connection they will not appear in the Workspace Dashboard.
     const created = connector.config.getAgent(name);
     if (created && !created.network) {
+      print(`Created local agent: ${name} (type: ${type})`);
       print('');
-      print(`Note: '${name}' is local-only and will not appear in the Workspace Dashboard.`);
-      print(`To make it visible, connect it to a workspace:`);
+      print('This agent is local-only and will not appear in Workspace Dashboard yet.');
+      print('');
+      print('To connect it to a Workspace, run:');
       print(`  agn connect ${name} <workspace-token>`);
+    } else {
+      print(`Agent '${name}' created (type: ${type})`);
     }
 
     if (!connector.isInstalled(type)) {
@@ -306,11 +309,10 @@ async function cmdConnect(connector, flags, positional) {
     // No token supplied and none in the environment. Never prompt — keep
     // CI / non-interactive environments from hanging. Print a helpful error
     // explaining why the agent stays invisible and how to fix it.
-    print(`Error: no workspace token provided for '${name}'.`);
-    print(`Without a token, '${name}' stays local-only and will not appear in the Workspace Dashboard.`);
-    print('Provide a token in one of these ways:');
+    print('Workspace token is required.');
+    print('Local-only agents do not appear in Workspace Dashboard until connected.');
+    print('Run:');
     print(`  agn connect ${name} <workspace-token>`);
-    print(`  OPENAGENTS_WORKSPACE_TOKEN=<workspace-token> agn connect ${name}`);
     process.exitCode = 1;
     return;
   }
