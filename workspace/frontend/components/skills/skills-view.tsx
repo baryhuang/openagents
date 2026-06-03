@@ -218,12 +218,21 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
   // Resolve the install state for this skill on a given agent. Prefer the
   // richer skill_status map (installing/installed/failed) the launcher reports
   // back; fall back to the legacy `installed` list for older backends.
+  // If a skill has been "installing" for longer than STALE_INSTALL_MS, treat
+  // it as failed so the user can retry instead of seeing a permanent spinner.
+  const STALE_INSTALL_MS = 2 * 60 * 1000; // 2 minutes
   const getSkillState = (agentName: string): 'installing' | 'installed' | 'failed' | null => {
     const agent = agents.find(a => a.agentName === agentName);
     const skills = (agent?.enabledSkills as Record<string, unknown>) || {};
-    const statusMap = (skills.skill_status as Record<string, { state?: string }>) || {};
+    const statusMap = (skills.skill_status as Record<string, { state?: string; updated_at?: number }>) || {};
     const entry = statusMap[skill.id];
-    if (entry?.state === 'installing' || entry?.state === 'failed' || entry?.state === 'installed') {
+    if (entry?.state === 'installing') {
+      if (entry.updated_at && Date.now() - entry.updated_at > STALE_INSTALL_MS) {
+        return 'failed';
+      }
+      return 'installing';
+    }
+    if (entry?.state === 'failed' || entry?.state === 'installed') {
       return entry.state;
     }
     const installed = (skills.installed as string[]) || [];
