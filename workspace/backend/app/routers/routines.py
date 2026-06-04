@@ -369,7 +369,7 @@ async def create_routine(
 # ---------------------------------------------------------------------------
 
 @router.get("/routines")
-async def list_routines(
+def list_routines(
     network: str = Query(...),
     channel: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
@@ -405,7 +405,7 @@ async def list_routines(
 # ---------------------------------------------------------------------------
 
 @router.delete("/routines/{routine_id}")
-async def cancel_routine(
+def cancel_routine(
     routine_id: str = Path(...),
     network: Optional[str] = Query(None),
     db: Session = Depends(get_db),

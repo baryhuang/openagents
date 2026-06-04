@@ -328,7 +328,7 @@ async def composing_signal(
 # ---------------------------------------------------------------------------
 
 @router.post("/token/resolve")
-async def resolve_token(
+def resolve_token(
     body: TokenResolveRequest,
     db: Session = Depends(get_db),
 ):
@@ -355,7 +355,7 @@ async def resolve_token(
 # ---------------------------------------------------------------------------
 
 @router.get("/discover")
-async def discover(
+def discover(
     network: str = Query(..., description="Network (workspace) ID"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -433,7 +433,7 @@ async def discover(
 # ---------------------------------------------------------------------------
 
 @router.get("/profile")
-async def network_profile(
+def network_profile(
     network: str = Query(..., description="Network (workspace) ID"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -581,6 +581,6 @@ _AGENT_CATALOG = [
 
 
 @router.get("/agent-catalog")
-async def agent_catalog():
+def agent_catalog():
     """Return the catalog of supported agent client types."""
     return success_response(_AGENT_CATALOG)

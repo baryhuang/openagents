@@ -46,7 +46,7 @@ class DeregisterDeviceRequest(BaseModel):
 
 
 @router.post("/devices/register")
-async def register_device(
+def register_device(
     body: RegisterDeviceRequest,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -109,7 +109,7 @@ async def register_device(
 
 
 @router.delete("/devices/register")
-async def deregister_device(
+def deregister_device(
     body: DeregisterDeviceRequest,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),

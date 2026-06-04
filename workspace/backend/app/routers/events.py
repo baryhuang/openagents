@@ -172,7 +172,7 @@ async def send_event(
 # ---------------------------------------------------------------------------
 
 @router.get("/events")
-async def poll_events(
+def poll_events(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     after: Optional[str] = Query(None, description="Return events after this event ID"),
     before: Optional[str] = Query(None, description="Return events before this event ID"),
@@ -437,7 +437,7 @@ async def poll_events(
 # ---------------------------------------------------------------------------
 
 @router.get("/events/conversations")
-async def list_conversations(
+def list_conversations(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     agent: Optional[str] = Query(None, description="Filter to conversations involving this agent"),
     limit: int = Query(20, ge=1, le=100),
@@ -533,7 +533,7 @@ async def list_conversations(
 # ---------------------------------------------------------------------------
 
 @router.get("/events/latest-per-channel")
-async def latest_per_channel(
+def latest_per_channel(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     type: Optional[str] = Query("workspace.message", description="Event type prefix to filter"),
     db: Session = Depends(get_db),

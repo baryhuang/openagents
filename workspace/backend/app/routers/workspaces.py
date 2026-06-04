@@ -184,7 +184,7 @@ def _format_channel(ch: Channel) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("")
-async def create_workspace(
+def create_workspace(
     body: WorkspaceCreateRequest,
     db: Session = Depends(get_db),
 ):
@@ -255,7 +255,7 @@ async def create_workspace(
 # ---------------------------------------------------------------------------
 
 @router.get("")
-async def list_workspaces(
+def list_workspaces(
     creator_email: Optional[str] = Query(None),
     agent_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -297,7 +297,7 @@ async def skill_catalog():
 # ---------------------------------------------------------------------------
 
 @router.get("/{workspace_id}")
-async def get_workspace(
+def get_workspace(
     workspace_id: str,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -327,7 +327,7 @@ async def get_workspace(
 # ---------------------------------------------------------------------------
 
 @router.patch("/{workspace_id}")
-async def update_workspace(
+def update_workspace(
     workspace_id: str,
     body: WorkspaceUpdateRequest,
     db: Session = Depends(get_db),
@@ -379,7 +379,7 @@ async def update_workspace(
 # ---------------------------------------------------------------------------
 
 @router.post("/{workspace_id}/claim")
-async def claim_workspace(
+def claim_workspace(
     workspace_id: str,
     db: Session = Depends(get_db),
     authorization: Optional[str] = Header(None),
@@ -426,7 +426,7 @@ async def claim_workspace(
 # ---------------------------------------------------------------------------
 
 @router.post("/{workspace_id}/rotate-token")
-async def rotate_token(
+def rotate_token(
     workspace_id: str,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -462,7 +462,7 @@ async def rotate_token(
 # ---------------------------------------------------------------------------
 
 @router.delete("/{workspace_id}/members/{agent_name}")
-async def remove_member(
+def remove_member(
     workspace_id: str,
     agent_name: str,
     db: Session = Depends(get_db),
@@ -507,7 +507,7 @@ class MemberUpdateRequest(BaseModel):
 
 
 @router.patch("/{workspace_id}/members/{agent_name}")
-async def update_member(
+def update_member(
     workspace_id: str,
     agent_name: str,
     body: MemberUpdateRequest,
@@ -654,7 +654,7 @@ async def uninstall_skill(
 # ---------------------------------------------------------------------------
 
 @router.get("/{workspace_id}/channels/{channel_name}")
-async def get_channel(
+def get_channel(
     workspace_id: str,
     channel_name: str,
     db: Session = Depends(get_db),
@@ -687,7 +687,7 @@ async def get_channel(
 # ---------------------------------------------------------------------------
 
 @router.patch("/{workspace_id}/channels/{channel_name}")
-async def update_channel(
+def update_channel(
     workspace_id: str,
     channel_name: str,
     body: ChannelUpdateRequest,
@@ -734,7 +734,7 @@ async def update_channel(
 # ---------------------------------------------------------------------------
 
 @router.delete("/{workspace_id}")
-async def delete_workspace(
+def delete_workspace(
     workspace_id: str,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -772,7 +772,7 @@ def _format_collaborator(c: WorkspaceCollaborator) -> dict:
 
 
 @router.get("/{workspace_id}/collaborators")
-async def list_collaborators(
+def list_collaborators(
     workspace_id: str,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -839,7 +839,7 @@ async def record_presence(
 
 
 @router.post("/{workspace_id}/collaborators")
-async def add_collaborator(
+def add_collaborator(
     workspace_id: str,
     body: CollaboratorAddRequest,
     db: Session = Depends(get_db),
@@ -897,7 +897,7 @@ async def add_collaborator(
 
 
 @router.delete("/{workspace_id}/collaborators/{email}")
-async def remove_collaborator(
+def remove_collaborator(
     workspace_id: str,
     email: str,
     db: Session = Depends(get_db),
