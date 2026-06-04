@@ -65,6 +65,25 @@ class WorkspaceApi {
     return `${API_URL}/v1/events/stream?${params}`;
   }
 
+  /** Whether configure() has run with a non-empty workspace id. */
+  isConfigured(): boolean {
+    return this.workspaceId !== '';
+  }
+
+  /**
+   * Guard against firing requests before configure() has populated
+   * workspaceId. configure() runs in a useEffect that fires *after* the
+   * first render, so any event sent during initial mount would otherwise
+   * POST `network: ""` and get a 400 ("Missing required field: network")
+   * from the backend. Throw a clear error instead of a confusing 400.
+   */
+  private requireWorkspace(): string {
+    if (this.workspaceId === '') {
+      throw new Error('WorkspaceApi not configured yet (workspaceId is empty)');
+    }
+    return this.workspaceId;
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const authHeaders: Record<string, string> = {};
     if (this.token) {
@@ -732,9 +751,10 @@ class WorkspaceApi {
     metadata?: Record<string, unknown>;
     visibility?: string;
   }): Promise<ONMEvent> {
+    const network = this.requireWorkspace();
     return this.request<ONMEvent>('/v1/events', {
       method: 'POST',
-      body: JSON.stringify({ ...event, network: this.workspaceId }),
+      body: JSON.stringify({ ...event, network }),
     });
   }
 
@@ -749,7 +769,7 @@ class WorkspaceApi {
     sort?: 'asc' | 'desc';
     limit?: number;
   } = {}): Promise<EventPollResponse> {
-    const params = new URLSearchParams({ network: this.workspaceId });
+    const params = new URLSearchParams({ network: this.requireWorkspace() });
     if (opts.after) params.set('after', opts.after);
     if (opts.before) params.set('before', opts.before);
     if (opts.target) params.set('target', opts.target);

@@ -257,7 +257,7 @@ async def upload_file_base64(
 # ---------------------------------------------------------------------------
 
 @router.get("/files")
-async def list_files(
+def list_files(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     status: str = Query("active", description="Filter by status"),
     channel_name: Optional[str] = Query(None, description="Filter by channel name"),
@@ -318,7 +318,7 @@ async def list_files(
 # ---------------------------------------------------------------------------
 
 @router.get("/files/{file_id}/info")
-async def file_info(
+def file_info(
     file_id: str,
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
