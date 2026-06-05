@@ -696,6 +696,15 @@ function createWindow(): void {
   mainWindow.once("ready-to-show", () => {
     if (process.platform === "darwin" && app.dock) app.dock.show()
     mainWindow!.show()
+    // On Windows, splash window (`alwaysOnTop: true`) sometimes leaves
+    // focus on the desktop after it closes, so the main window appears but
+    // doesn't receive clicks until the user clicks the title bar. Force the
+    // focus to land on the launcher so onboarding is immediately
+    // interactive.
+    if (process.platform === "win32") {
+      mainWindow!.focus()
+      mainWindow!.moveTop()
+    }
     // DevTools — dev only. Production builds (`app.isPackaged === true`) skip
     // this so end users never see the inspector pop up.
     if (!app.isPackaged) {
@@ -1392,11 +1401,12 @@ function setupIPC(): void {
       return { installed: false, binary: null }
     }
   })
-  ipcMain.handle("agents:catalog", async () => {
+  ipcMain.handle("agents:catalog", async (_e, force?: boolean) => {
     if (!agentManager) return []
     try {
-      return await agentManager.getCatalog()
-    } catch {
+      return await agentManager.getCatalog(!!force)
+    } catch (err: unknown) {
+      slog(`agents:catalog failed: ${(err as Error)?.message || err}`)
       return []
     }
   })
@@ -2173,6 +2183,16 @@ app.whenReady().then(async () => {
     splash = null
   }
 
+  // Create the main window BEFORE loading the connector. AgentManager's
+  // constructor performs a synchronous `require()` of the agent-launcher
+  // core, which on Windows can take 1-2s while Defender scans the freshly
+  // extracted files. Doing it after the BrowserWindow exists lets the
+  // renderer load in parallel — the user sees the UI instead of a frozen
+  // post-splash desktop. IPC handlers safely return defaults while
+  // agentManager is still undefined; the onboarding catalog poll retries
+  // until it lands.
+  if (!isHeadless) createWindow()
+
   agentManager = new AgentManager(store)
   agentManager!._ensureDaemon().catch(() => {})
 
@@ -2183,8 +2203,6 @@ app.whenReady().then(async () => {
   })
 
   setInterval(() => updateTrayMenu(), 5000)
-
-  if (!isHeadless) createWindow()
 
   const FOUR_HOURS = 4 * 60 * 60 * 1000
   const ONE_HOUR = 60 * 60 * 1000

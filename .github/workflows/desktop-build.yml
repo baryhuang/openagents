@@ -21,13 +21,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13
-            arch: x64
+          - arch: x64
             build_script: build:mac:x64
-          - os: macos-latest
-            arch: arm64
+          - arch: arm64
             build_script: build:mac:arm64
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     defaults:
       run:
         working-directory: packages/launcher
