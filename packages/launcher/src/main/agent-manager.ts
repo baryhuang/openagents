@@ -1781,6 +1781,21 @@ export class AgentManager extends EventEmitter {
       path.delimiter,
     )
 
+    // Bundled fallback CLI: the copy of @openagents-org/agent-launcher we ship
+    // inside the app (asarUnpack'd, so it's a real on-disk file the spawned
+    // node can execute rather than a virtual path inside app.asar). This lets
+    // the daemon start even when the runtime-downloaded GLOBAL core never
+    // landed (offline / AV-blocked) — the same failure that used to strand
+    // Windows users at "Daemon failed to start".
+    let bundledCli: string | null = null
+    try {
+      const pkg = require.resolve("@openagents-org/agent-launcher/package.json")
+      let p = path.join(path.dirname(pkg), "bin", "agent-connector.js")
+      if (p.includes("app.asar") && !p.includes("app.asar.unpacked"))
+        p = p.replace("app.asar", "app.asar.unpacked")
+      bundledCli = p
+    } catch {}
+
     let cliPath: string | null = null
     const cliCandidates = [
       path.join(LOCAL_CORE, "bin", "agent-connector.js"),
@@ -1792,6 +1807,7 @@ export class AgentManager extends EventEmitter {
         "bin",
         "agent-connector.js",
       ),
+      ...(bundledCli ? [bundledCli] : []),
     ]
     for (const c of cliCandidates) {
       try {
@@ -1814,18 +1830,19 @@ export class AgentManager extends EventEmitter {
 
     // Pick a node binary that actually launches. The bundled portable
     // node.exe is preferred when usable, but on some Windows machines it's
-    // blocked by Defender / SmartScreen and CreateProcess fails — in that
-    // case fall back to system node so the daemon can still start.
-    const nodeBin = resolveWorkingNode(portableNodeDir, enhancedPath)
+    // blocked by Defender / SmartScreen and CreateProcess fails. When neither
+    // a portable nor a system node is usable, fall back to running THIS
+    // Electron binary as a plain Node process (ELECTRON_RUN_AS_NODE=1) —
+    // Electron is always present, so the daemon can start without depending on
+    // a separately-installed node runtime.
+    let nodeBin = resolveWorkingNode(portableNodeDir, enhancedPath)
+    const daemonEnv: NodeJS.ProcessEnv = { ...process.env }
     if (!nodeBin) {
+      nodeBin = process.execPath
+      daemonEnv.ELECTRON_RUN_AS_NODE = "1"
       appendDaemonLog(
-        `cannot start daemon: no usable node binary found (portable=${portableNodeDir})`,
+        `no portable/system node usable; running daemon via Electron-as-node (${nodeBin})`,
       )
-      return {
-        success: false,
-        message:
-          "No usable node binary found. Reinstall Node.js or repair the bundled runtime in Settings.",
-      }
     }
 
     try {
@@ -1836,7 +1853,7 @@ export class AgentManager extends EventEmitter {
       const proc = spawn(nodeBin, [cliPath, "up", "--foreground"], {
         detached: true,
         stdio: ["ignore", logFd, logFd],
-        env: withPathEnv(enhancedPath),
+        env: withPathEnv(enhancedPath, daemonEnv),
         windowsHide: true,
       })
       proc.once("error", (err: Error) => {
