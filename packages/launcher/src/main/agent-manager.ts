@@ -796,11 +796,38 @@ export class AgentManager extends EventEmitter {
   }
 
   async getEnvFields(agentType: string): Promise<unknown[]> {
-    this._ensureConnector()
-    const getEnvFields = this._connector!.getEnvFields as (
-      type: string,
-    ) => unknown[]
-    return getEnvFields.call(this._connector, agentType)
+    // Mirror getCatalog's bundled fallback: when the agent-launcher core
+    // hasn't installed yet, _ensureConnector throws ("Core library not
+    // installed"). Without a fallback that rejection bubbles up to the
+    // onboarding Step 2 Promise.all, which then collapses every agent to the
+    // default mode:"none" — so the "Configure agent" step shows "no
+    // configuration needed" for codex/kimi/etc that actually require API keys.
+    // Fall back to the inlined registry so env fields are always available.
+    try {
+      this._ensureConnector()
+      const getEnvFields = this._connector!.getEnvFields as (
+        type: string,
+      ) => unknown[]
+      const fields = getEnvFields.call(this._connector, agentType)
+      if (Array.isArray(fields)) return fields
+    } catch {
+      // fall through to bundled fallback
+    }
+    return this._fallbackEnvFields(agentType)
+  }
+
+  /**
+   * env_config from the bundled registry for a single agent. Used when the
+   * connector isn't loaded yet so onboarding's API-key step still renders the
+   * right fields. Mirrors _fallbackCatalog.
+   */
+  private _fallbackEnvFields(agentType: string): unknown[] {
+    const entries = Array.isArray(BUNDLED_REGISTRY)
+      ? (BUNDLED_REGISTRY as Array<Record<string, unknown>>)
+      : []
+    const entry = entries.find((e) => e.name === agentType)
+    const env = entry?.env_config
+    return Array.isArray(env) ? env : []
   }
 
   getAgentEnv(agentType: string): unknown {
