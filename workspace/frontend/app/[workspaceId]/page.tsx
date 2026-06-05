@@ -1,22 +1,22 @@
 'use client';
 
-import { use, Suspense } from 'react';
+import { use, Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace-context';
 import { LayoutProvider } from '@/components/layout/layout-context';
 import { Wrapper } from '@/components/layout/wrapper';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
-import { IdentityDialog } from '@/components/identity/identity-dialog';
 
 function IdentityGate({ children }: { children: React.ReactNode }) {
   const { currentUser, setUserName } = useWorkspace();
 
-  return (
-    <>
-      <IdentityDialog open={!currentUser.name.trim()} onSubmit={setUserName} />
-      {children}
-    </>
-  );
+  useEffect(() => {
+    if (!currentUser.name.trim()) {
+      setUserName('Guest');
+    }
+  }, [currentUser.name, setUserName]);
+
+  return <>{children}</>;
 }
 
 function WorkspaceContent({ workspaceId }: { workspaceId: string }) {
