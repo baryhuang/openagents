@@ -7,6 +7,13 @@ import { LayoutProvider } from '@/components/layout/layout-context';
 import { Wrapper } from '@/components/layout/wrapper';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 
+function setWorkspaceCookie(slug: string, token: string) {
+  const maxAge = 30 * 24 * 60 * 60;
+  const shared = `path=/;max-age=${maxAge};secure;samesite=lax;domain=.openagents.org`;
+  document.cookie = `oa_workspace=${encodeURIComponent(JSON.stringify({ slug, token }))};${shared}`;
+  document.cookie = `oa_has_workspace=1;${shared}`;
+}
+
 function IdentityGate({ children }: { children: React.ReactNode }) {
   const { currentUser, setUserName } = useWorkspace();
 
@@ -23,6 +30,12 @@ function WorkspaceContent({ workspaceId }: { workspaceId: string }) {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const { user, idToken, loading: authLoading, isOpenAgentsDomain, signIn } = useOpenAgentsAuth();
+
+  useEffect(() => {
+    if (token) {
+      setWorkspaceCookie(workspaceId, token);
+    }
+  }, [workspaceId, token]);
 
   // Has workspace token in URL — use it directly
   if (token) {
