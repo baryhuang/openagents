@@ -1,7 +1,6 @@
 import React from "react"
 import {
   LayoutDashboard,
-  MessageSquare,
   Cpu,
   Layers,
   Plug,
@@ -36,7 +35,6 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" />, section: "overview" },
-  { id: "chat", label: "Chat", icon: <MessageSquare className="w-4 h-4" />, section: "overview" },
 
   { id: "install", label: "Marketplace", icon: <Download className="w-4 h-4" />, section: "manage" },
   { id: "agents", label: "Agents", icon: <Cpu className="w-4 h-4" />, section: "manage" },
