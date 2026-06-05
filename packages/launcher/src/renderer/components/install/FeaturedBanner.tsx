@@ -19,10 +19,14 @@ export function FeaturedBanner({ catalog, onOpen }: Props): React.JSX.Element {
     hero?.description ||
     hero?.long_description ||
     "Browse, install, and update AI coding agents from the OpenAgents catalog."
-  const ctaLabel = hero ? (hero.installed ? "Open" : "Install Now") : "Browse all"
+  const ctaLabel = hero
+    ? hero.installed
+      ? "Open"
+      : "Install Now"
+    : "Browse all"
 
   return (
-    <div className="relative box-border min-h-50 rounded-xl pl-8 pr-45 py-7 shadow-[0_4px_20px_rgba(99,102,241,0.25)] bg-[linear-gradient(135deg,#6366f1_0%,#4f46e5_50%,#7c3aed_100%)]">
+    <div className="relative box-border rounded-xl pl-8 pr-45 py-7 shadow-[0_4px_20px_rgba(99,102,241,0.25)] bg-[linear-gradient(135deg,#6366f1_0%,#4f46e5_50%,#7c3aed_100%)]">
       <div className="absolute top-7 right-7 w-33 h-33 rounded-2xl bg-white/15 flex items-center justify-center">
         {hero ? (
           <AgentIcon type={hero.name} size={72} />
