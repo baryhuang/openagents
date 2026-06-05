@@ -5,6 +5,12 @@ import https from "https"
 import { spawnSync } from "child_process"
 import { withPathEnv } from "./env"
 import { EventEmitter } from "events"
+// Bundled fallback registry. When the agent-launcher core hasn't installed
+// yet (slow network, antivirus interference on Windows, etc) the connector's
+// catalog comes back empty and the onboarding step shows nothing to pick.
+// Inlining the registry at build time gives the UI a guaranteed catalog so
+// "Pick your first agent" is always populated.
+import BUNDLED_REGISTRY from "../../../agent-connector/registry.json"
 
 const CONFIG_DIR = path.join(os.homedir(), ".openagents")
 const GLOBAL_CORE = path.join(
@@ -678,73 +684,114 @@ export class AgentManager extends EventEmitter {
   async getCatalog(force = false): Promise<unknown[]> {
     const now = Date.now()
     const ttl = process.platform === "win32" ? 60_000 : 10_000
-    if (
-      !force &&
-      this._catalogCache.value &&
+    // Empty arrays must NOT count as a valid cached value — otherwise a
+    // transient miss (connector not loaded yet, network blocked, etc) gets
+    // pinned for the full TTL and onboarding shows "no agents" until the
+    // user restarts. Treat non-empty cached entries as fresh; empty ones
+    // always re-fetch.
+    const cached = this._catalogCache.value
+    const haveFresh =
+      Array.isArray(cached) &&
+      cached.length > 0 &&
       now - this._catalogCache.at < ttl
-    ) {
-      return this._catalogCache.value
-    }
+    if (!force && haveFresh) return cached as unknown[]
     if (!force && this._catalogCache.inFlight)
       return this._catalogCache.inFlight
 
     const load = this._loadCatalog()
       .then((catalog) => {
-        this._catalogCache = { value: catalog, at: Date.now(), inFlight: null }
-        return catalog
+        const value =
+          Array.isArray(catalog) && catalog.length > 0
+            ? catalog
+            : this._fallbackCatalog()
+        this._catalogCache = {
+          value,
+          // Pin the cache only when we got a real catalog. A fallback result
+          // (connector still warming up) should keep retrying so the UI
+          // updates as soon as the connector recovers.
+          at: value === catalog ? Date.now() : 0,
+          inFlight: null,
+        }
+        return value
       })
-      .catch((err) => {
+      .catch(() => {
         this._catalogCache.inFlight = null
-        throw err
+        // Surface a fallback rather than a rejection — onboarding's IPC
+        // handler swallows errors silently and would otherwise leave the
+        // picker permanently empty.
+        return this._fallbackCatalog()
       })
     this._catalogCache.inFlight = load
     return load
   }
 
+  /**
+   * Bundled fallback when the connector hasn't loaded yet. Annotates each
+   * entry with `installed: false` so the UI treats them as "needs install".
+   */
+  private _fallbackCatalog(): unknown[] {
+    const entries = Array.isArray(BUNDLED_REGISTRY)
+      ? (BUNDLED_REGISTRY as Array<Record<string, unknown>>)
+      : []
+    return entries.map((e) => ({
+      ...e,
+      installed: false,
+      managed: false,
+      location: null,
+    }))
+  }
+
   private async _loadCatalog(): Promise<unknown[]> {
+    if (!this._connector) return []
     let catalog: unknown[]
     try {
-      const getCatalog = this._connector!.getCatalog as () => Promise<unknown[]>
+      const getCatalog = this._connector.getCatalog as () => Promise<unknown[]>
       catalog = await getCatalog.call(this._connector)
     } catch {
-      const registry = this._connector!.registry as Record<string, unknown>
-      const getCatalogSync = registry.getCatalogSync as () => unknown[]
-      catalog = getCatalogSync.call(registry).map((e) => {
-        const entry = e as Record<string, unknown>
-        const installer = this._connector!.installer as Record<string, unknown>
+      try {
+        const registry = this._connector.registry as Record<string, unknown>
+        const getCatalogSync = registry.getCatalogSync as () => unknown[]
+        const installer = this._connector.installer as Record<string, unknown>
         const getInstallInfo = installer.getInstallInfo as (name: string) => {
           installed: boolean
           managed?: boolean
           location?: string
         }
-        const info = getInstallInfo.call(installer, entry.name as string)
-        return {
-          ...entry,
-          installed: info.installed,
-          managed: info.managed,
-          location: info.location,
-        }
-      })
-    }
-    const registry = this._connector!.registry as Record<string, unknown>
-    const loadBundled = registry._loadBundled as () => unknown[]
-    const bundled = loadBundled.call(registry)
-    for (const entry of catalog) {
-      const e = entry as Record<string, unknown>
-      const b = (bundled as Array<Record<string, unknown>>).find(
-        (x) => x.name === e.name,
-      )
-      if (b) {
-        if (!e.check_ready && b.check_ready) e.check_ready = b.check_ready
-        if (
-          (!e.env_config || !(e.env_config as unknown[]).length) &&
-          (b.env_config as unknown[] | undefined)?.length
-        )
-          e.env_config = b.env_config
-        if (b.install) e.install = { ...b.install }
-        if (!e.launch && b.launch) e.launch = b.launch
+        catalog = getCatalogSync.call(registry).map((e) => {
+          const entry = e as Record<string, unknown>
+          const info = getInstallInfo.call(installer, entry.name as string)
+          return {
+            ...entry,
+            installed: info.installed,
+            managed: info.managed,
+            location: info.location,
+          }
+        })
+      } catch {
+        return []
       }
     }
+    try {
+      const registry = this._connector.registry as Record<string, unknown>
+      const loadBundled = registry._loadBundled as () => unknown[]
+      const bundled = loadBundled.call(registry)
+      for (const entry of catalog) {
+        const e = entry as Record<string, unknown>
+        const b = (bundled as Array<Record<string, unknown>>).find(
+          (x) => x.name === e.name,
+        )
+        if (b) {
+          if (!e.check_ready && b.check_ready) e.check_ready = b.check_ready
+          if (
+            (!e.env_config || !(e.env_config as unknown[]).length) &&
+            (b.env_config as unknown[] | undefined)?.length
+          )
+            e.env_config = b.env_config
+          if (b.install) e.install = { ...b.install }
+          if (!e.launch && b.launch) e.launch = b.launch
+        }
+      }
+    } catch {}
     return catalog
   }
 

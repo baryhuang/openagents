@@ -112,25 +112,46 @@ export function OnboardingFlow({
     }
   }, [selectedAgent])
 
+  const loadCatalog = useCallback(
+    async (force = false): Promise<CatalogEntry[]> => {
+      setCatalogLoading(true)
+      try {
+        const c = await window.api.getCatalog(force)
+        setCatalog(c)
+        return c
+      } catch {
+        return []
+      } finally {
+        setCatalogLoading(false)
+      }
+    },
+    [],
+  )
+
+  // The launcher's main process can return an empty catalog while the
+  // agent-launcher core is still downloading on first launch (especially
+  // common on Windows where antivirus heuristics slow the npm fetch). Poll a
+  // few times with force=true until something shows up, so the picker
+  // doesn't strand the user on a "No agents match" empty state.
   useEffect(() => {
     if (!open) return
     if (step !== 1) return
     let cancelled = false
-    setCatalogLoading(true)
-    window.api
-      .getCatalog()
-      .then((c) => {
+    let attempt = 0
+    const run = async (): Promise<void> => {
+      while (!cancelled && attempt < 6) {
+        const c = await loadCatalog(attempt > 0)
         if (cancelled) return
-        setCatalog(c)
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setCatalogLoading(false)
-      })
+        if (c.length > 0) return
+        attempt += 1
+        await new Promise((r) => setTimeout(r, 1500))
+      }
+    }
+    void run()
     return () => {
       cancelled = true
     }
-  }, [open, step])
+  }, [open, step, loadCatalog])
 
   // Load the selected agent's env_config + check_ready when entering Step 2.
   // Different agents need different fields (Kimi needs API_KEY + BASE_URL +
@@ -454,6 +475,7 @@ export function OnboardingFlow({
             setSearch={setSearch}
             selected={selectedAgent}
             setSelected={setSelectedAgent}
+            onRetry={() => void loadCatalog(true)}
           />
         )
       case 2:
@@ -758,6 +780,7 @@ function AgentSelectionStep({
   setSearch,
   selected,
   setSelected,
+  onRetry,
 }: {
   catalog: CatalogEntry[]
   loading: boolean
@@ -765,6 +788,7 @@ function AgentSelectionStep({
   setSearch: (v: string) => void
   selected: string
   setSelected: (v: string) => void
+  onRetry: () => void
 }): React.JSX.Element {
   return (
     <>
@@ -790,8 +814,17 @@ function AgentSelectionStep({
           </li>
         )}
         {!loading && catalog.length === 0 && (
-          <li className="col-span-1 sm:col-span-2 text-center text-[12px] text-(--text-tertiary) py-6">
-            No agents match.
+          <li className="col-span-1 sm:col-span-2 text-center text-[12px] text-(--text-tertiary) py-6 flex flex-col items-center gap-3">
+            <span>
+              {search.trim()
+                ? "No agents match."
+                : "Catalog hasn't loaded yet — this can happen on first launch while the runtime finishes installing."}
+            </span>
+            {!search.trim() && (
+              <Button size="sm" variant="ghost" onClick={onRetry}>
+                Retry
+              </Button>
+            )}
           </li>
         )}
         {!loading &&
