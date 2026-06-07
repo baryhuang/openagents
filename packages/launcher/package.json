@@ -151,10 +151,7 @@
         }
       ],
       "icon": "assets/icon.png",
-      "category": "Development",
-      "desktop": {
-        "StartupNotify": "true"
-      }
+      "category": "Development"
     },
     "publish": {
       "provider": "github",
