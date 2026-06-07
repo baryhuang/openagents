@@ -101,6 +101,16 @@ function canExecuteNodeBinary(binaryPath: string): boolean {
 
 app.setName("OpenAgents Launcher")
 
+// Stop macOS from popping the "<App> wants to use the keychain Safe Storage"
+// password prompt. That entry is Chromium's OSCrypt key (shared with Electron's
+// safeStorage) used to encrypt cookies/local storage; its keychain ACL is bound
+// to the app's code signature, so every unsigned dev run / Electron upgrade
+// re-triggers the prompt. We don't keep anything security-critical in Chromium
+// storage, so route OSCrypt to an in-memory mock keychain — no prompt, no real
+// keychain access. (Our own credential secrets are encrypted separately; see
+// CredentialsStore.)
+app.commandLine.appendSwitch("use-mock-keychain")
+
 const isHeadless = process.argv.includes("--headless")
 if (process.argv.includes("--disable-gpu") || isHeadless) {
   app.disableHardwareAcceleration()
@@ -1501,6 +1511,29 @@ function setupIPC(): void {
   ipcMain.handle("workspace:create", (_e, name) =>
     requireManager().createWorkspace(name),
   )
+
+  // ── Onboarding ──
+  // Runnable-only picker + atomic, verified provisioning. See agent-manager.ts.
+  ipcMain.handle("onboarding:agents", async () => {
+    if (!agentManager) return []
+    try {
+      return await agentManager.getOnboardingAgents()
+    } catch (err: unknown) {
+      slog(`onboarding:agents failed: ${(err as Error)?.message || err}`)
+      return []
+    }
+  })
+  ipcMain.handle("onboarding:provision", (_e, opts) =>
+    requireManager().provisionFirstAgent(opts),
+  )
+  // Renderer consumes the post-upgrade reset flag (set by the startup
+  // migration) to clear its onboarding localStorage and re-open the flow.
+  // Read-and-clear so it only fires once.
+  ipcMain.handle("onboarding:consume-reset", () => {
+    const pending = !!store.get("pendingOnboardingReset")
+    if (pending) store.delete("pendingOnboardingReset")
+    return pending
+  })
   ipcMain.handle("workspace:register-from-token", (_e, input) =>
     requireManager().registerWorkspaceFromToken(input),
   )
@@ -1975,6 +2008,41 @@ app.whenReady().then(async () => {
 
   setupIPC()
   createTray()
+
+  // ── One-time upgrade migration ──
+  // A big version bump can leave DERIVED caches stale enough to misbehave, so
+  // on the first launch after an upgrade we clear (1) the agent catalog cache
+  // and (2) the downloaded core (ensureCoreLibrary below reinstalls @latest),
+  // and flag the renderer to re-run onboarding. USER DATA is never touched —
+  // API keys (~/.openagents/env), agents (daemon.yaml), workspaces, chat
+  // history and credentials all survive. A fresh install (no prior recorded
+  // version) skips cleanup and just records the current version.
+  try {
+    const currentVersion = getLauncherVersion()
+    const prevVersion = store.get("lastMigratedVersion") as string | undefined
+    if (prevVersion && prevVersion !== currentVersion) {
+      slog(
+        `Upgrade ${prevVersion} → ${currentVersion}: clearing derived caches`,
+      )
+      try {
+        fs.rmSync(
+          path.join(os.homedir(), ".openagents", "agent_catalog.json"),
+          { force: true },
+        )
+      } catch {}
+      try {
+        fs.rmSync(
+          path.join(GLOBAL_MODULES, "@openagents-org", "agent-launcher"),
+          { recursive: true, force: true },
+        )
+      } catch {}
+      store.set("pendingOnboardingReset", true)
+    }
+    if (prevVersion !== currentVersion)
+      store.set("lastMigratedVersion", currentVersion)
+  } catch (e) {
+    slog(`upgrade migration failed: ${(e as Error).message}`)
+  }
 
   // Detect a working bundled node, not just file presence. A previous
   // download interrupted by ECONNRESET leaves a corrupt node.exe at the

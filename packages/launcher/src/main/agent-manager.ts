@@ -38,6 +38,278 @@ interface LauncherSettingsStore {
   get(key?: string): unknown
 }
 
+/**
+ * A fully-resolved agent for the onboarding picker. Unlike a raw CatalogEntry
+ * this is guaranteed to be runnable by the loaded core, and its auth mode is
+ * resolved authoritatively (so an agent that needs a key/login is never
+ * mislabelled as "no configuration needed").
+ */
+export interface OnboardingAgent {
+  name: string
+  label: string
+  description: string
+  featured: boolean
+  order: number
+  installed: boolean
+  authMode: "env" | "login" | "none"
+  loginCommand: string | null
+  envFields: Array<Record<string, unknown>>
+  docsUrl: string | null
+  notReadyMessage: string | null
+}
+
+/**
+ * Launcher-side auth overrides for agents that authenticate with an API key /
+ * base URL. These agents ship in the shared registry with an interactive
+ * terminal login (`claude login`, `gemini`, `codex login`), but the launcher
+ * prefers to collect the key/base-URL directly in onboarding and inject it into
+ * the agent's env — no external terminal. We apply this purely in launcher code
+ * so the bundled registry.json (and its source SDK YAML) stays untouched.
+ *
+ * When an entry exists for an agent we: use these fields as the onboarding
+ * inputs, force "env" auth mode, and drop the login command so the terminal
+ * path never appears.
+ */
+const LAUNCHER_AUTH_OVERRIDES: Record<
+  string,
+  Array<Record<string, unknown>>
+> = {
+  claude: [
+    {
+      name: "ANTHROPIC_API_KEY",
+      description: "Anthropic API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "ANTHROPIC_BASE_URL",
+      description: "Anthropic-compatible base URL (optional — for proxies or relays)",
+      required: false,
+    },
+  ],
+  gemini: [
+    {
+      name: "GEMINI_API_KEY",
+      description: "Google AI Studio API key — get one at https://aistudio.google.com/apikey",
+      required: true,
+      password: true,
+    },
+    {
+      name: "GOOGLE_GEMINI_BASE_URL",
+      description: "Gemini-compatible base URL (optional — for proxies or custom gateways)",
+      required: false,
+    },
+  ],
+  codex: [
+    {
+      name: "OPENAI_API_KEY",
+      description: "OpenAI API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "OPENAI_BASE_URL",
+      description: "OpenAI-compatible base URL (optional)",
+      required: false,
+    },
+  ],
+}
+
+type LLMTestResult = {
+  success: boolean
+  model?: string
+  response?: string
+  error?: string
+}
+
+function httpRequestJson(
+  urlStr: string,
+  method: string,
+  headers: Record<string, string>,
+  body: string | null,
+  timeoutMs = 15000,
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL
+    try {
+      parsed = new URL(urlStr)
+    } catch {
+      reject(new Error(`Invalid URL: ${urlStr}`))
+      return
+    }
+    const transport =
+      parsed.protocol === "http:" ? (require("http") as typeof https) : https
+    const req = transport.request(
+      urlStr,
+      { method, headers, timeout: timeoutMs },
+      (res) => {
+        let data = ""
+        res.setEncoding("utf8")
+        res.on("data", (c) => {
+          data += c
+        })
+        res.on("end", () => resolve({ status: res.statusCode || 0, text: data }))
+      },
+    )
+    req.on("error", (e) => reject(e))
+    req.on("timeout", () => {
+      req.destroy()
+      reject(new Error("Request timed out"))
+    })
+    if (body) req.write(body)
+    req.end()
+  })
+}
+
+/**
+ * Test an agent's LLM credentials directly from the launcher's main process,
+ * independent of the installed core's version (the core's own testLLM is older
+ * and only knows the OpenAI-compatible path, so Claude/Gemini keys fail there).
+ * We route by which key/base-URL the env carries so the "Test connection"
+ * button works for any key-based agent: Anthropic (Claude), Google Gemini, and
+ * any OpenAI-compatible endpoint (OpenAI/Codex, Kimi/Moonshot, OpenClaw,
+ * OpenCode, custom gateways). Agents that authenticate through a hosted service
+ * with no probe-able endpoint (e.g. Cursor) get an honest message instead of a
+ * misleading request.
+ */
+async function testLLMConnection(
+  env: Record<string, string>,
+): Promise<LLMTestResult> {
+  const pick = (...names: string[]): string => {
+    for (const n of names) {
+      const v = (env[n] || "").trim()
+      if (v) return v
+    }
+    return ""
+  }
+  const trimSlash = (u: string): string => u.replace(/\/+$/, "")
+
+  try {
+    // ── Google Gemini ──
+    const geminiKey = pick("GEMINI_API_KEY", "GOOGLE_API_KEY")
+    if (geminiKey) {
+      const base = trimSlash(
+        pick("GOOGLE_GEMINI_BASE_URL") ||
+          "https://generativelanguage.googleapis.com",
+      )
+      const model =
+        pick("GEMINI_MODEL", "GOOGLE_GEMINI_MODEL") || "gemini-2.0-flash"
+      const { status, text } = await httpRequestJson(
+        `${base}/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`,
+        "POST",
+        { "content-type": "application/json" },
+        JSON.stringify({
+          contents: [{ parts: [{ text: "Say hi in 5 words." }] }],
+        }),
+      )
+      if (status >= 400)
+        return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+      let reply = ""
+      try {
+        reply =
+          JSON.parse(text)?.candidates?.[0]?.content?.parts?.[0]?.text || ""
+      } catch {}
+      return { success: true, model, response: reply.slice(0, 80) }
+    }
+
+    const anthropicKey = pick("ANTHROPIC_API_KEY")
+    const openaiKey = pick(
+      "OPENAI_API_KEY",
+      "LLM_API_KEY",
+      "KIMI_API_KEY",
+      "MOONSHOT_API_KEY",
+      "OPENROUTER_API_KEY",
+    )
+
+    // ── Cursor: hosted login, no public key endpoint to probe ──
+    if (pick("CURSOR_API_KEY") && !anthropicKey && !openaiKey) {
+      return {
+        success: false,
+        error:
+          "Cursor signs in through its own service — there's no key endpoint to test here. Save the key and launch the agent to verify.",
+      }
+    }
+
+    // ── Anthropic (Claude) ──
+    if (anthropicKey && !openaiKey) {
+      const base = trimSlash(
+        pick("ANTHROPIC_BASE_URL") || "https://api.anthropic.com",
+      ).replace(/\/v1$/, "")
+      const model = pick("ANTHROPIC_MODEL") || "claude-3-5-haiku-latest"
+      const { status, text } = await httpRequestJson(
+        `${base}/v1/messages`,
+        "POST",
+        {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        JSON.stringify({
+          model,
+          max_tokens: 16,
+          messages: [{ role: "user", content: "Say hi in 5 words." }],
+        }),
+      )
+      if (status >= 400)
+        return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+      let reply = "",
+        used = model
+      try {
+        const p = JSON.parse(text)
+        reply = p?.content?.[0]?.text || ""
+        used = p?.model || model
+      } catch {}
+      return { success: true, model: used, response: reply.slice(0, 80) }
+    }
+
+    // ── OpenAI-compatible (OpenAI/Codex, Kimi/Moonshot, OpenClaw, OpenCode) ──
+    const apiKey = openaiKey || anthropicKey
+    if (!apiKey) {
+      return {
+        success: false,
+        error:
+          "No API key to test for this agent. Enter a key above — or this agent may authenticate a different way (e.g. a hosted login).",
+      }
+    }
+    const hasKimi = !!pick(
+      "KIMI_API_KEY",
+      "MOONSHOT_API_KEY",
+      "KIMI_BASE_URL",
+      "KIMI_MODEL",
+    )
+    let base = trimSlash(
+      pick("OPENAI_BASE_URL", "LLM_BASE_URL", "KIMI_BASE_URL") ||
+        (hasKimi ? "https://api.moonshot.ai/v1" : "https://api.openai.com/v1"),
+    )
+    if (!/\/v\d+$/.test(base)) base += "/v1"
+    const model =
+      pick("OPENAI_MODEL", "LLM_MODEL", "KIMI_MODEL", "OPENCLAW_MODEL") ||
+      (hasKimi ? "kimi-k2.6" : "gpt-4o-mini")
+    const { status, text } = await httpRequestJson(
+      `${base}/chat/completions`,
+      "POST",
+      { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      JSON.stringify({
+        model,
+        max_tokens: 16,
+        messages: [{ role: "user", content: "Say hi in 5 words." }],
+      }),
+    )
+    if (status >= 400)
+      return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+    let reply = "",
+      used = model
+    try {
+      const p = JSON.parse(text)
+      reply = p?.choices?.[0]?.message?.content || ""
+      used = p?.model || model
+    } catch {}
+    return { success: true, model: used, response: reply.slice(0, 80) }
+  } catch (e) {
+    return { success: false, error: (e as Error)?.message || "Request failed" }
+  }
+}
+
 function normalizeWorkspaceEndpoint(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
   const raw = value.trim()
@@ -796,6 +1068,17 @@ export class AgentManager extends EventEmitter {
   }
 
   async getEnvFields(agentType: string): Promise<unknown[]> {
+    // Launcher-side override is authoritative. Agents like claude/gemini ship
+    // in the shared registry with an EMPTY env_config (they default to a
+    // terminal login), but the launcher authenticates them with an API key /
+    // base URL entered in-app. Returning the override fields here makes those
+    // inputs appear everywhere env is edited — onboarding AND the Install
+    // detail page — and stay editable after the agent is configured (otherwise
+    // the detail page hides the setup wizard once an instance exists yet has no
+    // inline fields to show, leaving no way to change the key/base URL).
+    const override = LAUNCHER_AUTH_OVERRIDES[agentType]
+    if (override) return override
+
     // Mirror getCatalog's bundled fallback: when the agent-launcher core
     // hasn't installed yet, _ensureConnector throws ("Core library not
     // installed"). Without a fallback that rejection bubbles up to the
@@ -882,11 +1165,13 @@ export class AgentManager extends EventEmitter {
     return { success: true }
   }
 
-  async testLLM(env: Record<string, string>): Promise<unknown> {
-    const testLLM = this._connector!.testLLM as (
-      env: unknown,
-    ) => Promise<unknown>
-    return testLLM.call(this._connector, env)
+  async testLLM(env: Record<string, string>): Promise<LLMTestResult> {
+    // Run the test in-launcher rather than delegating to the installed core's
+    // testLLM: the core that ships on a user's machine is often older and only
+    // probes the OpenAI-compatible path, so Claude/Gemini keys come back as
+    // "No API key provided". testLLMConnection covers every provider and works
+    // even before the core is installed.
+    return testLLMConnection(env)
   }
 
   signalReload(): void {
@@ -1083,6 +1368,222 @@ export class AgentManager extends EventEmitter {
     const result = await removeWorkspace.call(this._connector, slug)
     this.signalReload()
     return result
+  }
+
+  // ─── Onboarding ───────────────────────────────────────────────
+  //
+  // The onboarding flow used to drive provisioning from the renderer with three
+  // separate IPC calls (createWorkspace → addAgent → connectWorkspace) and
+  // swallowed errors. That was the source of the "Agent 'x-1' not found" toast:
+  // the picker offered agents the loaded core couldn't run, addAgent threw
+  // "not supported", the renderer ate the error, and the follow-up bind failed
+  // because the agent was never persisted. The two methods below replace that
+  // with a runnable-only picker and a single atomic, verified provisioning step.
+
+  /**
+   * Agents to offer in onboarding. Returns ONLY types the loaded core can
+   * actually run (intersection with ADAPTER_MAP) and resolves each agent's auth
+   * requirements from the bundled registry first (authoritative), then the live
+   * catalog. Returns [] when the core hasn't finished installing yet so the
+   * renderer keeps polling instead of rendering a wrong empty/again state.
+   */
+  async getOnboardingAgents(): Promise<OnboardingAgent[]> {
+    const supported = this.getSupportedAgentTypes()
+    if (supported.length === 0) return []
+
+    let catalog: Array<Record<string, unknown>> = []
+    try {
+      catalog = (await this.getCatalog(false)) as Array<Record<string, unknown>>
+    } catch {
+      // Marketplace metadata is optional — we can still build from the bundle.
+    }
+    const catalogByName = new Map(
+      catalog.map((c) => [c.name as string, c] as const),
+    )
+    const bundled = Array.isArray(BUNDLED_REGISTRY)
+      ? (BUNDLED_REGISTRY as Array<Record<string, unknown>>)
+      : []
+    const bundledByName = new Map(
+      bundled.map((b) => [b.name as string, b] as const),
+    )
+
+    const result: OnboardingAgent[] = supported.map((type) => {
+      const cat = catalogByName.get(type)
+      const reg = bundledByName.get(type)
+      const regEnv = (reg?.env_config as Array<Record<string, unknown>>) || []
+      const catEnv = (cat?.env_config as Array<Record<string, unknown>>) || []
+      const checkReady = (reg?.check_ready ||
+        cat?.check_ready ||
+        {}) as {
+        login_command?: string
+        not_ready_message?: string
+        prefer_login?: boolean
+      }
+      // Launcher-side override: agents that should authenticate with a
+      // key/base-URL entered in onboarding rather than an external terminal
+      // login. Forces "env" mode and hides the login command, without touching
+      // the shared registry. See LAUNCHER_AUTH_OVERRIDES.
+      const override = LAUNCHER_AUTH_OVERRIDES[type]
+      const envFields = override || (regEnv.length > 0 ? regEnv : catEnv)
+      const loginCommand = override ? null : checkReady.login_command || null
+      // `prefer_login` keeps an agent on the CLI-login path as PRIMARY even when
+      // it also exposes (optional) env fields. Without it, any env field would
+      // force "env" mode.
+      const preferLogin = !!checkReady.prefer_login && !!loginCommand
+      const authMode: OnboardingAgent["authMode"] = preferLogin
+        ? "login"
+        : envFields.length > 0
+          ? "env"
+          : loginCommand
+            ? "login"
+            : "none"
+      return {
+        name: type,
+        label:
+          (cat?.label as string) || (reg?.label as string) || type,
+        description:
+          (cat?.description as string) ||
+          (reg?.description as string) ||
+          "",
+        featured: !!(cat?.featured ?? reg?.featured),
+        order: (cat?.order as number) ?? (reg?.order as number) ?? 99,
+        installed: !!cat?.installed,
+        authMode,
+        loginCommand,
+        envFields,
+        docsUrl:
+          (cat?.homepage as string) ||
+          (cat?.docs as string) ||
+          (reg?.homepage as string) ||
+          null,
+        notReadyMessage: checkReady.not_ready_message || null,
+      }
+    })
+
+    result.sort((a, b) => {
+      if ((b.featured ? 1 : 0) !== (a.featured ? 1 : 0))
+        return (b.featured ? 1 : 0) - (a.featured ? 1 : 0)
+      return a.order - b.order
+    })
+    return result
+  }
+
+  /**
+   * Atomically provision the onboarding agent and (optionally) a workspace.
+   * Ordering and verification live here in the main process so failures surface
+   * as precise errors instead of a misleading "not found" downstream:
+   *   1. validate the type is runnable
+   *   2. ensure the agent instance exists in daemon.yaml (idempotent) + verify
+   *   3. if a workspace name is given, create it, persist the network locally,
+   *      and bind the agent by SLUG. This step is best-effort: the agent is
+   *      already usable, so a workspace-service failure returns a warning
+   *      rather than aborting onboarding.
+   */
+  async provisionFirstAgent(opts: {
+    agentType: string
+    agentName: string
+    workspaceName?: string | null
+  }): Promise<{
+    agentName: string
+    workspaceSlug: string | null
+    workspaceName: string | null
+    warning: string | null
+  }> {
+    this._ensureConnector()
+    const type = (opts.agentType || "").trim()
+    const name = (opts.agentName || "").trim()
+    if (!type) throw new Error("No agent type was selected")
+    if (!name) throw new Error("Missing agent name")
+
+    const supported = this.getSupportedAgentTypes()
+    if (supported.length > 0 && !supported.includes(type)) {
+      throw new Error(
+        `Agent type '${type}' isn't supported by the installed runtime. ` +
+          `Update the Launcher and try again.`,
+      )
+    }
+
+    // 1 + 2. Ensure the agent exists, idempotently, then verify it persisted.
+    const listAgents = this._connector!.listAgents as () => Array<{
+      name: string
+    }>
+    const agentExists = (): boolean =>
+      (listAgents.call(this._connector) || []).some((a) => a.name === name)
+
+    if (!agentExists()) {
+      const addAgent = this._connector!.addAgent as (o: unknown) => void
+      addAgent.call(this._connector, { name, type, role: "worker" })
+      this._agentsCache = { value: [], at: 0 }
+    }
+    if (!agentExists()) {
+      throw new Error(
+        `Failed to register agent '${name}' — the runtime did not persist it.`,
+      )
+    }
+
+    // 3. Optional workspace — best-effort.
+    const wsName = (opts.workspaceName || "").trim()
+    if (!wsName) {
+      this.signalReload()
+      return {
+        agentName: name,
+        workspaceSlug: null,
+        workspaceName: null,
+        warning: null,
+      }
+    }
+
+    try {
+      const createWorkspace = this._connector!.createWorkspace as (
+        o: unknown,
+      ) => Promise<{
+        slug?: string
+        token?: string
+        id?: string
+        name?: string
+        endpoint?: string
+      }>
+      const ws = await createWorkspace.call(this._connector, { name: wsName })
+      const slug = ws?.slug
+      if (!slug) throw new Error("workspace service returned no slug")
+
+      // Persist the network locally so the Workspaces tab is populated and the
+      // agent can resolve it without another round-trip.
+      const config = this._connector!.config as Record<string, unknown>
+      const addNetwork = config.addNetwork as (o: unknown) => void
+      addNetwork.call(config, {
+        id: ws.id,
+        slug,
+        name: ws.name || wsName,
+        endpoint: ws.endpoint || this.configuredWorkspaceEndpoint(),
+        token: ws.token,
+      })
+
+      // Bind by slug (NOT token). The agent is verified above, so the core's
+      // setAgentNetwork lookup-by-name can't miss.
+      const connect = this._connector!.connectWorkspace as (
+        n: string,
+        s: string,
+      ) => void
+      connect.call(this._connector, name, slug)
+      this.signalReload()
+      return {
+        agentName: name,
+        workspaceSlug: slug,
+        workspaceName: ws.name || wsName,
+        warning: null,
+      }
+    } catch (e) {
+      this.signalReload()
+      return {
+        agentName: name,
+        workspaceSlug: null,
+        workspaceName: null,
+        warning: `Agent is ready, but workspace setup failed: ${
+          (e as Error).message
+        }. You can create one later from the Workspaces tab.`,
+      }
+    }
   }
 
   async checkAgentType(agentType: string): Promise<unknown> {

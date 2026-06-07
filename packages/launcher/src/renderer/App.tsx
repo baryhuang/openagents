@@ -37,6 +37,18 @@ export default function App(): React.JSX.Element {
     initTheme()
     void initNotifications()
     setOnboardingOpen(shouldShowOnboarding())
+    // After an upgrade the main process flags a one-time onboarding reset.
+    // Clear the saved onboarding state and re-open the flow so returning users
+    // walk through the new key-based configuration steps.
+    void window.api.consumeOnboardingReset().then((reset) => {
+      if (!reset) return
+      try {
+        localStorage.removeItem("onboarding_completed")
+        localStorage.removeItem("onboarding_step")
+        localStorage.removeItem("last_selected_agent")
+      } catch {}
+      setOnboardingOpen(true)
+    })
   }, [initTheme, initNotifications])
 
   // Global install:progress + install:output subscription

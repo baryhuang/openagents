@@ -11,13 +11,14 @@ import {
   Rocket,
   Cpu,
   Search,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "../ui/Button"
 import { Input } from "../ui/Input"
 import { PasswordInput } from "../ui/PasswordInput"
 import AgentIcon from "../AgentIcon"
 import { useAgentsStore } from "../../store/agents"
-import type { CatalogEntry, EnvField } from "../../types"
+import type { OnboardingAgent, EnvField } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 import { cn } from "../../lib/utils"
 import { capture } from "../../lib/analytics"
@@ -28,32 +29,14 @@ const SELECTED_AGENT_KEY = "last_selected_agent"
 
 type Step = 0 | 1 | 2 | 3 | 4
 
-type AuthMode = "env" | "login" | "none"
+const isWindows =
+  typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent)
 
-interface AgentConfigState {
-  loading: boolean
-  fields: EnvField[]
-  values: Record<string, string>
-  mode: AuthMode
-  loginCmd: string | null
-  loggedIn: boolean
-  docsUrl: string | null
-}
-
-const initialConfig: AgentConfigState = {
-  loading: false,
-  fields: [],
-  values: {},
-  mode: "none",
-  loginCmd: null,
-  loggedIn: false,
-  docsUrl: null,
-}
-
-function hasMissingRequired(config: AgentConfigState): boolean {
-  return config.fields.some(
-    (f) => f.required && !(config.values[f.name] || "").trim(),
-  )
+function hasMissingRequired(
+  fields: EnvField[],
+  values: Record<string, string>,
+): boolean {
+  return fields.some((f) => f.required && !(values[f.name] || "").trim())
 }
 
 export function OnboardingFlow({
@@ -74,8 +57,8 @@ export function OnboardingFlow({
       return 0
     }
   })
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([])
-  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [agents, setAgents] = useState<OnboardingAgent[]>([])
+  const [agentsLoading, setAgentsLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [selectedAgent, setSelectedAgent] = useState<string>(() => {
     try {
@@ -85,18 +68,32 @@ export function OnboardingFlow({
     }
   })
   const [installing, setInstalling] = useState(false)
-  const [config, setConfig] = useState<AgentConfigState>(initialConfig)
+
+  // Step 2 (configure) state.
+  const [envValues, setEnvValues] = useState<Record<string, string>>({})
+  const [loggedIn, setLoggedIn] = useState(false)
+  const [checkingLogin, setCheckingLogin] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<
     null | { ok: boolean; detail?: string }
   >(null)
   const [saving, setSaving] = useState(false)
+
+  // Step 3 (workspace) + provisioning.
   const [workspaceName, setWorkspaceName] = useState("My Workspace")
-  const [creating, setCreating] = useState(false)
+  const [provisioning, setProvisioning] = useState(false)
+
+  // Step 4 (launch).
   const [launching, setLaunching] = useState(false)
   const [launchResult, setLaunchResult] = useState<
     null | { ok: boolean; detail?: string }
   >(null)
+
+  const selectedEntry = useMemo(
+    () => agents.find((a) => a.name === selectedAgent) || null,
+    [agents, selectedAgent],
+  )
+  const finishedAgentName = useMemo(() => `${selectedAgent}-1`, [selectedAgent])
 
   useEffect(() => {
     try {
@@ -112,37 +109,33 @@ export function OnboardingFlow({
     }
   }, [selectedAgent])
 
-  const loadCatalog = useCallback(
-    async (force = false): Promise<CatalogEntry[]> => {
-      setCatalogLoading(true)
-      try {
-        const c = await window.api.getCatalog(force)
-        setCatalog(c)
-        return c
-      } catch {
-        return []
-      } finally {
-        setCatalogLoading(false)
-      }
-    },
-    [],
-  )
+  const loadAgents = useCallback(async (): Promise<OnboardingAgent[]> => {
+    setAgentsLoading(true)
+    try {
+      const list = await window.api.getOnboardingAgents()
+      setAgents(list)
+      return list
+    } catch {
+      return []
+    } finally {
+      setAgentsLoading(false)
+    }
+  }, [])
 
-  // The launcher's main process can return an empty catalog while the
-  // agent-launcher core is still downloading on first launch (especially
-  // common on Windows where antivirus heuristics slow the npm fetch). Poll a
-  // few times with force=true until something shows up, so the picker
-  // doesn't strand the user on a "No agents match" empty state.
+  // getOnboardingAgents returns [] until the agent-launcher core finishes
+  // installing (common on first launch / slow Windows AV). Poll until the
+  // runnable set appears so the picker never strands the user on an empty
+  // state. Only runnable agents are returned, so whatever shows up is safe to
+  // pick — no more "Agent not found" from choosing an unsupported runtime.
   useEffect(() => {
-    if (!open) return
-    if (step !== 1) return
+    if (!open || step !== 1) return
     let cancelled = false
     let attempt = 0
     const run = async (): Promise<void> => {
-      while (!cancelled && attempt < 6) {
-        const c = await loadCatalog(attempt > 0)
+      while (!cancelled && attempt < 10) {
+        const list = await loadAgents()
         if (cancelled) return
-        if (c.length > 0) return
+        if (list.length > 0) return
         attempt += 1
         await new Promise((r) => setTimeout(r, 1500))
       }
@@ -151,89 +144,38 @@ export function OnboardingFlow({
     return () => {
       cancelled = true
     }
-  }, [open, step, loadCatalog])
+  }, [open, step, loadAgents])
 
-  // Load the selected agent's env_config + check_ready when entering Step 2.
-  // Different agents need different fields (Kimi needs API_KEY + BASE_URL +
-  // MODEL; Claude only needs CLI login; Codex needs API_KEY + BASE_URL), so
-  // we rely on the agent's own manifest rather than a hard-coded provider list.
-  //
-  // Note: this is first-time onboarding, so we do NOT echo any previously
-  // saved values back into the form — the user fills it themselves. The
-  // registry's `default` is the only seed (e.g. base URL defaults), and
-  // password fields always start empty.
+  // Initialise the configure step from the selected agent's resolved auth info.
+  // No network round-trips for the field list — the picker already carries the
+  // authoritative env fields / login command, so an agent that needs auth is
+  // never silently shown as "no configuration needed".
   useEffect(() => {
-    if (!open) return
-    if (step !== 2) return
-    if (!selectedAgent) return
+    if (!open || step !== 2 || !selectedEntry) return
     let cancelled = false
-    setConfig({ ...initialConfig, loading: true })
     setTestResult(null)
-    Promise.all([
-      window.api.getEnvFields(selectedAgent),
-      window.api.getCatalog(),
-    ])
-      .then(([fields, cat]) => {
-        if (cancelled) return
-        const entry = cat.find((c) => c.name === selectedAgent)
-        const docsUrl = entry?.homepage || entry?.docs || null
-        const loginCmd = entry?.check_ready?.login_command || null
-        if (fields && fields.length > 0) {
-          const initialValues: Record<string, string> = {}
-          for (const f of fields) {
-            // Password fields (API keys) always start empty so the user
-            // explicitly enters them. Non-password fields seed from the
-            // registry's default (e.g. base URL like https://api.moonshot.ai/v1).
-            initialValues[f.name] = f.password ? "" : f.default || ""
-          }
-          setConfig({
-            loading: false,
-            fields,
-            values: initialValues,
-            mode: "env",
-            loginCmd,
-            loggedIn: false,
-            docsUrl,
-          })
-        } else if (loginCmd) {
-          setConfig({
-            loading: false,
-            fields: [],
-            values: {},
-            mode: "login",
-            loginCmd,
-            loggedIn: false,
-            docsUrl,
-          })
-          window.api
-            .healthCheck(selectedAgent)
-            .then((h) => {
-              if (cancelled) return
-              setConfig((prev) => ({ ...prev, loggedIn: !!h?.ready }))
-            })
-            .catch(() => {})
-        } else {
-          setConfig({
-            loading: false,
-            fields: [],
-            values: {},
-            mode: "none",
-            loginCmd: null,
-            loggedIn: true,
-            docsUrl,
-          })
-        }
-      })
-      .catch(() => {
-        if (cancelled) return
-        setConfig({ ...initialConfig, loading: false })
-      })
+    const seed: Record<string, string> = {}
+    for (const f of selectedEntry.envFields) {
+      seed[f.name] = f.password ? "" : f.default || ""
+    }
+    setEnvValues(seed)
+    setLoggedIn(false)
+    if (selectedEntry.authMode === "login") {
+      setCheckingLogin(true)
+      window.api
+        .healthCheck(selectedEntry.name)
+        .then((h) => {
+          if (!cancelled) setLoggedIn(!!h?.ready)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setCheckingLogin(false)
+        })
+    }
     return () => {
       cancelled = true
     }
-  }, [open, step, selectedAgent])
-
-  const finishedAgentName = useMemo(() => `${selectedAgent}-1`, [selectedAgent])
+  }, [open, step, selectedEntry])
 
   const close = useCallback(
     (markComplete = false) => {
@@ -249,33 +191,51 @@ export function OnboardingFlow({
     [onClose],
   )
 
-  const goNext = (): void => setStep((s) => (Math.min(s + 1, 4) as Step))
-  const goBack = (): void => setStep((s) => (Math.max(s - 1, 0) as Step))
+  const goNext = (): void => setStep((s) => Math.min(s + 1, 4) as Step)
+  const goBack = (): void => setStep((s) => Math.max(s - 1, 0) as Step)
 
-  const updateConfigValue = (name: string, value: string): void => {
-    setConfig((prev) => ({ ...prev, values: { ...prev.values, [name]: value } }))
+  const updateEnvValue = (name: string, value: string): void => {
+    setEnvValues((prev) => ({ ...prev, [name]: value }))
     setTestResult(null)
   }
 
+  const installSelectedAgent = async (): Promise<void> => {
+    if (!selectedEntry) return
+    if (selectedEntry.installed) {
+      goNext()
+      return
+    }
+    setInstalling(true)
+    try {
+      await window.api.installAgentTypeStreaming(selectedEntry.name)
+      await loadAgents()
+      goNext()
+    } catch (e) {
+      showToast((e as Error).message, "error")
+    } finally {
+      setInstalling(false)
+    }
+  }
+
   const testEnvConnection = async (): Promise<void> => {
-    if (config.fields.length === 0) return
-    if (hasMissingRequired(config)) {
+    if (!selectedEntry || selectedEntry.envFields.length === 0) return
+    if (hasMissingRequired(selectedEntry.envFields, envValues)) {
       showToast("Fill in the required fields first", "warning")
       return
     }
     setTesting(true)
     setTestResult(null)
     try {
-      const r = await window.api.testLLM(config.values)
+      const r = await window.api.testLLM(envValues)
       capture("llm_test_run", { success: r.success, model: r.model || null })
-      if (r.success) {
-        setTestResult({
-          ok: true,
-          detail: r.model ? `${r.model} responded` : "Connection looks good",
-        })
-      } else {
-        setTestResult({ ok: false, detail: r.error || "Test failed" })
-      }
+      setTestResult(
+        r.success
+          ? {
+              ok: true,
+              detail: r.model ? `${r.model} responded` : "Connection looks good",
+            }
+          : { ok: false, detail: r.error || "Test failed" },
+      )
     } catch (e) {
       setTestResult({ ok: false, detail: (e as Error).message })
     } finally {
@@ -284,114 +244,91 @@ export function OnboardingFlow({
   }
 
   const openLoginTerminal = async (): Promise<void> => {
-    if (!config.loginCmd) return
+    if (!selectedEntry?.loginCommand) return
     try {
-      await window.api.openTerminal(config.loginCmd)
+      await window.api.openTerminal(selectedEntry.loginCommand)
       showToast("Login terminal opened. Complete login there.", "success")
-      // Re-check health a few times after the terminal opens so the UI updates
-      // once the user finishes the CLI login.
-      for (let i = 0; i < 8; i++) {
+      setCheckingLogin(true)
+      for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 2000))
         try {
-          const h = await window.api.healthCheck(selectedAgent)
+          const h = await window.api.healthCheck(selectedEntry.name)
           if (h?.ready) {
-            setConfig((prev) => ({ ...prev, loggedIn: true }))
+            setLoggedIn(true)
+            setCheckingLogin(false)
             return
           }
         } catch {}
       }
+      setCheckingLogin(false)
     } catch (e) {
+      setCheckingLogin(false)
       showToast((e as Error).message, "error")
     }
   }
 
   const saveConfigAndContinue = async (): Promise<void> => {
-    if (config.mode === "env") {
-      if (hasMissingRequired(config)) {
+    if (!selectedEntry) return
+    if (selectedEntry.authMode === "env" || selectedEntry.envFields.length > 0) {
+      if (hasMissingRequired(selectedEntry.envFields, envValues)) {
         showToast("Fill in the required fields first", "warning")
         return
       }
-      setSaving(true)
-      try {
-        await window.api.saveAgentEnv(selectedAgent, config.values)
-        goNext()
-      } catch (e) {
-        showToast((e as Error).message, "error")
-      } finally {
+      // Only persist when the user actually entered something — codex et al.
+      // have optional env and may rely on CLI login instead.
+      const nonEmpty = Object.values(envValues).some((v) => (v || "").trim())
+      if (nonEmpty) {
+        setSaving(true)
+        try {
+          await window.api.saveAgentEnv(selectedEntry.name, envValues)
+        } catch (e) {
+          showToast((e as Error).message, "error")
+          setSaving(false)
+          return
+        }
         setSaving(false)
       }
+      goNext()
       return
     }
-    // login mode → require the CLI login to have succeeded before advancing.
-    if (config.mode === "login" && !config.loggedIn) {
-      showToast("Complete the CLI login before continuing", "warning")
-      return
-    }
+    // login / none modes: never block. If the agent isn't actually authed yet,
+    // the Launch step's real health check will surface it.
     goNext()
   }
 
-  const createWorkspaceAndContinue = async (): Promise<void> => {
+  // Atomic provisioning: register the agent (verified) and optionally create +
+  // bind a workspace, all in one main-process call. Replaces the old fragile
+  // create→add→connect sequence that swallowed errors and produced the
+  // "Agent 'x-1' not found" toast.
+  const provisionAndContinue = async (includeWorkspace: boolean): Promise<void> => {
+    if (!selectedEntry) return
     const name = workspaceName.trim()
-    if (!name) {
-      showToast("Enter a workspace name", "warning")
+    if (includeWorkspace && !name) {
+      showToast("Enter a workspace name, or skip this step", "warning")
       return
     }
-    setCreating(true)
+    setProvisioning(true)
     try {
-      // 1. Create the workspace on workspace.openagents.org. We let errors
-      //    surface so the user knows if creation actually failed — the prior
-      //    silent-catch implementation lied about success and left the
-      //    Workspaces tab empty.
-      const ws = await window.api.createWorkspace(name)
-      capture("workspace_created", { source: "onboarding" })
-
-      // 2. Create the agent instance. addAgent throws "already exists" if
-      //    the user re-runs onboarding with the same agent name — the
-      //    renderer catches it, but Electron's IPC handler still logs the
-      //    error to the main-process console. Pre-checking via listAgents
-      //    avoids the noisy log.
-      const existingAgents = await window.api.listAgents()
-      const alreadyExists = existingAgents.some(
-        (a) => a.name === finishedAgentName,
-      )
-      if (!alreadyExists) {
-        try {
-          await window.api.addAgent({
-            name: finishedAgentName,
-            type: selectedAgent,
-          })
-        } catch {
-          // Last-resort guard for a race (another window adding the same
-          // agent between the check and the add).
-        }
+      const res = await window.api.provisionFirstAgent({
+        agentType: selectedEntry.name,
+        agentName: finishedAgentName,
+        workspaceName: includeWorkspace ? name : null,
+      })
+      if (res.workspaceName) {
+        capture("workspace_created", { source: "onboarding" })
+        showToast(`Workspace "${res.workspaceName}" created`, "success")
       }
-
-      // 3. Bind the agent to the new workspace via its join token. This is
-      //    what registers the workspace in the launcher's local network
-      //    list — without it, listWorkspaces() returns nothing and the
-      //    Workspaces tab stays empty even though the workspace exists
-      //    server-side.
-      if (ws && ws.token) {
-        try {
-          await window.api.connectWorkspace(finishedAgentName, ws.token)
-          window.api.signalReload()
-        } catch (e) {
-          showToast(
-            `Workspace created, but binding the agent failed: ${(e as Error).message}`,
-            "warning",
-          )
-        }
-      }
-
+      if (res.warning) showToast(res.warning, "warning")
+      window.api.signalReload()
       await window.api
         .listAgents()
         .then((a) => useAgentsStore.getState().setAgents(a))
-      showToast(`Workspace "${name}" created`, "success")
+        .catch(() => {})
       goNext()
     } catch (e) {
-      showToast(`Failed to create workspace: ${(e as Error).message}`, "error")
+      showToast((e as Error).message, "error")
     } finally {
-      setCreating(false)
+      setProvisioning(false)
     }
   }
 
@@ -421,45 +358,17 @@ export function OnboardingFlow({
     }
   }
 
-  const installSelectedAgent = async (): Promise<void> => {
-    if (!selectedAgent) return
-    const entry = catalog.find((c) => c.name === selectedAgent)
-    if (entry?.installed) {
-      goNext()
-      return
-    }
-    setInstalling(true)
-    try {
-      await window.api.installAgentTypeStreaming(selectedAgent)
-      const next = await window.api.getCatalog()
-      setCatalog(next)
-      goNext()
-    } catch (e) {
-      showToast((e as Error).message, "error")
-    } finally {
-      setInstalling(false)
-    }
-  }
-
   if (!open) return null
 
-  const visibleCatalog = (() => {
+  const visibleAgents = (() => {
     const q = search.trim().toLowerCase()
-    let list = catalog.slice().sort((a, b) => {
-      if ((b.featured ? 1 : 0) !== (a.featured ? 1 : 0))
-        return (b.featured ? 1 : 0) - (a.featured ? 1 : 0)
-      return (a.order ?? 99) - (b.order ?? 99)
-    })
-    if (q) {
-      list = list.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          (c.label || "").toLowerCase().includes(q) ||
-          (c.description || "").toLowerCase().includes(q) ||
-          (c.tags || []).some((t) => t.toLowerCase().includes(q)),
-      )
-    }
-    return list
+    if (!q) return agents
+    return agents.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.label || "").toLowerCase().includes(q) ||
+        (c.description || "").toLowerCase().includes(q),
+    )
   })()
 
   const renderBody = (): React.JSX.Element | null => {
@@ -469,28 +378,27 @@ export function OnboardingFlow({
       case 1:
         return (
           <AgentSelectionStep
-            catalog={visibleCatalog}
-            loading={catalogLoading}
+            agents={visibleAgents}
+            loading={agentsLoading}
             search={search}
             setSearch={setSearch}
             selected={selectedAgent}
             setSelected={setSelectedAgent}
-            onRetry={() => void loadCatalog(true)}
+            onRetry={() => void loadAgents()}
           />
         )
       case 2:
         return (
           <ApiKeyStep
-            agentLabel={
-              catalog.find((c) => c.name === selectedAgent)?.label ||
-              selectedAgent
-            }
-            config={config}
-            onChangeValue={updateConfigValue}
+            entry={selectedEntry}
+            values={envValues}
+            onChangeValue={updateEnvValue}
             onTest={testEnvConnection}
             onLogin={openLoginTerminal}
             testing={testing}
             testResult={testResult}
+            loggedIn={loggedIn}
+            checkingLogin={checkingLogin}
           />
         )
       case 3:
@@ -528,7 +436,7 @@ export function OnboardingFlow({
             <Button
               variant="primary"
               onClick={installSelectedAgent}
-              disabled={!selectedAgent || installing}
+              disabled={!selectedEntry || installing}
             >
               {installing ? (
                 <>
@@ -543,11 +451,14 @@ export function OnboardingFlow({
           </FooterShell>
         )
       case 2: {
-        const cantContinue =
-          config.loading ||
-          saving ||
-          (config.mode === "env" && hasMissingRequired(config)) ||
-          (config.mode === "login" && !config.loggedIn)
+        // Only required ENV fields gate progress. CLI login is NOT a hard gate:
+        // the login happens in an external terminal and the launcher's health
+        // check is unreliable for some agents (e.g. Gemini exposes no readiness
+        // signal), so blocking on it would strand users who are actually logged
+        // in. We show detected status, but always let them continue.
+        const needsEnv =
+          !!selectedEntry &&
+          hasMissingRequired(selectedEntry.envFields, envValues)
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
@@ -556,7 +467,7 @@ export function OnboardingFlow({
             <Button
               variant="primary"
               onClick={saveConfigAndContinue}
-              disabled={cantContinue}
+              disabled={saving || needsEnv}
             >
               {saving ? (
                 <>
@@ -577,21 +488,30 @@ export function OnboardingFlow({
             <Button variant="ghost" onClick={goBack}>
               <ChevronLeft className="w-4 h-4" /> Back
             </Button>
-            <Button
-              variant="primary"
-              onClick={createWorkspaceAndContinue}
-              disabled={creating || !workspaceName.trim()}
-            >
-              {creating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Creating…
-                </>
-              ) : (
-                <>
-                  Create <ChevronRight className="w-4 h-4" />
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => void provisionAndContinue(false)}
+                disabled={provisioning}
+              >
+                Skip for now
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void provisionAndContinue(true)}
+                disabled={provisioning || !workspaceName.trim()}
+              >
+                {provisioning ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Creating…
+                  </>
+                ) : (
+                  <>
+                    Create <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
+              </Button>
+            </div>
           </FooterShell>
         )
       case 4:
@@ -624,11 +544,7 @@ export function OnboardingFlow({
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="primary"
-                onClick={launchAgent}
-                disabled={launching}
-              >
+              <Button variant="primary" onClick={launchAgent} disabled={launching}>
                 {launching ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" /> Launching…
@@ -664,7 +580,7 @@ export function OnboardingFlow({
 // ─── Layout shells ────────────────────────────────────────────
 
 function ProgressBar({ step }: { step: Step }): React.JSX.Element {
-  const labels = ["Welcome", "Agent", "API key", "Workspace", "Launch"]
+  const labels = ["Welcome", "Agent", "Configure", "Workspace", "Launch"]
   return (
     <div className="shrink-0 px-8 pt-6 pb-4 border-b border-(--border) bg-(--bg-card)">
       <div className="flex items-center gap-3 max-w-180 mx-auto">
@@ -704,7 +620,11 @@ function ProgressBar({ step }: { step: Step }): React.JSX.Element {
   )
 }
 
-function FooterShell({ children }: { children?: React.ReactNode }): React.JSX.Element {
+function FooterShell({
+  children,
+}: {
+  children?: React.ReactNode
+}): React.JSX.Element {
   return (
     <div className="shrink-0 border-t border-(--border) bg-(--bg-card) px-8 py-4">
       <div className="max-w-180 mx-auto flex items-center justify-between gap-3">
@@ -729,12 +649,8 @@ function StepHeader({
         {icon}
       </div>
       <div className="min-w-0">
-        <h1 className="text-[22px] font-bold m-0 tracking-[-0.02em]">
-          {title}
-        </h1>
-        <p className="mt-1 m-0 text-[13px] text-(--text-secondary)">
-          {subtitle}
-        </p>
+        <h1 className="text-[22px] font-bold m-0 tracking-[-0.02em]">{title}</h1>
+        <p className="mt-1 m-0 text-[13px] text-(--text-secondary)">{subtitle}</p>
       </div>
     </div>
   )
@@ -752,10 +668,22 @@ function WelcomeStep(): React.JSX.Element {
       />
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 list-none m-0 p-0">
         {[
-          { icon: <Cpu className="w-4 h-4" />, label: "Install agents (Claude, Codex, OpenCode, Hermes…)" },
-          { icon: <KeyRound className="w-4 h-4" />, label: "Manage API keys and credentials in one encrypted store" },
-          { icon: <Layers className="w-4 h-4" />, label: "Spin up workspaces and chat with running agents" },
-          { icon: <Rocket className="w-4 h-4" />, label: "Connect to GitHub, Slack, Discord, Linear and more" },
+          {
+            icon: <Cpu className="w-4 h-4" />,
+            label: "Install agents (Claude, Codex, Gemini, Kimi…)",
+          },
+          {
+            icon: <KeyRound className="w-4 h-4" />,
+            label: "Manage API keys and credentials in one encrypted store",
+          },
+          {
+            icon: <Layers className="w-4 h-4" />,
+            label: "Spin up workspaces and chat with running agents",
+          },
+          {
+            icon: <Rocket className="w-4 h-4" />,
+            label: "Connect to GitHub, Slack, Discord, Linear and more",
+          },
         ].map((b) => (
           <li
             key={b.label}
@@ -774,7 +702,7 @@ function WelcomeStep(): React.JSX.Element {
 }
 
 function AgentSelectionStep({
-  catalog,
+  agents,
   loading,
   search,
   setSearch,
@@ -782,7 +710,7 @@ function AgentSelectionStep({
   setSelected,
   onRetry,
 }: {
-  catalog: CatalogEntry[]
+  agents: OnboardingAgent[]
   loading: boolean
   search: string
   setSearch: (v: string) => void
@@ -795,7 +723,7 @@ function AgentSelectionStep({
       <StepHeader
         icon={<Cpu className="w-5 h-5" />}
         title="Pick your first agent"
-        subtitle="You can install more later from the Install tab."
+        subtitle="Only agents your installed runtime can run are shown. You can install more later from the Install tab."
       />
       <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-(--radius-sm) bg-(--bg-card) border border-(--border)">
         <Search className="w-3.5 h-3.5 text-(--text-tertiary)" />
@@ -808,17 +736,17 @@ function AgentSelectionStep({
       </div>
 
       <ul className="grid grid-cols-1 sm:grid-cols-2 auto-rows-fr gap-2.5 list-none m-0 p-0">
-        {loading && (
-          <li className="col-span-1 sm:col-span-2 text-center text-[12px] text-(--text-tertiary) py-6">
-            Loading catalog…
+        {loading && agents.length === 0 && (
+          <li className="col-span-1 sm:col-span-2 text-center text-[12px] text-(--text-tertiary) py-6 flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading agents…
           </li>
         )}
-        {!loading && catalog.length === 0 && (
+        {!loading && agents.length === 0 && (
           <li className="col-span-1 sm:col-span-2 text-center text-[12px] text-(--text-tertiary) py-6 flex flex-col items-center gap-3">
             <span>
               {search.trim()
-                ? "No agents match."
-                : "Catalog hasn't loaded yet — this can happen on first launch while the runtime finishes installing."}
+                ? "No agents match your search."
+                : "The agent runtime is still installing — this can take a minute on first launch."}
             </span>
             {!search.trim() && (
               <Button size="sm" variant="ghost" onClick={onRetry}>
@@ -827,76 +755,221 @@ function AgentSelectionStep({
             )}
           </li>
         )}
-        {!loading &&
-          catalog.map((c) => {
-            const active = c.name === selected
-            return (
-              <li key={c.name} className="h-full">
-                <button
-                  type="button"
-                  onClick={() => setSelected(c.name)}
-                  className={cn(
-                    "w-full h-full text-left p-3 rounded-(--radius-sm) border bg-(--bg-card) cursor-pointer transition-colors",
-                    active
-                      ? "border-(--accent) ring-2 ring-(--accent-border)"
-                      : "border-(--border) hover:border-(--border-hover)",
-                  )}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <AgentIcon type={c.name} size={28} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[13px] font-semibold text-(--text-primary) truncate">
-                          {c.label || c.name}
+        {agents.map((c) => {
+          const active = c.name === selected
+          return (
+            <li key={c.name} className="h-full">
+              <button
+                type="button"
+                onClick={() => setSelected(c.name)}
+                className={cn(
+                  "w-full h-full text-left p-3 rounded-(--radius-sm) border bg-(--bg-card) cursor-pointer transition-colors",
+                  active
+                    ? "border-(--accent) ring-2 ring-(--accent-border)"
+                    : "border-(--border) hover:border-(--border-hover)",
+                )}
+              >
+                <div className="flex items-start gap-2.5">
+                  <AgentIcon type={c.name} size={28} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13px] font-semibold text-(--text-primary) truncate">
+                        {c.label || c.name}
+                      </span>
+                      {c.featured && (
+                        <span className="text-[9px] uppercase px-1 py-0.5 rounded-sm bg-(--accent-bg) text-(--accent) font-bold">
+                          Featured
                         </span>
-                        {c.featured && (
-                          <span className="text-[9px] uppercase px-1 py-0.5 rounded-sm bg-(--accent-bg) text-(--accent) font-bold">
-                            Featured
-                          </span>
-                        )}
-                        {c.installed && (
-                          <span className="text-[9px] uppercase px-1 py-0.5 rounded-sm bg-(--success-bg) text-(--success-text) font-bold">
-                            Installed
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] leading-snug text-(--text-secondary) line-clamp-2 mt-1 min-h-[2lh]">
-                        {c.description || "—"}
-                      </div>
+                      )}
+                      {c.installed && (
+                        <span className="text-[9px] uppercase px-1 py-0.5 rounded-sm bg-(--success-bg) text-(--success-text) font-bold">
+                          Installed
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] leading-snug text-(--text-secondary) line-clamp-2 mt-1 min-h-[2lh]">
+                      {c.description || "—"}
                     </div>
                   </div>
-                </button>
-              </li>
-            )
-          })}
+                </div>
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </>
   )
 }
 
 function ApiKeyStep({
-  agentLabel,
-  config,
+  entry,
+  values,
   onChangeValue,
   onTest,
   onLogin,
   testing,
   testResult,
+  loggedIn,
+  checkingLogin,
 }: {
-  agentLabel: string
-  config: AgentConfigState
+  entry: OnboardingAgent | null
+  values: Record<string, string>
   onChangeValue: (name: string, value: string) => void
   onTest: () => void
   onLogin: () => void
   testing: boolean
   testResult: null | { ok: boolean; detail?: string }
+  loggedIn: boolean
+  checkingLogin: boolean
 }): React.JSX.Element {
+  const label = entry?.label || entry?.name || "this agent"
+  const mode = entry?.authMode ?? "none"
+  const hasLogin = !!entry?.loginCommand
+  const hasEnvFields = !!entry && entry.envFields.length > 0
   const subtitle =
-    config.mode === "login"
-      ? `${agentLabel} uses CLI login — we'll open a terminal so you can authenticate.`
-      : config.mode === "none"
-        ? `${agentLabel} doesn't need any environment configuration.`
-        : `Configure ${agentLabel}. Saved to ~/.openagents/env/ and wired into the agent's .env automatically.`
+    mode === "env"
+      ? `Configure ${label}. Saved to ~/.openagents/env/ and injected into the agent automatically.`
+      : mode === "login"
+        ? `${label} signs in through its own CLI${hasEnvFields ? " — or enter an API key below instead." : "."}`
+        : `${label} doesn't need any environment configuration.`
+
+  // Claude Code refuses to run under cmd.exe on Windows; the launcher opens
+  // PowerShell, but if the CLI also needs bash the user must have Git for
+  // Windows. Surface that up front instead of a cryptic terminal error.
+  const showWindowsShellNote =
+    isWindows && hasLogin && /^claude\b/.test(entry?.loginCommand || "")
+
+  // Reusable: the env-field inputs (used as the primary view in "env" mode and
+  // as the optional "prefer an API key" section inside "login" mode).
+  const envInputs = entry ? (
+    <div className="flex flex-col gap-4">
+      {entry.envFields.map((f) => {
+        const FieldInput = f.password ? PasswordInput : Input
+        const value = values[f.name] ?? ""
+        return (
+          <div key={f.name}>
+            <label className="block text-[12px] font-medium mb-1.5">
+              {f.description || f.name}
+              {f.required && (
+                <span className="text-(--danger-text) ml-0.5">*</span>
+              )}
+              <span className="ml-2 text-[10px] text-(--text-tertiary) font-mono">
+                {f.name}
+              </span>
+            </label>
+            <FieldInput
+              value={value}
+              onChange={(e) => onChangeValue(f.name, e.target.value)}
+              placeholder={f.placeholder || f.default || `Enter ${f.name}…`}
+            />
+          </div>
+        )
+      })}
+    </div>
+  ) : null
+
+  const testRow = (
+    <div className="flex items-center gap-3 mt-4 flex-wrap">
+      <Button size="sm" onClick={onTest} disabled={testing}>
+        {testing ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Testing…
+          </>
+        ) : (
+          "Test connection"
+        )}
+      </Button>
+      {entry?.docsUrl && (
+        <a
+          href={entry.docsUrl}
+          onClick={(e) => {
+            e.preventDefault()
+            if (entry?.docsUrl) window.api.openExternal(entry.docsUrl)
+          }}
+          className="text-[12px] text-(--accent) hover:underline"
+        >
+          Where do I get a key?
+        </a>
+      )}
+    </div>
+  )
+
+  const loginBlock = entry ? (
+    <div className="p-4 rounded-(--radius-sm) bg-(--bg-card) border border-(--border)">
+      {loggedIn && (
+        <div className="flex items-center gap-2 text-[13px] mb-3 text-(--success-text)">
+          <span>✓</span>
+          <strong>Detected an active login</strong>
+        </div>
+      )}
+      <p className="text-[12px] text-(--text-secondary) m-0 mb-3">
+        {label} signs in through its own CLI. Open a terminal and run{" "}
+        <code className="inline-code">{entry.loginCommand}</code> to authenticate.
+        When the CLI says you're signed in, come back and click{" "}
+        <strong>Save & continue</strong>.
+      </p>
+      {showWindowsShellNote && (
+        <div className="flex items-start gap-2 text-[11px] text-(--text-secondary) mb-3 p-2.5 rounded-sm bg-(--bg-input)">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-(--warning-text)" />
+          <span>
+            Claude Code on Windows needs PowerShell (opened for you) or Git for
+            Windows. If login fails, install{" "}
+            <a
+              href="https://git-scm.com/downloads/win"
+              onClick={(e) => {
+                e.preventDefault()
+                window.api.openExternal("https://git-scm.com/downloads/win")
+              }}
+              className="text-(--accent) hover:underline"
+            >
+              Git for Windows
+            </a>{" "}
+            or{" "}
+            <a
+              href="https://aka.ms/powershell"
+              onClick={(e) => {
+                e.preventDefault()
+                window.api.openExternal("https://aka.ms/powershell")
+              }}
+              className="text-(--accent) hover:underline"
+            >
+              PowerShell 7
+            </a>{" "}
+            and retry.
+          </span>
+        </div>
+      )}
+      <Button
+        size="sm"
+        variant="primary"
+        onClick={onLogin}
+        disabled={checkingLogin}
+      >
+        {checkingLogin ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Waiting for login…
+          </>
+        ) : loggedIn ? (
+          "Re-open login terminal"
+        ) : (
+          "Open login terminal"
+        )}
+      </Button>
+      <p className="mt-3 text-[11px] text-(--text-tertiary) m-0">
+        We can't reliably detect every CLI login, so this step never blocks you —
+        if the agent isn't actually signed in, the Launch step will surface it.
+      </p>
+      {hasEnvFields && (
+        <div className="mt-4 pt-4 border-t border-(--border)">
+          <p className="text-[12px] font-medium m-0 mb-3">
+            Prefer an API key? Enter it instead:
+          </p>
+          {envInputs}
+          {testRow}
+        </div>
+      )}
+    </div>
+  ) : null
 
   return (
     <>
@@ -906,34 +979,13 @@ function ApiKeyStep({
         subtitle={subtitle}
       />
 
-      {config.loading ? (
+      {!entry ? (
         <div className="flex items-center gap-2 text-[12px] text-(--text-tertiary) py-6">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading configuration…
         </div>
-      ) : config.mode === "env" ? (
+      ) : mode === "env" ? (
         <>
-          <div className="flex flex-col gap-4">
-            {config.fields.map((f) => {
-              const FieldInput = f.password ? PasswordInput : Input
-              const value = config.values[f.name] ?? ""
-              return (
-                <div key={f.name}>
-                  <label className="block text-[12px] font-medium mb-1.5">
-                    {f.description || f.name}
-                    {f.required && <span className="text-(--danger-text) ml-0.5">*</span>}
-                    <span className="ml-2 text-[10px] text-(--text-tertiary) font-mono">
-                      {f.name}
-                    </span>
-                  </label>
-                  <FieldInput
-                    value={value}
-                    onChange={(e) => onChangeValue(f.name, e.target.value)}
-                    placeholder={f.placeholder || f.default || `Enter ${f.name}…`}
-                  />
-                </div>
-              )
-            })}
-          </div>
+          {envInputs}
           <div className="flex items-center gap-3 mt-4 flex-wrap">
             <Button size="sm" onClick={onTest} disabled={testing}>
               {testing ? (
@@ -944,12 +996,26 @@ function ApiKeyStep({
                 "Test connection"
               )}
             </Button>
-            {config.docsUrl && (
+            {hasLogin && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onLogin}
+                disabled={checkingLogin}
+              >
+                {checkingLogin
+                  ? "Waiting for login…"
+                  : loggedIn
+                    ? "Re-login via CLI"
+                    : "Or log in via CLI"}
+              </Button>
+            )}
+            {entry.docsUrl && (
               <a
-                href={config.docsUrl}
+                href={entry.docsUrl}
                 onClick={(e) => {
                   e.preventDefault()
-                  if (config.docsUrl) window.api.openExternal(config.docsUrl)
+                  if (entry.docsUrl) window.api.openExternal(entry.docsUrl)
                 }}
                 className="text-[12px] text-(--accent) hover:underline"
               >
@@ -958,27 +1024,12 @@ function ApiKeyStep({
             )}
           </div>
         </>
-      ) : config.mode === "login" ? (
-        <div className="p-4 rounded-(--radius-sm) bg-(--bg-card) border border-(--border)">
-          <div className="flex items-center gap-2 text-[13px] mb-3">
-            <span>{config.loggedIn ? "✅" : "⚠️"}</span>
-            <strong>
-              {config.loggedIn ? "Logged in" : "Not logged in"}
-            </strong>
-          </div>
-          <p className="text-[12px] text-(--text-secondary) m-0 mb-3">
-            Click below to open a terminal and run{" "}
-            <code className="inline-code">{config.loginCmd}</code>. Once you
-            complete the login, this page will update automatically.
-          </p>
-          <Button size="sm" variant="primary" onClick={onLogin}>
-            {config.loggedIn ? "Re-login" : "Open login terminal"}
-          </Button>
-        </div>
+      ) : mode === "login" ? (
+        loginBlock
       ) : (
         <div className="p-4 rounded-(--radius-sm) bg-(--success-bg) text-(--success-text) text-[12px]">
-          No configuration needed. Click <strong>Save & continue</strong> to
-          move on.
+          No configuration needed. Click <strong>Save & continue</strong> to move
+          on.
         </div>
       )}
 
@@ -1013,7 +1064,7 @@ function WorkspaceStep({
       <StepHeader
         icon={<Layers className="w-5 h-5" />}
         title="Create a workspace"
-        subtitle="A workspace is where agents collaborate. You can connect more later."
+        subtitle="A workspace is where agents collaborate. This is optional — you can skip it and connect one later."
       />
       <label className="block text-[12px] font-medium mb-1.5">
         Workspace name
@@ -1024,8 +1075,10 @@ function WorkspaceStep({
         placeholder="My Workspace"
       />
       <p className="mt-3 text-[11px] text-(--text-tertiary)">
-        We'll create a new workspace at <code className="inline-code">workspace.openagents.org</code> and
-        register your first agent against it.
+        We'll create a new workspace at{" "}
+        <code className="inline-code">workspace.openagents.org</code> and bind
+        your first agent to it. Prefer to do this later? Use{" "}
+        <strong>Skip for now</strong>.
       </p>
     </>
   )
