@@ -33,6 +33,25 @@ export interface EnvField {
   default?: string
 }
 
+/**
+ * A fully-resolved onboarding agent (mirror of the main-process type). Only
+ * agents the loaded core can actually run are returned, and `authMode` is
+ * resolved authoritatively so onboarding never mislabels auth requirements.
+ */
+export interface OnboardingAgent {
+  name: string
+  label: string
+  description: string
+  featured: boolean
+  order: number
+  installed: boolean
+  authMode: "env" | "login" | "none"
+  loginCommand: string | null
+  envFields: EnvField[]
+  docsUrl: string | null
+  notReadyMessage: string | null
+}
+
 export interface CatalogEntry {
   name: string
   label?: string
@@ -324,6 +343,18 @@ declare global {
       removeWorkspace(slug: string): Promise<unknown>
       listWorkspaces(): Promise<Workspace[]>
       createWorkspace(name: string): Promise<{ token?: string; slug?: string }>
+      getOnboardingAgents(): Promise<OnboardingAgent[]>
+      consumeOnboardingReset(): Promise<boolean>
+      provisionFirstAgent(opts: {
+        agentType: string
+        agentName: string
+        workspaceName?: string | null
+      }): Promise<{
+        agentName: string
+        workspaceSlug: string | null
+        workspaceName: string | null
+        warning: string | null
+      }>
       registerWorkspaceFromToken(input: {
         url?: string
         token?: string

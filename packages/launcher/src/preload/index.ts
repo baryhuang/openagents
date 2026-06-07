@@ -52,6 +52,10 @@ contextBridge.exposeInMainWorld('api', {
   removeWorkspace: (slug: string) => ipcRenderer.invoke('workspace:remove', slug),
   listWorkspaces: () => ipcRenderer.invoke('workspace:list'),
   createWorkspace: (name: string) => ipcRenderer.invoke('workspace:create', name),
+  getOnboardingAgents: () => ipcRenderer.invoke('onboarding:agents'),
+  consumeOnboardingReset: () => ipcRenderer.invoke('onboarding:consume-reset'),
+  provisionFirstAgent: (opts: { agentType: string; agentName: string; workspaceName?: string | null }) =>
+    ipcRenderer.invoke('onboarding:provision', opts),
   registerWorkspaceFromToken: (input: { url?: string; token?: string; slug?: string }) =>
     ipcRenderer.invoke('workspace:register-from-token', input),
 
