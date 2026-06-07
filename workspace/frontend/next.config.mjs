@@ -21,6 +21,14 @@ const nextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      {
+        source: '/wsapi/:path*',
+        destination: 'https://workspace-endpoint.openagents.org/:path*',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

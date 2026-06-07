@@ -8,6 +8,7 @@
 
 const blessed = require('blessed');
 const { AgentConnector } = require('./index');
+const { loadAgentRows, connectAvailable } = require('./agent-rows');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -62,49 +63,6 @@ function stateMarkup(state, hasWorkspace) {
 function getConnector() {
   const configDir = path.join(process.env.HOME || process.env.USERPROFILE || '.', '.openagents');
   return new AgentConnector({ configDir });
-}
-
-function loadAgentRows(connector) {
-  const config = connector.config.load();
-  const agents = config.agents || [];
-  const agentStatuses = connector.getDaemonStatus() || {};
-  const pid = connector.getDaemonPid();
-  const networks = config.networks || [];
-  return agents.map(agent => {
-    const info = agentStatuses[agent.name] || {};
-    const state = pid ? (info.state || 'stopped') : 'stopped';
-    let workspace = '';
-    if (agent.network) {
-      const net = networks.find(n => n.slug === agent.network || n.id === agent.network);
-      if (net) {
-        const slug = net.slug || net.id;
-        const isLocal = (net.endpoint || '').includes('localhost') || (net.endpoint || '').includes('127.0.0.1');
-        if (isLocal) workspace = `${net.endpoint}/${slug}`;
-        else workspace = `workspace.openagents.org/${slug}`;
-      } else {
-        workspace = agent.network;
-      }
-    }
-    let notReadyMsg = '';
-    let health = null;
-    try {
-      health = connector.healthCheck(agent.type || 'openclaw');
-      if (health && !health.ready) notReadyMsg = health.message || 'Not configured';
-    } catch {}
-
-    return {
-      name: agent.name,
-      type: agent.type || 'openclaw',
-      state,
-      workspace,
-      path: agent.path || '',
-      network: agent.network || '',
-      lastError: info.last_error || '',
-      notReadyMsg,
-      health,
-      configured: true,
-    };
-  });
 }
 
 function describeHealth(health) {
@@ -271,7 +229,7 @@ function createTUI() {
       const envFields = connector.registry.getEnvFields(agent.type);
       if (envFields && envFields.length > 0) items.push({ key: 'e', label: 'Configure' });
 
-      if (!agent.workspace) items.push({ key: 'c', label: 'Connect' });
+      if (connectAvailable(agent)) items.push({ key: 'c', label: 'Connect' });
       if (agent.workspace) items.push({ key: 'd', label: 'Disconnect' });
       if (agent.workspace) items.push({ key: 'w', label: 'Workspace' });
 
@@ -322,7 +280,8 @@ function createTUI() {
       const items = [];
       for (const r of agentRows) {
         const state = stateMarkup(r.state, !!r.workspace);
-        const ws = r.workspace || '';
+        // Local-only agents (no workspace) show a dimmed "(local)" marker.
+        const ws = r.workspace || `{gray-fg}${r.workspaceLabel}{/gray-fg}`;
         items.push(`  ${r.name.padEnd(22)} ${r.type.padEnd(14)} ${state.padEnd(30)} ${ws}`);
         // Detail row: working dir + config warning
         const details = [];
@@ -418,7 +377,7 @@ function createTUI() {
     if (isStopped) actions.push({ label: 'Start', key: 'start' });
     if (isRunning) actions.push({ label: 'Stop', key: 'stop' });
     if (agent.workspace) actions.push({ label: 'Open Workspace', key: 'open_workspace' });
-    if (!agent.workspace) actions.push({ label: 'Connect to Workspace', key: 'connect' });
+    if (connectAvailable(agent)) actions.push({ label: 'Connect to Workspace', key: 'connect' });
     if (agent.workspace) actions.push({ label: 'Disconnect from Workspace', key: 'disconnect' });
     actions.push({ label: 'Remove', key: 'remove' });
 
@@ -1403,7 +1362,7 @@ function createTUI() {
     Connect() {
       if (currentView !== 'main' || !selectedAgent()) return;
       const a = selectedAgent();
-      if (a.configured && !a.workspace) showConnectWorkspaceScreen(a.name);
+      if (connectAvailable(a)) showConnectWorkspaceScreen(a.name);
     },
     Disconnect() {
       if (currentView !== 'main' || !selectedAgent()) return;
@@ -1492,4 +1451,4 @@ function createTUI() {
 }
 
 function run() { createTUI(); }
-module.exports = { run };
+module.exports = { run, loadAgentRows, connectAvailable };

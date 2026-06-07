@@ -55,12 +55,16 @@ def upgrade():
     # agent routing queries stay unchanged. Auto-populated on first human
     # post in a channel; consulted by push.py to decide whose devices get
     # a banner for a non-mention chat message.
+    #
+    # Create WITHOUT the FK first to avoid ACCESS EXCLUSIVE lock on
+    # channels (deadlocks with live replicas polling that table during
+    # rolling deploys). Add the constraint NOT VALID afterwards — it
+    # skips scanning existing rows so no long lock is needed.
     op.create_table(
         "channel_human_members",
         sa.Column(
             "channel_id",
             sa.dialects.postgresql.UUID(as_uuid=False),
-            sa.ForeignKey("channels.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column("user_email", sa.Text(), nullable=False),
@@ -72,6 +76,12 @@ def upgrade():
         ),
         sa.PrimaryKeyConstraint("channel_id", "user_email"),
     )
+    op.execute(
+        'ALTER TABLE channel_human_members '
+        'ADD CONSTRAINT fk_channel_human_members_channel_id '
+        'FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE '
+        'NOT VALID'
+    )
     op.create_index(
         "idx_channel_human_members_email",
         "channel_human_members",
@@ -81,6 +91,7 @@ def upgrade():
 
 def downgrade():
     op.drop_index("idx_channel_human_members_email", table_name="channel_human_members")
+    op.execute('ALTER TABLE channel_human_members DROP CONSTRAINT IF EXISTS fk_channel_human_members_channel_id')
     op.drop_table("channel_human_members")
     op.drop_index("idx_device_tokens_workspace_user", table_name="device_tokens")
     op.drop_column("device_tokens", "user_email")

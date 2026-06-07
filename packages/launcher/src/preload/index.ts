@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('api', {
   uninstallAgentType: (type: string) => ipcRenderer.invoke('agents:uninstall-type', type),
   uninstallAgentTypeStreaming: (type: string) => ipcRenderer.invoke('agents:uninstall-type-streaming', type),
   checkAgentType: (type: string) => ipcRenderer.invoke('agents:check-type', type),
-  getCatalog: () => ipcRenderer.invoke('agents:catalog'),
+  getCatalog: (force?: boolean) => ipcRenderer.invoke('agents:catalog', !!force),
   getInstalledAgents: () => ipcRenderer.invoke('agents:installed-list'),
   checkAgentUpdates: () => ipcRenderer.invoke('agents:check-updates'),
   rollbackAgentType: (type: string) => ipcRenderer.invoke('agents:rollback', type),

@@ -358,6 +358,30 @@ class WorkspaceClient {
   }
 
   /**
+   * Report skill-install progress/result back to the workspace.
+   *
+   * POST /v1/workspaces/{id}/members/{agentName}/skills/status
+   * Body: { skill_id, state: "installing"|"installed"|"failed"|"uninstalled",
+   *         path?, error? }
+   *
+   * The backend updates WorkspaceMember.enabled_skills.skill_status so the
+   * Skill Hub UI can render installing / installed / failed states. Best
+   * effort — returns the updated payload or throws (caller decides).
+   */
+  async reportSkillStatus(workspaceId, agentName, token, { skillId, state, path: installPath, error, partial } = {}) {
+    const body = { skill_id: skillId, state };
+    if (installPath) body.path = installPath;
+    if (error) body.error = String(error).slice(0, 2000);
+    if (partial) body.partial = true;
+    const data = await this._post(
+      `/v1/workspaces/${workspaceId}/members/${encodeURIComponent(agentName)}/skills/status`,
+      body,
+      this._wsHeaders(token),
+    );
+    return data.data || data;
+  }
+
+  /**
    * Get session/channel info via GET /v1/workspaces/{id}/channels/{name}.
    */
   async getSession(workspaceId, channelName, token) {

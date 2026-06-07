@@ -302,7 +302,7 @@ declare global {
       uninstallAgentType(type: string): Promise<unknown>
       uninstallAgentTypeStreaming(type: string): Promise<unknown>
       checkAgentType(type: string): Promise<{ installed: boolean; binary: string | null }>
-      getCatalog(): Promise<CatalogEntry[]>
+      getCatalog(force?: boolean): Promise<CatalogEntry[]>
       getInstalledAgents(): Promise<InstalledAgentRecord[]>
       checkAgentUpdates(): Promise<AgentUpdateInfo[]>
       rollbackAgentType(type: string): Promise<{ success: boolean; version?: string | null; error?: string }>

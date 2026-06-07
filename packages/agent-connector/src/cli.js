@@ -123,10 +123,23 @@ async function cmdCreate(connector, flags, positional) {
 
   try {
     connector.addAgent({ name, type, role, path: flags.path || process.cwd() });
-    print(`Agent '${name}' created (type: ${type})`);
 
     // Signal daemon to pick up the new agent
     try { connector.sendDaemonCommand('reload'); } catch {}
+
+    // Newly created agents are local-only until connected to a workspace.
+    // Without a workspace connection they will not appear in the Workspace Dashboard.
+    const created = connector.config.getAgent(name);
+    if (created && !created.network) {
+      print(`Created local agent: ${name} (type: ${type})`);
+      print('');
+      print('This agent is local-only and will not appear in Workspace Dashboard yet.');
+      print('');
+      print('To connect it to a Workspace, run:');
+      print(`  agn connect ${name} <workspace-token>`);
+    } else {
+      print(`Agent '${name}' created (type: ${type})`);
+    }
 
     if (!connector.isInstalled(type)) {
       if (!flags.install) {
@@ -278,9 +291,29 @@ async function cmdRuntimes(connector) {
 
 async function cmdConnect(connector, flags, positional) {
   const name = positional[0];
-  const token = positional[1] || flags.token;
-  if (!name || !token) {
+  // Token resolution order: positional arg / --token flag, then env vars.
+  // OPENAGENTS_WORKSPACE_TOKEN is preferred; OA_WORKSPACE_TOKEN is supported
+  // for compatibility with the existing mcp-server env var.
+  const token = positional[1]
+    || flags.token
+    || process.env.OPENAGENTS_WORKSPACE_TOKEN
+    || process.env.OA_WORKSPACE_TOKEN;
+
+  if (!name) {
     print('Usage: agn connect <agent-name> <token>');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!token) {
+    // No token supplied and none in the environment. Never prompt — keep
+    // CI / non-interactive environments from hanging. Print a helpful error
+    // explaining why the agent stays invisible and how to fix it.
+    print('Workspace token is required.');
+    print('Local-only agents do not appear in Workspace Dashboard until connected.');
+    print('Run:');
+    print(`  agn connect ${name} <workspace-token>`);
+    process.exitCode = 1;
     return;
   }
 

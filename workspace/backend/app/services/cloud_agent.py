@@ -134,9 +134,11 @@ async def _invoke_image_agent(
     cloud_config: CloudAgentConfig,
 ) -> None:
     """Invoke an image generation cloud agent."""
+    import re
     channel_target = event_data.get("target", "")
     agent_name = cloud_config.agent_name
     prompt = event_data.get("payload", {}).get("content", "")
+    prompt = re.sub(r"@\S+\s*", "", prompt).strip()
 
     if not prompt:
         return

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Sparkles, Search, ExternalLink, Star, ArrowRight, Check, Plus } from 'lucide-react';
+import { Sparkles, Search, ExternalLink, Star, ArrowRight, Check, Plus, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
@@ -96,6 +96,13 @@ const SKILLS: Skill[] = [
   { id: 'pptx', name: 'Presentations', description: 'Create and edit .pptx slide decks — layouts, speaker notes, templates', category: 'documents', logo: `${SI}/microsoftpowerpoint.svg`, tags: ['slides', 'presentations', 'templates'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/pptx', author: 'Anthropic' },
   { id: 'pdf', name: 'PDF Processing', description: 'Read, merge, split, watermark, OCR, encrypt PDFs — forms and image extraction', category: 'documents', logo: `${SI}/adobeacrobatreader.svg`, tags: ['pdf', 'ocr', 'merge'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/pdf', author: 'Anthropic' },
   { id: 'doc-coauthoring', name: 'Doc Co-Authoring', description: 'Structured workflow for co-authoring docs, specs, proposals, and decision docs', category: 'documents', logo: `${SI}/anthropic.svg`, tags: ['writing', 'specs', 'collaboration'], sourceRepo: 'anthropics/skills', sourcePath: 'skills/doc-coauthoring', author: 'Anthropic' },
+  // SenseNova Skills
+  { id: 'sn-deep-research', name: 'SenseNova Deep Research', description: 'Full-pipeline deep research — planning, multi-source evidence, synthesis, and report generation', category: 'sensenova', logo: 'https://avatars.githubusercontent.com/u/215225587', tags: ['research', 'report', 'evidence'], sourceRepo: 'OpenSenseNova/SenseNova-Skills', sourcePath: 'skills/sn-deep-research', author: 'SenseNova', featured: true },
+  { id: 'sn-infographic', name: 'SenseNova Infographic', description: 'Generate professional infographics with various layouts and visual styles', category: 'sensenova', logo: 'https://avatars.githubusercontent.com/u/215225587', tags: ['infographic', 'visual', 'design'], sourceRepo: 'OpenSenseNova/SenseNova-Skills', sourcePath: 'skills/sn-infographic', author: 'SenseNova' },
+  { id: 'sn-ppt-entry', name: 'SenseNova PPT', description: 'AI-powered presentation creation — standard and creative modes with full-page visuals', category: 'sensenova', logo: 'https://avatars.githubusercontent.com/u/215225587', tags: ['ppt', 'slides', 'creative'], sourceRepo: 'OpenSenseNova/SenseNova-Skills', sourcePath: 'skills/sn-ppt-entry', author: 'SenseNova' },
+  { id: 'sn-da-excel-workflow', name: 'SenseNova Excel Analysis', description: 'End-to-end Excel data analysis — cleaning, filtering, aggregation, charts, and export', category: 'sensenova', logo: 'https://avatars.githubusercontent.com/u/215225587', tags: ['excel', 'data-analysis', 'pivot'], sourceRepo: 'OpenSenseNova/SenseNova-Skills', sourcePath: 'skills/sn-da-excel-workflow', author: 'SenseNova' },
+  { id: 'sn-image-base', name: 'SenseNova Image Gen', description: 'Image generation, recognition (VLM), and text optimization APIs', category: 'sensenova', logo: 'https://avatars.githubusercontent.com/u/215225587', tags: ['image-gen', 'vlm', 'vision'], sourceRepo: 'OpenSenseNova/SenseNova-Skills', sourcePath: 'skills/sn-image-base', author: 'SenseNova' },
+  { id: 'sn-md-to-html-report', name: 'SenseNova HTML Report', description: 'Convert Markdown research reports to polished HTML with charts and styling', category: 'sensenova', logo: 'https://avatars.githubusercontent.com/u/215225587', tags: ['markdown', 'html', 'report'], sourceRepo: 'OpenSenseNova/SenseNova-Skills', sourcePath: 'skills/sn-md-to-html-report', author: 'SenseNova' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -113,6 +120,7 @@ const CATEGORIES = [
   { id: 'security', label: 'Security', icon: '🔒' },
   { id: 'integrations', label: 'Integrations', icon: '🔗' },
   { id: 'documents', label: 'Documents', icon: '📄' },
+  { id: 'sensenova', label: 'SenseNova', icon: '🌟' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -182,10 +190,13 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
     setInstalling(agentName);
     try {
       await workspaceApi.installSkill(agentName, skill.id);
+      // The request only queues the install; the launcher installs the skill
+      // and reports back. Server `skill_status` (installing → installed/failed)
+      // drives the badge from here, picked up by discovery polling.
       await refreshWorkspace();
-      toast.success(`${skill.name} added to ${agentName}`);
+      toast.success(`Installing ${skill.name} on ${agentName}…`);
     } catch {
-      toast.error('Failed to install skill');
+      toast.error('Failed to request skill install');
     } finally {
       setInstalling(null);
     }
@@ -204,10 +215,28 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
     }
   }, [skill, refreshWorkspace]);
 
-  const isInstalled = (agentName: string) => {
+  // Resolve the install state for this skill on a given agent. Prefer the
+  // richer skill_status map (installing/installed/failed) the launcher reports
+  // back; fall back to the legacy `installed` list for older backends.
+  // If a skill has been "installing" for longer than STALE_INSTALL_MS, treat
+  // it as failed so the user can retry instead of seeing a permanent spinner.
+  const STALE_INSTALL_MS = 2 * 60 * 1000; // 2 minutes
+  const getSkillState = (agentName: string): 'installing' | 'installed' | 'failed' | null => {
     const agent = agents.find(a => a.agentName === agentName);
-    const installed: string[] = (agent?.enabledSkills as Record<string, unknown>)?.installed as string[] || [];
-    return installed.includes(skill.id);
+    const skills = (agent?.enabledSkills as Record<string, unknown>) || {};
+    const statusMap = (skills.skill_status as Record<string, { state?: string; updated_at?: number }>) || {};
+    const entry = statusMap[skill.id];
+    if (entry?.state === 'installing') {
+      if (entry.updated_at && Date.now() - entry.updated_at > STALE_INSTALL_MS) {
+        return 'failed';
+      }
+      return 'installing';
+    }
+    if (entry?.state === 'failed' || entry?.state === 'installed') {
+      return entry.state;
+    }
+    const installed = (skills.installed as string[]) || [];
+    return installed.includes(skill.id) ? 'installed' : null;
   };
 
   const onlineAgents = agents.filter(a => a.status === 'online');
@@ -248,30 +277,69 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
             ) : (
               <div className="space-y-1.5">
                 {onlineAgents.map(agent => {
-                  const installed = isInstalled(agent.agentName);
+                  const serverState = getSkillState(agent.agentName);
+                  // Optimistic local state wins until the next discovery refresh
+                  // confirms the launcher's reported status.
+                  const pending = installing === agent.agentName;
+                  const state = pending ? 'installing' : serverState;
+
+                  if (state === 'installed') {
+                    return (
+                      <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
+                        <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
+                        <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
+                        <button
+                          onClick={() => handleUninstall(agent.agentName)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-red-500/10 hover:text-red-600 transition-colors"
+                        >
+                          <Check className="size-3" />
+                          Installed
+                        </button>
+                      </div>
+                    );
+                  }
+                  if (state === 'installing') {
+                    return (
+                      <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
+                        <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
+                        <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
+                        <button
+                          disabled
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-muted text-muted-foreground disabled:opacity-70"
+                        >
+                          <Loader2 className="size-3 animate-spin" />
+                          Installing…
+                        </button>
+                      </div>
+                    );
+                  }
+                  if (state === 'failed') {
+                    return (
+                      <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-red-500/30 px-3 py-2">
+                        <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
+                        <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
+                        <button
+                          onClick={() => handleInstall(agent.agentName)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors"
+                          title="Installation failed — click to retry"
+                        >
+                          <AlertCircle className="size-3" />
+                          Failed · Retry
+                        </button>
+                      </div>
+                    );
+                  }
                   return (
                     <div key={agent.agentName} className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
                       <AgentAvatar name={agent.agentName} size={20} status={agent.status} showStatus />
                       <span className="flex-1 text-xs font-medium truncate">{agent.agentName}</span>
-                      {installed ? (
-                        <button
-                          onClick={() => handleUninstall(agent.agentName)}
-                          disabled={installing === agent.agentName}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-red-500/10 hover:text-red-600 transition-colors"
-                        >
-                          <Check className="size-3" />
-                          {installing === agent.agentName ? 'Removing...' : 'Installed'}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleInstall(agent.agentName)}
-                          disabled={installing === agent.agentName}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                        >
-                          <Plus className="size-3" />
-                          {installing === agent.agentName ? 'Adding...' : 'Add'}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleInstall(agent.agentName)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      >
+                        <Plus className="size-3" />
+                        Add
+                      </button>
                     </div>
                   );
                 })}
