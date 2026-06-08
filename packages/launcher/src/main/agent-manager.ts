@@ -3,7 +3,7 @@ import fs from "fs"
 import os from "os"
 import https from "https"
 import { spawnSync } from "child_process"
-import { withPathEnv } from "./env"
+import { withPathEnv, readPathEnv } from "./env"
 import { EventEmitter } from "events"
 // Bundled fallback registry. When the agent-launcher core hasn't installed
 // yet (slow network, antivirus interference on Windows, etc) the connector's
@@ -668,6 +668,60 @@ function resolveWorkingNode(
     }
   } catch {}
   return null
+}
+
+/**
+ * Resolve how to invoke npm for an install. Prefers running the bundled
+ * `node` binary directly against `npm-cli.js` (argv passed array-style, no
+ * shell) — on Windows that goes through CreateProcessW as UTF-16, so a home
+ * dir with non-ASCII characters (e.g. `C:\Users\用户名\...`) is preserved
+ * exactly. The legacy path (spawning `npm.cmd` via `shell:true`) instead
+ * relied on a hand-written .cmd batch shim whose UTF-8 bytes cmd.exe decodes
+ * with the OEM code page (936/GBK on zh-CN), corrupting the embedded node
+ * path and silently breaking every install. We only fall back to that legacy
+ * shell path when the bundled node / npm-cli layout is missing, so the common
+ * (ASCII) case still works identically.
+ */
+function resolveNpmInvocation(): {
+  cmd: string
+  preArgs: string[]
+  useShell: boolean
+} {
+  const portableNodeDir = path.join(os.homedir(), ".openagents", "nodejs")
+  const exists = (p: string): boolean => {
+    try {
+      return fs.existsSync(p)
+    } catch {
+      return false
+    }
+  }
+  const nodeBin = [
+    path.join(
+      portableNodeDir,
+      process.platform === "win32" ? "node.exe" : "node",
+    ),
+    path.join(portableNodeDir, "bin", "node"),
+  ].find(exists)
+  if (nodeBin) {
+    const npmCli = [
+      path.join(portableNodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+      path.join(
+        portableNodeDir,
+        "lib",
+        "node_modules",
+        "npm",
+        "bin",
+        "npm-cli.js",
+      ),
+    ].find(exists)
+    if (npmCli) return { cmd: nodeBin, preArgs: [npmCli], useShell: false }
+  }
+  // Bundled node/npm-cli not found — preserve legacy behaviour exactly.
+  return {
+    cmd: process.platform === "win32" ? "npm.cmd" : "npm",
+    preArgs: [],
+    useShell: true,
+  }
 }
 
 let core: Record<string, unknown> | null = loadCore()
@@ -1835,7 +1889,6 @@ export class AgentManager extends EventEmitter {
     const { spawn } = require("child_process") as typeof import("child_process")
     const prefixDir = path.join(CONFIG_DIR, "runtimes", agentType)
     fs.mkdirSync(prefixDir, { recursive: true })
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm"
     const args = [
       "install",
       "--save",
@@ -1844,13 +1897,19 @@ export class AgentManager extends EventEmitter {
       `${npmPkg}@${target}`,
     ]
 
-    if (onData) onData(`$ ${npmCmd} ${args.join(" ")}\n\n`)
+    // Invoke bundled `node npm-cli.js` directly (no shell) so non-ASCII home
+    // paths survive on Windows; see resolveNpmInvocation().
+    const inv = resolveNpmInvocation()
+    const portableNodeDir = path.join(os.homedir(), ".openagents", "nodejs")
+    if (onData) onData(`$ npm ${args.join(" ")}\n\n`)
 
     return new Promise((resolve) => {
-      const proc = spawn(npmCmd, args, {
-        shell: true,
+      const proc = spawn(inv.cmd, [...inv.preArgs, ...args], {
+        shell: inv.useShell,
         cwd: prefixDir,
         stdio: ["ignore", "pipe", "pipe"],
+        env: withPathEnv(portableNodeDir + path.delimiter + readPathEnv()),
+        windowsHide: true,
       })
       proc.stdout?.setEncoding("utf-8")
       proc.stderr?.setEncoding("utf-8")
