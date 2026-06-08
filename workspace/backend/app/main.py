@@ -23,185 +23,236 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def _timer_loop():
-    """Background loop that fires due timers and expires stale todos."""
+# Background timer-loop cadence. Time-sensitive firing (timers/routines)
+# runs every cycle; the heavy maintenance scans run far less often so they
+# never hold a pooled DB connection — or block the event loop — every 10s.
+TIMER_LOOP_INTERVAL_SECONDS = 10
+MAINTENANCE_EVERY_N_CYCLES = 30  # ~5 minutes
+
+
+def _run_maintenance():
+    """Expire stale todos/notifications and auto-archive stale threads.
+
+    Pure synchronous DB work in a short-lived session. Invoked via
+    ``asyncio.to_thread`` so these table scans run off the event loop and the
+    connection is released the moment the sweep finishes. The archive scan is
+    backed by ``idx_channels_status_last_event`` so it's an index lookup, not
+    a full-table scan.
+    """
     from datetime import timedelta
-    from sqlalchemy import select, update
+    from sqlalchemy import update
     from app.database import SessionLocal
-    from app.models import EventRecord, NotificationRecord, RoutineRecord, TimerRecord, TodoRecord, Workspace
+    from app.models import Channel, NotificationRecord, TodoRecord
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+
+        # ── Expire stale todos (no update for 1 hour) ──
+        stale_cutoff = now - timedelta(hours=1)
+        expired = db.execute(
+            update(TodoRecord)
+            .where(
+                TodoRecord.status.in_(["pending", "in_progress"]),
+                TodoRecord.updated_at < stale_cutoff,
+            )
+            .values(status="cancelled", updated_at=now)
+            .returning(TodoRecord.id)
+        ).fetchall()
+        if expired:
+            logger.info("Expired %d stale todo(s)", len(expired))
+
+        # ── Expire old notifications (older than 7 days) ──
+        seven_days_ago = now - timedelta(days=7)
+        expired_notifs = db.execute(
+            update(NotificationRecord)
+            .where(
+                NotificationRecord.status == "active",
+                NotificationRecord.created_at < seven_days_ago,
+            )
+            .values(status="expired")
+            .returning(NotificationRecord.id)
+        ).fetchall()
+        if expired_notifs:
+            logger.info("Expired %d old notification(s)", len(expired_notifs))
+
+        # ── Auto-archive stale threads (no activity for 30 days) ──
+        stale_thread_cutoff = int((now - timedelta(days=30)).timestamp() * 1000)
+        archived = db.execute(
+            update(Channel)
+            .where(
+                Channel.status == "active",
+                Channel.starred == False,  # noqa: E712
+                Channel.last_event_at != None,  # noqa: E711
+                Channel.last_event_at < stale_thread_cutoff,
+                ~Channel.name.startswith("routines:"),
+            )
+            .values(status="archived")
+            .returning(Channel.id)
+        ).fetchall()
+        if archived:
+            logger.info("Auto-archived %d stale thread(s)", len(archived))
+
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _fire_due():
+    """Fire due timers and routines.
+
+    Runs every loop cycle. Opens one short-lived session that is committed
+    and closed within the cycle, so it never holds a pooled connection across
+    the sleep interval. ``pipeline.process`` is a coroutine (its mods are
+    async), so firing runs on the event loop — but only when something is
+    actually due, which is rare.
+    """
+    from sqlalchemy import select
+    from app.database import SessionLocal
+    from app.models import EventRecord, RoutineRecord, TimerRecord, Workspace
     from app.pipeline_factory import pipeline
+    from app.routers.routines import _compute_next_fires_at
     from openagents.core.onm_events import Event
     from openagents.core.onm_mods import PipelineContext
 
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+
+        # ── Fire due timers ──
+        due = db.execute(
+            select(TimerRecord).where(
+                TimerRecord.status == "active",
+                TimerRecord.fires_at <= now,
+            ).limit(50)
+        ).scalars().all()
+
+        for timer in due:
+            timer.status = "fired"
+            workspace = db.execute(
+                select(Workspace).where(Workspace.id == timer.workspace_id)
+            ).scalar_one_or_none()
+            if not workspace:
+                continue
+            agent_name = timer.created_by.replace("openagents:", "")
+            event = Event(
+                type="workspace.message.posted",
+                source="system:timer",
+                target=f"channel/{timer.channel_name}",
+                payload={
+                    "content": f"⏰ Timer fired (set by @{agent_name}): {timer.message}",
+                    "message_type": "chat",
+                },
+                metadata={"target_agents": [agent_name]},
+            )
+            ctx = PipelineContext(
+                network_id=str(workspace.id),
+                agent_address=timer.created_by,
+                db=db,
+                workspace=workspace,
+                token=workspace.password_hash,
+            )
+            try:
+                await pipeline.process(event, ctx)
+            except Exception:
+                logger.exception("Timer fire failed for %s", timer.id)
+
+        # ── Fire due routines ──
+        due_routines = db.execute(
+            select(RoutineRecord).where(
+                RoutineRecord.status == "active",
+                RoutineRecord.next_fires_at <= now,
+            ).limit(50)
+        ).scalars().all()
+
+        for routine in due_routines:
+            workspace = db.execute(
+                select(Workspace).where(Workspace.id == routine.workspace_id)
+            ).scalar_one_or_none()
+            if not workspace:
+                continue
+            agent_name = routine.created_by.replace("openagents:", "")
+
+            # Skip if the agent hasn't responded to the previous fire yet
+            last_msg = db.execute(
+                select(EventRecord)
+                .where(
+                    EventRecord.network_id == workspace.id,
+                    EventRecord.target == f"channel/{routine.channel_name}",
+                    EventRecord.type == "workspace.message.posted",
+                )
+                .order_by(EventRecord.timestamp.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if last_msg and last_msg.source == "system:routine":
+                # Previous fire still pending — skip, just advance schedule
+                routine.next_fires_at = _compute_next_fires_at(
+                    routine.schedule_hour,
+                    routine.schedule_minute,
+                    routine.schedule_days,
+                    routine.schedule_interval_minutes,
+                )
+                continue
+
+            ctx = PipelineContext(
+                network_id=str(workspace.id),
+                agent_address=routine.created_by,
+                db=db,
+                workspace=workspace,
+                token=workspace.password_hash,
+            )
+            try:
+                content = f"Routine \"{routine.name}\" fired: {routine.message}"
+                if routine.context:
+                    content = f"**Routine Context for \"{routine.name}\"**\n\n{routine.context}\n\n---\n\n{content}"
+
+                fire_event = Event(
+                    type="workspace.message.posted",
+                    source="system:routine",
+                    target=f"channel/{routine.channel_name}",
+                    payload={
+                        "content": content,
+                        "message_type": "chat",
+                    },
+                    metadata={"target_agents": [agent_name]},
+                )
+                await pipeline.process(fire_event, ctx)
+            except Exception:
+                logger.exception("Routine fire failed for %s", routine.id)
+
+            routine.last_fired_at = now
+            routine.next_fires_at = _compute_next_fires_at(
+                routine.schedule_hour,
+                routine.schedule_minute,
+                routine.schedule_days,
+                routine.schedule_interval_minutes,
+            )
+
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _timer_loop():
+    """Background loop: fire due timers/routines each cycle; run heavy
+    maintenance (expiry/archival) every few minutes.
+
+    Previously this did all of the above in one session held open for the
+    whole run, every 10s — including unindexed table scans that grew with the
+    data. On the event loop that froze the worker (even /health) and starved
+    the 24-slot DB pool. Now the firing path uses a short-lived session and
+    the heavy scans run off-loop via ``asyncio.to_thread``, far less often.
+    """
+    cycle = 0
     while True:
         try:
-            db = SessionLocal()
-            try:
-                now = datetime.now(timezone.utc)
-
-                # ── Fire due timers ──
-                due = db.execute(
-                    select(TimerRecord).where(
-                        TimerRecord.status == "active",
-                        TimerRecord.fires_at <= now,
-                    ).limit(50)
-                ).scalars().all()
-
-                for timer in due:
-                    timer.status = "fired"
-                    workspace = db.execute(
-                        select(Workspace).where(Workspace.id == timer.workspace_id)
-                    ).scalar_one_or_none()
-                    if not workspace:
-                        continue
-                    agent_name = timer.created_by.replace("openagents:", "")
-                    event = Event(
-                        type="workspace.message.posted",
-                        source="system:timer",
-                        target=f"channel/{timer.channel_name}",
-                        payload={
-                            "content": f"⏰ Timer fired (set by @{agent_name}): {timer.message}",
-                            "message_type": "chat",
-                        },
-                        metadata={"target_agents": [agent_name]},
-                    )
-                    ctx = PipelineContext(
-                        network_id=str(workspace.id),
-                        agent_address=timer.created_by,
-                        db=db,
-                        workspace=workspace,
-                        token=workspace.password_hash,
-                    )
-                    try:
-                        await pipeline.process(event, ctx)
-                    except Exception:
-                        logger.exception("Timer fire failed for %s", timer.id)
-
-                # ── Expire stale todos (no update for 1 hour) ──
-                stale_cutoff = now - timedelta(hours=1)
-                expired = db.execute(
-                    update(TodoRecord)
-                    .where(
-                        TodoRecord.status.in_(["pending", "in_progress"]),
-                        TodoRecord.updated_at < stale_cutoff,
-                    )
-                    .values(status="cancelled", updated_at=now)
-                    .returning(TodoRecord.id)
-                ).fetchall()
-                if expired:
-                    logger.info("Expired %d stale todo(s)", len(expired))
-
-                # ── Expire old notifications (older than 7 days) ──
-                seven_days_ago = now - timedelta(days=7)
-                expired_notifs = db.execute(
-                    update(NotificationRecord)
-                    .where(
-                        NotificationRecord.status == "active",
-                        NotificationRecord.created_at < seven_days_ago,
-                    )
-                    .values(status="expired")
-                    .returning(NotificationRecord.id)
-                ).fetchall()
-                if expired_notifs:
-                    logger.info("Expired %d old notification(s)", len(expired_notifs))
-
-                # ── Auto-archive stale threads (no activity for 30 days) ──
-                from app.models import Channel
-                stale_thread_cutoff = int((now - timedelta(days=30)).timestamp() * 1000)
-                archived = db.execute(
-                    update(Channel)
-                    .where(
-                        Channel.status == "active",
-                        Channel.starred == False,  # noqa: E712
-                        Channel.last_event_at != None,  # noqa: E711
-                        Channel.last_event_at < stale_thread_cutoff,
-                        ~Channel.name.startswith("routines:"),
-                    )
-                    .values(status="archived")
-                    .returning(Channel.id)
-                ).fetchall()
-                if archived:
-                    logger.info("Auto-archived %d stale thread(s)", len(archived))
-
-                # ── Fire due routines ──
-                due_routines = db.execute(
-                    select(RoutineRecord).where(
-                        RoutineRecord.status == "active",
-                        RoutineRecord.next_fires_at <= now,
-                    ).limit(50)
-                ).scalars().all()
-
-                for routine in due_routines:
-                    workspace = db.execute(
-                        select(Workspace).where(Workspace.id == routine.workspace_id)
-                    ).scalar_one_or_none()
-                    if not workspace:
-                        continue
-                    agent_name = routine.created_by.replace("openagents:", "")
-
-                    # Skip if the agent hasn't responded to the previous fire yet
-                    last_msg = db.execute(
-                        select(EventRecord)
-                        .where(
-                            EventRecord.network_id == workspace.id,
-                            EventRecord.target == f"channel/{routine.channel_name}",
-                            EventRecord.type == "workspace.message.posted",
-                        )
-                        .order_by(EventRecord.timestamp.desc())
-                        .limit(1)
-                    ).scalar_one_or_none()
-                    if last_msg and last_msg.source == "system:routine":
-                        # Previous fire still pending — skip, just advance schedule
-                        from app.routers.routines import _compute_next_fires_at
-                        routine.next_fires_at = _compute_next_fires_at(
-                            routine.schedule_hour,
-                            routine.schedule_minute,
-                            routine.schedule_days,
-                            routine.schedule_interval_minutes,
-                        )
-                        continue
-
-                    ctx = PipelineContext(
-                        network_id=str(workspace.id),
-                        agent_address=routine.created_by,
-                        db=db,
-                        workspace=workspace,
-                        token=workspace.password_hash,
-                    )
-                    try:
-                        content = f"Routine \"{routine.name}\" fired: {routine.message}"
-                        if routine.context:
-                            content = f"**Routine Context for \"{routine.name}\"**\n\n{routine.context}\n\n---\n\n{content}"
-
-                        fire_event = Event(
-                            type="workspace.message.posted",
-                            source="system:routine",
-                            target=f"channel/{routine.channel_name}",
-                            payload={
-                                "content": content,
-                                "message_type": "chat",
-                            },
-                            metadata={"target_agents": [agent_name]},
-                        )
-                        await pipeline.process(fire_event, ctx)
-                    except Exception:
-                        logger.exception("Routine fire failed for %s", routine.id)
-
-                    routine.last_fired_at = now
-                    from app.routers.routines import _compute_next_fires_at
-                    routine.next_fires_at = _compute_next_fires_at(
-                        routine.schedule_hour,
-                        routine.schedule_minute,
-                        routine.schedule_days,
-                        routine.schedule_interval_minutes,
-                    )
-
-                db.commit()
-            finally:
-                db.close()
+            await _fire_due()
+            cycle += 1
+            if cycle % MAINTENANCE_EVERY_N_CYCLES == 0:
+                await asyncio.to_thread(_run_maintenance)
         except Exception:
             logger.exception("Timer loop error")
-        await asyncio.sleep(10)
+        await asyncio.sleep(TIMER_LOOP_INTERVAL_SECONDS)
 
 
 @asynccontextmanager
