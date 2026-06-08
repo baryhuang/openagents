@@ -67,6 +67,13 @@ const NAV_ITEMS: NavItem[] = [
     description: "Step 3 · Open and manage workspaces",
   },
   {
+    id: "chat",
+    label: "Chat",
+    icon: <MessageSquare className="w-4 h-4" />,
+    section: "manage",
+    description: "Chat with your connected workspaces",
+  },
+  {
     id: "connections",
     label: "Connections",
     icon: <Plug className="w-4 h-4" />,
