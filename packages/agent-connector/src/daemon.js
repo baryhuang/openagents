@@ -300,7 +300,17 @@ class Daemon {
    * Read daemon PID, returning null if not running.
    */
   static readDaemonPid(configDir) {
-    return Daemon._readPid(path.join(configDir, 'daemon.pid'));
+    const pidFile = path.join(configDir, 'daemon.pid');
+    const statusFile = path.join(configDir, 'daemon.status.json');
+    const pid = Daemon._readPid(pidFile);
+    if (!pid) return null;
+
+    if (!Daemon._isAlive(pid)) {
+      Daemon._cleanupStaleDaemonFiles(pidFile, statusFile);
+      return null;
+    }
+
+    return pid;
   }
 
   // ---------------------------------------------------------------------------
@@ -818,6 +828,17 @@ class Daemon {
       return isNaN(pid) ? null : pid;
     } catch {
       return null;
+    }
+  }
+
+  static _cleanupStaleDaemonFiles(pidFile, statusFile) {
+    Daemon._unlinkIfExists(pidFile);
+    Daemon._unlinkIfExists(statusFile);
+  }
+
+  static _unlinkIfExists(filePath) {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
     }
   }
 
