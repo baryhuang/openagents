@@ -40,13 +40,18 @@ import {
 function execFileAsync(
   file: string,
   args: string[],
-  opts: { timeout?: number; env?: NodeJS.ProcessEnv } = {},
+  opts: { timeout?: number; env?: NodeJS.ProcessEnv; maxBuffer?: number } = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       file,
       args,
-      { timeout: opts.timeout || 10000, env: opts.env, encoding: "utf-8" },
+      {
+        timeout: opts.timeout || 10000,
+        env: opts.env,
+        encoding: "utf-8",
+        maxBuffer: opts.maxBuffer,
+      },
       (err, stdout) => {
         if (err) reject(err)
         else resolve((stdout || "").toString().trim())
@@ -1865,19 +1870,24 @@ function setupIPC(): void {
   })
 
   ipcMain.handle("core:update", async () => {
-    const npmUnified = path.join(
-      PORTABLE_NODE_DIR,
-      process.platform === "win32" ? "npm.cmd" : "npm",
-    )
-    const npmBin = fs.existsSync(npmUnified)
-      ? npmUnified
-      : path.join(PORTABLE_NODE_DIR, "bin", "npm")
+    // Run bundled `node npm-cli.js` directly (no shell, argv array) so a
+    // non-ASCII home path survives on Windows — the `.cmd` shim does not.
+    const npm = resolveNpmInvocation()
+    if (!npm) return { success: false, error: "npm runtime not found" }
     try {
-      execSync(
-        `"${npmBin}" install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`,
+      await execFileAsync(
+        npm.node,
+        [
+          ...npm.args,
+          "install",
+          "--prefix",
+          PORTABLE_NODE_DIR,
+          `${CORE_PKG}@latest`,
+          "--ignore-scripts",
+        ],
         {
-          stdio: "ignore",
           timeout: 120000,
+          maxBuffer: 64 * 1024 * 1024,
           env: withPathEnv(
             PORTABLE_NODE_DIR +
               (process.platform === "win32" ? ";" : ":") +

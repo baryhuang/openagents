@@ -9,6 +9,7 @@ import Sidebar from "./components/Sidebar"
 import { ToastContainer } from "./components/ui/Toast"
 import { CommandPalette } from "./components/command-palette/CommandPalette"
 import { OnboardingFlow, shouldShowOnboarding } from "./components/onboarding/OnboardingFlow"
+import { GuidedTour, shouldShowGuidedTour } from "./components/onboarding/GuidedTour"
 import Dashboard from "./pages/dashboard"
 import Agents from "./pages/agents"
 
@@ -31,12 +32,17 @@ export default function App(): React.JSX.Element {
   const initTheme = useThemeStore((s) => s.init)
   const initNotifications = useNotificationsStore((s) => s.init)
   const { showToast } = useToasts()
+  const startTour = useUiStore((s) => s.startTour)
   const [onboardingOpen, setOnboardingOpen] = React.useState(false)
 
   useEffect(() => {
     initTheme()
     void initNotifications()
-    setOnboardingOpen(shouldShowOnboarding())
+    const showOnboarding = shouldShowOnboarding()
+    setOnboardingOpen(showOnboarding)
+    // Returning users who never saw the spotlight tour get it once on launch.
+    // New users get it after the provisioning wizard closes (see onClose).
+    if (!showOnboarding && shouldShowGuidedTour()) startTour()
     // After an upgrade the main process flags a one-time onboarding reset.
     // Clear the saved onboarding state and re-open the flow so returning users
     // walk through the new key-based configuration steps.
@@ -49,7 +55,7 @@ export default function App(): React.JSX.Element {
       } catch {}
       setOnboardingOpen(true)
     })
-  }, [initTheme, initNotifications])
+  }, [initTheme, initNotifications, startTour])
 
   // Global install:progress + install:output subscription
   useInstallProgress()
@@ -135,9 +141,15 @@ export default function App(): React.JSX.Element {
       <CommandPalette />
       <OnboardingFlow
         open={onboardingOpen}
-        onClose={() => setOnboardingOpen(false)}
+        onClose={() => {
+          setOnboardingOpen(false)
+          // Right after the wizard, run the spotlight tour once to show where
+          // each step lives in the sidebar.
+          if (shouldShowGuidedTour()) startTour()
+        }}
         showToast={showToast}
       />
+      <GuidedTour />
     </div>
   )
 }

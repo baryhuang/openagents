@@ -13,6 +13,7 @@ import {
   Moon,
   Sun,
   Monitor,
+  HelpCircle,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { cn } from "../lib/utils"
@@ -31,20 +32,24 @@ interface NavItem {
   label: string
   icon: React.JSX.Element
   section: SectionId
+  // One-line "what is this for" hint, surfaced as a hover tooltip so new users
+  // can tell the tabs apart without clicking through each one.
+  description: string
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" />, section: "overview" },
+  { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" />, section: "overview", description: "Overview: agent status, workspaces, and recent activity" },
+  { id: "chat", label: "Chat", icon: <MessageSquare className="w-4 h-4" />, section: "overview", description: "Chat with your connected workspaces" },
 
-  { id: "install", label: "Marketplace", icon: <Download className="w-4 h-4" />, section: "manage" },
-  { id: "agents", label: "Agents", icon: <Cpu className="w-4 h-4" />, section: "manage" },
-  { id: "workspaces", label: "Workspaces", icon: <Layers className="w-4 h-4" />, section: "manage" },
-  { id: "connections", label: "Connections", icon: <Plug className="w-4 h-4" />, section: "manage" },
-  { id: "credentials", label: "Credentials", icon: <KeyRound className="w-4 h-4" />, section: "manage" },
-  { id: "github", label: "GitHub", icon: <Github className="w-4 h-4" />, section: "manage" },
+  { id: "install", label: "Marketplace", icon: <Download className="w-4 h-4" />, section: "manage", description: "Step 1 · Browse and install agents" },
+  { id: "agents", label: "Agents", icon: <Cpu className="w-4 h-4" />, section: "manage", description: "Step 2 · Create agents, set API keys, test and connect" },
+  { id: "workspaces", label: "Workspaces", icon: <Layers className="w-4 h-4" />, section: "manage", description: "Step 3 · Open and manage workspaces" },
+  { id: "connections", label: "Connections", icon: <Plug className="w-4 h-4" />, section: "manage", description: "Connect external platforms like GitHub and Slack" },
+  { id: "credentials", label: "Credentials", icon: <KeyRound className="w-4 h-4" />, section: "manage", description: "Manage API keys and secrets in one place" },
+  { id: "github", label: "GitHub", icon: <Github className="w-4 h-4" />, section: "manage", description: "Bind repos and view issues / PRs" },
 
-  { id: "logs", label: "Logs", icon: <FileText className="w-4 h-4" />, section: "system" },
-  { id: "settings", label: "Settings", icon: <SettingsIcon className="w-4 h-4" />, section: "system" },
+  { id: "logs", label: "Logs", icon: <FileText className="w-4 h-4" />, section: "system", description: "View runtime logs and troubleshoot" },
+  { id: "settings", label: "Settings", icon: <SettingsIcon className="w-4 h-4" />, section: "system", description: "App settings and preferences" },
 ]
 
 const SECTION_LABELS: Record<SectionId, string> = {
@@ -130,6 +135,8 @@ export default function Sidebar(): React.JSX.Element {
                     <li key={item.id} className="m-0">
                       <button
                         type="button"
+                        data-tour={item.id}
+                        title={item.description}
                         onClick={() => {
                           capture("tab_switched", { tab: item.id })
                           item.id === "install"
@@ -169,10 +176,11 @@ export default function Sidebar(): React.JSX.Element {
         })}
       </nav>
 
-      {/* Footer: bell + theme strip, then daemon status + version */}
+      {/* Footer: bell + theme + guide strip, then daemon status + version */}
       <div className="px-3 py-2 sidebar-no-drag flex items-center gap-1 border-t border-white/5">
         <NotificationBellDark />
         <ThemeToggleDark />
+        <GuideButtonDark />
       </div>
       <div
         className="px-4 pt-2 pb-3 sidebar-no-drag flex items-center gap-2 text-[11px] text-[#7a7e8c]"
@@ -321,6 +329,21 @@ function NotificationBellDark(): React.JSX.Element {
         </div>
       )}
     </div>
+  )
+}
+
+function GuideButtonDark(): React.JSX.Element {
+  const startTour = useUiStore((s) => s.startTour)
+  return (
+    <button
+      type="button"
+      onClick={() => startTour()}
+      title="Quick start guide"
+      aria-label="Quick start guide"
+      className="w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent text-[#a8aabb] hover:bg-[#15171f] hover:text-white transition-colors"
+    >
+      <HelpCircle className="w-3.5 h-3.5" />
+    </button>
   )
 }
 
