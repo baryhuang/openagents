@@ -18,6 +18,7 @@ import { Input } from "../ui/Input"
 import { PasswordInput } from "../ui/PasswordInput"
 import AgentIcon from "../AgentIcon"
 import { useAgentsStore } from "../../store/agents"
+import { useInstallStore } from "../../store/install"
 import type { OnboardingAgent, EnvField } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 import { cn } from "../../lib/utils"
@@ -68,6 +69,12 @@ export function OnboardingFlow({
     }
   })
   const [installing, setInstalling] = useState(false)
+  // Live install progress for the selected agent, mirrored from the global
+  // install:progress IPC stream by useInstallProgress (mounted at App root).
+  // Keyed by agent TYPE, which is exactly selectedAgent.
+  const installJob = useInstallStore((s) =>
+    selectedAgent ? s.jobs[selectedAgent] || null : null,
+  )
 
   // Step 2 (configure) state.
   const [envValues, setEnvValues] = useState<Record<string, string>>({})
@@ -223,11 +230,37 @@ export function OnboardingFlow({
       return
     }
     setInstalling(true)
+    const type = selectedEntry.name
+    let settled = false
+    // First-run installs are slow (npm + sometimes a portable Node download) and
+    // can run for several minutes. In rare cases the streaming promise stalls
+    // even after npm has finished writing files — leaving the user stuck on a
+    // spinner forever (closing/reopening the launcher then shows it installed).
+    // Guard against that with a watchdog that polls the real on-disk install
+    // state and lets us advance the moment the agent is actually installed. The
+    // 30s grace period keeps it from racing a partial install to a false
+    // positive during the normal (promise resolves) path.
+    const watchdog = new Promise<void>((resolve) => {
+      const startedAt = Date.now()
+      const poll = async (): Promise<void> => {
+        if (settled) return resolve()
+        if (Date.now() - startedAt > 30_000) {
+          try {
+            const r = await window.api.checkAgentType(type)
+            if (r?.installed) return resolve()
+          } catch {}
+        }
+        setTimeout(() => void poll(), 5000)
+      }
+      setTimeout(() => void poll(), 5000)
+    })
     try {
-      await window.api.installAgentTypeStreaming(selectedEntry.name)
+      await Promise.race([window.api.installAgentTypeStreaming(type), watchdog])
+      settled = true
       await loadAgents()
       goNext()
     } catch (e) {
+      settled = true
       showToast((e as Error).message, "error")
     } finally {
       setInstalling(false)
@@ -402,6 +435,9 @@ export function OnboardingFlow({
             selected={selectedAgent}
             setSelected={setSelectedAgent}
             onRetry={() => void loadAgents()}
+            installing={installing}
+            installPhase={installJob?.phase ?? null}
+            installDetail={installJob?.detail ?? null}
           />
         )
       case 2:
@@ -718,6 +754,15 @@ function WelcomeStep(): React.JSX.Element {
   )
 }
 
+const INSTALL_PHASE_LABEL: Record<string, string> = {
+  preparing: "Preparing…",
+  downloading: "Downloading…",
+  installing: "Installing…",
+  verifying: "Finalizing…",
+  done: "Done",
+  error: "Failed",
+}
+
 function AgentSelectionStep({
   agents,
   loading,
@@ -726,6 +771,9 @@ function AgentSelectionStep({
   selected,
   setSelected,
   onRetry,
+  installing,
+  installPhase,
+  installDetail,
 }: {
   agents: OnboardingAgent[]
   loading: boolean
@@ -734,6 +782,9 @@ function AgentSelectionStep({
   selected: string
   setSelected: (v: string) => void
   onRetry: () => void
+  installing: boolean
+  installPhase: string | null
+  installDetail: string | null
 }): React.JSX.Element {
   return (
     <>
@@ -742,6 +793,21 @@ function AgentSelectionStep({
         title="Pick your first agent"
         subtitle="Only agents your installed runtime can run are shown. You can install more later from the Install tab."
       />
+      {installing && (
+        <div className="flex items-start gap-2.5 mb-4 px-3.5 py-3 rounded-(--radius-sm) bg-(--accent-bg) border border-(--accent-border)">
+          <Loader2 className="w-4 h-4 mt-0.5 shrink-0 animate-spin text-(--accent)" />
+          <div className="min-w-0">
+            <div className="text-[12px] font-semibold text-(--text-primary)">
+              {INSTALL_PHASE_LABEL[installPhase || "preparing"] ||
+                "Installing…"}
+            </div>
+            <div className="text-[11px] text-(--text-secondary) truncate">
+              {installDetail ||
+                "First-time installs can take a few minutes — downloading the runtime and dependencies."}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-(--radius-sm) bg-(--bg-card) border border-(--border)">
         <Search className="w-3.5 h-3.5 text-(--text-tertiary)" />
         <input

@@ -5,6 +5,11 @@
    =========================================================== */
 @layer base {
   :root {
+    /* Render native form controls (the <select> option popup, date pickers,
+       scrollbars) with light chrome by default; the dark theme flips this to
+       `dark` so the OS-drawn option list isn't white-on-white. */
+    color-scheme: light;
+
     /* Backgrounds */
     --bg-primary: #f2f2f7;
     --bg-secondary: #ffffff;
@@ -87,6 +92,10 @@
      light defaults via the higher-specificity selector.
      =========================================================== */
   [data-theme="dark"] {
+    /* Make the native <select> option popup, date pickers and scrollbars use
+       the OS dark palette so they don't render white-on-white in dark mode. */
+    color-scheme: dark;
+
     --bg-primary: #0f1115;
     --bg-secondary: #161922;
     --bg-card: #1a1d27;
@@ -460,7 +469,15 @@ code {
 .form-group select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-bg);
-  background: #ffffff;
+  background: var(--bg-secondary);
+}
+/* The native <select> option popup is OS-drawn. When the control carries an
+   explicit light text color, the open list can render white-on-white in dark
+   mode on Windows/Linux Chromium, so theme the options explicitly. */
+select option,
+select optgroup {
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 .form-actions {
   display: flex;

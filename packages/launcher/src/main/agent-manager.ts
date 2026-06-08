@@ -84,15 +84,18 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
     },
     {
       name: "ANTHROPIC_BASE_URL",
-      description: "Anthropic-compatible base URL (optional — for proxies or relays)",
-      required: false,
+      description: "Anthropic-compatible base URL (the default works for direct Anthropic API; change it for a proxy or relay)",
+      required: true,
+      default: "https://api.anthropic.com",
+      placeholder: "https://api.anthropic.com",
     },
     {
       name: "ANTHROPIC_MODEL",
       description:
-        "Model name (recommended when using a relay/proxy — its channels rarely match the default)",
-      required: false,
-      placeholder: "claude-sonnet-4-5",
+        "Model name (change it when using a relay/proxy — its channels rarely match the default)",
+      required: true,
+      default: "claude-sonnet-4-6",
+      placeholder: "claude-sonnet-4-6",
     },
   ],
   gemini: [
@@ -104,14 +107,17 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
     },
     {
       name: "GOOGLE_GEMINI_BASE_URL",
-      description: "Gemini-compatible base URL (optional — for proxies or custom gateways)",
-      required: false,
+      description: "Gemini-compatible base URL (the default works for Google AI Studio; change it for a proxy or custom gateway)",
+      required: true,
+      default: "https://generativelanguage.googleapis.com",
+      placeholder: "https://generativelanguage.googleapis.com",
     },
     {
       name: "GEMINI_MODEL",
       description:
-        "Model name (recommended when using a relay/proxy — its channels rarely match the default)",
-      required: false,
+        "Model name (change it when using a relay/proxy — its channels rarely match the default)",
+      required: true,
+      default: "gemini-2.5-pro",
       placeholder: "gemini-2.5-pro",
     },
   ],
@@ -124,15 +130,84 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
     },
     {
       name: "OPENAI_BASE_URL",
-      description: "OpenAI-compatible base URL (optional)",
-      required: false,
+      description: "OpenAI-compatible base URL (the default works for the OpenAI API; change it for a proxy or relay)",
+      required: true,
+      default: "https://api.openai.com/v1",
+      placeholder: "https://api.openai.com/v1",
     },
     {
       name: "CODEX_MODEL",
       description:
-        "Model name (recommended when using a relay/proxy — its channels rarely match the default)",
-      required: false,
+        "Model name (change it when using a relay/proxy — its channels rarely match the default)",
+      required: true,
+      default: "gpt-5-codex",
       placeholder: "gpt-5-codex",
+    },
+  ],
+  kimi: [
+    {
+      name: "KIMI_API_KEY",
+      description: "Moonshot / Kimi API key (also accepts MOONSHOT_API_KEY)",
+      required: true,
+      password: true,
+    },
+    {
+      name: "KIMI_BASE_URL",
+      description: "Kimi API base URL (OpenAI-compatible endpoint)",
+      required: true,
+      default: "https://api.moonshot.ai/v1",
+      placeholder: "https://api.moonshot.ai/v1",
+    },
+    {
+      name: "KIMI_MODEL",
+      description: "Kimi model name",
+      required: true,
+      default: "kimi-k2.6",
+      placeholder: "kimi-k2.6",
+    },
+  ],
+  openclaw: [
+    {
+      name: "LLM_API_KEY",
+      description: "API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "LLM_BASE_URL",
+      description: "API base URL (OpenAI-compatible endpoint)",
+      required: true,
+      default: "https://api.openai.com/v1",
+      placeholder: "https://api.openai.com/v1",
+    },
+    {
+      name: "LLM_MODEL",
+      description: "Model name",
+      required: true,
+      default: "gpt-4o",
+      placeholder: "gpt-4o, claude-sonnet-4-6, deepseek-chat, etc.",
+    },
+  ],
+  opencode: [
+    {
+      name: "LLM_API_KEY",
+      description: "API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "LLM_BASE_URL",
+      description: "API base URL (OpenAI-compatible endpoint)",
+      required: true,
+      default: "https://api.openai.com/v1",
+      placeholder: "https://api.openai.com/v1",
+    },
+    {
+      name: "LLM_MODEL",
+      description: "Model name",
+      required: true,
+      default: "gpt-4o",
+      placeholder: "gpt-4o, claude-sonnet-4-6, etc.",
     },
   ],
 }
@@ -944,7 +1019,11 @@ export class AgentManager extends EventEmitter {
         state: statusEntry?.state || "stopped",
         restarts: statusEntry?.restarts || 0,
         lastError: statusError || runtimeMessage,
-        health: this._healthByType.get(type) || null,
+        health: this._reconcileAgentHealth(
+          type,
+          a.env as Record<string, string> | undefined,
+          this._healthByType.get(type) || null,
+        ),
         runtimeMismatch,
       }
     })
@@ -996,6 +1075,106 @@ export class AgentManager extends EventEmitter {
       }, 0)
     }
     tick()
+  }
+
+  /**
+   * Correct a false "Not installed" from the core health check.
+   *
+   * The core resolves an agent's binary with `which`/`where` against PATH, but
+   * agents the launcher installs live in isolated runtimes
+   * (~/.openagents/runtimes/<type>/node_modules/.bin) that are NOT on the user's
+   * PATH. So a freshly-installed agent can report `installed:false` ("Not
+   * installed") from the health check even though the marketplace — which uses a
+   * filesystem package.json check (getInstallInfo) — correctly shows it
+   * installed. That mismatch surfaced in the Agents list as a confusing
+   * "⚠ Not installed" badge on a working agent. Trust the filesystem: if the npm
+   * package is present on disk, mark it installed and re-derive readiness from
+   * saved credentials so the label reflects configuration, not binary lookup.
+   */
+  private _reconcileHealth(type: string, health: unknown): unknown {
+    if (!health || typeof health !== "object") return health
+    const h = health as Record<string, unknown>
+    if (h.installed !== false) return health
+    // Only override when the launcher can independently confirm the install via
+    // the filesystem. api_only agents (no npm package) are already handled
+    // correctly by the core via its marker check, so getInstalledVersion being
+    // null there means "leave the core's verdict alone".
+    if (!this.getInstalledVersion(type)) return health
+    const ready = this._hasConfiguredCredentials(type)
+    return {
+      ...h,
+      installed: true,
+      ready,
+      auth_mode: ready ? "api_key" : null,
+      execution_mode: ready ? h.execution_mode || "direct" : "unavailable",
+      message: ready ? "Ready" : this._notReadyMessage(type),
+    }
+  }
+
+  /**
+   * Per-agent health, fixing two false negatives in the core's per-TYPE check:
+   *  1. "Not installed" — the core resolves binaries with `which`, which misses
+   *     isolated-runtime installs (handled by _reconcileHealth via filesystem).
+   *  2. "Not configured" — the core evaluates readiness against TYPE-level saved
+   *     env (~/.openagents/env/<type>.env) ONLY. But Configure on an existing
+   *     agent saves INSTANCE env into daemon.yaml (saveAgentInstanceEnv), so a
+   *     fully-configured agent (valid key/base/model, Test connection passes)
+   *     still shows "Not configured". Trust the instance's own env here.
+   */
+  private _reconcileAgentHealth(
+    type: string,
+    instanceEnv: Record<string, string> | undefined,
+    typeHealth: unknown,
+  ): unknown {
+    const health = this._reconcileHealth(type, typeHealth)
+    if (!health || typeof health !== "object") return health
+    const h = health as Record<string, unknown>
+    if (h.installed === false || h.ready === true) return health
+    if (this._envHasApiKey(instanceEnv) || this._hasConfiguredCredentials(type)) {
+      return {
+        ...h,
+        installed: true,
+        ready: true,
+        auth_mode: "api_key",
+        execution_mode:
+          h.execution_mode && h.execution_mode !== "unavailable"
+            ? h.execution_mode
+            : "direct",
+        message: "Ready",
+      }
+    }
+    return health
+  }
+
+  /** True when an env map carries any non-empty API key (e.g. *_API_KEY). */
+  private _envHasApiKey(env: Record<string, string> | undefined): boolean {
+    if (!env || typeof env !== "object") return false
+    return Object.entries(env).some(
+      ([k, v]) => /API_KEY$/.test(k) && !!(v || "").trim(),
+    )
+  }
+
+  /** True when saved TYPE-level env for this agent carries any non-empty key. */
+  private _hasConfiguredCredentials(type: string): boolean {
+    try {
+      return this._envHasApiKey(
+        this.getAgentEnv(type) as Record<string, string> | undefined,
+      )
+    } catch {
+      return false
+    }
+  }
+
+  /** Registry's not-ready hint for an agent type, with a sensible fallback. */
+  private _notReadyMessage(type: string): string {
+    try {
+      const entry = this._getRegistryEntry(type)
+      const checkReady = entry?.check_ready as
+        | { not_ready_message?: string }
+        | undefined
+      if (checkReady?.not_ready_message) return checkReady.not_ready_message
+    } catch {}
+    return "Not configured — add an API key in Configure"
   }
 
   async addAgent(agentConfig: {

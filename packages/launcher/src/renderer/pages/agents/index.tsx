@@ -173,7 +173,41 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
   }
 
   const openWorkspace = async (agent: Agent): Promise<void> => {
+    // An agent that isn't bound to a workspace runs "local only" in the daemon
+    // and never joins the workspace channel — so it can't ever answer messages
+    // sent from the web chat. Catch that here instead of opening a chat that
+    // silently goes nowhere.
+    if (!agent.network) {
+      showToast(
+        `${agent.name} isn't connected to a workspace yet — click Connect first.`,
+        "warning",
+      )
+      return
+    }
     try {
+      // The agent must be running to reply in the workspace. Opening the web
+      // chat against a stopped agent is the #1 "agent never responds" trap —
+      // start it first and wait briefly for it to come online so the chat the
+      // user lands on is actually live.
+      const isRunning = ["online", "running", "idle"].includes(agent.state)
+      if (!isRunning) {
+        showToast(`Starting ${agent.name}…`, "info")
+        try {
+          await window.api.startAgent(agent.name)
+          for (let i = 0; i < 5; i++) {
+            await new Promise((r) => setTimeout(r, 1200))
+            const status = await window.api.agentStatus()
+            const st = status[agent.name]?.state
+            if (st && ["online", "running", "idle"].includes(st)) break
+          }
+        } catch (e: unknown) {
+          showToast(
+            `Couldn't start ${agent.name}: ${(e as Error).message}`,
+            "error",
+          )
+          return
+        }
+      }
       const workspaces = await window.api.listWorkspaces()
       const ws = workspaces.find(
         (w) => w.slug === agent.network || w.id === agent.network,
@@ -623,6 +657,16 @@ function ConfigureDialog({
   }, [open, agentName, agentType])
 
   const save = async (): Promise<void> => {
+    const missing = fields.find(
+      (f) => f.required && !(values[f.name] || "").trim(),
+    )
+    if (missing) {
+      showToast(
+        `${missing.description || missing.name} is required`,
+        "warning",
+      )
+      return
+    }
     try {
       if (agentName) {
         await window.api.saveAgentInstanceEnv(agentName, values)

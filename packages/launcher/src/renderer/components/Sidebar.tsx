@@ -47,14 +47,6 @@ const NAV_ITEMS: NavItem[] = [
     description: "Overview: agent status, workspaces, and recent activity",
   },
   {
-    id: "chat",
-    label: "Chat",
-    icon: <MessageSquare className="w-4 h-4" />,
-    section: "overview",
-    description: "Chat with your connected workspaces",
-  },
-
-  {
     id: "install",
     label: "Marketplace",
     icon: <Download className="w-4 h-4" />,
@@ -74,6 +66,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Layers className="w-4 h-4" />,
     section: "manage",
     description: "Step 3 · Open and manage workspaces",
+  },
+  {
+    id: "chat",
+    label: "Chat",
+    icon: <MessageSquare className="w-4 h-4" />,
+    section: "manage",
+    description: "Chat with your connected workspaces",
   },
   {
     id: "connections",
