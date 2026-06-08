@@ -12,7 +12,7 @@ import { OnboardingFlow, shouldShowOnboarding } from "./components/onboarding/On
 import { GuidedTour, shouldShowGuidedTour } from "./components/onboarding/GuidedTour"
 import Dashboard from "./pages/dashboard"
 import Agents from "./pages/agents"
-
+import Chat from "./pages/chat"
 import Workspaces from "./pages/workspaces"
 import Connections from "./pages/connections"
 import Credentials from "./pages/credentials"
@@ -120,6 +120,7 @@ export default function App(): React.JSX.Element {
           />
         )}
 
+        {currentTab === "chat" && <Chat showToast={showToast} />}
         {currentTab === "agents" && <Agents showToast={showToast} />}
         {currentTab === "workspaces" && <Workspaces showToast={showToast} />}
         {currentTab === "connections" && <Connections showToast={showToast} />}
