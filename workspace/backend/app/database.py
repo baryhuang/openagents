@@ -25,13 +25,22 @@ if _is_sqlite:
         SQLiteTypeCompiler.visit_JSONB = lambda self, type_, **kw: "JSON"
         SQLiteTypeCompiler.visit_UUID = lambda self, type_, **kw: "TEXT"
 
-# PgBouncer (e.g. Supabase port 6543) maintains its own connection pool;
-# app-level pooling is redundant and causes stale-connection failures
+# A PgBouncer pooler in front of Postgres maintains its own backend pool,
+# so app-level pooling is redundant and causes stale-connection failures
 # ("SSL connection has been closed unexpectedly") because pgbouncer may
 # rotate or idle-kill the TCP connection our app still thinks is fresh.
 # Use NullPool in pgbouncer mode: each request opens a short-lived conn
-# that goes straight to pgbouncer (local to Supabase, ~1-2ms overhead).
-_is_pgbouncer = ":6543/" in config.DATABASE_URL
+# that goes straight to pgbouncer (co-located, ~1ms overhead), and pgbouncer
+# multiplexes those onto a small fixed set of real Postgres backends — which
+# lifts the ~100-connection Postgres ceiling that forced the app pool down.
+#
+# Detected by Supabase's pooler port (:6543) OR an explicit DB_PGBOUNCER
+# flag. A self-hosted/Railway pgbouncer listens on a different port (commonly
+# 6432), so the port alone isn't a reliable signal — the flag is.
+_is_pgbouncer = (
+    ":6543/" in config.DATABASE_URL
+    or os.environ.get("DB_PGBOUNCER", "").strip().lower() in ("1", "true", "yes")
+)
 
 _pool_kwargs = (
     {"poolclass": NullPool}
