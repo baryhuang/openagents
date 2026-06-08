@@ -53,6 +53,17 @@ jobs:
 
     - name: Publish to npm
       working-directory: packages/agent-connector
-      run: npm publish --access public --provenance
+      # Skip when this exact version is already on npm so a push to develop that
+      # doesn't bump the version doesn't fail the job with E403 ("cannot publish
+      # over previously published versions"). Only an actual version bump
+      # publishes.
+      run: |
+        NAME=$(node -p "require('./package.json').name")
+        VERSION=$(node -p "require('./package.json').version")
+        if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+          echo "$NAME@$VERSION already published — skipping publish."
+          exit 0
+        fi
+        npm publish --access public --provenance
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
