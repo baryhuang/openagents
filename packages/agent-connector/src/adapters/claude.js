@@ -38,6 +38,8 @@ class ClaudeAdapter extends BaseAdapter {
     this._stoppingChannels = new Set();
     this._persistentProcs = {}; // channel → { proc, lineBuffer, pendingLines, idleTimer, messageResolve }
     this._IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+    this._WATCHDOG_INTERVAL_MS = 15_000; // 15s between checks
+    this._WATCHDOG_MAX_TIMEOUTS = 20;    // 20 * 15s = 5 min of silence → kill
     this._sessionsFile = path.join(
       os.homedir(), '.openagents', 'sessions',
       `${this.workspaceId}_${this.agentName}.json`
@@ -579,6 +581,7 @@ class ClaudeAdapter extends BaseAdapter {
     const pp = this._persistentProcs[channel];
     if (!pp) return;
     if (pp.idleTimer) clearTimeout(pp.idleTimer);
+    this._stopWatchdog(pp);
     this._stopProcess(pp.proc).catch(() => {});
     delete this._persistentProcs[channel];
   }
@@ -595,6 +598,49 @@ class ClaudeAdapter extends BaseAdapter {
       this._log(`Persistent process idle for ${this._IDLE_TIMEOUT_MS / 60000}min, releasing ${channel}`);
       this._killPersistentProc(channel);
     }, this._IDLE_TIMEOUT_MS);
+  }
+
+  /**
+   * Start a watchdog that kills the persistent process if stdout goes
+   * silent for too long while a message is in flight.  Pauses during
+   * tool execution (awaitingToolResult) since long-running commands
+   * like builds or sleep produce no stdout legitimately.
+   */
+  _startWatchdog(pp) {
+    this._stopWatchdog(pp);
+    pp.lastStdoutTime = Date.now();
+    let consecutiveTimeouts = 0;
+
+    pp.watchdogTimer = setInterval(async () => {
+      if (!pp.messageResolve) { consecutiveTimeouts = 0; return; }
+      if (pp.awaitingToolResult) { consecutiveTimeouts = 0; return; }
+
+      const elapsed = Date.now() - pp.lastStdoutTime;
+      if (elapsed < this._WATCHDOG_INTERVAL_MS) { consecutiveTimeouts = 0; return; }
+
+      consecutiveTimeouts++;
+      pp.lastStdoutTime = Date.now();
+
+      if (consecutiveTimeouts === 2) {
+        try { await this.sendStatus(pp.msgChannel, 'Still processing...'); } catch {}
+      }
+
+      if (consecutiveTimeouts >= this._WATCHDOG_MAX_TIMEOUTS) {
+        this._log(`Watchdog: process unresponsive for ${consecutiveTimeouts * 15}s on ${pp.msgChannel} — killing`);
+        this._stopWatchdog(pp);
+        try { await this.sendError(pp.msgChannel, 'Agent process became unresponsive and was restarted.'); } catch {}
+        if (pp.messageResolve) {
+          const resolve = pp.messageResolve;
+          pp.messageResolve = null;
+          resolve({ exited: true, error: new Error('watchdog timeout') });
+        }
+        this._killPersistentProc(pp.msgChannel);
+      }
+    }, this._WATCHDOG_INTERVAL_MS);
+  }
+
+  _stopWatchdog(pp) {
+    if (pp.watchdogTimer) { clearInterval(pp.watchdogTimer); pp.watchdogTimer = null; }
   }
 
   /**
@@ -651,6 +697,9 @@ class ClaudeAdapter extends BaseAdapter {
       everPostedAnything: false,
       stderrBuf: '',
       alive: true,
+      lastStdoutTime: Date.now(),
+      watchdogTimer: null,
+      awaitingToolResult: false,
     };
 
     if (proc.stderr) {
@@ -665,6 +714,7 @@ class ClaudeAdapter extends BaseAdapter {
       const eventType = event.type;
 
       if (eventType === 'assistant') {
+        pp.awaitingToolResult = false;
         const blocks = (event.message || {}).content || [];
         for (const block of blocks) {
           if (block.type === 'text' && block.text && block.text.trim()) {
@@ -680,6 +730,7 @@ class ClaudeAdapter extends BaseAdapter {
             pp.hasToolUseSinceLastText = true;
             pp.postedThinking = false;
             pp.lastResponseText.length = 0;
+            pp.awaitingToolResult = true;
             const toolName = block.name || '';
             if (toolName === 'TodoWrite' && block.input && block.input.todos) {
               try {
@@ -707,6 +758,7 @@ class ClaudeAdapter extends BaseAdapter {
           }
         }
       } else if (eventType === 'result') {
+        pp.awaitingToolResult = false;
         const sessionId = event.session_id;
         if (sessionId) {
           this._channelSessions[pp.msgChannel] = sessionId;
@@ -732,6 +784,7 @@ class ClaudeAdapter extends BaseAdapter {
 
     proc.stdout.on('data', (chunk) => {
       pp.lineBuffer += chunk.toString('utf-8');
+      pp.lastStdoutTime = Date.now();
       const lines = pp.lineBuffer.split('\n');
       pp.lineBuffer = lines.pop();
       for (const line of lines) {
@@ -743,6 +796,7 @@ class ClaudeAdapter extends BaseAdapter {
       this._log(`Persistent process exited: channel=${channel} code=${code}`);
       pp.alive = false;
       if (pp.idleTimer) clearTimeout(pp.idleTimer);
+      this._stopWatchdog(pp);
       if (pp.messageResolve) {
         pp.messageResolve({ exited: true, code });
         pp.messageResolve = null;
@@ -754,6 +808,7 @@ class ClaudeAdapter extends BaseAdapter {
     proc.on('error', (err) => {
       this._log(`Persistent process error: ${err.message}`);
       pp.alive = false;
+      this._stopWatchdog(pp);
       if (pp.messageResolve) {
         pp.messageResolve({ exited: true, error: err });
         pp.messageResolve = null;
@@ -777,6 +832,7 @@ class ClaudeAdapter extends BaseAdapter {
     pp.hasToolUseSinceLastText = false;
     pp.postedThinking = false;
     pp.everPostedAnything = false;
+    pp.awaitingToolResult = false;
 
     const stdinMsg = JSON.stringify({
       type: 'user',
@@ -787,11 +843,18 @@ class ClaudeAdapter extends BaseAdapter {
     }) + '\n';
 
     return new Promise((resolve) => {
-      pp.messageResolve = resolve;
+      pp.messageResolve = (result) => {
+        this._stopWatchdog(pp);
+        resolve(result);
+      };
+      pp.lastStdoutTime = Date.now();
+      this._startWatchdog(pp);
       try {
         pp.proc.stdin.write(stdinMsg);
       } catch (e) {
         this._log(`stdin write failed: ${e.message}`);
+        this._stopWatchdog(pp);
+        pp.messageResolve = null;
         resolve({ exited: true, error: e });
       }
     });

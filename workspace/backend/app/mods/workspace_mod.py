@@ -297,9 +297,11 @@ async def _handle_channel_create(event: Event, ctx: PipelineContext) -> Optional
     db.add(channel)
     db.flush()  # get channel.id
 
-    # Add initial participants
+    # Add initial participants (filter out routing sentinels)
     participants = payload.get("participants", [])
     for agent_name in participants:
+        if agent_name == "__no_response__":
+            continue
         db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
 
     db.flush()
@@ -922,7 +924,11 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
         return event
 
     # ── Multi-agent channel: always use LLM router ──────────────────
-    if len(channel.participants or []) >= 2:
+    real_participants = [
+        p for p in (channel.participants or [])
+        if p.agent_name != "__no_response__"
+    ]
+    if len(real_participants) >= 2:
         from app.config import config
         if config.ROUTER_LLM_ENABLED and _get_router_api_key():
             targets = await _route_with_llm(channel, event, db, workspace)
@@ -957,6 +963,17 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
             not channel.name.startswith("routines:"):
         from app.models import ChannelMember
         existing = {p.agent_name for p in (channel.participants or [])}
+        # Clean up any __no_response__ sentinels that leaked into participants
+        if "__no_response__" in existing:
+            bogus = db.execute(
+                select(ChannelMember).where(
+                    ChannelMember.channel_id == channel.id,
+                    ChannelMember.agent_name == "__no_response__",
+                )
+            ).scalar_one_or_none()
+            if bogus:
+                db.delete(bogus)
+            existing.discard("__no_response__")
         for agent_name in event.metadata.get("target_agents", []):
             if agent_name == "__no_response__":
                 continue
