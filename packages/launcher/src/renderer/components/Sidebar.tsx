@@ -14,7 +14,6 @@ import {
   Sun,
   Monitor,
   HelpCircle,
-  MessageSquare,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { cn } from "../lib/utils"
@@ -46,14 +45,6 @@ const NAV_ITEMS: NavItem[] = [
     section: "overview",
     description: "Overview: agent status, workspaces, and recent activity",
   },
-  {
-    id: "chat",
-    label: "Chat",
-    icon: <MessageSquare className="w-4 h-4" />,
-    section: "overview",
-    description: "Chat with your connected workspaces",
-  },
-
   {
     id: "install",
     label: "Marketplace",

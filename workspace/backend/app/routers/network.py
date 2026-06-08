@@ -577,6 +577,25 @@ _AGENT_CATALOG = [
         "tags": ["coding", "container", "lightweight", "open-source"],
         "builtin": False,
     },
+    {
+        "name": "cursor",
+        "label": "Cursor",
+        "description": "Cursor's AI coding agent for the terminal",
+        "install_command": "curl -fsSL https://cursor.com/install | bash",
+        "install_command_win": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm 'https://cursor.com/install?win32=true' | iex\"",
+        "homepage": "https://cursor.com",
+        "tags": ["coding", "cli", "cursor"],
+        "builtin": True,
+    },
+    {
+        "name": "hermes",
+        "label": "Hermes Agent",
+        "description": "Nous Research's self-improving AI agent with tools, profiles, memory, and messaging",
+        "install_command": "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup",
+        "homepage": "https://github.com/NousResearch/hermes-agent",
+        "tags": ["coding", "open-source", "nous-research", "self-improving"],
+        "builtin": True,
+    },
 ]
 
 
