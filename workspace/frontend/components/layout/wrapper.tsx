@@ -18,10 +18,12 @@ import { SkillsView } from '@/components/skills/skills-view';
 import { InboxView } from '@/components/inbox/inbox-view';
 import { KnowledgeView } from '@/components/knowledge/knowledge-view';
 import { useWorkspace } from '@/lib/workspace-context';
+import { EmptyState } from '@/components/chat/empty-state';
 
 export function Wrapper() {
   const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen, isDetailExpanded, mobilePane, splitBrowser, showBrowserPreview } = useLayout();
-  const { monitorMode } = useWorkspace();
+  const { monitorMode, agents } = useWorkspace();
+  const hasAgents = agents.length > 0;
 
   // ── Mobile layout: single-pane with list/detail switching ──
   if (isMobile) {
@@ -30,7 +32,11 @@ export function Wrapper() {
         <MobileHeader />
         <div className="flex-1 min-h-0 pt-[var(--header-height-mobile)] pb-[calc(48px+env(safe-area-inset-bottom))]">
           {/* Full-screen views (no list/detail split) */}
-          {viewMode === 'connect' ? (
+          {!hasAgents && viewMode === 'threads' ? (
+            <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+              <EmptyState />
+            </div>
+          ) : viewMode === 'connect' ? (
             <div className="h-full mx-2 my-1.5 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
               <ConnectAgentView />
             </div>
@@ -95,8 +101,13 @@ export function Wrapper() {
             />
           )}
 
-          {/* Monitor mode: replace both panes with 2x3 grid */}
-          {viewMode === 'threads' && monitorMode ? (
+          {/* No agents + threads view: full-width onboarding (no thread list, no message input) */}
+          {!hasAgents && viewMode === 'threads' ? (
+            <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
+              <EmptyState />
+            </div>
+          ) : viewMode === 'threads' && monitorMode ? (
+            /* Monitor mode: replace both panes with 2x3 grid */
             <div className="relative flex-1 min-w-0">
               <MonitorGrid />
               {isAgentPanelOpen && <AgentProfilePanel />}

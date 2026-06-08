@@ -1,7 +1,6 @@
 import React from "react"
 import {
   LayoutDashboard,
-  MessageSquare,
   Cpu,
   Layers,
   Plug,

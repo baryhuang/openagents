@@ -1,28 +1,41 @@
 'use client';
 
-import { use, Suspense } from 'react';
+import { use, Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace-context';
 import { LayoutProvider } from '@/components/layout/layout-context';
 import { Wrapper } from '@/components/layout/wrapper';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
-import { IdentityDialog } from '@/components/identity/identity-dialog';
+
+function setWorkspaceCookie(slug: string, token: string) {
+  const maxAge = 30 * 24 * 60 * 60;
+  const shared = `path=/;max-age=${maxAge};secure;samesite=lax;domain=.openagents.org`;
+  document.cookie = `oa_workspace=${encodeURIComponent(JSON.stringify({ slug, token }))};${shared}`;
+  document.cookie = `oa_has_workspace=1;${shared}`;
+}
 
 function IdentityGate({ children }: { children: React.ReactNode }) {
   const { currentUser, setUserName } = useWorkspace();
 
-  return (
-    <>
-      <IdentityDialog open={!currentUser.name.trim()} onSubmit={setUserName} />
-      {children}
-    </>
-  );
+  useEffect(() => {
+    if (!currentUser.name.trim()) {
+      setUserName('Guest');
+    }
+  }, [currentUser.name, setUserName]);
+
+  return <>{children}</>;
 }
 
 function WorkspaceContent({ workspaceId }: { workspaceId: string }) {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const { user, idToken, loading: authLoading, isOpenAgentsDomain, signIn } = useOpenAgentsAuth();
+
+  useEffect(() => {
+    if (token) {
+      setWorkspaceCookie(workspaceId, token);
+    }
+  }, [workspaceId, token]);
 
   // Has workspace token in URL — use it directly
   if (token) {
