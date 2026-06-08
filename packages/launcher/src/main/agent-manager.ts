@@ -86,6 +86,13 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
       description: "Anthropic-compatible base URL (optional — for proxies or relays)",
       required: false,
     },
+    {
+      name: "ANTHROPIC_MODEL",
+      description:
+        "Model name (recommended when using a relay/proxy — its channels rarely match the default)",
+      required: false,
+      placeholder: "claude-sonnet-4-5",
+    },
   ],
   gemini: [
     {
@@ -99,6 +106,13 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
       description: "Gemini-compatible base URL (optional — for proxies or custom gateways)",
       required: false,
     },
+    {
+      name: "GEMINI_MODEL",
+      description:
+        "Model name (recommended when using a relay/proxy — its channels rarely match the default)",
+      required: false,
+      placeholder: "gemini-2.5-pro",
+    },
   ],
   codex: [
     {
@@ -111,6 +125,13 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
       name: "OPENAI_BASE_URL",
       description: "OpenAI-compatible base URL (optional)",
       required: false,
+    },
+    {
+      name: "CODEX_MODEL",
+      description:
+        "Model name (recommended when using a relay/proxy — its channels rarely match the default)",
+      required: false,
+      placeholder: "gpt-5-codex",
     },
   ],
 }
@@ -194,10 +215,22 @@ async function testLLMConnection(
       )
       const model =
         pick("GEMINI_MODEL", "GOOGLE_GEMINI_MODEL") || "gemini-2.0-flash"
+      // Google's REST path is /v1beta/models/<model>:generateContent. Relays
+      // and custom gateways are usually entered WITH the version already in the
+      // base URL (e.g. https://host/v1beta), so only add it when the base URL
+      // doesn't already carry a /v1 or /v1beta segment — otherwise we'd POST to
+      // …/v1beta/v1beta/… and the relay never answers (the request hangs to the
+      // socket timeout instead of returning a clean error).
+      const geminiPath = /\/v\d+(beta)?$/.test(base)
+        ? `/models/${model}:generateContent`
+        : `/v1beta/models/${model}:generateContent`
       const { status, text } = await httpRequestJson(
-        `${base}/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`,
+        `${base}${geminiPath}?key=${encodeURIComponent(geminiKey)}`,
         "POST",
-        { "content-type": "application/json" },
+        // Native Google also accepts the key via x-goog-api-key; harmless next
+        // to ?key=. Deliberately NOT sending Authorization: Bearer — Google
+        // would treat it as an OAuth token and reject a plain API key with 401.
+        { "content-type": "application/json", "x-goog-api-key": geminiKey },
         JSON.stringify({
           contents: [{ parts: [{ text: "Say hi in 5 words." }] }],
         }),
@@ -283,8 +316,13 @@ async function testLLMConnection(
     )
     if (!/\/v\d+$/.test(base)) base += "/v1"
     const model =
-      pick("OPENAI_MODEL", "LLM_MODEL", "KIMI_MODEL", "OPENCLAW_MODEL") ||
-      (hasKimi ? "kimi-k2.6" : "gpt-4o-mini")
+      pick(
+        "OPENAI_MODEL",
+        "CODEX_MODEL",
+        "LLM_MODEL",
+        "KIMI_MODEL",
+        "OPENCLAW_MODEL",
+      ) || (hasKimi ? "kimi-k2.6" : "gpt-4o-mini")
     const { status, text } = await httpRequestJson(
       `${base}/chat/completions`,
       "POST",

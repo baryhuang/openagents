@@ -195,6 +195,12 @@ class GeminiAdapter extends BaseAdapter {
 
     const cmd = [geminiBin, '-p', fullPrompt, '-y', '-o', 'stream-json'];
 
+    // Honor a user-configured model (e.g. when pointing at a relay/proxy whose
+    // channels don't match the CLI default). Set via GEMINI_MODEL in env_config.
+    const env = this.agentEnv || process.env;
+    const model = (env.GEMINI_MODEL || env.GOOGLE_GEMINI_MODEL || '').trim();
+    if (model) cmd.push('-m', model);
+
     const sessionId = this._channelSessions[channelName];
     if (sessionId && !skipResume) {
       cmd.push('-r', sessionId);

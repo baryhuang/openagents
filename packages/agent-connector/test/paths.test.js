@@ -30,6 +30,20 @@ describe('Paths', () => {
     assert.ok(env.PATH.includes('/custom'));
   });
 
+  it('getEnhancedEnv updates a lowercase "Path" key in place, no duplicate', () => {
+    // Windows spreads process.env with key "Path" (not "PATH"). Writing a fresh
+    // env.PATH would create a SECOND key holding only the extra dirs — dropping
+    // System32 — and libuv would resolve spawns against that truncated value.
+    const sentinel = path.join('Z:', 'System32-sentinel');
+    const env = getEnhancedEnv({ FOO: 'bar', Path: sentinel });
+    // The original Path value must be preserved.
+    assert.ok((env.Path || '').includes(sentinel), 'original Path retained');
+    // No second case-variant key should have been created holding only extras.
+    const pathKeys = Object.keys(env).filter((k) => k.toLowerCase() === 'path');
+    assert.equal(pathKeys.length, 1, 'exactly one path key');
+    assert.equal(pathKeys[0], 'Path', 'kept the original key casing');
+  });
+
   it('getEnhancedEnv sets UTF-8 vars on Windows', () => {
     if (!IS_WINDOWS) return; // skip on non-Windows
     const env = getEnhancedEnv();
