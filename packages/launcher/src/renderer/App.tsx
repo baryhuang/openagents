@@ -38,23 +38,34 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     initTheme()
     void initNotifications()
-    const showOnboarding = shouldShowOnboarding()
-    setOnboardingOpen(showOnboarding)
-    // Returning users who never saw the spotlight tour get it once on launch.
-    // New users get it after the provisioning wizard closes (see onClose).
-    if (!showOnboarding && shouldShowGuidedTour()) startTour()
-    // After an upgrade the main process flags a one-time onboarding reset.
-    // Clear the saved onboarding state and re-open the flow so returning users
-    // walk through the new key-based configuration steps.
-    void window.api.consumeOnboardingReset().then((reset) => {
-      if (!reset) return
-      try {
-        localStorage.removeItem("onboarding_completed")
-        localStorage.removeItem("onboarding_step")
-        localStorage.removeItem("last_selected_agent")
-      } catch {}
-      setOnboardingOpen(true)
-    })
+    // After an upgrade the main process flags a one-time onboarding reset. We
+    // MUST resolve that flag before deciding whether to show onboarding or to
+    // auto-run the spotlight tour: otherwise a returning user (onboarding
+    // already complete, tour never seen) would auto-start the tour
+    // synchronously, and the async reset would then re-open the onboarding
+    // wizard on top of it — showing both at once. Serializing the decision
+    // against the final localStorage state avoids that race entirely.
+    void window.api
+      .consumeOnboardingReset()
+      .catch(() => false)
+      .then((reset) => {
+        if (reset) {
+          // Clear saved onboarding state so returning users walk through the
+          // new key-based configuration steps from the top.
+          try {
+            localStorage.removeItem("onboarding_completed")
+            localStorage.removeItem("onboarding_step")
+            localStorage.removeItem("last_selected_agent")
+          } catch {}
+        }
+        const showOnboarding = shouldShowOnboarding()
+        setOnboardingOpen(showOnboarding)
+        // Returning users who already finished onboarding but never saw the
+        // spotlight tour get it once now. New users (and post-reset users) get
+        // it only after the provisioning wizard closes — see OnboardingFlow's
+        // onClose handler — so the tour never overlaps the wizard.
+        if (!showOnboarding && shouldShowGuidedTour()) startTour()
+      })
   }, [initTheme, initNotifications, startTour])
 
   // Global install:progress + install:output subscription
@@ -150,7 +161,10 @@ export default function App(): React.JSX.Element {
         }}
         showToast={showToast}
       />
-      <GuidedTour />
+      {/* Never mount the tour while the onboarding wizard is open — they are
+          mutually exclusive, and this guarantees the spotlight can never render
+          on top of the wizard even if a stray startTour() slips through. */}
+      {!onboardingOpen && <GuidedTour />}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import path from "path"
 import fs from "fs"
 import os from "os"
 import https from "https"
+import { net } from "electron"
 import { spawnSync } from "child_process"
 import { withPathEnv, readPathEnv } from "./env"
 import { EventEmitter } from "events"
@@ -151,32 +152,51 @@ function httpRequestJson(
   timeoutMs = 15000,
 ): Promise<{ status: number; text: string }> {
   return new Promise((resolve, reject) => {
-    let parsed: URL
     try {
-      parsed = new URL(urlStr)
+      // Validate early so a bad base URL fails fast instead of via the socket.
+      void new URL(urlStr)
     } catch {
       reject(new Error(`Invalid URL: ${urlStr}`))
       return
     }
-    const transport =
-      parsed.protocol === "http:" ? (require("http") as typeof https) : https
-    const req = transport.request(
-      urlStr,
-      { method, headers, timeout: timeoutMs },
-      (res) => {
-        let data = ""
-        res.setEncoding("utf8")
-        res.on("data", (c) => {
-          data += c
-        })
-        res.on("end", () => resolve({ status: res.statusCode || 0, text: data }))
-      },
-    )
-    req.on("error", (e) => reject(e))
-    req.on("timeout", () => {
-      req.destroy()
-      reject(new Error("Request timed out"))
+    // Use Electron's net (Chromium network stack) rather than Node's https.
+    // Node's http/https ignores the OS proxy, so on Windows — where the user's
+    // proxy/VPN is usually configured as a *system* HTTP proxy that only
+    // WinINET/Chromium honor — requests to api.openai.com / api.anthropic.com /
+    // generativelanguage.googleapis.com never connect and hit the timeout,
+    // while macOS (typically a transparent/global proxy) passes. net.request
+    // resolves the system proxy exactly like the browser, so "Test connection"
+    // behaves the same on every platform.
+    const req = net.request({ method, url: urlStr })
+    for (const [k, v] of Object.entries(headers)) req.setHeader(k, v)
+
+    let settled = false
+    const finish = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    const timer = setTimeout(() => {
+      finish(() => {
+        try {
+          req.abort()
+        } catch {}
+        reject(new Error("Request timed out"))
+      })
+    }, timeoutMs)
+
+    req.on("response", (res) => {
+      let data = ""
+      res.on("data", (c: Buffer) => {
+        data += c.toString("utf8")
+      })
+      res.on("end", () =>
+        finish(() => resolve({ status: res.statusCode || 0, text: data })),
+      )
+      res.on("error", (e: Error) => finish(() => reject(e)))
     })
+    req.on("error", (e) => finish(() => reject(e)))
     if (body) req.write(body)
     req.end()
   })

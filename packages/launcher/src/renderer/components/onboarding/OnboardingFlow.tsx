@@ -127,8 +127,14 @@ export function OnboardingFlow({
   // runnable set appears so the picker never strands the user on an empty
   // state. Only runnable agents are returned, so whatever shows up is safe to
   // pick — no more "Agent not found" from choosing an unsupported runtime.
+  //
+  // This also has to run for the steps AFTER the picker (Configure / Workspace
+  // / Launch): a returning user can relaunch straight into a resumed step, and
+  // those steps derive `selectedEntry` from `agents`. If we only loaded on the
+  // picker step, a resumed Configure step would sit on "Loading configuration…"
+  // forever because the agent list was never fetched. Skip once loaded.
   useEffect(() => {
-    if (!open || step !== 1) return
+    if (!open || step < 1 || agents.length > 0) return
     let cancelled = false
     let attempt = 0
     const run = async (): Promise<void> => {
@@ -144,7 +150,18 @@ export function OnboardingFlow({
     return () => {
       cancelled = true
     }
-  }, [open, step, loadAgents])
+  }, [open, step, agents.length, loadAgents])
+
+  // If a resumed session points at an agent that's no longer runnable (e.g. it
+  // was uninstalled, or its persisted name no longer matches the catalog),
+  // don't strand the post-picker steps on a perpetual spinner — once the agent
+  // list has actually loaded and the saved selection isn't in it, send the user
+  // back to the picker to choose again.
+  useEffect(() => {
+    if (!open || step < 2) return
+    if (agentsLoading || agents.length === 0) return
+    if (!selectedEntry) setStep(1)
+  }, [open, step, agentsLoading, agents.length, selectedEntry])
 
   // Initialise the configure step from the selected agent's resolved auth info.
   // No network round-trips for the field list — the picker already carries the
