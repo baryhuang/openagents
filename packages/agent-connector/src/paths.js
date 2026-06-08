@@ -107,7 +107,13 @@ function getEnhancedEnv(baseEnv) {
   const env = { ...(baseEnv || process.env) };
   const extra = getExtraBinDirs();
   if (extra.length > 0) {
-    env.PATH = extra.join(SEP) + SEP + (env.PATH || '');
+    // Spreading process.env on Windows yields a "Path" key (not "PATH"), so a
+    // bare `env.PATH = …` would create a SECOND key holding only the extra dirs
+    // — no System32 — and libuv picks that truncated one when resolving spawned
+    // executables (cmd.exe / where.exe become unfindable). Update the existing
+    // case-insensitive path key in place instead.
+    const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
+    env[pathKey] = extra.join(SEP) + SEP + (env[pathKey] || '');
   }
   if (IS_WINDOWS) {
     // Force UTF-8 output from child processes on non-English Windows locales

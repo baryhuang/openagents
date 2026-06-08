@@ -411,13 +411,18 @@ async function downloadNodejs(
 
     const npmCliPath = path.join(npmModDir, "bin", "npm-cli.js")
     if (fs.existsSync(npmCliPath)) {
+      // Reference node.exe / the cli via %~dp0 (this .cmd file's own dir),
+      // NOT an absolute path. cmd.exe reads a .cmd FILE from disk using the OEM
+      // code page (936/GBK on zh-CN), so an embedded "C:\Users\中文名\…" path
+      // would be corrupted; %~dp0 is resolved from the filesystem at runtime as
+      // Unicode and stays correct under a non-ASCII home dir.
       fs.writeFileSync(
         path.join(nodejsDir, "npm.cmd"),
-        `@echo off\r\n"${nodeExeDest}" "${npmCliPath}" %*\r\n`,
+        `@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\npm\\bin\\npm-cli.js" %*\r\n`,
       )
       fs.writeFileSync(
         path.join(nodejsDir, "npx.cmd"),
-        `@echo off\r\n"${nodeExeDest}" "${path.join(npmModDir, "bin", "npx-cli.js")}" %*\r\n`,
+        `@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\npm\\bin\\npx-cli.js" %*\r\n`,
       )
     }
   } else {
@@ -2183,10 +2188,12 @@ app.whenReady().then(async () => {
         fs.unlinkSync(npmTgz)
       } catch {}
       if (process.platform === "win32") {
-        const nodeExe = path.join(PORTABLE_NODE_DIR, "node.exe")
+        // %~dp0-relative so cmd.exe (which reads this .cmd file with the OEM
+        // code page) never sees an embedded non-ASCII path. See the matching
+        // shim in downloadNodejs().
         fs.writeFileSync(
           path.join(PORTABLE_NODE_DIR, "npm.cmd"),
-          `@echo off\r\n"${nodeExe}" "${path.join(npmModDir, "bin", "npm-cli.js")}" %*\r\n`,
+          `@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\npm\\bin\\npm-cli.js" %*\r\n`,
         )
       }
       slog("npm installed")

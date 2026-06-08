@@ -414,31 +414,72 @@ class Installer {
       await this.installNodejs(onData);
     }
 
-    // Resolve npm command
-    let cmd = rawCmd;
+    const env = this._buildShellEnv();
+    const isWin = process.platform === 'win32';
+
+    // Build the spawn invocation. Three shapes:
+    //   1. npm install via bundled `node npm-cli.js` — argv array, no shell.
+    //      Path-safe under non-ASCII home dirs on Windows (preferred).
+    //   2. npm install via legacy shell string (npm.cmd / npm) — fallback only
+    //      when no node + npm-cli.js layout is found; OEM-codepage corruption
+    //      means this breaks on non-ASCII paths, but still works for ASCII.
+    //   3. pip / curl / powershell — keep the legacy shell-string behaviour.
+    let spawnFile;
+    let spawnArgs = [];
+    let useShell;
+    let installCwd;
+    let displayCmd;
+
     if (rawCmd.startsWith('npm install')) {
       const prefixDir = getRuntimePrefix(agentType);
       fs.mkdirSync(prefixDir, { recursive: true });
-      // Use --save so npm tracks the package in package.json (prevents pruning on next install)
-      const args = rawCmd.replace('npm install', 'install --loglevel=verbose --save').replace(' -g ', ` --prefix "${prefixDir}" `);
-      cmd = this._resolveNpmCommand(args);
-    } else if (rawCmd.startsWith('pip install') || rawCmd.startsWith('pipx install')) {
-      cmd = rawCmd; // pip commands stay as-is
+      installCwd = prefixDir;
+
+      // `npm install [-g] <pkg…>` → install --save --prefix <dir> <pkg…>
+      const pkgArgs = rawCmd
+        .replace(/^npm install\s*/, '')
+        .replace(/(^|\s)-g(\s|$)/, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      // Use --save so npm tracks the package in package.json (prevents pruning
+      // on next install).
+      const npmArgs = ['install', '--loglevel=verbose', '--save', '--prefix', prefixDir, ...pkgArgs];
+      displayCmd = `npm ${npmArgs.join(' ')}`;
+
+      const direct = this._resolveNodeNpmCli();
+      if (direct) {
+        spawnFile = direct.node;
+        spawnArgs = [direct.npmCli, ...npmArgs];
+        useShell = false;
+        // Ensure npm's own `node` child lookups (postinstall scripts) resolve
+        // to this same runtime by putting its dir first on PATH.
+        const pathKey = Object.keys(env).find(k => k.toLowerCase() === 'path') || 'PATH';
+        const nodeDir = path.dirname(direct.node);
+        if (!(env[pathKey] || '').includes(nodeDir)) {
+          env[pathKey] = nodeDir + (isWin ? ';' : ':') + (env[pathKey] || '');
+        }
+      } else {
+        // Legacy fallback: quoted prefix inside a shell string.
+        const args = `install --loglevel=verbose --save --prefix "${prefixDir}" ${pkgArgs.join(' ')}`;
+        spawnFile = this._wrapForWindowsShell(this._resolveNpmCommand(args));
+        useShell = isWin ? (env.ComSpec || 'C:\\Windows\\System32\\cmd.exe') : true;
+        displayCmd = spawnFile;
+      }
+    } else {
+      // pip / curl / powershell — unchanged shell-string behaviour.
+      spawnFile = this._wrapForWindowsShell(rawCmd);
+      useShell = isWin ? (env.ComSpec || 'C:\\Windows\\System32\\cmd.exe') : true;
+      // Set cwd outside System32 on Windows.
+      installCwd = os.homedir();
+      displayCmd = spawnFile;
     }
 
-    cmd = this._wrapForWindowsShell(cmd);
-
-    if (onData) onData(`$ ${cmd}\n\n`);
-
-    const env = this._buildShellEnv();
-    const shell = process.platform === 'win32'
-      ? (process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe')
-      : true;
-    // Set cwd to runtime prefix dir (avoids running from System32 on Windows)
-    const installCwd = rawCmd.startsWith('npm install') ? getRuntimePrefix(agentType) : os.homedir();
+    if (onData) onData(`$ ${displayCmd}\n\n`);
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(cmd, [], { shell, env, cwd: installCwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      // windowsHide stops a console window from flashing up on every install.
+      const proc = spawn(spawnFile, spawnArgs, { shell: useShell, env, cwd: installCwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 
       if (proc.stdout) proc.stdout.setEncoding('utf-8');
       if (proc.stderr) proc.stderr.setEncoding('utf-8');
@@ -458,7 +499,7 @@ class Installer {
         if (code === 0) {
           this._markInstalled(agentType);
           if (onData) onData(`\nDone! ${agentType} is now installed.\n`);
-          resolve({ success: true, command: cmd });
+          resolve({ success: true, command: displayCmd });
         } else {
           // A partial install can leave a placeholder stub at
           // bin/<binary>.exe and npm-generated cmd-shims under
@@ -473,8 +514,8 @@ class Installer {
           } catch {}
           const tail = outputTail.trim();
           const msg = tail
-            ? `Install failed with exit code ${code}\nCommand: ${cmd}\n\n${tail}`
-            : `Install failed with exit code ${code}\nCommand: ${cmd}`;
+            ? `Install failed with exit code ${code}\nCommand: ${displayCmd}\n\n${tail}`
+            : `Install failed with exit code ${code}\nCommand: ${displayCmd}`;
           if (onData) onData(`\n${msg}\n`);
           reject(new Error(msg));
         }
@@ -599,7 +640,7 @@ class Installer {
       : true;
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(cmd, [], { shell, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn(cmd, [], { shell, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 
       if (proc.stdout) proc.stdout.setEncoding('utf-8');
       if (proc.stderr) proc.stderr.setEncoding('utf-8');
@@ -811,9 +852,14 @@ class Installer {
         } catch {}
       }
     }
+    // On Windows the spread above yields a "Path" key, not "PATH". Writing
+    // `env.PATH` would create a duplicate key holding only extraDirs and drop
+    // everything else; libuv then resolves spawned binaries against the wrong,
+    // truncated value. Update the existing case-insensitive key in place.
+    const pathKey = Object.keys(env).find(k => k.toLowerCase() === 'path') || 'PATH';
     for (const d of extraDirs) {
-      if (d && !(env.PATH || '').includes(d)) {
-        env.PATH = d + sep + (env.PATH || '');
+      if (d && !(env[pathKey] || '').includes(d)) {
+        env[pathKey] = d + sep + (env[pathKey] || '');
       }
     }
     return env;
@@ -918,7 +964,7 @@ class Installer {
         const proc = spawnProc('powershell', [
           '-NoProfile', '-Command',
           `Expand-Archive -Path '${zipPath}' -DestinationPath '${nodejsDir}' -Force`
-        ], { stdio: ['ignore', 'pipe', 'pipe'] });
+        ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
         if (proc.stdout) proc.stdout.on('data', (d) => { if (onData) onData(d.toString()); });
         if (proc.stderr) proc.stderr.on('data', (d) => { if (onData) onData(d.toString()); });
         proc.on('error', reject);
@@ -1037,6 +1083,54 @@ class Installer {
         file.on('error', reject);
       }).on('error', reject);
     });
+  }
+
+  /**
+   * Locate a `node` binary plus its `npm-cli.js` so npm can be invoked as
+   * `node npm-cli.js …` with argv passed array-style and NO shell. On Windows
+   * that goes through CreateProcessW (UTF-16), so an install prefix under a
+   * non-ASCII home dir (e.g. `C:\Users\用户名\.openagents\runtimes\…`) is
+   * preserved exactly. The legacy `npm.cmd` shell shim instead has cmd.exe
+   * decode the path bytes with the OEM code page (936/GBK on zh-CN), corrupting
+   * it and silently breaking every install. Returns { node, npmCli } or null
+   * when no usable layout is found (caller falls back to the legacy shell
+   * command, which still works for ASCII paths).
+   */
+  _resolveNodeNpmCli() {
+    const exists = (p) => { try { return fs.existsSync(p); } catch { return false; } };
+    const isWin = process.platform === 'win32';
+    const nodeName = isWin ? 'node.exe' : 'node';
+
+    const nodeCandidates = [];
+    // Bundled portable node (~/.openagents/nodejs, plus nested node-* layouts)
+    const bundledDir = path.join(this.configDir, 'nodejs');
+    nodeCandidates.push(path.join(bundledDir, nodeName));
+    nodeCandidates.push(path.join(bundledDir, 'bin', 'node'));
+    try {
+      for (const e of fs.readdirSync(bundledDir)) {
+        if (e.startsWith('node-')) {
+          nodeCandidates.push(path.join(bundledDir, e, nodeName));
+          nodeCandidates.push(path.join(bundledDir, e, 'bin', 'node'));
+        }
+      }
+    } catch {}
+    // System node — its npm-cli.js lives next to (or one level above) it.
+    try {
+      const sys = whichBinary('node');
+      if (sys) nodeCandidates.push(sys);
+    } catch {}
+
+    for (const node of nodeCandidates) {
+      if (!node || !exists(node)) continue;
+      const dir = path.dirname(node);
+      const npmCli = [
+        path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        path.join(dir, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        path.join(dir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      ].find(exists);
+      if (npmCli && this._canExecute(node)) return { node, npmCli };
+    }
+    return null;
   }
 
   /**
