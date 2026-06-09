@@ -8,6 +8,7 @@ as push.py.
 """
 
 import asyncio
+import json as _json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -350,6 +351,25 @@ async def _post_response(
         return
 
     db.commit()
+
+    # Publish to Redis so SSE clients receive the event in real-time
+    try:
+        from app import cache
+        snapshot = {
+            "id": event.id,
+            "type": event.type,
+            "source": event.source,
+            "target": event.target,
+            "payload": event.payload,
+            "metadata": event.metadata,
+            "timestamp": event.timestamp,
+        }
+        cache.publish_event(
+            f"ws:{workspace_id}:events",
+            _json.dumps(snapshot, default=str, separators=(",", ":")).encode(),
+        )
+    except Exception:
+        pass
 
 
 async def _post_error_message(
