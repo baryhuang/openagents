@@ -62,15 +62,18 @@ async def invoke_cloud_agents(workspace_id: str, event_data: dict) -> None:
 
             try:
                 await _invoke_single(db, workspace_id, event_data, cloud_config, depth)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "cloud_agent: failed to invoke %s (%s/%s)",
                     agent_name, cloud_config.provider, cloud_config.model,
                 )
+                error_detail = str(exc)[:200] if str(exc) else "Unknown error"
+                # Use a fresh DB session for error posting — the original
+                # session may be stale after a long async API call.
                 await _post_error_message(
-                    db, workspace_id, event_data, agent_name,
-                    f"Failed to get a response from {cloud_config.provider}/{cloud_config.model}. "
-                    f"Please check that the API key is valid.",
+                    workspace_id, event_data, agent_name,
+                    f"Failed to get a response from {cloud_config.provider}/{cloud_config.model}: "
+                    f"{error_detail}",
                 )
     finally:
         db.close()
@@ -373,12 +376,17 @@ async def _post_response(
 
 
 async def _post_error_message(
-    db, workspace_id: str, event_data: dict, agent_name: str, error_text: str,
+    workspace_id: str, event_data: dict, agent_name: str, error_text: str,
 ) -> None:
-    """Post an error message to the channel on behalf of the cloud agent."""
+    """Post an error message to the channel on behalf of the cloud agent.
+
+    Opens its own short-lived DB session so a stale connection from a
+    long-running API call cannot prevent the error from reaching the user.
+    """
+    err_db = SessionLocal()
     try:
         await _post_response(
-            db, workspace_id,
+            err_db, workspace_id,
             event_data.get("target", ""),
             agent_name,
             f"[Error] {error_text}",
@@ -386,3 +394,5 @@ async def _post_error_message(
         )
     except Exception:
         logger.exception("cloud_agent: failed to post error message for %s", agent_name)
+    finally:
+        err_db.close()
