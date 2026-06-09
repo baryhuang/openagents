@@ -277,6 +277,15 @@ const HOSTED_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
   },
 }
 
+/**
+ * Agents hidden from the onboarding picker (Step 1). They remain fully
+ * installable and configurable from the Install tab — we just don't surface
+ * them to first-time users. Cursor and Hermes need an external CLI install +
+ * an API key, so they're a rougher first-run experience than the key-only
+ * agents; keep onboarding to the smoother options.
+ */
+const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes"])
+
 type LLMTestResult = {
   success: boolean
   model?: string
@@ -522,6 +531,34 @@ function normalizeWorkspaceEndpoint(value: unknown): string | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * Normalize provider base URLs before they're persisted to env, so what we
+ * SAVE matches what we TEST (testLLMConnection). The mismatch this guards
+ * against: a user pastes an Anthropic-compatible relay URL that already ends
+ * in `/v1` (e.g. https://relay.example/v1). The connection test strips the
+ * trailing `/v1` before probing `${base}/v1/messages`, so it passes — but the
+ * spawned `claude` CLI appends `/v1/messages` to the raw value, hitting
+ * `…/v1/v1/messages` → 404, which the CLI mis-reports as "model not found".
+ *
+ * Anthropic's SDK owns the `/v1` segment, so the base must NOT carry it. We do
+ * NOT touch OpenAI-style bases (OPENAI_BASE_URL etc.) — those are SUPPOSED to
+ * include `/v1` (the defaults do), and the OpenAI client appends only the
+ * sub-path. Gemini already tolerates either form in its REST path builder.
+ */
+function normalizeEnvForSave(
+  env: Record<string, string>,
+): Record<string, string> {
+  const out = { ...env }
+  const anthropicBase = out.ANTHROPIC_BASE_URL
+  if (typeof anthropicBase === "string" && anthropicBase.trim()) {
+    out.ANTHROPIC_BASE_URL = anthropicBase
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/v1$/, "")
+  }
+  return out
 }
 
 export interface InstalledAgentRecord {
@@ -1576,7 +1613,7 @@ export class AgentManager extends EventEmitter {
         name: string,
         env: unknown,
       ) => void
-      saveEnv.call(this._connector, name, updates.env)
+      saveEnv.call(this._connector, name, normalizeEnvForSave(updates.env))
     }
     this._agentsCache = { value: [], at: 0 }
     return { success: true }
@@ -1805,6 +1842,7 @@ export class AgentManager extends EventEmitter {
   }
 
   saveAgentEnv(agentType: string, env: Record<string, string>): unknown {
+    env = normalizeEnvForSave(env)
     const saveEnv = this._connector!.saveAgentEnv as (
       type: string,
       env: unknown,
@@ -1826,6 +1864,7 @@ export class AgentManager extends EventEmitter {
     agentName: string,
     env: Record<string, string>,
   ): unknown {
+    env = normalizeEnvForSave(env)
     const saveEnv = this._connector!.saveAgentInstanceEnv as (
       name: string,
       env: unknown,
@@ -2077,7 +2116,9 @@ export class AgentManager extends EventEmitter {
       bundled.map((b) => [b.name as string, b] as const),
     )
 
-    const result: OnboardingAgent[] = supported.map((type) => {
+    const result: OnboardingAgent[] = supported
+      .filter((type) => !ONBOARDING_HIDDEN.has(type))
+      .map((type) => {
       const cat = catalogByName.get(type)
       const reg = bundledByName.get(type)
       const regEnv = (reg?.env_config as Array<Record<string, unknown>>) || []
