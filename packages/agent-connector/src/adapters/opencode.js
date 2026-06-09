@@ -123,6 +123,22 @@ class OpenCodeAdapter extends BaseAdapter {
   // ------------------------------------------------------------------
 
   _findOpencodeBinary() {
+    const home = os.homedir();
+    const ext = IS_WINDOWS ? '.cmd' : '';
+
+    // Tier 0: Isolated runtime prefix — where the launcher installs agents
+    // (~/.openagents/runtimes/opencode/node_modules/.bin). Every other adapter
+    // checks this first; opencode was the lone exception, so a launcher-managed
+    // install was invisible unless its .bin happened to be on PATH — which is
+    // exactly why the workspace failed with "opencode CLI not found" even though
+    // the marketplace showed it installed.
+    const runtimeBin = path.join(home, '.openagents', 'runtimes', 'opencode', 'node_modules', '.bin', `opencode${ext}`);
+    if (fs.existsSync(runtimeBin)) return runtimeBin;
+
+    // Tier 0b: Legacy shared portable prefix.
+    const legacyBin = path.join(home, '.openagents', 'nodejs', 'node_modules', '.bin', `opencode${ext}`);
+    if (fs.existsSync(legacyBin)) return legacyBin;
+
     // Tier 1: PATH
     try {
       if (IS_WINDOWS) {
@@ -136,12 +152,10 @@ class OpenCodeAdapter extends BaseAdapter {
     } catch {}
 
     // Tier 2: Next to Node.js
-    const ext = IS_WINDOWS ? '.cmd' : '';
     const nearNode = path.join(path.dirname(process.execPath), `opencode${ext}`);
     if (fs.existsSync(nearNode)) return nearNode;
 
     // Tier 3: Common locations
-    const home = os.homedir();
     const candidates = IS_WINDOWS ? [
       path.join(process.env.APPDATA || '', 'npm', 'opencode.cmd'),
     ] : [

@@ -13,7 +13,12 @@ const http = require("http");
 // ---------------------------------------------------------------------------
 
 const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 120_000;
+// A cold hermes reply can be slow: first message spins up the Python runtime,
+// loads the agent, builds a large context prompt, and runs an agentic loop
+// (--max-turns) against a possibly-slow custom LLM endpoint. 120s was too tight
+// and produced false-negative timeouts; 240s gives cold start room while still
+// fitting comfortably under the job's timeout-minutes budget.
+const POLL_TIMEOUT_MS = 240_000;
 const INSTALL_TIMEOUT_MS = 600_000;
 const DAEMON_SETTLE_MS = 5000;
 const AGENT_READY_MS = 15000;
@@ -42,7 +47,10 @@ const WORKSPACE_API_BASE_URL =
   process.env.WORKSPACE_API_BASE_URL ||
   "https://workspace-endpoint.openagents.org";
 
-const SECRETS = [LLM_API_KEY, E2E_WS_TOKEN].filter(Boolean);
+// Redacted from all console/file output. LLM_BASE_URL/LLM_MODEL are included
+// because dumpDaemonLogs() now echoes the daemon log, which can contain the
+// configured endpoint/model.
+const SECRETS = [LLM_API_KEY, E2E_WS_TOKEN, LLM_BASE_URL, LLM_MODEL].filter(Boolean);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,6 +86,36 @@ function fatal(msg) {
   logRun(`FATAL: ${msg}`);
   process.exitCode = 1;
   throw new Error(msg);
+}
+
+// Dump the daemon-side logs to the console. The daemon writes to
+// ~/.openagents/daemon.log (NOT to the piped stdout we capture, since its
+// _log() only echoes to a TTY), so on CI those lines never reach the job
+// console — they only land in the uploaded artifact. When that artifact is
+// hard to fetch, this surfaces the adapter join/poll/hermes-subprocess output
+// (the only place that explains *why* an agent didn't reply) directly in the
+// job log so a failure is diagnosable from the console alone.
+function dumpDaemonLogs() {
+  const candidates = [
+    path.join(os.homedir(), ".openagents", "daemon.log"),
+    path.join(os.homedir(), ".openagents", "daemon.status.json"),
+    path.join(LOG_DIR, "agent.log"),
+  ];
+  for (const file of candidates) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const raw = fs.readFileSync(file, "utf-8");
+      const lines = raw.split("\n");
+      const tail = lines.slice(-200).join("\n");
+      logRun(`===== BEGIN ${file} (last ${Math.min(lines.length, 200)} lines) =====`);
+      // Write directly so the daemon lines aren't prefixed/duplicated oddly.
+      console.log(sanitize(tail));
+      if (runLogStream) runLogStream.write(sanitize(tail) + "\n");
+      logRun(`===== END ${file} =====`);
+    } catch (e) {
+      logRun(`Could not read ${file}: ${e.message}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +549,12 @@ async function main() {
 
     logRun("=== ALL CHECKS PASSED ===");
   } finally {
+    // Surface the daemon-side logs to the console BEFORE we tear the daemon
+    // down — this is the only record of whether the agent joined, polled, and
+    // what the hermes subprocess actually did (or why it never replied).
+    logRun("--- Step: dump daemon logs ---");
+    dumpDaemonLogs();
+
     // -- Cleanup ---------------------------------------------------------------
     logRun("--- Step: cleanup ---");
     const cleanupCmds = [

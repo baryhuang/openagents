@@ -3,7 +3,7 @@ import fs from "fs"
 import os from "os"
 import https from "https"
 import { net } from "electron"
-import { spawnSync } from "child_process"
+import { spawn, spawnSync } from "child_process"
 import { withPathEnv, readPathEnv } from "./env"
 import { EventEmitter } from "events"
 // Bundled fallback registry. When the agent-launcher core hasn't installed
@@ -210,6 +210,71 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
       placeholder: "gpt-4o, claude-sonnet-4-6, etc.",
     },
   ],
+}
+
+/**
+ * Agents that authenticate through their OWN hosted login flow (a browser /
+ * device sign-in built into the CLI), not an API key the launcher collects or
+ * can probe. Cursor is the canonical example — `cursor-agent` signs in via
+ * Cursor's service, so there is no key endpoint to "Test connection" against and
+ * no env for the user to fill in. The launcher cannot capture the token (the CLI
+ * stores it locally, e.g. under ~/.cursor); it can only drive the CLI's own
+ * `login` command and read its `status`. For these agents the launcher:
+ *   • shows no API-key config (getEnvFields → []), so the post-install wizard
+ *     and the Configure dialog skip the "Save & test connection" step that can
+ *     only ever fail;
+ *   • surfaces the CLI's `loginCommand` so Configure shows a "Login" button
+ *     (opens a terminal running the sign-in) instead of key fields; and
+ *   • derives readiness from the CLI's own `status` output (signed in?) rather
+ *     than an API key. The shared registry's check_ready for these carries only
+ *     a binary hint and no credential/login rule, so the core otherwise reports
+ *     ready:false ("CLI not found") even when the CLI IS installed — which is
+ *     exactly why the Agents list showed "Not installed" while the marketplace
+ *     showed "Installed".
+ *
+ * `apiKeyEnv` lets a power user skip the browser login by setting that env var
+ * (Cursor accepts CURSOR_API_KEY); when present the agent is ready without a
+ * `status` probe. `statusArgs` is run against the resolved binary; sign-in is
+ * derived from its output via EXACTLY ONE of:
+ *   • `loggedOutPattern` — match ⇒ signed OUT (for terse CLIs like Cursor whose
+ *     status is just "Not logged in" vs an account line); or
+ *   • `loggedInPattern`  — match ⇒ signed IN (for verbose CLIs like Hermes whose
+ *     status always lists "not logged in" for every unconfigured provider, so a
+ *     negative match is useless — we look for a positive "✓ logged in" instead).
+ * The probe runs ASYNC (status can take seconds, e.g. Hermes ~2.5s) and the
+ * result is cached; sync health reads the cache and never blocks the main loop.
+ */
+interface HostedLoginSpec {
+  loginCommand: string
+  statusArgs: string[]
+  loggedOutPattern?: RegExp
+  loggedInPattern?: RegExp
+  apiKeyEnv?: string
+  // Env vars wiped when the user signs in via the browser flow. Hosted-login
+  // agents have no env UI (getEnvFields → []), so any saved value is stale
+  // leftover that overrides the login session — e.g. an invalid CURSOR_API_KEY
+  // or CURSOR_MODEL from the old setup wizard, which is what broke the workspace
+  // chat ("API key is invalid"). Clearing them lets the CLI use its own login +
+  // account defaults.
+  loginClearsEnv?: string[]
+}
+
+const HOSTED_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
+  cursor: {
+    loginCommand: "cursor-agent login",
+    statusArgs: ["status"],
+    loggedOutPattern: /not logged in|logged out|signed out/i,
+    apiKeyEnv: "CURSOR_API_KEY",
+    loginClearsEnv: ["CURSOR_API_KEY", "CURSOR_MODEL"],
+  },
+  hermes: {
+    // `hermes setup` is the interactive wizard; `hermes status` prints a rich
+    // report where a configured auth provider reads "✓ logged in" (everything
+    // unconfigured reads "✗ not logged in"), so match the positive marker.
+    loginCommand: "hermes setup",
+    statusArgs: ["status"],
+    loggedInPattern: /✓\s*logged in/i,
+  },
 }
 
 type LLMTestResult = {
@@ -866,6 +931,16 @@ export class AgentManager extends EventEmitter {
   private _lastHealthRefreshAt = 0
   private _healthQueue: string[] = []
   private _healthProcessing = false
+  // Cached sign-in state for hosted-login agents (e.g. Cursor), keyed by type.
+  // value: true = signed in, false = signed out, null = unknown (probe failed /
+  // timed out → treated optimistically). Probing spawns the CLI's `status`, so
+  // we cache for 30s and only re-probe off the hot getAgents path.
+  private _hostedLoginAuth = new Map<
+    string,
+    { value: boolean | null; at: number }
+  >()
+  // In-flight `status` probes, so concurrent callers share one CLI spawn.
+  private _hostedLoginProbe = new Map<string, Promise<boolean | null>>()
   private _agentsCache: { value: unknown[]; at: number } = { value: [], at: 0 }
   private _catalogCache: {
     value: unknown[] | null
@@ -1059,13 +1134,20 @@ export class AgentManager extends EventEmitter {
       }
       setTimeout(() => {
         try {
-          const healthCheck = this._connector?.healthCheck as
-            | ((type: string) => unknown)
-            | undefined
-          const health = healthCheck
-            ? healthCheck.call(this._connector, type)
-            : null
-          this._healthByType.set(type, health)
+          // Hosted-login agents derive readiness from the CLI's `status`, not
+          // the core's check_ready (which has no login rule). Compute it here,
+          // in the 30s refresh, so the per-call getAgents path never spawns.
+          if (HOSTED_LOGIN_AGENTS[type]) {
+            this._healthByType.set(type, this._hostedLoginHealth(type))
+          } else {
+            const healthCheck = this._connector?.healthCheck as
+              | ((type: string) => unknown)
+              | undefined
+            const health = healthCheck
+              ? healthCheck.call(this._connector, type)
+              : null
+            this._healthByType.set(type, health)
+          }
         } catch {
           this._healthByType.set(type, null)
         } finally {
@@ -1126,11 +1208,68 @@ export class AgentManager extends EventEmitter {
     instanceEnv: Record<string, string> | undefined,
     typeHealth: unknown,
   ): unknown {
+    // Hosted-login agents (e.g. Cursor, Hermes) sign in through their own CLI,
+    // not an API key the launcher collects. Readiness = installed + signed in
+    // (or, where the CLI accepts one, an API key set in env). A power user who
+    // set CURSOR_API_KEY skips the browser login, so honor that before login.
+    const hostedLogin = HOSTED_LOGIN_AGENTS[type]
+    if (hostedLogin) {
+      const hasApiKey =
+        !!(
+          hostedLogin.apiKeyEnv &&
+          (instanceEnv?.[hostedLogin.apiKeyEnv] || "").trim()
+        ) || this._hasConfiguredCredentials(type)
+      if (this._isInstalled(type) && hasApiKey) {
+        return {
+          installed: true,
+          ready: true,
+          auth_mode: "api_key",
+          execution_mode: "direct",
+          message: "Ready",
+        }
+      }
+      // Prefer the cached login-aware health from the 30s refresh. Until it
+      // populates, return an optimistic install-only verdict rather than probing
+      // `status` here — getAgents runs every ~1.5s and must not spawn the CLI.
+      if (typeHealth && typeof typeHealth === "object") return typeHealth
+      return this._isInstalled(type)
+        ? {
+            installed: true,
+            ready: true,
+            auth_mode: "cli_login",
+            execution_mode: "subprocess",
+            message: "Ready",
+          }
+        : {
+            installed: false,
+            ready: false,
+            auth_mode: null,
+            execution_mode: "unavailable",
+            message: this._notReadyMessage(type),
+          }
+    }
     const health = this._reconcileHealth(type, typeHealth)
-    if (!health || typeof health !== "object") return health
+    const hasCreds =
+      this._envHasApiKey(instanceEnv) || this._hasConfiguredCredentials(type)
+    // The type-level health is populated asynchronously (see
+    // _scheduleHealthRefresh), so right after onboarding it is still null. Don't
+    // fall back to a misleading "Not configured" when the agent actually has a
+    // saved API key — synthesize a ready status from the configured credentials.
+    if (!health || typeof health !== "object") {
+      if (hasCreds) {
+        return {
+          installed: true,
+          ready: true,
+          auth_mode: "api_key",
+          execution_mode: "direct",
+          message: "Ready",
+        }
+      }
+      return health
+    }
     const h = health as Record<string, unknown>
     if (h.installed === false || h.ready === true) return health
-    if (this._envHasApiKey(instanceEnv) || this._hasConfiguredCredentials(type)) {
+    if (hasCreds) {
       return {
         ...h,
         installed: true,
@@ -1144,6 +1283,216 @@ export class AgentManager extends EventEmitter {
       }
     }
     return health
+  }
+
+  /**
+   * Health for hosted-login agents (e.g. Cursor). Install is confirmed with the
+   * connector's isInstalled — the same check the marketplace's "Installed" badge
+   * uses, so the two views never disagree. Readiness then follows the CLI's own
+   * sign-in state (its `status` command): signed in ⇒ Ready; signed out ⇒ a
+   * clear "click Login" hint rather than a misleading "Ready"; unknown (probe
+   * failed/timed out) ⇒ optimistic Ready so a working agent is never blocked.
+   */
+  private _hostedLoginHealth(type: string): Record<string, unknown> {
+    if (!this._isInstalled(type)) {
+      return {
+        installed: false,
+        ready: false,
+        auth_mode: null,
+        execution_mode: "unavailable",
+        message: this._notReadyMessage(type),
+      }
+    }
+    if (this._hostedLoginIsAuthed(type) === false) {
+      return {
+        installed: true,
+        ready: false,
+        auth_mode: null,
+        execution_mode: "unavailable",
+        message: "Not signed in — open Configure and click Login",
+      }
+    }
+    return {
+      installed: true,
+      ready: true,
+      auth_mode: "cli_login",
+      execution_mode: "subprocess",
+      message: "Ready",
+    }
+  }
+
+  /** Install check matching the marketplace's "Installed" badge (getInstallInfo). */
+  private _isInstalled(type: string): boolean {
+    try {
+      const isInstalled = this._connector?.isInstalled as
+        | ((t: string) => boolean)
+        | undefined
+      return !!isInstalled?.call(this._connector, type)
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Cached sign-in state for a hosted-login agent: true (signed in) / false
+   * (signed out) / null (unknown — never probed, or the probe couldn't decide).
+   * NON-BLOCKING: returns the cache immediately and kicks off a background probe
+   * when the cache is stale (>30s). The CLI's `status` can take seconds (Hermes
+   * ~2.5s), so it must never run on a sync path. The Configure dialog uses the
+   * awaitable refreshHostedLogin() instead when it needs a guaranteed-fresh read.
+   */
+  private _hostedLoginIsAuthed(type: string): boolean | null {
+    const spec = HOSTED_LOGIN_AGENTS[type]
+    if (!spec) return null
+    const cached = this._hostedLoginAuth.get(type)
+    const fresh = !!cached && Date.now() - cached.at < 30_000
+    if (!fresh) void this._probeHostedLogin(type)
+    return cached ? cached.value : null
+  }
+
+  /**
+   * Run a FRESH sign-in probe for a hosted-login agent and resolve its health.
+   * Awaitable — the Configure dialog calls this after the user confirms they
+   * completed the terminal login, so the result reflects reality rather than an
+   * optimistic guess.
+   */
+  async refreshHostedLogin(type: string): Promise<unknown> {
+    if (!HOSTED_LOGIN_AGENTS[type]) return this.healthCheck(type)
+    await this._probeHostedLogin(type, true)
+    return this._hostedLoginHealth(type)
+  }
+
+  /**
+   * Spawn the hosted-login CLI's `status` asynchronously and cache the parsed
+   * sign-in state. Deduped per type (concurrent callers share one probe) and
+   * throttled (no re-spawn within 2s unless `force`d) so polling can't pile up
+   * CLI processes. On completion it refreshes the cached type health and busts
+   * the agents cache so the Agents list picks up the new state.
+   */
+  private _probeHostedLogin(type: string, force = false): Promise<boolean | null> {
+    const spec = HOSTED_LOGIN_AGENTS[type]
+    if (!spec) return Promise.resolve(null)
+    const inflight = this._hostedLoginProbe.get(type)
+    if (inflight) return inflight
+    const cached = this._hostedLoginAuth.get(type)
+    if (!force && cached && Date.now() - cached.at < 2_000) {
+      return Promise.resolve(cached.value)
+    }
+    const p = this._runHostedLoginProbe(type, spec)
+    this._hostedLoginProbe.set(type, p)
+    void p.finally(() => this._hostedLoginProbe.delete(type))
+    return p
+  }
+
+  private _runHostedLoginProbe(
+    type: string,
+    spec: HostedLoginSpec,
+  ): Promise<boolean | null> {
+    return new Promise((resolve) => {
+      let bin: string | null = null
+      try {
+        const installer = this._connector?.installer as
+          | Record<string, unknown>
+          | undefined
+        const which = installer?.which as
+          | ((t: string) => string | null)
+          | undefined
+        bin = which?.call(installer, type) || null
+      } catch {}
+
+      const settle = (value: boolean | null): void => {
+        this._hostedLoginAuth.set(type, { value, at: Date.now() })
+        // Cache is fresh now, so this re-derive won't re-probe. Refresh the type
+        // health + bust the agents cache so the list reflects the new state.
+        this._healthByType.set(type, this._hostedLoginHealth(type))
+        this._agentsCache = { value: [], at: 0 }
+        resolve(value)
+      }
+
+      if (!bin) {
+        settle(null)
+        return
+      }
+      try {
+        const child = spawn(bin, spec.statusArgs, {
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+        let out = ""
+        let settled = false
+        const finish = (value: boolean | null): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          settle(value)
+        }
+        const timer = setTimeout(() => {
+          try {
+            child.kill()
+          } catch {}
+          finish(null)
+        }, 8000)
+        child.stdout?.on("data", (c: Buffer) => (out += c.toString("utf-8")))
+        child.stderr?.on("data", (c: Buffer) => (out += c.toString("utf-8")))
+        child.on("error", () => finish(null))
+        child.on("close", (code) => {
+          // Decide via whichever direction the spec declares. A clean run with
+          // output but no match is "definitive" → the opposite of the pattern;
+          // anything else stays null (unknown) so a hiccup never reads as out.
+          const definitive = !!out.trim() && code === 0
+          let value: boolean | null = null
+          if (spec.loggedInPattern) {
+            value = spec.loggedInPattern.test(out)
+              ? true
+              : definitive
+                ? false
+                : null
+          } else if (spec.loggedOutPattern) {
+            value = spec.loggedOutPattern.test(out)
+              ? false
+              : definitive
+                ? true
+                : null
+          }
+          finish(value)
+        })
+      } catch {
+        settle(null)
+      }
+    })
+  }
+
+  /**
+   * Clear a hosted-login agent's stale env (e.g. CURSOR_API_KEY, CURSOR_MODEL)
+   * from both the type-level and instance env. Cursor's CLI prefers an explicit
+   * key/model over its own browser-login session and account defaults, so values
+   * left over from the old setup wizard (an invalid key, a bogus model like
+   * "gpt-5.4") make the agent fail — "API key is invalid" — even after a
+   * successful `cursor-agent login`. When the user signs in via the browser flow
+   * we wipe them so the login session + account defaults are what get used.
+   * Saving an empty value removes the line (env.save filters out empties).
+   */
+  clearHostedLoginApiKey(type: string, agentName?: string): void {
+    const keys = HOSTED_LOGIN_AGENTS[type]?.loginClearsEnv
+    if (!keys?.length) return
+    try {
+      const typeEnv = (this.getAgentEnv(type) as Record<string, string>) || {}
+      const drop = keys.filter((k) => (typeEnv[k] || "").trim())
+      if (drop.length)
+        this.saveAgentEnv(type, Object.fromEntries(drop.map((k) => [k, ""])))
+    } catch {}
+    if (agentName) {
+      try {
+        const instEnv =
+          (this.getAgentInstanceEnv(agentName) as Record<string, string>) || {}
+        const drop = keys.filter((k) => (instEnv[k] || "").trim())
+        if (drop.length)
+          this.saveAgentInstanceEnv(
+            agentName,
+            Object.fromEntries(drop.map((k) => [k, ""])),
+          )
+      } catch {}
+    }
+    this._agentsCache = { value: [], at: 0 }
   }
 
   /** True when an env map carries any non-empty API key (e.g. *_API_KEY). */
@@ -1296,12 +1645,22 @@ export class AgentManager extends EventEmitter {
     const entries = Array.isArray(BUNDLED_REGISTRY)
       ? (BUNDLED_REGISTRY as Array<Record<string, unknown>>)
       : []
-    return entries.map((e) => ({
-      ...e,
-      installed: false,
-      managed: false,
-      location: null,
-    }))
+    return entries.map((e) => {
+      const spec = HOSTED_LOGIN_AGENTS[e.name as string]
+      const check_ready = spec
+        ? {
+            ...((e.check_ready as Record<string, unknown>) || {}),
+            login_command: spec.loginCommand,
+          }
+        : e.check_ready
+      return {
+        ...e,
+        check_ready,
+        installed: false,
+        managed: false,
+        location: null,
+      }
+    })
   }
 
   private async _loadCatalog(): Promise<unknown[]> {
@@ -1355,6 +1714,19 @@ export class AgentManager extends EventEmitter {
         }
       }
     } catch {}
+    // Launcher-side login wiring for hosted-login agents (e.g. Cursor): the
+    // shared registry has no login_command for these, so expose the CLI's own
+    // sign-in here. This makes the Configure dialog render its "Login" flow
+    // (open a terminal running `cursor-agent login`) instead of falling back to
+    // "No configuration required". Kept in launcher code so the shared registry
+    // stays untouched — same rationale as LAUNCHER_AUTH_OVERRIDES.
+    for (const entry of catalog) {
+      const e = entry as Record<string, unknown>
+      const spec = HOSTED_LOGIN_AGENTS[e.name as string]
+      if (!spec) continue
+      const checkReady = (e.check_ready as Record<string, unknown>) || {}
+      e.check_ready = { ...checkReady, login_command: spec.loginCommand }
+    }
     return catalog
   }
 
@@ -1367,6 +1739,13 @@ export class AgentManager extends EventEmitter {
     // detail page — and stay editable after the agent is configured (otherwise
     // the detail page hides the setup wizard once an instance exists yet has no
     // inline fields to show, leaving no way to change the key/base URL).
+    // Hosted-login agents (e.g. Cursor) sign in through their own service —
+    // there are no launcher-collected keys to show and nothing to test.
+    // Returning [] makes every env-editing surface (post-install wizard, the
+    // Configure dialog) skip the API-key / "Test connection" step entirely.
+    // See HOSTED_LOGIN_AGENTS.
+    if (HOSTED_LOGIN_AGENTS[agentType]) return []
+
     const override = LAUNCHER_AUTH_OVERRIDES[agentType]
     if (override) return override
 
@@ -1577,7 +1956,7 @@ export class AgentManager extends EventEmitter {
     const config = this._connector!.config as Record<string, unknown>
     const addNetwork = config.addNetwork as (opts: unknown) => unknown
     addNetwork.call(config, {
-      id: info.workspace_id,
+      id: info.workspace_id || slug,
       slug,
       name: info.name || slug,
       endpoint,
@@ -1585,7 +1964,7 @@ export class AgentManager extends EventEmitter {
     })
     this.signalReload()
     return {
-      id: info.workspace_id,
+      id: info.workspace_id || slug,
       slug,
       name: info.name || slug,
       endpoint,
@@ -1614,7 +1993,7 @@ export class AgentManager extends EventEmitter {
       const addNetwork = (this._connector!.config as Record<string, unknown>)
         .addNetwork as (opts: unknown) => void
       addNetwork.call(this._connector!.config as Record<string, unknown>, {
-        id: info.workspace_id,
+        id: info.workspace_id || slug,
         slug,
         name: wsName,
         endpoint,
@@ -1715,8 +2094,17 @@ export class AgentManager extends EventEmitter {
       // login. Forces "env" mode and hides the login command, without touching
       // the shared registry. See LAUNCHER_AUTH_OVERRIDES.
       const override = LAUNCHER_AUTH_OVERRIDES[type]
-      const envFields = override || (regEnv.length > 0 ? regEnv : catEnv)
-      const loginCommand = override ? null : checkReady.login_command || null
+      // Hosted-login agents (e.g. Cursor) sign in through their own service —
+      // no key fields, drive the CLI's login instead. See HOSTED_LOGIN_AGENTS.
+      const hostedLogin = HOSTED_LOGIN_AGENTS[type]
+      const envFields = hostedLogin
+        ? []
+        : override || (regEnv.length > 0 ? regEnv : catEnv)
+      const loginCommand = hostedLogin
+        ? hostedLogin.loginCommand
+        : override
+          ? null
+          : checkReady.login_command || null
       // `prefer_login` keeps an agent on the CLI-login path as PRIMARY even when
       // it also exposes (optional) env fields. Without it, any env field would
       // force "env" mode.
@@ -1843,7 +2231,11 @@ export class AgentManager extends EventEmitter {
       const config = this._connector!.config as Record<string, unknown>
       const addNetwork = config.addNetwork as (o: unknown) => void
       addNetwork.call(config, {
-        id: ws.id,
+        // The workspace service may return only a slug (no id). Persisting
+        // id: null makes the daemon adapter join a null network → every
+        // poll/heartbeat fails "Network not found". Fall back to the slug,
+        // which is the server's canonical workspace identifier.
+        id: ws.id || slug,
         slug,
         name: ws.name || wsName,
         endpoint: ws.endpoint || this.configuredWorkspaceEndpoint(),
@@ -2449,6 +2841,10 @@ export class AgentManager extends EventEmitter {
   }
 
   healthCheck(type: string): unknown {
+    // Hosted-login agents (e.g. Cursor, Hermes): answer from the CLI's own
+    // sign-in state (cached probe) rather than the core's check_ready. The
+    // Configure dialog gets a guaranteed-fresh read via refreshHostedLogin().
+    if (HOSTED_LOGIN_AGENTS[type]) return this._hostedLoginHealth(type)
     const healthCheck = this._connector!.healthCheck as (
       type: string,
     ) => unknown
@@ -2488,8 +2884,9 @@ export class AgentManager extends EventEmitter {
       const getDaemonPid = this._connector?.getDaemonPid as
         | (() => number | null)
         | undefined
-      const pid = getDaemonPid ? getDaemonPid.call(this._connector) : null
-      if (!pid) return null
+      const pidFromFile = getDaemonPid
+        ? getDaemonPid.call(this._connector)
+        : null
 
       const pidFileAge = (() => {
         try {
@@ -2510,21 +2907,46 @@ export class AgentManager extends EventEmitter {
         }
       })()
 
-      // A live PID alone is not enough on Windows because stale PIDs can be
-      // reused by unrelated processes. The daemon writes status every 5s; once
-      // the pid file is older than the startup grace period, require matching
-      // fresh status as proof that this is really our daemon.
+      // The pid file gets truncated/empty under races (the launcher used to
+      // delete it, and multiple foreground daemons clobber it), which made us
+      // report a perfectly healthy daemon as "stopped". The daemon rewrites the
+      // status file — including its own pid — every 5s, so treat that as an
+      // equally authoritative source and fall back to it when the pid file is
+      // missing or points at a dead process.
       const startupGraceMs = 15_000
       const statusFreshMs = 20_000
-      const hasFreshMatchingStatus =
-        statusInfo.pid === pid && statusInfo.age < statusFreshMs
-      if (
-        isPidAlive(pid) &&
-        (pidFileAge < startupGraceMs || hasFreshMatchingStatus)
-      )
-        return pid
+      const candidates: number[] = []
+      if (pidFromFile) candidates.push(pidFromFile)
+      if (statusInfo.pid && statusInfo.pid !== pidFromFile)
+        candidates.push(statusInfo.pid)
 
-      appendDaemonLog(`removing stale daemon pid ${pid}`)
+      for (const pid of candidates) {
+        // A live PID alone is not enough on Windows because stale PIDs can be
+        // reused. Require either a young pid file (startup grace, before the
+        // first status write) or a fresh status file written by THIS pid.
+        const hasFreshMatchingStatus =
+          statusInfo.pid === pid && statusInfo.age < statusFreshMs
+        if (
+          isPidAlive(pid) &&
+          (pidFileAge < startupGraceMs || hasFreshMatchingStatus)
+        ) {
+          // Heal an empty/stale pid file so the daemon's own singleton guard
+          // (which reads daemon.pid) keeps working and we don't spawn a second.
+          if (pidFromFile !== pid) {
+            try {
+              fs.writeFileSync(DAEMON_PID_FILE, String(pid), "utf-8")
+            } catch {}
+          }
+          return pid
+        }
+      }
+
+      // Genuinely no live daemon — clean up so a fresh start isn't blocked.
+      if (pidFromFile || statusInfo.pid) {
+        appendDaemonLog(
+          `removing stale daemon pid ${pidFromFile || statusInfo.pid}`,
+        )
+      }
       for (const file of [
         DAEMON_PID_FILE,
         DAEMON_STATUS_FILE,

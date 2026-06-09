@@ -355,7 +355,7 @@ async function downloadNodejs(
   onProgress: (pct: number, detail: string) => void,
 ): Promise<void> {
   const https = require("https")
-  const nodeVersion = "v22.14.0"
+  const nodeVersion = "v22.22.3"
   const arch = nodeDistArch()
 
   try {
@@ -389,7 +389,7 @@ async function downloadNodejs(
       )
     }
 
-    const npmVersion = "10.9.2"
+    const npmVersion = "10.9.8"
     const npmUrl = `https://registry.npmjs.org/npm/-/npm-${npmVersion}.tgz`
     const npmTgz = path.join(os.tmpdir(), `npm-${npmVersion}.tgz`)
     const npmModDir = path.join(nodejsDir, "node_modules", "npm")
@@ -634,7 +634,7 @@ async function ensureCoreLibrary(): Promise<void> {
       const npmDir = path.join(PORTABLE_NODE_DIR, "node_modules", "npm")
       await downloadFile(
         https,
-        "https://registry.npmjs.org/npm/-/npm-10.9.2.tgz",
+        "https://registry.npmjs.org/npm/-/npm-10.9.8.tgz",
         npmTgz,
         null,
       )
@@ -1874,6 +1874,30 @@ function setupIPC(): void {
     }
   })
 
+  // Run a fresh sign-in probe for a hosted-login agent (Cursor/Hermes) and
+  // return its health. Used by the Configure dialog after the user confirms
+  // they completed the terminal login, so the result reflects reality.
+  ipcMain.handle("agents:login-refresh", async (_e, type) => {
+    if (!agentManager) return null
+    try {
+      return await agentManager.refreshHostedLogin(type)
+    } catch {
+      return null
+    }
+  })
+
+  // Drop a stale/invalid API key (e.g. CURSOR_API_KEY) so a hosted-login agent
+  // uses its browser-login session instead. See clearHostedLoginApiKey.
+  ipcMain.handle("agents:login-clear-key", (_e, type, agentName) => {
+    if (!agentManager) return { success: false }
+    try {
+      agentManager.clearHostedLoginApiKey(type, agentName || undefined)
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
   ipcMain.handle("core:update", async () => {
     // Run bundled `node npm-cli.js` directly (no shell, argv array) so a
     // non-ASCII home path survives on Windows — the `.cmd` shim does not.
@@ -2170,7 +2194,7 @@ app.whenReady().then(async () => {
     updateSplash("Installing npm...", 55)
     try {
       const https = require("https")
-      const npmVersion = "10.9.2"
+      const npmVersion = "10.9.8"
       const npmTgz = path.join(os.tmpdir(), `npm-${npmVersion}.tgz`)
       const npmModDir = path.join(PORTABLE_NODE_DIR, "node_modules", "npm")
       await downloadFile(
