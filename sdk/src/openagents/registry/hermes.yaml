@@ -13,8 +13,9 @@ install:
   # `hermes-agent` package on PyPI.
   macos: "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"
   linux: "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"
-  # Native Windows is not supported by hermes-agent upstream — run under WSL2.
-  windows: "echo 'Hermes requires WSL2 on Windows. See https://github.com/NousResearch/hermes-agent'"
+  # Native Windows is not supported by hermes-agent upstream — install and run
+  # under WSL2. The adapter detects the in-WSL hermes and invokes it via `wsl -e`.
+  windows: "wsl.exe -e bash -lc \"curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup\""
 
 adapter:
   module: openagents.adapters.hermes
