@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn, execSync, execFileSync } = require('child_process');
 const os = require('os');
 const { WorkspaceClient } = require('./workspace-client');
-const { getEnhancedEnv, whichBinary, IS_WINDOWS } = require('./paths');
+const { getEnhancedEnv, whichBinary, IS_WINDOWS, defaultAgentWorkdir } = require('./paths');
 
 /**
  * Agent process lifecycle manager.
@@ -477,7 +477,11 @@ class Daemon {
         openclawAgentId: agentCfg.openclaw_agent_id || 'main',
         disabledModules: skillsToDisabledModules(agentCfg.skills),
         agentEnv: this._buildAgentEnv(agentCfg),
-        workingDir: agentCfg.path || undefined,
+        // Always give the agent a real, writable working directory. Without an
+        // explicit `path`, adapters used to fall back to process.cwd(), which on
+        // a packaged Windows launcher is C:\WINDOWS\system32 — so writing
+        // .claude/skills there failed with EPERM. Root it under ~/.openagents.
+        workingDir: agentCfg.path || defaultAgentWorkdir(name),
         toolMode: agentCfg.tool_mode || 'skills',
       });
     } catch (e) {

@@ -19,6 +19,7 @@ const { execSync, spawn } = require('child_process');
 const BaseAdapter = require('./base');
 const { formatAttachmentsForPrompt, SESSION_DEFAULT_RE, generateSessionTitle } = require('./utils');
 const { buildClaudeSystemPrompt, buildClaudeSkillMd } = require('./workspace-prompt');
+const { defaultAgentWorkdir, whichBinary, getEnhancedEnv } = require('../paths');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -332,15 +333,22 @@ class ClaudeAdapter extends BaseAdapter {
     const portableCandidate = path.join(portableBin, `claude${ext}`);
     if (fs.existsSync(portableCandidate)) return portableCandidate;
 
-    // Tier 1: PATH search
+    // Tier 1: PATH search. Use the ENRICHED env so the lookup sees the same
+    // node-version-manager / homebrew / npm-global dirs the launcher adds —
+    // a packaged Electron daemon's own PATH is minimal, which is why `which
+    // claude` came up empty and the agent reported "claude CLI not found".
+    // windowsHide stops a console window from flashing.
     try {
+      const env = getEnhancedEnv();
       if (IS_WINDOWS) {
         const r = execSync('where claude.cmd 2>nul || where claude.exe 2>nul || where claude 2>nul', {
-          encoding: 'utf-8', timeout: 5000,
+          encoding: 'utf-8', timeout: 5000, windowsHide: true, env,
         });
-        return r.split(/\r?\n/)[0].trim();
+        const hit = r.split(/\r?\n/)[0].trim();
+        if (hit) return hit;
       } else {
-        return execSync('which claude', { encoding: 'utf-8', timeout: 5000 }).trim();
+        const hit = execSync('which claude', { encoding: 'utf-8', timeout: 5000, windowsHide: true, env }).trim();
+        if (hit) return hit;
       }
     } catch {}
 
@@ -354,6 +362,7 @@ class ClaudeAdapter extends BaseAdapter {
       path.join(process.env.APPDATA || '', 'npm', 'claude.cmd'),
     ] : [
       path.join(home, '.local', 'bin', 'claude'),
+      path.join(home, '.claude', 'local', 'claude'),
       path.join(home, '.npm-global', 'bin', 'claude'),
       '/opt/homebrew/bin/claude',
       '/usr/local/bin/claude',
@@ -361,6 +370,13 @@ class ClaudeAdapter extends BaseAdapter {
     for (const c of candidates) {
       if (fs.existsSync(c)) return c;
     }
+
+    // Tier 4: Deep scan of every known bin dir (nvm/fnm/volta node-global,
+    // homebrew, cargo, pip, …). This is what catches a `claude` installed as a
+    // global npm package under a version-managed Node — the most common setup,
+    // and the one the fixed-PATH tiers above miss.
+    const viaWhich = whichBinary('claude');
+    if (viaWhich) return viaWhich;
 
     return null;
   }
@@ -427,8 +443,10 @@ class ClaudeAdapter extends BaseAdapter {
       cmd.push('--allowedTools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep');
     }
 
-    // Write SKILL.md to .claude/skills/ in the working directory
-    const workDir = this.workingDir || process.cwd();
+    // Write SKILL.md to .claude/skills/ in the working directory. Never use
+    // process.cwd() as the fallback — on a packaged Windows daemon that is
+    // C:\WINDOWS\system32 and mkdir there throws EPERM.
+    const workDir = this.workingDir || defaultAgentWorkdir(this.agentName);
     const skillDir = path.join(workDir, '.claude', 'skills');
     fs.mkdirSync(skillDir, { recursive: true });
     const skillFile = path.join(skillDir, 'openagents-workspace.md');
@@ -1009,7 +1027,7 @@ class ClaudeAdapter extends BaseAdapter {
 
         if (this._mode === 'plan') {
           try {
-            const planDir = path.join(this.workingDir || process.cwd(), '.claude', 'plans');
+            const planDir = path.join(this.workingDir || defaultAgentWorkdir(this.agentName), '.claude', 'plans');
             if (fs.existsSync(planDir)) {
               const planFiles = fs.readdirSync(planDir)
                 .filter((f) => f.endsWith('.md'))
