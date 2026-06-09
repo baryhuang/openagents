@@ -29,7 +29,7 @@
     "dist": "npm run build && electron-builder --publish always"
   },
   "dependencies": {
-    "@openagents-org/agent-launcher": "0.2.135",
+    "@openagents-org/agent-launcher": "0.2.136",
     "clsx": "^2.1.1",
     "lucide-react": "^0.460.0",
     "posthog-js": "^1.376.0",
