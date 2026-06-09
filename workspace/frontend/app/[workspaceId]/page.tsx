@@ -14,7 +14,12 @@ function WorkspaceLoadingSplash() {
         <img
           src="/logo-icon.png"
           alt="OpenAgents"
-          className="size-16 animate-[pulse_2s_ease-in-out_infinite]"
+          className="size-16 animate-[pulse_2s_ease-in-out_infinite] dark:hidden"
+        />
+        <img
+          src="/logo-white.png"
+          alt="OpenAgents"
+          className="size-16 animate-[pulse_2s_ease-in-out_infinite] hidden dark:block"
         />
         <div className="text-center">
           <h1 className="text-xl font-semibold tracking-tight">OpenAgents</h1>
