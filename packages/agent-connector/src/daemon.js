@@ -55,6 +55,25 @@ class Daemon {
       try { process.on('SIGHUP', () => this._reload()); } catch {}
     }
 
+    // Crash guards. A bug in one adapter — a rejected fire-and-forget promise,
+    // an EBADF from a double fs.closeSync in a child-process callback, a throw
+    // inside a stream/'exit' handler — must NEVER take down the whole daemon
+    // and every other agent with it. Node ≥15 terminates the process on an
+    // unhandled rejection by default, so without these the daemon silently
+    // dies and the launcher shows "Daemon stopped". Log loudly, keep
+    // supervising; per-agent failures are already isolated in _adapterLoop.
+    if (!this._crashGuardsInstalled) {
+      this._crashGuardsInstalled = true;
+      process.on('unhandledRejection', (reason) => {
+        const msg = reason && reason.stack ? reason.stack : String(reason);
+        this._log(`UNHANDLED REJECTION (daemon kept alive): ${msg}`);
+      });
+      process.on('uncaughtException', (err) => {
+        const msg = err && err.stack ? err.stack : String(err);
+        this._log(`UNCAUGHT EXCEPTION (daemon kept alive): ${msg}`);
+      });
+    }
+
     // Write PID file
     this._writePid();
 
@@ -444,7 +463,12 @@ class Daemon {
     let adapter;
     try {
       adapter = createAdapter(agentType, {
-        workspaceId: network.id,
+        // Networks created via the launcher can be persisted with id: null
+        // (the workspace service returns only a slug). The server identifies
+        // a workspace by its slug — the same value the web UI uses in its URL —
+        // so fall back to it. Joining with a null id makes every poll/heartbeat
+        // fail "Network not found", which spins the adapter in an error loop.
+        workspaceId: network.id || network.slug,
         channelName: 'general',
         token: network.token,
         agentName: name,
@@ -657,8 +681,24 @@ class Daemon {
           this.stopAgent(agentName);
         } else if (cmd.startsWith('start:')) {
           const agentName = cmd.slice(6).trim();
-          this._log(`Command: start ${agentName}`);
-          this.restartAgent(agentName);
+          // 'start' must be idempotent. The launcher sends start:<name> right
+          // after (re)spawning the daemon, but the daemon's own start() already
+          // launched every configured agent. A blind restart here tears down
+          // the just-joined workspace session and re-joins as the same agent;
+          // the server revokes the first session and the agent then stops the
+          // moment it next touches the workspace (e.g. the first user message →
+          // "thinking..." status). Only (re)launch when it isn't running.
+          const running =
+            (this._adapters && this._adapters[agentName]) ||
+            ['running', 'starting'].includes(
+              this._processes[agentName] && this._processes[agentName].state
+            );
+          if (running) {
+            this._log(`Command: start ${agentName} — already running, skipping`);
+          } else {
+            this._log(`Command: start ${agentName}`);
+            this.restartAgent(agentName);
+          }
         } else if (cmd.startsWith('restart:')) {
           const agentName = cmd.slice(8).trim();
           this._log(`Command: restart ${agentName}`);
@@ -830,6 +870,38 @@ class Daemon {
       if (e.code === 'EPERM') return true;
       return false;
     }
+  }
+
+  /**
+   * Return the PID of another live daemon for this configDir, or null.
+   *
+   * Used to enforce the singleton even on the `up --foreground` path, which the
+   * launcher spawns directly (bypassing daemonize's guard). Trusts BOTH the pid
+   * file and the status file (a live daemon rewrites the latter every 5s with
+   * its own pid), because the pid file gets emptied/clobbered under races. Uses
+   * real process-liveness — not just file age — so a daemon that was just
+   * stopped for a legitimate restart doesn't block the replacement.
+   */
+  static runningDaemonPid(configDir) {
+    const self = process.pid;
+    const isOtherAlive = (pid) =>
+      pid && pid !== self && Daemon._isAlive(pid);
+
+    const pidFromFile = Daemon._readPid(path.join(configDir, 'daemon.pid'));
+    if (isOtherAlive(pidFromFile)) return pidFromFile;
+
+    try {
+      const statusFile = path.join(configDir, 'daemon.status.json');
+      const age = Date.now() - fs.statSync(statusFile).mtimeMs;
+      // Bound the age so a long-dead daemon whose pid got reused by an
+      // unrelated process can't masquerade as a live daemon.
+      if (age < 30000) {
+        const raw = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+        const pid = raw && raw.pid;
+        if (isOtherAlive(pid)) return pid;
+      }
+    } catch {}
+    return null;
   }
 }
 

@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld('api', {
   showPath: (p: string) => ipcRenderer.invoke('paths:show', p),
 
   healthCheck: (type: string) => ipcRenderer.invoke('agents:health-check', type),
+  refreshLogin: (type: string) => ipcRenderer.invoke('agents:login-refresh', type),
+  clearLoginKey: (type: string, agentName?: string) =>
+    ipcRenderer.invoke('agents:login-clear-key', type, agentName),
 
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   shellExec: (cmd: string) => ipcRenderer.invoke('shell:exec', cmd),

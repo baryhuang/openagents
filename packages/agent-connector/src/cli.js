@@ -64,9 +64,18 @@ function table(rows, headers) {
 
 async function cmdUp(connector, flags) {
   if (flags.foreground) {
-    // Run in foreground (used by daemonize child) — skip PID check
-    // because the parent already wrote our PID to the file.
+    // Run in foreground. daemonize() already guards its own child, but the
+    // launcher spawns `up --foreground` DIRECTLY — bypassing that guard — so a
+    // stale/empty pid file used to let it pile up dozens of daemons that each
+    // join the workspace as the same agents (session wars, duplicate replies).
+    // Enforce the singleton here using process-liveness from the pid OR status
+    // file, so a clobbered pid file can't defeat it.
     const daemon = connector.createDaemon();
+    const other = Daemon.runningDaemonPid(daemon.config.configDir);
+    if (other) {
+      print(`Daemon already running (PID ${other}); not starting another.`);
+      return;
+    }
     await daemon.start();
   } else {
     const pid = connector.getDaemonPid();
@@ -172,7 +181,15 @@ async function cmdRemove(connector, _flags, positional) {
 async function cmdStart(connector, _flags, positional) {
   const name = positional[0];
   if (!name) { print('Usage: agn start <name>'); return; }
-  connector.sendDaemonCommand(`restart:${name}`);
+  // `start` must be idempotent — it ensures the agent is running, it does NOT
+  // forcibly restart one that already is. Send `start:` (which the daemon
+  // guards: relaunch only when not already running) rather than `restart:`.
+  // A blind `restart:` tears down the workspace session the daemon already
+  // joined on launch and re-joins as the same agent; the server revokes the
+  // first session, so the agent stops the moment it next touches the workspace
+  // (first user message → "thinking..." then silence). The launcher already
+  // sends `start:`; this aligns the CLI with it.
+  connector.sendDaemonCommand(`start:${name}`);
   print(`Sent start command for '${name}'`);
 }
 

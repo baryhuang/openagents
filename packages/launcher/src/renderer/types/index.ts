@@ -383,6 +383,8 @@ declare global {
       }>
       showPath(path: string): Promise<boolean>
       healthCheck(type: string): Promise<HealthCheck>
+      refreshLogin(type: string): Promise<HealthCheck>
+      clearLoginKey(type: string, agentName?: string): Promise<{ success: boolean }>
       openExternal(url: string): Promise<void>
       shellExec(cmd: string): Promise<string>
       openTerminal(cmd: string): Promise<void>
