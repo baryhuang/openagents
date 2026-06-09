@@ -1956,11 +1956,24 @@ function setupIPC(): void {
             runtimeBins.push(path.join(rd, d.name, "node_modules", ".bin"))
         }
       } catch {}
+      // Hosted-login CLIs (Cursor) install to their own dirs and only edit the
+      // *registry* PATH — which a freshly-spawned cmd inherits stale, so a bare
+      // `cursor-agent login` here dies with "not recognized". The Windows native
+      // installer drops the CLI under %LOCALAPPDATA%\cursor-agent; the shell
+      // installer uses ~/.cursor\bin. Mirror the dirs the core adds to its own
+      // enhanced PATH so the login terminal resolves the CLI without a reboot.
+      const localAppData =
+        process.env.LOCALAPPDATA || path.join(home, "AppData", "Local")
+      const cliBins = [
+        path.join(localAppData, "cursor-agent"),
+        path.join(home, ".cursor", "bin"),
+      ]
       const allBins = [
         ...runtimeBins,
         path.join(portableNode, "node_modules", ".bin"),
         portableNode,
         npmBin,
+        ...cliBins,
       ].join(";")
       const setPath = `set PATH=${allBins};%PATH%`
       exec(`start "" cmd /K "${setPath} && ${cmd}"`, {
