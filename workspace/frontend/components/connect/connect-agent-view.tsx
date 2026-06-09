@@ -33,6 +33,7 @@ const AGENT_BRANDS: Record<string, { bg: string; text: string }> = {
   nanoclaw:  { bg: 'bg-pink-500',    text: 'text-white' },
   cursor:    { bg: 'bg-zinc-800',    text: 'text-white' },
   hermes:    { bg: 'bg-yellow-500',  text: 'text-white' },
+  kimi:      { bg: 'bg-sky-500',     text: 'text-white' },
 };
 
 const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string }> = {
