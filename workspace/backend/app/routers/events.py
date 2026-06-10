@@ -19,7 +19,7 @@ from sqlalchemy import and_, case, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
 
 from app import cache
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import Channel, ChannelMember, EventRecord, Workspace
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
@@ -606,7 +606,6 @@ async def stream_events(
     network: str = Query(...),
     channel: Optional[str] = Query(None),
     token: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ):
@@ -617,15 +616,25 @@ async def stream_events(
     to polling.
     """
     effective_token = x_workspace_token or token
-    workspace = db.execute(
-        select(Workspace).where(_workspace_filter(network))
-    ).scalar_one_or_none()
-    if not workspace:
-        return json_response(ResponseCode.NOT_FOUND, "Network not found")
-    if not _verify_workspace_access(workspace, effective_token, authorization):
-        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
 
-    workspace_id = str(workspace.id)
+    # Verify access with a SHORT-LIVED session that is closed BEFORE we start
+    # streaming. SSE streams live for minutes/hours; a Depends(get_db) session
+    # would stay checked out — and idle-in-transaction, from the verify query
+    # below — for the whole stream, pinning a pooled connection per client and
+    # exhausting the pool. The generator below reads only from Redis, so no DB
+    # session is needed once access is verified.
+    db = SessionLocal()
+    try:
+        workspace = db.execute(
+            select(Workspace).where(_workspace_filter(network))
+        ).scalar_one_or_none()
+        if not workspace:
+            return json_response(ResponseCode.NOT_FOUND, "Network not found")
+        if not _verify_workspace_access(workspace, effective_token, authorization):
+            return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+        workspace_id = str(workspace.id)
+    finally:
+        db.close()
     target_prefix = f"channel/{channel}" if channel else None
 
     async def event_generator():
