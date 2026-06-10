@@ -305,6 +305,15 @@ class ClaudeAdapter extends BaseAdapter {
       if (jsMatch) {
         return [nodeBin, path.resolve(cmdDir, jsMatch[1])];
       }
+      // .cmd shims that forward to a native .exe (e.g. Claude Code's
+      // claude.cmd → @anthropic-ai/claude-code/bin/claude.exe). Resolve to the
+      // exe and spawn it directly. Wrapping such a .cmd in `cmd.exe /c` caps the
+      // command line at cmd.exe's 8191-char limit, which truncates the ~14KB
+      // --append-system-prompt and makes the agent hang ("command line too long").
+      const exeMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.exe)/i);
+      if (exeMatch) {
+        return [path.resolve(cmdDir, exeMatch[1])];
+      }
     } else {
       // Unix: symlink → resolve to actual .js file
       try {
@@ -564,7 +573,7 @@ class ClaudeAdapter extends BaseAdapter {
         const resolved = this._resolveToNodeCmd(oaBin);
         if (resolved) {
           mcpCommand = resolved[0];
-          mcpFinalArgs = [resolved[1], ...mcpArgs];
+          mcpFinalArgs = [...resolved.slice(1), ...mcpArgs];
         } else {
           mcpCommand = oaBin;
         }
@@ -689,7 +698,7 @@ class ClaudeAdapter extends BaseAdapter {
     const resolved = this._resolveToNodeCmd(filteredCmd[0]);
     let finalCmd = filteredCmd;
     if (resolved) {
-      finalCmd = [resolved[0], resolved[1], ...filteredCmd.slice(1)];
+      finalCmd = [...resolved, ...filteredCmd.slice(1)];
     } else if (IS_WINDOWS && filteredCmd[0].toLowerCase().endsWith('.cmd')) {
       finalCmd = ['cmd.exe', '/c', ...filteredCmd];
     }
