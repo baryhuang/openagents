@@ -286,6 +286,30 @@ const HOSTED_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
  */
 const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes"])
 
+/**
+ * The agents the launcher/workspace core officially supports today, in the
+ * order product wants them surfaced (the "8 核心 agent" list). Anything NOT in
+ * this set is shown as "coming soon" in the Install marketplace — visible but
+ * not installable, sorted to the bottom — and omitted from onboarding, so users
+ * stay on the supported set. Kept in launcher code (not the shared registry) so
+ * the supported list can move independently of the catalog, and `coreOrder`
+ * gives a single display order regardless of the registry's own
+ * featured/order (which is inconsistent for e.g. gemini).
+ */
+const CORE_AGENTS: readonly string[] = [
+  "claude",
+  "openclaw",
+  "codex",
+  "cursor",
+  "opencode",
+  "hermes",
+  "kimi",
+  "gemini",
+]
+const CORE_AGENT_ORDER = new Map<string, number>(
+  CORE_AGENTS.map((name, i) => [name, i]),
+)
+
 type LLMTestResult = {
   success: boolean
   model?: string
@@ -438,11 +462,20 @@ async function testLLMConnection(
         pick("ANTHROPIC_BASE_URL") || "https://api.anthropic.com",
       ).replace(/\/v1$/, "")
       const model = pick("ANTHROPIC_MODEL") || "claude-3-5-haiku-latest"
+      // Mirror exactly how the spawned `claude` CLI will authenticate, so the
+      // test predicts the real run: the official endpoint uses `x-api-key`,
+      // while a relay/proxy base goes through `Authorization: Bearer` (the CLI
+      // gets that via ANTHROPIC_AUTH_TOKEN — see normalizeEnvForSave). Sending
+      // x-api-key to a Bearer-only relay is precisely what makes it 401 with
+      // "invalid token", so the test must use the same header the agent does.
+      const authHeader: Record<string, string> = isOfficialAnthropicBase(base)
+        ? { "x-api-key": anthropicKey }
+        : { Authorization: `Bearer ${anthropicKey}` }
       const { status, text } = await httpRequestJson(
         `${base}/v1/messages`,
         "POST",
         {
-          "x-api-key": anthropicKey,
+          ...authHeader,
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
@@ -534,6 +567,22 @@ function normalizeWorkspaceEndpoint(value: unknown): string | undefined {
 }
 
 /**
+ * True when an Anthropic base URL points at Anthropic's own API (not a
+ * third-party relay/proxy). The official endpoint authenticates with the API
+ * key via the `x-api-key` header; everything else is treated as a relay that
+ * wants `Authorization: Bearer` (see normalizeEnvForSave). An unparseable value
+ * is treated as NON-official so we don't accidentally suppress the relay path.
+ */
+function isOfficialAnthropicBase(base: string): boolean {
+  try {
+    const h = new URL(base).hostname.toLowerCase()
+    return h === "anthropic.com" || h.endsWith(".anthropic.com")
+  } catch {
+    return false
+  }
+}
+
+/**
  * Normalize provider base URLs before they're persisted to env, so what we
  * SAVE matches what we TEST (testLLMConnection). The mismatch this guards
  * against: a user pastes an Anthropic-compatible relay URL that already ends
@@ -558,6 +607,30 @@ function normalizeEnvForSave(
       .replace(/\/+$/, "")
       .replace(/\/v1$/, "")
   }
+
+  // Route Claude through Bearer auth on third-party relays. The Claude CLI
+  // sends ANTHROPIC_API_KEY as the `x-api-key` header, but most Anthropic-
+  // compatible relays/proxies — the usual reason a custom ANTHROPIC_BASE_URL is
+  // set — only honor `Authorization: Bearer`. With just the API key those relays
+  // reject every request as 401 "invalid token / 无效的令牌", which is exactly the
+  // failure seen creating a workspace through such a relay. ANTHROPIC_AUTH_TOKEN
+  // is sent as Bearer and, per Claude Code's auth precedence, outranks the API
+  // key, so mirroring the key into it makes the CLI authenticate the way relays
+  // expect. The daemon passes this env straight through to the spawned CLI, so
+  // the fix works without changing the installed core. We do this ONLY for a
+  // non-official base; for api.anthropic.com x-api-key is correct, so any stale
+  // token from a previous relay save is cleared (saving "" drops the line) to
+  // stop it overriding the API key.
+  const anthropicKey = (out.ANTHROPIC_API_KEY || "").trim()
+  const resolvedBase = (out.ANTHROPIC_BASE_URL || "").trim()
+  if (anthropicKey && resolvedBase) {
+    if (isOfficialAnthropicBase(resolvedBase)) {
+      out.ANTHROPIC_AUTH_TOKEN = ""
+    } else if (!(out.ANTHROPIC_AUTH_TOKEN || "").trim()) {
+      out.ANTHROPIC_AUTH_TOKEN = anthropicKey
+    }
+  }
+
   return out
 }
 
@@ -1764,6 +1837,15 @@ export class AgentManager extends EventEmitter {
       const checkReady = (e.check_ready as Record<string, unknown>) || {}
       e.check_ready = { ...checkReady, login_command: spec.loginCommand }
     }
+    // Stamp the supported-core flag + display order. Non-core agents become
+    // "coming soon" (the UI sinks + disables them); core agents carry the
+    // product-defined order from CORE_AGENTS.
+    for (const entry of catalog) {
+      const e = entry as Record<string, unknown>
+      const idx = CORE_AGENT_ORDER.get(e.name as string)
+      e.comingSoon = idx === undefined
+      e.coreOrder = idx ?? 999
+    }
     return catalog
   }
 
@@ -2117,7 +2199,7 @@ export class AgentManager extends EventEmitter {
     )
 
     const result: OnboardingAgent[] = supported
-      .filter((type) => !ONBOARDING_HIDDEN.has(type))
+      .filter((type) => CORE_AGENTS.includes(type) && !ONBOARDING_HIDDEN.has(type))
       .map((type) => {
       const cat = catalogByName.get(type)
       const reg = bundledByName.get(type)
