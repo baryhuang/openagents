@@ -511,8 +511,14 @@ struct ThreadListView: View {
             if isInbox {
                 return "Routine activity from your agents will appear here."
             }
-            if store.onlineAgents.isEmpty {
+            if !store.hasConnectedAgents {
+                // No agent has joined this workspace yet — guide to connect.
                 return "Connect an agent to start a conversation."
+            }
+            if store.onlineAgents.isEmpty {
+                // Agents exist but none are online — they're connected, just
+                // offline. Don't push the "connect a new agent" flow.
+                return "Your agents are offline. Start one to begin a conversation."
             }
             return nil
         }()
