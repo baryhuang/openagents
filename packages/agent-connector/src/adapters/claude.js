@@ -710,6 +710,7 @@ class ClaudeAdapter extends BaseAdapter {
       messageResolve: null,
       msgChannel: channel,
       lastResponseText: [],
+      lastErrorText: '',
       hasToolUseSinceLastText: false,
       postedThinking: false,
       everPostedAnything: false,
@@ -783,7 +784,12 @@ class ClaudeAdapter extends BaseAdapter {
           this._saveSessions();
         }
         if (event.is_error) {
-          this._log(`Claude error: ${String(event.result || '').slice(0, 200)}`);
+          // Capture the error so _handleMessage can surface it to the user.
+          // Without this, an auth/API failure (e.g. 401 invalid token) is only
+          // logged and the user just sees "No response generated", hiding the
+          // real cause and making it nearly impossible to diagnose.
+          pp.lastErrorText = String(event.result || '').trim();
+          this._log(`Claude error: ${pp.lastErrorText.slice(0, 200)}`);
         }
         if (pp.messageResolve) {
           pp.messageResolve({ resultEvent: event });
@@ -847,6 +853,7 @@ class ClaudeAdapter extends BaseAdapter {
    */
   _sendToPersistentProc(pp, content) {
     pp.lastResponseText = [];
+    pp.lastErrorText = '';
     pp.hasToolUseSinceLastText = false;
     pp.postedThinking = false;
     pp.everPostedAnything = false;
@@ -876,6 +883,20 @@ class ClaudeAdapter extends BaseAdapter {
         resolve({ exited: true, error: e });
       }
     });
+  }
+
+  /**
+   * Turn a raw Claude `result` error into a user-facing message. Auth failures
+   * (401 / invalid token) are the most common real-world cause and are otherwise
+   * invisible — add a concrete hint about which env vars to check.
+   */
+  _formatClaudeError(text) {
+    const msg = String(text || '').trim() || 'Claude returned an error.';
+    if (/401|403|authenticate|invalid.*(token|key|api)|无效的?\s*(令牌|密钥|key)/i.test(msg)) {
+      return `Claude authentication failed: ${msg}\n\n` +
+        'Check this agent\'s API key and Base URL in the launcher — the key may be invalid or expired.';
+    }
+    return `Claude error: ${msg}`;
   }
 
   async _handleMessage(msg) {
@@ -933,6 +954,8 @@ class ClaudeAdapter extends BaseAdapter {
         const fullResponse = existingPP.lastResponseText.join('\n').trim();
         if (fullResponse) {
           try { await this.sendResponse(msgChannel, fullResponse); } catch {}
+        } else if (existingPP.lastErrorText) {
+          try { await this.sendError(msgChannel, this._formatClaudeError(existingPP.lastErrorText)); } catch {}
         }
         this._resetIdleTimer(msgChannel);
         if (!msg._todoNudge) {
@@ -1017,7 +1040,11 @@ class ClaudeAdapter extends BaseAdapter {
             continue;
           }
           if (!pp.everPostedAnything) {
-            try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
+            if (pp.lastErrorText) {
+              try { await this.sendError(msgChannel, this._formatClaudeError(pp.lastErrorText)); } catch {}
+            } else {
+              try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
+            }
           }
           break;
         }
@@ -1052,6 +1079,10 @@ class ClaudeAdapter extends BaseAdapter {
 
         if (finalResponse) {
           try { await this.sendResponse(msgChannel, finalResponse); } catch {}
+        } else if (pp.lastErrorText) {
+          // Claude finished with an error and no assistant text (e.g. 401 invalid
+          // token). Surface it instead of silently dropping the turn.
+          try { await this.sendError(msgChannel, this._formatClaudeError(pp.lastErrorText)); } catch {}
         }
 
         this._resetIdleTimer(msgChannel);

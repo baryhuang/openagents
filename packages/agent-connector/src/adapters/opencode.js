@@ -22,6 +22,10 @@ const { whichBinary, getEnhancedEnv } = require('../paths');
 
 const IS_WINDOWS = process.platform === 'win32';
 
+// Max wall-clock for a single `opencode run`. When it fires, Node kills the
+// child with SIGTERM, the 'close' handler sees signal='SIGTERM' / code=null.
+const TIMEOUT_MS = 300000; // 5 minutes
+
 class OpenCodeAdapter extends BaseAdapter {
   /**
    * @param {object} opts - BaseAdapter opts plus:
@@ -360,6 +364,32 @@ class OpenCodeAdapter extends BaseAdapter {
   // Subprocess execution
   // ------------------------------------------------------------------
 
+  /**
+   * Build the `--model` value (provider/model) for `opencode run`.
+   *
+   * CRITICAL: opencode-ai does NOT read the OPENCODE_MODEL env var. When no
+   * model is given on the command line AND none is set in opencode.json, the
+   * non-interactive `run` command hangs forever waiting for interactive
+   * provider/model selection — it emits zero output until the spawn timeout
+   * kills it with SIGTERM (surfaced as the misleading "exited with code null").
+   * Passing `--model` explicitly is what makes headless runs actually work.
+   */
+  _resolveModel() {
+    const env = this.agentEnv || process.env;
+    const model = (env.OPENCODE_MODEL || env.LLM_MODEL || '').trim();
+    if (!model) return '';
+    // Already provider-qualified (e.g. "openai/gpt-4o", "anthropic/claude-…").
+    if (model.includes('/')) return model;
+    // Infer the provider from which key/base URL the env resolved to. The
+    // registry maps LLM_* → OPENAI_* for OpenAI-compatible endpoints, so
+    // "openai" is the right default; only switch for an Anthropic endpoint.
+    const baseUrl = (env.OPENAI_BASE_URL || env.LLM_BASE_URL || '').toLowerCase();
+    const provider = (env.ANTHROPIC_API_KEY || baseUrl.includes('anthropic'))
+      ? 'anthropic'
+      : 'openai';
+    return `${provider}/${model}`;
+  }
+
   _runOpencode(content, msgChannel) {
     const binary = this._opencodeBinary || this._findOpencodeBinary();
     if (binary) this._opencodeBinary = binary;
@@ -370,6 +400,19 @@ class OpenCodeAdapter extends BaseAdapter {
     }
 
     const cmd = [binary, 'run', '--format', 'json', '--dir', this.agentHome];
+
+    // Pin the model explicitly — without it opencode hangs waiting for
+    // interactive selection (see _resolveModel). Harmless when resuming a
+    // session (opencode keeps the session's model); essential for new ones.
+    const model = this._resolveModel();
+    if (model) {
+      cmd.push('--model', model);
+    } else {
+      this._log(
+        'WARNING: no model configured (set LLM_MODEL / OPENCODE_MODEL). ' +
+        'opencode may hang or produce no response.'
+      );
+    }
 
     const sessionId = this._channelSessions[msgChannel];
     let fullPrompt;
@@ -382,7 +425,7 @@ class OpenCodeAdapter extends BaseAdapter {
       fullPrompt = `${context}\n\n---\n\n${content}`;
     }
 
-    this._log(`CLI: ${binary} ${cmd.slice(1, 5).join(' ')} ...`);
+    this._log(`CLI: ${binary} run --format json --dir … --model ${model || '(none)'}`);
 
     const spawnEnv = { ...(this.agentEnv || process.env) };
 
@@ -400,7 +443,7 @@ class OpenCodeAdapter extends BaseAdapter {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: spawnEnv,
         cwd: this.agentHome,
-        timeout: 300000, // 5 minutes
+        timeout: TIMEOUT_MS,
         // Never let a console window appear. Besides being ugly, an attached
         // console makes opencode start its interactive TUI and hang instead of
         // running headless — the root cause of "stuck on thinking…" on Windows.
@@ -428,10 +471,21 @@ class OpenCodeAdapter extends BaseAdapter {
 
       proc.on('error', (err) => finish(reject, err));
       // 'close' (not 'exit') fires after stdout/stderr have fully drained, so we
-      // never parse a truncated response.
-      proc.on('close', (code) => {
+      // never parse a truncated response. The handler receives (code, signal):
+      // when the spawn timeout kills the child, code is null and signal is the
+      // signal name — report that as a timeout rather than "exited with code null".
+      proc.on('close', (code, signal) => {
         stdout = stdout.trim();
         stderr = stderr.trim();
+
+        if (signal) {
+          this._log(`opencode killed by signal ${signal} after ${TIMEOUT_MS / 1000}s (no output: ${!stdout})`);
+          return finish(reject, new Error(
+            stderr ? stderr.slice(0, 500)
+              : `opencode timed out after ${TIMEOUT_MS / 1000}s with no response. ` +
+                'This usually means no model/provider is configured — check LLM_MODEL / LLM_API_KEY.'
+          ));
+        }
 
         if (code !== 0) {
           this._log(`opencode exited with code ${code}: ${stderr.slice(0, 300)}`);
