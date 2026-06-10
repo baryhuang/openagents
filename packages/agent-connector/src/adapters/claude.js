@@ -305,6 +305,15 @@ class ClaudeAdapter extends BaseAdapter {
       if (jsMatch) {
         return [nodeBin, path.resolve(cmdDir, jsMatch[1])];
       }
+      // .cmd shims that forward to a native .exe (e.g. Claude Code's
+      // claude.cmd → @anthropic-ai/claude-code/bin/claude.exe). Resolve to the
+      // exe and spawn it directly. Wrapping such a .cmd in `cmd.exe /c` caps the
+      // command line at cmd.exe's 8191-char limit, which truncates the ~14KB
+      // --append-system-prompt and makes the agent hang ("command line too long").
+      const exeMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.exe)/i);
+      if (exeMatch) {
+        return [path.resolve(cmdDir, exeMatch[1])];
+      }
     } else {
       // Unix: symlink → resolve to actual .js file
       try {
@@ -564,7 +573,7 @@ class ClaudeAdapter extends BaseAdapter {
         const resolved = this._resolveToNodeCmd(oaBin);
         if (resolved) {
           mcpCommand = resolved[0];
-          mcpFinalArgs = [resolved[1], ...mcpArgs];
+          mcpFinalArgs = [...resolved.slice(1), ...mcpArgs];
         } else {
           mcpCommand = oaBin;
         }
@@ -689,7 +698,7 @@ class ClaudeAdapter extends BaseAdapter {
     const resolved = this._resolveToNodeCmd(filteredCmd[0]);
     let finalCmd = filteredCmd;
     if (resolved) {
-      finalCmd = [resolved[0], resolved[1], ...filteredCmd.slice(1)];
+      finalCmd = [...resolved, ...filteredCmd.slice(1)];
     } else if (IS_WINDOWS && filteredCmd[0].toLowerCase().endsWith('.cmd')) {
       finalCmd = ['cmd.exe', '/c', ...filteredCmd];
     }
@@ -996,6 +1005,30 @@ class ClaudeAdapter extends BaseAdapter {
     for (const k of Object.keys(cleanEnv)) {
       if ((k.startsWith('CLAUDE_') && !CLAUDE_ENV_KEEP.has(k)) || k === 'CLAUDECODE' || k === 'AI_AGENT') {
         delete cleanEnv[k];
+      }
+    }
+
+    // Third-party Anthropic-compatible relays (the common reason a custom
+    // ANTHROPIC_BASE_URL is set) authenticate via `Authorization: Bearer`, which
+    // the Claude CLI only sends when ANTHROPIC_AUTH_TOKEN is set. With just
+    // ANTHROPIC_API_KEY the CLI sends `x-api-key`, which most relays ignore — the
+    // relay then rejects every request as 401 "invalid token / 无效的令牌". When a
+    // non-official base URL is configured and no auth token was provided, mirror
+    // the API key into ANTHROPIC_AUTH_TOKEN (it outranks the API key in Claude
+    // Code's auth precedence) so the CLI uses Bearer auth. The launcher normally
+    // sets this when saving env; this is the runtime backstop for envs saved by
+    // an older launcher or coming from any other source. The official
+    // api.anthropic.com endpoint keeps x-api-key, so it is left untouched.
+    const anthropicBase = (cleanEnv.ANTHROPIC_BASE_URL || '').trim();
+    const anthropicKey = (cleanEnv.ANTHROPIC_API_KEY || '').trim();
+    if (anthropicKey && anthropicBase && !(cleanEnv.ANTHROPIC_AUTH_TOKEN || '').trim()) {
+      let officialAnthropic = false;
+      try {
+        const host = new URL(anthropicBase).hostname.toLowerCase();
+        officialAnthropic = host === 'anthropic.com' || host.endsWith('.anthropic.com');
+      } catch { officialAnthropic = false; }
+      if (!officialAnthropic) {
+        cleanEnv.ANTHROPIC_AUTH_TOKEN = anthropicKey;
       }
     }
 
