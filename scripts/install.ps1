@@ -209,7 +209,7 @@ if ($latestVer -and ($latestVer -ne $installedVer)) {
     New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
     tar -xzf $tgz -C $coreDir --strip-components=1
     Remove-Item $tgz -Force -ErrorAction SilentlyContinue
-    # Install blessed (TUI dep) via direct tarball — avoids npm --prefix pruning other packages
+    # Install blessed (TUI dep) via direct tarball - avoids npm --prefix pruning other packages
     $blessedDir = Join-Path $prefixDir "node_modules\blessed"
     $blessedVer = "0.1.81"
     if (-not (Test-Path (Join-Path $blessedDir "package.json"))) {
@@ -246,7 +246,7 @@ if ($latestVer -and ($latestVer -ne $installedVer)) {
             $pkg.dependencies | Add-Member -NotePropertyName "blessed" -NotePropertyValue $blessedVer -Force
             $pkg | ConvertTo-Json -Compress | Set-Content -Path $prefixPkg
         } catch {
-            Warn "Could not update $prefixPkg — creating fresh"
+            Warn "Could not update $prefixPkg - creating fresh"
             $pkgJson = @{
                 private = $true
                 dependencies = @{
@@ -260,7 +260,7 @@ if ($latestVer -and ($latestVer -ne $installedVer)) {
 
     # Create bin shims
     # Uses %~dp0-relative paths so cmd.exe OEM code page doesn't corrupt
-    # non-ASCII characters in home directory paths (e.g. C:\Users\用户名\...)
+    # non-ASCII characters in home directory paths (e.g. C:\Users\<non-ascii-name>\...)
     # Matches the launcher's shim format (2-line, no setlocal).
     $shimDir = Join-Path $prefixDir "node_modules\.bin"
     New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
@@ -319,7 +319,11 @@ function Detect-Agent {
         foreach ($p in $ExtraPaths) {
             if (Test-Path $p) {
                 $ver = ""
-                try { $ver = & $p --version 2>$null | Select-Object -First 1 } catch {}
+                # Collect full output before selecting first line; piping a native
+                # command straight into Select-Object -First 1 stops the pipeline
+                # early, killing the process and leaving $LASTEXITCODE = 255 (which
+                # would otherwise become the script's exit code).
+                try { $ver = (& $p --version 2>$null) | Select-Object -First 1 } catch {}
                 if ($ver) { Ok "$Name ($ver)" } else { Ok "$Name (found at $p)" }
                 $script:agentCount++
                 return
@@ -328,7 +332,7 @@ function Detect-Agent {
         Dim "$Name - not installed"
         return
     }
-    $ver = try { & $Binary --version 2>$null | Select-Object -First 1 } catch { "" }
+    $ver = try { (& $Binary --version 2>$null) | Select-Object -First 1 } catch { "" }
     if ($ver) { Ok "$Name ($ver)" } else { Ok $Name }
     $script:agentCount++
 }
