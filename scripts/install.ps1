@@ -10,7 +10,8 @@ $ErrorActionPreference = "Stop"
 $VERSION = "1.0.6"
 $NPM_PACKAGE = "@openagents-org/agent-launcher"
 $MIN_NODE_MAJOR = 18
-$NODE_V22 = "v22.16.0"
+$NODE_V22 = "v22.22.3"
+$NODE_V22_MIN = [version]"22.19.0"  # Minimum portable Node for agents like OpenClaw (>=22.19)
 
 # --- Helpers ---
 function Info($msg)  { Write-Host ">>> " -ForegroundColor Cyan -NoNewline; Write-Host $msg }
@@ -96,25 +97,29 @@ if ($node) {
 }
 
 # =========================================================================
-# Step 1b: Ensure portable Node.js v22+ at ~/.openagents/nodejs/
-# Agents like OpenClaw require v22.12+. System Node may be v18/v20.
+# Step 1b: Ensure portable Node.js >=22.19 at ~/.openagents/nodejs/
+# Agents like OpenClaw require Node v22.19+. System Node may be v18/v20, or an
+# older portable v22 (e.g. v22.16) left by a previous installer version.
 # =========================================================================
 $portableNode = Join-Path $nodejsDir "node.exe"
 $needPortableUpgrade = $false
 
+function Test-NodeBelowMin($verString) {
+    try { return ([version]($verString -replace '^v','')) -lt $NODE_V22_MIN } catch { return $true }
+}
+
 if (Test-Path $portableNode) {
     try {
         $pVer = & $portableNode --version 2>$null
-        $pMajor = [int]($pVer -replace '^v','').Split('.')[0]
-        if ($pMajor -lt 22) {
-            Info "Upgrading portable Node.js to $NODE_V22 (current: $pVer)..."
+        if (Test-NodeBelowMin $pVer) {
+            Info "Upgrading portable Node.js to $NODE_V22 (current: $pVer, need >=$NODE_V22_MIN)..."
             $needPortableUpgrade = $true
         }
     } catch {
         $needPortableUpgrade = $true
     }
-} elseif ($node -and $node.Major -lt 22) {
-    Info "Installing portable Node.js $NODE_V22 (system Node is $($node.Version))..."
+} elseif ($node -and (Test-NodeBelowMin $node.Version)) {
+    Info "Installing portable Node.js $NODE_V22 (system Node is $($node.Version), need >=$NODE_V22_MIN)..."
     $needPortableUpgrade = $true
 }
 
