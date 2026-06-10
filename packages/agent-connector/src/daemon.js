@@ -151,6 +151,14 @@ class Daemon {
       if (!this._adapters || !this._adapters[agentName]) break;
       await new Promise(r => setTimeout(r, 500));
     }
+    // Force-clear the adapter slot if it's still hanging. Without this,
+    // a hung adapter.run() promise prevents the slot from ever being
+    // released, and subsequent start/restart commands see "already running".
+    if (this._adapters && this._adapters[agentName]) {
+      this._log(`WARNING: ${agentName} adapter did not exit after stop — force-releasing slot`);
+      try { this._adapters[agentName].stop(); } catch {}
+      delete this._adapters[agentName];
+    }
     this._writeStatus();
   }
 

@@ -93,7 +93,10 @@ class BaseAdapter {
 
     // Sync workspace-managed skills into disabledModules
     try {
-      const agents = await this.client.getAgents(this.workspaceId, this.token);
+      const agents = await Promise.race([
+        this.client.getAgents(this.workspaceId, this.token),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('skill sync timed out (10s)')), 10000)),
+      ]);
       const self = agents.find((a) => a.agentName === this.agentName);
       if (self && self.enabledSkills) {
         const { skillsToDisabledModules } = require('../skill-catalog');
