@@ -197,6 +197,15 @@ function _addWindowsPaths(dirs) {
   if (localAppData) _push(dirs, path.join(localAppData, 'cursor-agent'));
   _push(dirs, path.join(HOME, '.local', 'bin'));
 
+  // Hermes CLI native (no-WSL) installer drops hermes.exe in the portable
+  // venv's Scripts dir and the uv shim in %LOCALAPPDATA%\hermes\bin. Same
+  // registry-PATH staleness as Cursor — add explicitly so an already-running
+  // daemon resolves hermes via `where` without a reboot.
+  if (localAppData) {
+    _push(dirs, path.join(localAppData, 'hermes', 'hermes-agent', 'venv', 'Scripts'));
+    _push(dirs, path.join(localAppData, 'hermes', 'bin'));
+  }
+
   // Node.js install
   _push(dirs, path.join(programFiles, 'nodejs'));
 

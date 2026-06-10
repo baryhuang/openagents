@@ -1965,8 +1965,17 @@ function setupIPC(): void {
       const localAppData =
         process.env.LOCALAPPDATA || path.join(home, "AppData", "Local")
       const cliBins = [
+        // Cursor: the native win32 installer drops the CLI under ~/.local\bin
+        // (same as Unix); older/alternate layouts use %LOCALAPPDATA%\cursor-agent
+        // or ~/.cursor\bin. Missing ~/.local\bin was why `cursor-agent login`
+        // died with "not recognized" right after a fresh install.
+        path.join(home, ".local", "bin"),
         path.join(localAppData, "cursor-agent"),
         path.join(home, ".cursor", "bin"),
+        // Hermes: the native (no-WSL) installer puts hermes.exe in the portable
+        // venv's Scripts dir and the uv shim in %LOCALAPPDATA%\hermes\bin.
+        path.join(localAppData, "hermes", "hermes-agent", "venv", "Scripts"),
+        path.join(localAppData, "hermes", "bin"),
       ]
       const allBins = [
         ...runtimeBins,
