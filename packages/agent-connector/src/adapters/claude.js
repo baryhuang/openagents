@@ -1008,6 +1008,30 @@ class ClaudeAdapter extends BaseAdapter {
       }
     }
 
+    // Third-party Anthropic-compatible relays (the common reason a custom
+    // ANTHROPIC_BASE_URL is set) authenticate via `Authorization: Bearer`, which
+    // the Claude CLI only sends when ANTHROPIC_AUTH_TOKEN is set. With just
+    // ANTHROPIC_API_KEY the CLI sends `x-api-key`, which most relays ignore — the
+    // relay then rejects every request as 401 "invalid token / 无效的令牌". When a
+    // non-official base URL is configured and no auth token was provided, mirror
+    // the API key into ANTHROPIC_AUTH_TOKEN (it outranks the API key in Claude
+    // Code's auth precedence) so the CLI uses Bearer auth. The launcher normally
+    // sets this when saving env; this is the runtime backstop for envs saved by
+    // an older launcher or coming from any other source. The official
+    // api.anthropic.com endpoint keeps x-api-key, so it is left untouched.
+    const anthropicBase = (cleanEnv.ANTHROPIC_BASE_URL || '').trim();
+    const anthropicKey = (cleanEnv.ANTHROPIC_API_KEY || '').trim();
+    if (anthropicKey && anthropicBase && !(cleanEnv.ANTHROPIC_AUTH_TOKEN || '').trim()) {
+      let officialAnthropic = false;
+      try {
+        const host = new URL(anthropicBase).hostname.toLowerCase();
+        officialAnthropic = host === 'anthropic.com' || host.endsWith('.anthropic.com');
+      } catch { officialAnthropic = false; }
+      if (!officialAnthropic) {
+        cleanEnv.ANTHROPIC_AUTH_TOKEN = anthropicKey;
+      }
+    }
+
     // Spawn a persistent process and send the first message via stdin
     let effectiveContent = content;
     for (let attempt = 0; attempt < 2; attempt++) {
