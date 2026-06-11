@@ -2,6 +2,7 @@ import path from "path"
 import fs from "fs"
 import os from "os"
 import https from "https"
+import crypto from "crypto"
 import { net } from "electron"
 import { spawn, spawnSync } from "child_process"
 import { withPathEnv, readPathEnv } from "./env"
@@ -3630,6 +3631,39 @@ export class AgentManager extends EventEmitter {
       if (this.deleteChatSession(s.workspaceId, s.channelName)) removed++
     }
     return removed
+  }
+
+  createChatSession(workspaceId: string): ChatSessionMeta {
+    const ws = this._resolveChatWorkspace(workspaceId)
+    if (!ws) throw new Error("Workspace not found")
+
+    const dir = path.join(LAUNCHER_SESSIONS_DIR, ws.id)
+    ensureDir(dir)
+
+    let channelName = ""
+    let file = ""
+    do {
+      channelName = `chat-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+      file = path.join(dir, `${channelName}.json`)
+    } while (fs.existsSync(file))
+
+    const now = new Date().toISOString()
+    const meta: ChatSessionMeta = {
+      id: `${ws.id}:${channelName}`,
+      workspaceId: ws.id,
+      workspaceSlug: ws.slug,
+      workspaceName: ws.name,
+      channelName,
+      title: ws.name || ws.slug || channelName,
+      lastMessageAt: null,
+      lastMessagePreview: null,
+      messageCount: 0,
+      participants: [],
+      createdAt: now,
+    }
+
+    fs.writeFileSync(file, JSON.stringify(meta, null, 2), "utf-8")
+    return meta
   }
 
   private _touchChatSession(
