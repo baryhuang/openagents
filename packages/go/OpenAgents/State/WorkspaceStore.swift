@@ -151,6 +151,14 @@ final class WorkspaceStore {
 
     var onlineAgents: [Agent] { agents.filter(\.isOnline) }
 
+    /// Whether any agent is a member of this workspace, regardless of online
+    /// status. A member whose heartbeat has gone stale is still *connected*
+    /// to the workspace — it just isn't online right now. Use this (not
+    /// `onlineAgents`) to decide whether to surface the "connect an agent"
+    /// onboarding empty state; `onlineAgents` only gates what can be picked
+    /// to join a conversation.
+    var hasConnectedAgents: Bool { !agents.isEmpty }
+
     /// Browser tabs sorted with the most recently active first. The Browser
     /// panel validates each tab as it appears, so rows without an initial
     /// `liveUrl` can still reconnect and render.

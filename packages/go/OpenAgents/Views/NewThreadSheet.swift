@@ -44,7 +44,12 @@ struct NewThreadSheet: View {
             ScrollView {
                 VStack(spacing: 6) {
                     if onlineAgents.isEmpty {
-                        Text("No agents are currently online.")
+                        // Picker only ever lists online agents (you can't start
+                        // a chat with an offline one), but the message depends
+                        // on whether any agent is connected at all.
+                        Text(store.hasConnectedAgents
+                             ? "No agents are currently online."
+                             : "Connect an agent to start chatting.")
                             .foregroundStyle(BrandColors.inkMuted)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 40)

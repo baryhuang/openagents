@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { History, Check, Star, User } from 'lucide-react';
 import type { WorkspaceAgent, WorkspaceCollaborator, WorkspaceSession } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { agentPresence } from '@/lib/helpers';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 
 interface NewThreadDialogProps {
@@ -124,7 +125,11 @@ export function NewThreadDialog({ open, onOpenChange, agents, humans, sessions, 
         {/* Agent list */}
         <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
           {onlineAgents.length === 0 && (
-            <p className="text-sm text-muted-foreground py-4 text-center">No agents are currently online.</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              {agentPresence(agents) === 'offline'
+                ? 'No agents are currently online.'
+                : 'Connect an agent to start chatting.'}
+            </p>
           )}
           {onlineAgents.map((agent) => {
             const isSelected = selected.has(agent.agentName);
