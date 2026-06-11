@@ -122,6 +122,13 @@ class GeminiAdapter extends BaseAdapter {
       if (jsMatch) {
         return [nodeBin, path.resolve(cmdDir, jsMatch[1])];
       }
+      // .cmd shims that forward to a native .exe — resolve to the exe and spawn
+      // it directly. Wrapping such a .cmd in `cmd.exe /c` caps the command line
+      // at cmd.exe's 8191-char limit, truncating long args (e.g. system prompts).
+      const exeMatch = cmdContent.match(/%dp0%\\([^\s"*?]+\.exe)/i);
+      if (exeMatch) {
+        return [path.resolve(cmdDir, exeMatch[1])];
+      }
     } else {
       try {
         let target = binPath;
@@ -195,6 +202,12 @@ class GeminiAdapter extends BaseAdapter {
 
     const cmd = [geminiBin, '-p', fullPrompt, '-y', '-o', 'stream-json'];
 
+    // Honor a user-configured model (e.g. when pointing at a relay/proxy whose
+    // channels don't match the CLI default). Set via GEMINI_MODEL in env_config.
+    const env = this.agentEnv || process.env;
+    const model = (env.GEMINI_MODEL || env.GOOGLE_GEMINI_MODEL || '').trim();
+    if (model) cmd.push('-m', model);
+
     const sessionId = this._channelSessions[channelName];
     if (sessionId && !skipResume) {
       cmd.push('-r', sessionId);
@@ -259,7 +272,7 @@ class GeminiAdapter extends BaseAdapter {
       try {
         const resolved = this._resolveToNodeCmd(cmd[0]);
         if (resolved) {
-          cmd = [resolved[0], resolved[1], ...cmd.slice(1)];
+          cmd = [...resolved, ...cmd.slice(1)];
         } else if (IS_WINDOWS && cmd[0].toLowerCase().endsWith('.cmd')) {
           cmd = ['cmd.exe', '/c', ...cmd];
         }

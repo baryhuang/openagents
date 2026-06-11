@@ -33,6 +33,25 @@ export interface EnvField {
   default?: string
 }
 
+/**
+ * A fully-resolved onboarding agent (mirror of the main-process type). Only
+ * agents the loaded core can actually run are returned, and `authMode` is
+ * resolved authoritatively so onboarding never mislabels auth requirements.
+ */
+export interface OnboardingAgent {
+  name: string
+  label: string
+  description: string
+  featured: boolean
+  order: number
+  installed: boolean
+  authMode: "env" | "login" | "none"
+  loginCommand: string | null
+  envFields: EnvField[]
+  docsUrl: string | null
+  notReadyMessage: string | null
+}
+
 export interface CatalogEntry {
   name: string
   label?: string
@@ -41,6 +60,12 @@ export interface CatalogEntry {
   tags?: string[]
   featured?: boolean
   order?: number
+  // Launcher-stamped (see CORE_AGENTS in agent-manager). Agents outside the
+  // supported core set are surfaced as "coming soon": visible, not installable,
+  // sorted to the bottom. `coreOrder` is the product-defined display order for
+  // the core set (999 for coming-soon agents).
+  comingSoon?: boolean
+  coreOrder?: number
   builtin?: boolean
   installed: boolean
   managed?: boolean
@@ -324,6 +349,18 @@ declare global {
       removeWorkspace(slug: string): Promise<unknown>
       listWorkspaces(): Promise<Workspace[]>
       createWorkspace(name: string): Promise<{ token?: string; slug?: string }>
+      getOnboardingAgents(): Promise<OnboardingAgent[]>
+      consumeOnboardingReset(): Promise<boolean>
+      provisionFirstAgent(opts: {
+        agentType: string
+        agentName: string
+        workspaceName?: string | null
+      }): Promise<{
+        agentName: string
+        workspaceSlug: string | null
+        workspaceName: string | null
+        warning: string | null
+      }>
       registerWorkspaceFromToken(input: {
         url?: string
         token?: string
@@ -352,6 +389,8 @@ declare global {
       }>
       showPath(path: string): Promise<boolean>
       healthCheck(type: string): Promise<HealthCheck>
+      refreshLogin(type: string): Promise<HealthCheck>
+      clearLoginKey(type: string, agentName?: string): Promise<{ success: boolean }>
       openExternal(url: string): Promise<void>
       shellExec(cmd: string): Promise<string>
       openTerminal(cmd: string): Promise<void>

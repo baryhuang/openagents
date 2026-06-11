@@ -294,15 +294,18 @@ async def _refresh_google_token(refresh_token: str) -> str:
         return r.json()["access_token"]
 
 
-def _make_client(api_key: str, provider: str, base_url_override: Optional[str] = None) -> AsyncOpenAI:
+def _make_client(api_key: str, provider: str, base_url_override: Optional[str] = None, timeout: float = 120) -> AsyncOpenAI:
+    kwargs: dict = {"api_key": api_key, "timeout": timeout}
     if base_url_override:
         base_url = base_url_override.rstrip("/")
         if not base_url.endswith("/v1"):
             base_url = base_url + "/v1"
-        return AsyncOpenAI(api_key=api_key, base_url=base_url)
-    prov = PROVIDERS.get(provider)
-    base_url = prov.base_url if prov else None
-    return AsyncOpenAI(api_key=api_key, base_url=base_url)
+        kwargs["base_url"] = base_url
+    else:
+        prov = PROVIDERS.get(provider)
+        if prov and prov.base_url:
+            kwargs["base_url"] = prov.base_url
+    return AsyncOpenAI(**kwargs)
 
 
 async def chat_completion(
@@ -477,6 +480,10 @@ async def image_generation(
             kwargs["size"] = "1024x1024"
 
         response = await client.images.generate(**kwargs)
+
+        if not response.data:
+            raise ValueError(f"Image API returned empty result for prompt: {prompt[:60]}")
+
         item = response.data[0]
 
         if hasattr(item, "b64_json") and item.b64_json:
@@ -485,7 +492,7 @@ async def image_generation(
 
         if hasattr(item, "url") and item.url:
             import httpx
-            async with httpx.AsyncClient() as http:
+            async with httpx.AsyncClient(timeout=60) as http:
                 r = await http.get(item.url)
                 r.raise_for_status()
                 return r.content, "png"

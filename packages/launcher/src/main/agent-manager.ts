@@ -2,8 +2,9 @@ import path from "path"
 import fs from "fs"
 import os from "os"
 import https from "https"
-import { spawnSync } from "child_process"
-import { withPathEnv } from "./env"
+import { net } from "electron"
+import { spawn, spawnSync } from "child_process"
+import { withPathEnv, readPathEnv } from "./env"
 import { EventEmitter } from "events"
 // Bundled fallback registry. When the agent-launcher core hasn't installed
 // yet (slow network, antivirus interference on Windows, etc) the connector's
@@ -38,6 +39,517 @@ interface LauncherSettingsStore {
   get(key?: string): unknown
 }
 
+/**
+ * A fully-resolved agent for the onboarding picker. Unlike a raw CatalogEntry
+ * this is guaranteed to be runnable by the loaded core, and its auth mode is
+ * resolved authoritatively (so an agent that needs a key/login is never
+ * mislabelled as "no configuration needed").
+ */
+export interface OnboardingAgent {
+  name: string
+  label: string
+  description: string
+  featured: boolean
+  order: number
+  installed: boolean
+  authMode: "env" | "login" | "none"
+  loginCommand: string | null
+  envFields: Array<Record<string, unknown>>
+  docsUrl: string | null
+  notReadyMessage: string | null
+}
+
+/**
+ * Launcher-side auth overrides for agents that authenticate with an API key /
+ * base URL. These agents ship in the shared registry with an interactive
+ * terminal login (`claude login`, `gemini`, `codex login`), but the launcher
+ * prefers to collect the key/base-URL directly in onboarding and inject it into
+ * the agent's env — no external terminal. We apply this purely in launcher code
+ * so the bundled registry.json (and its source SDK YAML) stays untouched.
+ *
+ * When an entry exists for an agent we: use these fields as the onboarding
+ * inputs, force "env" auth mode, and drop the login command so the terminal
+ * path never appears.
+ */
+const LAUNCHER_AUTH_OVERRIDES: Record<
+  string,
+  Array<Record<string, unknown>>
+> = {
+  claude: [
+    {
+      name: "ANTHROPIC_API_KEY",
+      description: "Anthropic API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "ANTHROPIC_BASE_URL",
+      description: "Anthropic-compatible base URL (the default works for direct Anthropic API; change it for a proxy or relay)",
+      required: true,
+      default: "https://api.anthropic.com",
+      placeholder: "https://api.anthropic.com",
+    },
+    {
+      name: "ANTHROPIC_MODEL",
+      description:
+        "Model name (change it when using a relay/proxy — its channels rarely match the default)",
+      required: true,
+      default: "claude-sonnet-4-6",
+      placeholder: "claude-sonnet-4-6",
+    },
+  ],
+  gemini: [
+    {
+      name: "GEMINI_API_KEY",
+      description: "Google AI Studio API key — get one at https://aistudio.google.com/apikey",
+      required: true,
+      password: true,
+    },
+    {
+      name: "GOOGLE_GEMINI_BASE_URL",
+      description: "Gemini-compatible base URL (the default works for Google AI Studio; change it for a proxy or custom gateway)",
+      required: true,
+      default: "https://generativelanguage.googleapis.com",
+      placeholder: "https://generativelanguage.googleapis.com",
+    },
+    {
+      name: "GEMINI_MODEL",
+      description:
+        "Model name (change it when using a relay/proxy — its channels rarely match the default)",
+      required: true,
+      default: "gemini-2.5-pro",
+      placeholder: "gemini-2.5-pro",
+    },
+  ],
+  codex: [
+    {
+      name: "OPENAI_API_KEY",
+      description: "OpenAI API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "OPENAI_BASE_URL",
+      description: "OpenAI-compatible base URL (the default works for the OpenAI API; change it for a proxy or relay)",
+      required: true,
+      default: "https://api.openai.com/v1",
+      placeholder: "https://api.openai.com/v1",
+    },
+    {
+      name: "CODEX_MODEL",
+      description:
+        "Model name (change it when using a relay/proxy — its channels rarely match the default)",
+      required: true,
+      default: "gpt-5-codex",
+      placeholder: "gpt-5-codex",
+    },
+  ],
+  kimi: [
+    {
+      name: "KIMI_API_KEY",
+      description: "Moonshot / Kimi API key (also accepts MOONSHOT_API_KEY)",
+      required: true,
+      password: true,
+    },
+    {
+      name: "KIMI_BASE_URL",
+      description: "Kimi API base URL (OpenAI-compatible endpoint)",
+      required: true,
+      default: "https://api.moonshot.ai/v1",
+      placeholder: "https://api.moonshot.ai/v1",
+    },
+    {
+      name: "KIMI_MODEL",
+      description: "Kimi model name",
+      required: true,
+      default: "kimi-k2.6",
+      placeholder: "kimi-k2.6",
+    },
+  ],
+  openclaw: [
+    {
+      name: "LLM_API_KEY",
+      description: "API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "LLM_BASE_URL",
+      description: "API base URL (OpenAI-compatible endpoint)",
+      required: true,
+      default: "https://api.openai.com/v1",
+      placeholder: "https://api.openai.com/v1",
+    },
+    {
+      name: "LLM_MODEL",
+      description: "Model name",
+      required: true,
+      default: "gpt-4o",
+      placeholder: "gpt-4o, claude-sonnet-4-6, deepseek-chat, etc.",
+    },
+  ],
+  opencode: [
+    {
+      name: "LLM_API_KEY",
+      description: "API key",
+      required: true,
+      password: true,
+    },
+    {
+      name: "LLM_BASE_URL",
+      description: "API base URL (OpenAI-compatible endpoint)",
+      required: true,
+      default: "https://api.openai.com/v1",
+      placeholder: "https://api.openai.com/v1",
+    },
+    {
+      name: "LLM_MODEL",
+      description: "Model name",
+      required: true,
+      default: "gpt-4o",
+      placeholder: "gpt-4o, claude-sonnet-4-6, etc.",
+    },
+  ],
+}
+
+/**
+ * Agents that authenticate through their OWN hosted login flow (a browser /
+ * device sign-in built into the CLI), not an API key the launcher collects or
+ * can probe. Cursor is the canonical example — `cursor-agent` signs in via
+ * Cursor's service, so there is no key endpoint to "Test connection" against and
+ * no env for the user to fill in. The launcher cannot capture the token (the CLI
+ * stores it locally, e.g. under ~/.cursor); it can only drive the CLI's own
+ * `login` command and read its `status`. For these agents the launcher:
+ *   • shows no API-key config (getEnvFields → []), so the post-install wizard
+ *     and the Configure dialog skip the "Save & test connection" step that can
+ *     only ever fail;
+ *   • surfaces the CLI's `loginCommand` so Configure shows a "Login" button
+ *     (opens a terminal running the sign-in) instead of key fields; and
+ *   • derives readiness from the CLI's own `status` output (signed in?) rather
+ *     than an API key. The shared registry's check_ready for these carries only
+ *     a binary hint and no credential/login rule, so the core otherwise reports
+ *     ready:false ("CLI not found") even when the CLI IS installed — which is
+ *     exactly why the Agents list showed "Not installed" while the marketplace
+ *     showed "Installed".
+ *
+ * `apiKeyEnv` lets a power user skip the browser login by setting that env var
+ * (Cursor accepts CURSOR_API_KEY); when present the agent is ready without a
+ * `status` probe. `statusArgs` is run against the resolved binary; sign-in is
+ * derived from its output via EXACTLY ONE of:
+ *   • `loggedOutPattern` — match ⇒ signed OUT (for terse CLIs like Cursor whose
+ *     status is just "Not logged in" vs an account line); or
+ *   • `loggedInPattern`  — match ⇒ signed IN (for verbose CLIs like Hermes whose
+ *     status always lists "not logged in" for every unconfigured provider, so a
+ *     negative match is useless — we look for a positive "✓ logged in" instead).
+ * The probe runs ASYNC (status can take seconds, e.g. Hermes ~2.5s) and the
+ * result is cached; sync health reads the cache and never blocks the main loop.
+ */
+interface HostedLoginSpec {
+  loginCommand: string
+  statusArgs: string[]
+  loggedOutPattern?: RegExp
+  loggedInPattern?: RegExp
+  apiKeyEnv?: string
+  // Env vars wiped when the user signs in via the browser flow. Hosted-login
+  // agents have no env UI (getEnvFields → []), so any saved value is stale
+  // leftover that overrides the login session — e.g. an invalid CURSOR_API_KEY
+  // or CURSOR_MODEL from the old setup wizard, which is what broke the workspace
+  // chat ("API key is invalid"). Clearing them lets the CLI use its own login +
+  // account defaults.
+  loginClearsEnv?: string[]
+}
+
+const HOSTED_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
+  cursor: {
+    loginCommand: "cursor-agent login",
+    statusArgs: ["status"],
+    loggedOutPattern: /not logged in|logged out|signed out/i,
+    apiKeyEnv: "CURSOR_API_KEY",
+    loginClearsEnv: ["CURSOR_API_KEY", "CURSOR_MODEL"],
+  },
+  hermes: {
+    // `hermes setup` is the interactive wizard; `hermes status` prints a rich
+    // report where a configured auth provider reads "✓ logged in" (everything
+    // unconfigured reads "✗ not logged in"), so match the positive marker.
+    loginCommand: "hermes setup",
+    statusArgs: ["status"],
+    loggedInPattern: /✓\s*logged in/i,
+  },
+}
+
+/**
+ * Agents hidden from the onboarding picker (Step 1). They remain fully
+ * installable and configurable from the Install tab — we just don't surface
+ * them to first-time users. Cursor and Hermes need an external CLI install +
+ * an API key, so they're a rougher first-run experience than the key-only
+ * agents; keep onboarding to the smoother options.
+ */
+const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes"])
+
+/**
+ * The agents the launcher/workspace core officially supports today, in the
+ * order product wants them surfaced (the "8 核心 agent" list). Anything NOT in
+ * this set is shown as "coming soon" in the Install marketplace — visible but
+ * not installable, sorted to the bottom — and omitted from onboarding, so users
+ * stay on the supported set. Kept in launcher code (not the shared registry) so
+ * the supported list can move independently of the catalog, and `coreOrder`
+ * gives a single display order regardless of the registry's own
+ * featured/order (which is inconsistent for e.g. gemini).
+ */
+const CORE_AGENTS: readonly string[] = [
+  "claude",
+  "openclaw",
+  "codex",
+  "cursor",
+  "opencode",
+  "hermes",
+  "kimi",
+  "gemini",
+]
+const CORE_AGENT_ORDER = new Map<string, number>(
+  CORE_AGENTS.map((name, i) => [name, i]),
+)
+
+type LLMTestResult = {
+  success: boolean
+  model?: string
+  response?: string
+  error?: string
+}
+
+function httpRequestJson(
+  urlStr: string,
+  method: string,
+  headers: Record<string, string>,
+  body: string | null,
+  timeoutMs = 15000,
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    try {
+      // Validate early so a bad base URL fails fast instead of via the socket.
+      void new URL(urlStr)
+    } catch {
+      reject(new Error(`Invalid URL: ${urlStr}`))
+      return
+    }
+    // Use Electron's net (Chromium network stack) rather than Node's https.
+    // Node's http/https ignores the OS proxy, so on Windows — where the user's
+    // proxy/VPN is usually configured as a *system* HTTP proxy that only
+    // WinINET/Chromium honor — requests to api.openai.com / api.anthropic.com /
+    // generativelanguage.googleapis.com never connect and hit the timeout,
+    // while macOS (typically a transparent/global proxy) passes. net.request
+    // resolves the system proxy exactly like the browser, so "Test connection"
+    // behaves the same on every platform.
+    const req = net.request({ method, url: urlStr })
+    for (const [k, v] of Object.entries(headers)) req.setHeader(k, v)
+
+    let settled = false
+    const finish = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    const timer = setTimeout(() => {
+      finish(() => {
+        try {
+          req.abort()
+        } catch {}
+        reject(new Error("Request timed out"))
+      })
+    }, timeoutMs)
+
+    req.on("response", (res) => {
+      let data = ""
+      res.on("data", (c: Buffer) => {
+        data += c.toString("utf8")
+      })
+      res.on("end", () =>
+        finish(() => resolve({ status: res.statusCode || 0, text: data })),
+      )
+      res.on("error", (e: Error) => finish(() => reject(e)))
+    })
+    req.on("error", (e) => finish(() => reject(e)))
+    if (body) req.write(body)
+    req.end()
+  })
+}
+
+/**
+ * Test an agent's LLM credentials directly from the launcher's main process,
+ * independent of the installed core's version (the core's own testLLM is older
+ * and only knows the OpenAI-compatible path, so Claude/Gemini keys fail there).
+ * We route by which key/base-URL the env carries so the "Test connection"
+ * button works for any key-based agent: Anthropic (Claude), Google Gemini, and
+ * any OpenAI-compatible endpoint (OpenAI/Codex, Kimi/Moonshot, OpenClaw,
+ * OpenCode, custom gateways). Agents that authenticate through a hosted service
+ * with no probe-able endpoint (e.g. Cursor) get an honest message instead of a
+ * misleading request.
+ */
+async function testLLMConnection(
+  env: Record<string, string>,
+): Promise<LLMTestResult> {
+  const pick = (...names: string[]): string => {
+    for (const n of names) {
+      const v = (env[n] || "").trim()
+      if (v) return v
+    }
+    return ""
+  }
+  const trimSlash = (u: string): string => u.replace(/\/+$/, "")
+
+  try {
+    // ── Google Gemini ──
+    const geminiKey = pick("GEMINI_API_KEY", "GOOGLE_API_KEY")
+    if (geminiKey) {
+      const base = trimSlash(
+        pick("GOOGLE_GEMINI_BASE_URL") ||
+          "https://generativelanguage.googleapis.com",
+      )
+      const model =
+        pick("GEMINI_MODEL", "GOOGLE_GEMINI_MODEL") || "gemini-2.0-flash"
+      // Google's REST path is /v1beta/models/<model>:generateContent. Relays
+      // and custom gateways are usually entered WITH the version already in the
+      // base URL (e.g. https://host/v1beta), so only add it when the base URL
+      // doesn't already carry a /v1 or /v1beta segment — otherwise we'd POST to
+      // …/v1beta/v1beta/… and the relay never answers (the request hangs to the
+      // socket timeout instead of returning a clean error).
+      const geminiPath = /\/v\d+(beta)?$/.test(base)
+        ? `/models/${model}:generateContent`
+        : `/v1beta/models/${model}:generateContent`
+      const { status, text } = await httpRequestJson(
+        `${base}${geminiPath}?key=${encodeURIComponent(geminiKey)}`,
+        "POST",
+        // Native Google also accepts the key via x-goog-api-key; harmless next
+        // to ?key=. Deliberately NOT sending Authorization: Bearer — Google
+        // would treat it as an OAuth token and reject a plain API key with 401.
+        { "content-type": "application/json", "x-goog-api-key": geminiKey },
+        JSON.stringify({
+          contents: [{ parts: [{ text: "Say hi in 5 words." }] }],
+        }),
+      )
+      if (status >= 400)
+        return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+      let reply = ""
+      try {
+        reply =
+          JSON.parse(text)?.candidates?.[0]?.content?.parts?.[0]?.text || ""
+      } catch {}
+      return { success: true, model, response: reply.slice(0, 80) }
+    }
+
+    const anthropicKey = pick("ANTHROPIC_API_KEY")
+    const openaiKey = pick(
+      "OPENAI_API_KEY",
+      "LLM_API_KEY",
+      "KIMI_API_KEY",
+      "MOONSHOT_API_KEY",
+      "OPENROUTER_API_KEY",
+    )
+
+    // ── Cursor: hosted login, no public key endpoint to probe ──
+    if (pick("CURSOR_API_KEY") && !anthropicKey && !openaiKey) {
+      return {
+        success: false,
+        error:
+          "Cursor signs in through its own service — there's no key endpoint to test here. Save the key and launch the agent to verify.",
+      }
+    }
+
+    // ── Anthropic (Claude) ──
+    if (anthropicKey && !openaiKey) {
+      const base = trimSlash(
+        pick("ANTHROPIC_BASE_URL") || "https://api.anthropic.com",
+      ).replace(/\/v1$/, "")
+      const model = pick("ANTHROPIC_MODEL") || "claude-3-5-haiku-latest"
+      // Mirror exactly how the spawned `claude` CLI will authenticate, so the
+      // test predicts the real run: the official endpoint uses `x-api-key`,
+      // while a relay/proxy base goes through `Authorization: Bearer` (the CLI
+      // gets that via ANTHROPIC_AUTH_TOKEN — see normalizeEnvForSave). Sending
+      // x-api-key to a Bearer-only relay is precisely what makes it 401 with
+      // "invalid token", so the test must use the same header the agent does.
+      const authHeader: Record<string, string> = isOfficialAnthropicBase(base)
+        ? { "x-api-key": anthropicKey }
+        : { Authorization: `Bearer ${anthropicKey}` }
+      const { status, text } = await httpRequestJson(
+        `${base}/v1/messages`,
+        "POST",
+        {
+          ...authHeader,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        JSON.stringify({
+          model,
+          max_tokens: 16,
+          messages: [{ role: "user", content: "Say hi in 5 words." }],
+        }),
+      )
+      if (status >= 400)
+        return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+      let reply = "",
+        used = model
+      try {
+        const p = JSON.parse(text)
+        reply = p?.content?.[0]?.text || ""
+        used = p?.model || model
+      } catch {}
+      return { success: true, model: used, response: reply.slice(0, 80) }
+    }
+
+    // ── OpenAI-compatible (OpenAI/Codex, Kimi/Moonshot, OpenClaw, OpenCode) ──
+    const apiKey = openaiKey || anthropicKey
+    if (!apiKey) {
+      return {
+        success: false,
+        error:
+          "No API key to test for this agent. Enter a key above — or this agent may authenticate a different way (e.g. a hosted login).",
+      }
+    }
+    const hasKimi = !!pick(
+      "KIMI_API_KEY",
+      "MOONSHOT_API_KEY",
+      "KIMI_BASE_URL",
+      "KIMI_MODEL",
+    )
+    let base = trimSlash(
+      pick("OPENAI_BASE_URL", "LLM_BASE_URL", "KIMI_BASE_URL") ||
+        (hasKimi ? "https://api.moonshot.ai/v1" : "https://api.openai.com/v1"),
+    )
+    if (!/\/v\d+$/.test(base)) base += "/v1"
+    const model =
+      pick(
+        "OPENAI_MODEL",
+        "CODEX_MODEL",
+        "LLM_MODEL",
+        "KIMI_MODEL",
+        "OPENCLAW_MODEL",
+      ) || (hasKimi ? "kimi-k2.6" : "gpt-4o-mini")
+    const { status, text } = await httpRequestJson(
+      `${base}/chat/completions`,
+      "POST",
+      { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      JSON.stringify({
+        model,
+        max_tokens: 16,
+        messages: [{ role: "user", content: "Say hi in 5 words." }],
+      }),
+    )
+    if (status >= 400)
+      return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+    let reply = "",
+      used = model
+    try {
+      const p = JSON.parse(text)
+      reply = p?.choices?.[0]?.message?.content || ""
+      used = p?.model || model
+    } catch {}
+    return { success: true, model: used, response: reply.slice(0, 80) }
+  } catch (e) {
+    return { success: false, error: (e as Error)?.message || "Request failed" }
+  }
+}
+
 function normalizeWorkspaceEndpoint(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
   const raw = value.trim()
@@ -52,6 +564,74 @@ function normalizeWorkspaceEndpoint(value: unknown): string | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * True when an Anthropic base URL points at Anthropic's own API (not a
+ * third-party relay/proxy). The official endpoint authenticates with the API
+ * key via the `x-api-key` header; everything else is treated as a relay that
+ * wants `Authorization: Bearer` (see normalizeEnvForSave). An unparseable value
+ * is treated as NON-official so we don't accidentally suppress the relay path.
+ */
+function isOfficialAnthropicBase(base: string): boolean {
+  try {
+    const h = new URL(base).hostname.toLowerCase()
+    return h === "anthropic.com" || h.endsWith(".anthropic.com")
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Normalize provider base URLs before they're persisted to env, so what we
+ * SAVE matches what we TEST (testLLMConnection). The mismatch this guards
+ * against: a user pastes an Anthropic-compatible relay URL that already ends
+ * in `/v1` (e.g. https://relay.example/v1). The connection test strips the
+ * trailing `/v1` before probing `${base}/v1/messages`, so it passes — but the
+ * spawned `claude` CLI appends `/v1/messages` to the raw value, hitting
+ * `…/v1/v1/messages` → 404, which the CLI mis-reports as "model not found".
+ *
+ * Anthropic's SDK owns the `/v1` segment, so the base must NOT carry it. We do
+ * NOT touch OpenAI-style bases (OPENAI_BASE_URL etc.) — those are SUPPOSED to
+ * include `/v1` (the defaults do), and the OpenAI client appends only the
+ * sub-path. Gemini already tolerates either form in its REST path builder.
+ */
+function normalizeEnvForSave(
+  env: Record<string, string>,
+): Record<string, string> {
+  const out = { ...env }
+  const anthropicBase = out.ANTHROPIC_BASE_URL
+  if (typeof anthropicBase === "string" && anthropicBase.trim()) {
+    out.ANTHROPIC_BASE_URL = anthropicBase
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/v1$/, "")
+  }
+
+  // Route Claude through Bearer auth on third-party relays. The Claude CLI
+  // sends ANTHROPIC_API_KEY as the `x-api-key` header, but most Anthropic-
+  // compatible relays/proxies — the usual reason a custom ANTHROPIC_BASE_URL is
+  // set — only honor `Authorization: Bearer`. With just the API key those relays
+  // reject every request as 401 "invalid token / 无效的令牌", which is exactly the
+  // failure seen creating a workspace through such a relay. ANTHROPIC_AUTH_TOKEN
+  // is sent as Bearer and, per Claude Code's auth precedence, outranks the API
+  // key, so mirroring the key into it makes the CLI authenticate the way relays
+  // expect. The daemon passes this env straight through to the spawned CLI, so
+  // the fix works without changing the installed core. We do this ONLY for a
+  // non-official base; for api.anthropic.com x-api-key is correct, so any stale
+  // token from a previous relay save is cleared (saving "" drops the line) to
+  // stop it overriding the API key.
+  const anthropicKey = (out.ANTHROPIC_API_KEY || "").trim()
+  const resolvedBase = (out.ANTHROPIC_BASE_URL || "").trim()
+  if (anthropicKey && resolvedBase) {
+    if (isOfficialAnthropicBase(resolvedBase)) {
+      out.ANTHROPIC_AUTH_TOKEN = ""
+    } else if (!(out.ANTHROPIC_AUTH_TOKEN || "").trim()) {
+      out.ANTHROPIC_AUTH_TOKEN = anthropicKey
+    }
+  }
+
+  return out
 }
 
 export interface InstalledAgentRecord {
@@ -398,6 +978,60 @@ function resolveWorkingNode(
   return null
 }
 
+/**
+ * Resolve how to invoke npm for an install. Prefers running the bundled
+ * `node` binary directly against `npm-cli.js` (argv passed array-style, no
+ * shell) — on Windows that goes through CreateProcessW as UTF-16, so a home
+ * dir with non-ASCII characters (e.g. `C:\Users\用户名\...`) is preserved
+ * exactly. The legacy path (spawning `npm.cmd` via `shell:true`) instead
+ * relied on a hand-written .cmd batch shim whose UTF-8 bytes cmd.exe decodes
+ * with the OEM code page (936/GBK on zh-CN), corrupting the embedded node
+ * path and silently breaking every install. We only fall back to that legacy
+ * shell path when the bundled node / npm-cli layout is missing, so the common
+ * (ASCII) case still works identically.
+ */
+function resolveNpmInvocation(): {
+  cmd: string
+  preArgs: string[]
+  useShell: boolean
+} {
+  const portableNodeDir = path.join(os.homedir(), ".openagents", "nodejs")
+  const exists = (p: string): boolean => {
+    try {
+      return fs.existsSync(p)
+    } catch {
+      return false
+    }
+  }
+  const nodeBin = [
+    path.join(
+      portableNodeDir,
+      process.platform === "win32" ? "node.exe" : "node",
+    ),
+    path.join(portableNodeDir, "bin", "node"),
+  ].find(exists)
+  if (nodeBin) {
+    const npmCli = [
+      path.join(portableNodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+      path.join(
+        portableNodeDir,
+        "lib",
+        "node_modules",
+        "npm",
+        "bin",
+        "npm-cli.js",
+      ),
+    ].find(exists)
+    if (npmCli) return { cmd: nodeBin, preArgs: [npmCli], useShell: false }
+  }
+  // Bundled node/npm-cli not found — preserve legacy behaviour exactly.
+  return {
+    cmd: process.platform === "win32" ? "npm.cmd" : "npm",
+    preArgs: [],
+    useShell: true,
+  }
+}
+
 let core: Record<string, unknown> | null = loadCore()
 
 export class AgentManager extends EventEmitter {
@@ -407,6 +1041,16 @@ export class AgentManager extends EventEmitter {
   private _lastHealthRefreshAt = 0
   private _healthQueue: string[] = []
   private _healthProcessing = false
+  // Cached sign-in state for hosted-login agents (e.g. Cursor), keyed by type.
+  // value: true = signed in, false = signed out, null = unknown (probe failed /
+  // timed out → treated optimistically). Probing spawns the CLI's `status`, so
+  // we cache for 30s and only re-probe off the hot getAgents path.
+  private _hostedLoginAuth = new Map<
+    string,
+    { value: boolean | null; at: number }
+  >()
+  // In-flight `status` probes, so concurrent callers share one CLI spawn.
+  private _hostedLoginProbe = new Map<string, Promise<boolean | null>>()
   private _agentsCache: { value: unknown[]; at: number } = { value: [], at: 0 }
   private _catalogCache: {
     value: unknown[] | null
@@ -560,7 +1204,11 @@ export class AgentManager extends EventEmitter {
         state: statusEntry?.state || "stopped",
         restarts: statusEntry?.restarts || 0,
         lastError: statusError || runtimeMessage,
-        health: this._healthByType.get(type) || null,
+        health: this._reconcileAgentHealth(
+          type,
+          a.env as Record<string, string> | undefined,
+          this._healthByType.get(type) || null,
+        ),
         runtimeMismatch,
       }
     })
@@ -596,13 +1244,20 @@ export class AgentManager extends EventEmitter {
       }
       setTimeout(() => {
         try {
-          const healthCheck = this._connector?.healthCheck as
-            | ((type: string) => unknown)
-            | undefined
-          const health = healthCheck
-            ? healthCheck.call(this._connector, type)
-            : null
-          this._healthByType.set(type, health)
+          // Hosted-login agents derive readiness from the CLI's `status`, not
+          // the core's check_ready (which has no login rule). Compute it here,
+          // in the 30s refresh, so the per-call getAgents path never spawns.
+          if (HOSTED_LOGIN_AGENTS[type]) {
+            this._healthByType.set(type, this._hostedLoginHealth(type))
+          } else {
+            const healthCheck = this._connector?.healthCheck as
+              | ((type: string) => unknown)
+              | undefined
+            const health = healthCheck
+              ? healthCheck.call(this._connector, type)
+              : null
+            this._healthByType.set(type, health)
+          }
         } catch {
           this._healthByType.set(type, null)
         } finally {
@@ -612,6 +1267,430 @@ export class AgentManager extends EventEmitter {
       }, 0)
     }
     tick()
+  }
+
+  /**
+   * Correct a false "Not installed" from the core health check.
+   *
+   * The core resolves an agent's binary with `which`/`where` against PATH, but
+   * agents the launcher installs live in isolated runtimes
+   * (~/.openagents/runtimes/<type>/node_modules/.bin) that are NOT on the user's
+   * PATH. So a freshly-installed agent can report `installed:false` ("Not
+   * installed") from the health check even though the marketplace — which uses a
+   * filesystem package.json check (getInstallInfo) — correctly shows it
+   * installed. That mismatch surfaced in the Agents list as a confusing
+   * "⚠ Not installed" badge on a working agent. Trust the filesystem: if the npm
+   * package is present on disk, mark it installed and re-derive readiness from
+   * saved credentials so the label reflects configuration, not binary lookup.
+   */
+  private _reconcileHealth(type: string, health: unknown): unknown {
+    if (!health || typeof health !== "object") return health
+    const h = health as Record<string, unknown>
+    if (h.installed !== false) return health
+    // Only override when the launcher can independently confirm the install via
+    // the filesystem. api_only agents (no npm package) are already handled
+    // correctly by the core via its marker check, so getInstalledVersion being
+    // null there means "leave the core's verdict alone".
+    if (!this.getInstalledVersion(type)) return health
+    const ready = this._hasConfiguredCredentials(type)
+    return {
+      ...h,
+      installed: true,
+      ready,
+      auth_mode: ready ? "api_key" : null,
+      execution_mode: ready ? h.execution_mode || "direct" : "unavailable",
+      message: ready ? "Ready" : this._notReadyMessage(type),
+    }
+  }
+
+  /**
+   * Per-agent health, fixing two false negatives in the core's per-TYPE check:
+   *  1. "Not installed" — the core resolves binaries with `which`, which misses
+   *     isolated-runtime installs (handled by _reconcileHealth via filesystem).
+   *  2. "Not configured" — the core evaluates readiness against TYPE-level saved
+   *     env (~/.openagents/env/<type>.env) ONLY. But Configure on an existing
+   *     agent saves INSTANCE env into daemon.yaml (saveAgentInstanceEnv), so a
+   *     fully-configured agent (valid key/base/model, Test connection passes)
+   *     still shows "Not configured". Trust the instance's own env here.
+   */
+  private _reconcileAgentHealth(
+    type: string,
+    instanceEnv: Record<string, string> | undefined,
+    typeHealth: unknown,
+  ): unknown {
+    // Hosted-login agents (e.g. Cursor, Hermes) sign in through their own CLI,
+    // not an API key the launcher collects. Readiness = installed + signed in
+    // (or, where the CLI accepts one, an API key set in env). A power user who
+    // set CURSOR_API_KEY skips the browser login, so honor that before login.
+    const hostedLogin = HOSTED_LOGIN_AGENTS[type]
+    if (hostedLogin) {
+      const hasApiKey =
+        !!(
+          hostedLogin.apiKeyEnv &&
+          (instanceEnv?.[hostedLogin.apiKeyEnv] || "").trim()
+        ) || this._hasConfiguredCredentials(type)
+      if (this._isInstalled(type) && hasApiKey) {
+        return {
+          installed: true,
+          ready: true,
+          auth_mode: "api_key",
+          execution_mode: "direct",
+          message: "Ready",
+        }
+      }
+      // Prefer the cached login-aware health from the 30s refresh. Until it
+      // populates, return an optimistic install-only verdict rather than probing
+      // `status` here — getAgents runs every ~1.5s and must not spawn the CLI.
+      if (typeHealth && typeof typeHealth === "object") return typeHealth
+      return this._isInstalled(type)
+        ? {
+            installed: true,
+            ready: true,
+            auth_mode: "cli_login",
+            execution_mode: "subprocess",
+            message: "Ready",
+          }
+        : {
+            installed: false,
+            ready: false,
+            auth_mode: null,
+            execution_mode: "unavailable",
+            message: this._notReadyMessage(type),
+          }
+    }
+    const health = this._reconcileHealth(type, typeHealth)
+    const hasCreds =
+      this._envHasApiKey(instanceEnv) || this._hasConfiguredCredentials(type)
+    // The type-level health is populated asynchronously (see
+    // _scheduleHealthRefresh), so right after onboarding it is still null. Don't
+    // fall back to a misleading "Not configured" when the agent actually has a
+    // saved API key — synthesize a ready status from the configured credentials.
+    if (!health || typeof health !== "object") {
+      if (hasCreds) {
+        return {
+          installed: true,
+          ready: true,
+          auth_mode: "api_key",
+          execution_mode: "direct",
+          message: "Ready",
+        }
+      }
+      return health
+    }
+    const h = health as Record<string, unknown>
+    if (h.installed === false || h.ready === true) return health
+    if (hasCreds) {
+      return {
+        ...h,
+        installed: true,
+        ready: true,
+        auth_mode: "api_key",
+        execution_mode:
+          h.execution_mode && h.execution_mode !== "unavailable"
+            ? h.execution_mode
+            : "direct",
+        message: "Ready",
+      }
+    }
+    return health
+  }
+
+  /**
+   * Health for hosted-login agents (e.g. Cursor). Install is confirmed with the
+   * connector's isInstalled — the same check the marketplace's "Installed" badge
+   * uses, so the two views never disagree. Readiness then follows the CLI's own
+   * sign-in state (its `status` command): signed in ⇒ Ready; signed out ⇒ a
+   * clear "click Login" hint rather than a misleading "Ready"; unknown (probe
+   * failed/timed out) ⇒ optimistic Ready so a working agent is never blocked.
+   */
+  private _hostedLoginHealth(type: string): Record<string, unknown> {
+    if (!this._isInstalled(type)) {
+      return {
+        installed: false,
+        ready: false,
+        auth_mode: null,
+        execution_mode: "unavailable",
+        message: this._notReadyMessage(type),
+      }
+    }
+    if (this._hostedLoginIsAuthed(type) === false) {
+      return {
+        installed: true,
+        ready: false,
+        auth_mode: null,
+        execution_mode: "unavailable",
+        message: "Not signed in — open Configure and click Login",
+      }
+    }
+    return {
+      installed: true,
+      ready: true,
+      auth_mode: "cli_login",
+      execution_mode: "subprocess",
+      message: "Ready",
+    }
+  }
+
+  /** Install check matching the marketplace's "Installed" badge (getInstallInfo). */
+  private _isInstalled(type: string): boolean {
+    try {
+      const isInstalled = this._connector?.isInstalled as
+        | ((t: string) => boolean)
+        | undefined
+      return !!isInstalled?.call(this._connector, type)
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Cached sign-in state for a hosted-login agent: true (signed in) / false
+   * (signed out) / null (unknown — never probed, or the probe couldn't decide).
+   * NON-BLOCKING: returns the cache immediately and kicks off a background probe
+   * when the cache is stale (>30s). The CLI's `status` can take seconds (Hermes
+   * ~2.5s), so it must never run on a sync path. The Configure dialog uses the
+   * awaitable refreshHostedLogin() instead when it needs a guaranteed-fresh read.
+   */
+  private _hostedLoginIsAuthed(type: string): boolean | null {
+    const spec = HOSTED_LOGIN_AGENTS[type]
+    if (!spec) return null
+    const cached = this._hostedLoginAuth.get(type)
+    const fresh = !!cached && Date.now() - cached.at < 30_000
+    if (!fresh) void this._probeHostedLogin(type)
+    return cached ? cached.value : null
+  }
+
+  /**
+   * Resolve an agent type's CLI to an ABSOLUTE binary path (via the core's
+   * `installer.which`, which searches the enhanced PATH incl. the Cursor/Hermes
+   * native install dirs). Returns null when the binary can't be located.
+   */
+  resolveBinary(type: string): string | null {
+    try {
+      const installer = this._connector?.installer as
+        | Record<string, unknown>
+        | undefined
+      const which = installer?.which as
+        | ((t: string) => string | null)
+        | undefined
+      return which?.call(installer, type) || null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Rewrite a hosted-login command (e.g. "cursor-agent login", "hermes setup")
+   * so its leading binary token becomes the resolved ABSOLUTE path. This is the
+   * fix for the Windows "'cursor-agent' is not recognized as an internal or
+   * external command" failure: the native installer drops the CLI under
+   * %LOCALAPPDATA%\cursor-agent and only edits the *registry* PATH, which a
+   * freshly-spawned login terminal inherits stale — so a bare `cursor-agent
+   * login` dies. Resolving to an absolute path makes the login PATH-independent.
+   * Returns the original command unchanged when it isn't a known hosted-login
+   * binary or the binary can't be resolved (callers still inject PATH as a
+   * fallback). The returned binary path is quoted so spaces in the home dir
+   * (e.g. C:\Users\First Last\...) survive.
+   */
+  resolveLoginCommand(cmd: string): string {
+    if (!cmd || !cmd.trim()) return cmd
+    const trimmed = cmd.trim()
+    // First whitespace-delimited token, with any surrounding quotes stripped.
+    const m = trimmed.match(/^("[^"]*"|'[^']*'|\S+)(\s+[\s\S]*)?$/)
+    if (!m) return cmd
+    const rawFirst = m[1].replace(/^["']|["']$/g, "")
+    const rest = m[2] || ""
+    // Map the CLI binary name to its agent type so we can resolve via the core.
+    const base = rawFirst
+      .replace(/\.(exe|cmd|ps1|bat)$/i, "")
+      .split(/[\\/]/)
+      .pop()
+    const BINARY_TO_TYPE: Record<string, string> = {
+      "cursor-agent": "cursor",
+      agent: "cursor",
+      hermes: "hermes",
+    }
+    const type = base ? BINARY_TO_TYPE[base] : undefined
+    if (!type) return cmd
+    const abs = this.resolveBinary(type)
+    if (!abs) return cmd
+    return `"${abs}"${rest}`
+  }
+
+  /**
+   * Run a FRESH sign-in probe for a hosted-login agent and resolve its health.
+   * Awaitable — the Configure dialog calls this after the user confirms they
+   * completed the terminal login, so the result reflects reality rather than an
+   * optimistic guess.
+   */
+  async refreshHostedLogin(type: string): Promise<unknown> {
+    if (!HOSTED_LOGIN_AGENTS[type]) return this.healthCheck(type)
+    await this._probeHostedLogin(type, true)
+    return this._hostedLoginHealth(type)
+  }
+
+  /**
+   * Spawn the hosted-login CLI's `status` asynchronously and cache the parsed
+   * sign-in state. Deduped per type (concurrent callers share one probe) and
+   * throttled (no re-spawn within 2s unless `force`d) so polling can't pile up
+   * CLI processes. On completion it refreshes the cached type health and busts
+   * the agents cache so the Agents list picks up the new state.
+   */
+  private _probeHostedLogin(type: string, force = false): Promise<boolean | null> {
+    const spec = HOSTED_LOGIN_AGENTS[type]
+    if (!spec) return Promise.resolve(null)
+    const inflight = this._hostedLoginProbe.get(type)
+    if (inflight) return inflight
+    const cached = this._hostedLoginAuth.get(type)
+    if (!force && cached && Date.now() - cached.at < 2_000) {
+      return Promise.resolve(cached.value)
+    }
+    const p = this._runHostedLoginProbe(type, spec)
+    this._hostedLoginProbe.set(type, p)
+    void p.finally(() => this._hostedLoginProbe.delete(type))
+    return p
+  }
+
+  private _runHostedLoginProbe(
+    type: string,
+    spec: HostedLoginSpec,
+  ): Promise<boolean | null> {
+    return new Promise((resolve) => {
+      let bin: string | null = null
+      try {
+        const installer = this._connector?.installer as
+          | Record<string, unknown>
+          | undefined
+        const which = installer?.which as
+          | ((t: string) => string | null)
+          | undefined
+        bin = which?.call(installer, type) || null
+      } catch {}
+
+      const settle = (value: boolean | null): void => {
+        this._hostedLoginAuth.set(type, { value, at: Date.now() })
+        // Cache is fresh now, so this re-derive won't re-probe. Refresh the type
+        // health + bust the agents cache so the list reflects the new state.
+        this._healthByType.set(type, this._hostedLoginHealth(type))
+        this._agentsCache = { value: [], at: 0 }
+        resolve(value)
+      }
+
+      if (!bin) {
+        settle(null)
+        return
+      }
+      try {
+        const child = spawn(bin, spec.statusArgs, {
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+        let out = ""
+        let settled = false
+        const finish = (value: boolean | null): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          settle(value)
+        }
+        const timer = setTimeout(() => {
+          try {
+            child.kill()
+          } catch {}
+          finish(null)
+        }, 8000)
+        child.stdout?.on("data", (c: Buffer) => (out += c.toString("utf-8")))
+        child.stderr?.on("data", (c: Buffer) => (out += c.toString("utf-8")))
+        child.on("error", () => finish(null))
+        child.on("close", (code) => {
+          // Decide via whichever direction the spec declares. A clean run with
+          // output but no match is "definitive" → the opposite of the pattern;
+          // anything else stays null (unknown) so a hiccup never reads as out.
+          const definitive = !!out.trim() && code === 0
+          let value: boolean | null = null
+          if (spec.loggedInPattern) {
+            value = spec.loggedInPattern.test(out)
+              ? true
+              : definitive
+                ? false
+                : null
+          } else if (spec.loggedOutPattern) {
+            value = spec.loggedOutPattern.test(out)
+              ? false
+              : definitive
+                ? true
+                : null
+          }
+          finish(value)
+        })
+      } catch {
+        settle(null)
+      }
+    })
+  }
+
+  /**
+   * Clear a hosted-login agent's stale env (e.g. CURSOR_API_KEY, CURSOR_MODEL)
+   * from both the type-level and instance env. Cursor's CLI prefers an explicit
+   * key/model over its own browser-login session and account defaults, so values
+   * left over from the old setup wizard (an invalid key, a bogus model like
+   * "gpt-5.4") make the agent fail — "API key is invalid" — even after a
+   * successful `cursor-agent login`. When the user signs in via the browser flow
+   * we wipe them so the login session + account defaults are what get used.
+   * Saving an empty value removes the line (env.save filters out empties).
+   */
+  clearHostedLoginApiKey(type: string, agentName?: string): void {
+    const keys = HOSTED_LOGIN_AGENTS[type]?.loginClearsEnv
+    if (!keys?.length) return
+    try {
+      const typeEnv = (this.getAgentEnv(type) as Record<string, string>) || {}
+      const drop = keys.filter((k) => (typeEnv[k] || "").trim())
+      if (drop.length)
+        this.saveAgentEnv(type, Object.fromEntries(drop.map((k) => [k, ""])))
+    } catch {}
+    if (agentName) {
+      try {
+        const instEnv =
+          (this.getAgentInstanceEnv(agentName) as Record<string, string>) || {}
+        const drop = keys.filter((k) => (instEnv[k] || "").trim())
+        if (drop.length)
+          this.saveAgentInstanceEnv(
+            agentName,
+            Object.fromEntries(drop.map((k) => [k, ""])),
+          )
+      } catch {}
+    }
+    this._agentsCache = { value: [], at: 0 }
+  }
+
+  /** True when an env map carries any non-empty API key (e.g. *_API_KEY). */
+  private _envHasApiKey(env: Record<string, string> | undefined): boolean {
+    if (!env || typeof env !== "object") return false
+    return Object.entries(env).some(
+      ([k, v]) => /API_KEY$/.test(k) && !!(v || "").trim(),
+    )
+  }
+
+  /** True when saved TYPE-level env for this agent carries any non-empty key. */
+  private _hasConfiguredCredentials(type: string): boolean {
+    try {
+      return this._envHasApiKey(
+        this.getAgentEnv(type) as Record<string, string> | undefined,
+      )
+    } catch {
+      return false
+    }
+  }
+
+  /** Registry's not-ready hint for an agent type, with a sensible fallback. */
+  private _notReadyMessage(type: string): string {
+    try {
+      const entry = this._getRegistryEntry(type)
+      const checkReady = entry?.check_ready as
+        | { not_ready_message?: string }
+        | undefined
+      if (checkReady?.not_ready_message) return checkReady.not_ready_message
+    } catch {}
+    return "Not configured — add an API key in Configure"
   }
 
   async addAgent(agentConfig: {
@@ -664,7 +1743,7 @@ export class AgentManager extends EventEmitter {
         name: string,
         env: unknown,
       ) => void
-      saveEnv.call(this._connector, name, updates.env)
+      saveEnv.call(this._connector, name, normalizeEnvForSave(updates.env))
     }
     this._agentsCache = { value: [], at: 0 }
     return { success: true }
@@ -733,12 +1812,22 @@ export class AgentManager extends EventEmitter {
     const entries = Array.isArray(BUNDLED_REGISTRY)
       ? (BUNDLED_REGISTRY as Array<Record<string, unknown>>)
       : []
-    return entries.map((e) => ({
-      ...e,
-      installed: false,
-      managed: false,
-      location: null,
-    }))
+    return entries.map((e) => {
+      const spec = HOSTED_LOGIN_AGENTS[e.name as string]
+      const check_ready = spec
+        ? {
+            ...((e.check_ready as Record<string, unknown>) || {}),
+            login_command: spec.loginCommand,
+          }
+        : e.check_ready
+      return {
+        ...e,
+        check_ready,
+        installed: false,
+        managed: false,
+        location: null,
+      }
+    })
   }
 
   private async _loadCatalog(): Promise<unknown[]> {
@@ -792,10 +1881,50 @@ export class AgentManager extends EventEmitter {
         }
       }
     } catch {}
+    // Launcher-side login wiring for hosted-login agents (e.g. Cursor): the
+    // shared registry has no login_command for these, so expose the CLI's own
+    // sign-in here. This makes the Configure dialog render its "Login" flow
+    // (open a terminal running `cursor-agent login`) instead of falling back to
+    // "No configuration required". Kept in launcher code so the shared registry
+    // stays untouched — same rationale as LAUNCHER_AUTH_OVERRIDES.
+    for (const entry of catalog) {
+      const e = entry as Record<string, unknown>
+      const spec = HOSTED_LOGIN_AGENTS[e.name as string]
+      if (!spec) continue
+      const checkReady = (e.check_ready as Record<string, unknown>) || {}
+      e.check_ready = { ...checkReady, login_command: spec.loginCommand }
+    }
+    // Stamp the supported-core flag + display order. Non-core agents become
+    // "coming soon" (the UI sinks + disables them); core agents carry the
+    // product-defined order from CORE_AGENTS.
+    for (const entry of catalog) {
+      const e = entry as Record<string, unknown>
+      const idx = CORE_AGENT_ORDER.get(e.name as string)
+      e.comingSoon = idx === undefined
+      e.coreOrder = idx ?? 999
+    }
     return catalog
   }
 
   async getEnvFields(agentType: string): Promise<unknown[]> {
+    // Launcher-side override is authoritative. Agents like claude/gemini ship
+    // in the shared registry with an EMPTY env_config (they default to a
+    // terminal login), but the launcher authenticates them with an API key /
+    // base URL entered in-app. Returning the override fields here makes those
+    // inputs appear everywhere env is edited — onboarding AND the Install
+    // detail page — and stay editable after the agent is configured (otherwise
+    // the detail page hides the setup wizard once an instance exists yet has no
+    // inline fields to show, leaving no way to change the key/base URL).
+    // Hosted-login agents (e.g. Cursor) sign in through their own service —
+    // there are no launcher-collected keys to show and nothing to test.
+    // Returning [] makes every env-editing surface (post-install wizard, the
+    // Configure dialog) skip the API-key / "Test connection" step entirely.
+    // See HOSTED_LOGIN_AGENTS.
+    if (HOSTED_LOGIN_AGENTS[agentType]) return []
+
+    const override = LAUNCHER_AUTH_OVERRIDES[agentType]
+    if (override) return override
+
     // Mirror getCatalog's bundled fallback: when the agent-launcher core
     // hasn't installed yet, _ensureConnector throws ("Core library not
     // installed"). Without a fallback that rejection bubbles up to the
@@ -852,6 +1981,7 @@ export class AgentManager extends EventEmitter {
   }
 
   saveAgentEnv(agentType: string, env: Record<string, string>): unknown {
+    env = normalizeEnvForSave(env)
     const saveEnv = this._connector!.saveAgentEnv as (
       type: string,
       env: unknown,
@@ -873,6 +2003,7 @@ export class AgentManager extends EventEmitter {
     agentName: string,
     env: Record<string, string>,
   ): unknown {
+    env = normalizeEnvForSave(env)
     const saveEnv = this._connector!.saveAgentInstanceEnv as (
       name: string,
       env: unknown,
@@ -882,11 +2013,13 @@ export class AgentManager extends EventEmitter {
     return { success: true }
   }
 
-  async testLLM(env: Record<string, string>): Promise<unknown> {
-    const testLLM = this._connector!.testLLM as (
-      env: unknown,
-    ) => Promise<unknown>
-    return testLLM.call(this._connector, env)
+  async testLLM(env: Record<string, string>): Promise<LLMTestResult> {
+    // Run the test in-launcher rather than delegating to the installed core's
+    // testLLM: the core that ships on a user's machine is often older and only
+    // probes the OpenAI-compatible path, so Claude/Gemini keys come back as
+    // "No API key provided". testLLMConnection covers every provider and works
+    // even before the core is installed.
+    return testLLMConnection(env)
   }
 
   signalReload(): void {
@@ -1001,7 +2134,7 @@ export class AgentManager extends EventEmitter {
     const config = this._connector!.config as Record<string, unknown>
     const addNetwork = config.addNetwork as (opts: unknown) => unknown
     addNetwork.call(config, {
-      id: info.workspace_id,
+      id: info.workspace_id || slug,
       slug,
       name: info.name || slug,
       endpoint,
@@ -1009,7 +2142,7 @@ export class AgentManager extends EventEmitter {
     })
     this.signalReload()
     return {
-      id: info.workspace_id,
+      id: info.workspace_id || slug,
       slug,
       name: info.name || slug,
       endpoint,
@@ -1038,7 +2171,7 @@ export class AgentManager extends EventEmitter {
       const addNetwork = (this._connector!.config as Record<string, unknown>)
         .addNetwork as (opts: unknown) => void
       addNetwork.call(this._connector!.config as Record<string, unknown>, {
-        id: info.workspace_id,
+        id: info.workspace_id || slug,
         slug,
         name: wsName,
         endpoint,
@@ -1083,6 +2216,237 @@ export class AgentManager extends EventEmitter {
     const result = await removeWorkspace.call(this._connector, slug)
     this.signalReload()
     return result
+  }
+
+  // ─── Onboarding ───────────────────────────────────────────────
+  //
+  // The onboarding flow used to drive provisioning from the renderer with three
+  // separate IPC calls (createWorkspace → addAgent → connectWorkspace) and
+  // swallowed errors. That was the source of the "Agent 'x-1' not found" toast:
+  // the picker offered agents the loaded core couldn't run, addAgent threw
+  // "not supported", the renderer ate the error, and the follow-up bind failed
+  // because the agent was never persisted. The two methods below replace that
+  // with a runnable-only picker and a single atomic, verified provisioning step.
+
+  /**
+   * Agents to offer in onboarding. Returns ONLY types the loaded core can
+   * actually run (intersection with ADAPTER_MAP) and resolves each agent's auth
+   * requirements from the bundled registry first (authoritative), then the live
+   * catalog. Returns [] when the core hasn't finished installing yet so the
+   * renderer keeps polling instead of rendering a wrong empty/again state.
+   */
+  async getOnboardingAgents(): Promise<OnboardingAgent[]> {
+    const supported = this.getSupportedAgentTypes()
+    if (supported.length === 0) return []
+
+    let catalog: Array<Record<string, unknown>> = []
+    try {
+      catalog = (await this.getCatalog(false)) as Array<Record<string, unknown>>
+    } catch {
+      // Marketplace metadata is optional — we can still build from the bundle.
+    }
+    const catalogByName = new Map(
+      catalog.map((c) => [c.name as string, c] as const),
+    )
+    const bundled = Array.isArray(BUNDLED_REGISTRY)
+      ? (BUNDLED_REGISTRY as Array<Record<string, unknown>>)
+      : []
+    const bundledByName = new Map(
+      bundled.map((b) => [b.name as string, b] as const),
+    )
+
+    const result: OnboardingAgent[] = supported
+      .filter((type) => CORE_AGENTS.includes(type) && !ONBOARDING_HIDDEN.has(type))
+      .map((type) => {
+      const cat = catalogByName.get(type)
+      const reg = bundledByName.get(type)
+      const regEnv = (reg?.env_config as Array<Record<string, unknown>>) || []
+      const catEnv = (cat?.env_config as Array<Record<string, unknown>>) || []
+      const checkReady = (reg?.check_ready ||
+        cat?.check_ready ||
+        {}) as {
+        login_command?: string
+        not_ready_message?: string
+        prefer_login?: boolean
+      }
+      // Launcher-side override: agents that should authenticate with a
+      // key/base-URL entered in onboarding rather than an external terminal
+      // login. Forces "env" mode and hides the login command, without touching
+      // the shared registry. See LAUNCHER_AUTH_OVERRIDES.
+      const override = LAUNCHER_AUTH_OVERRIDES[type]
+      // Hosted-login agents (e.g. Cursor) sign in through their own service —
+      // no key fields, drive the CLI's login instead. See HOSTED_LOGIN_AGENTS.
+      const hostedLogin = HOSTED_LOGIN_AGENTS[type]
+      const envFields = hostedLogin
+        ? []
+        : override || (regEnv.length > 0 ? regEnv : catEnv)
+      const loginCommand = hostedLogin
+        ? hostedLogin.loginCommand
+        : override
+          ? null
+          : checkReady.login_command || null
+      // `prefer_login` keeps an agent on the CLI-login path as PRIMARY even when
+      // it also exposes (optional) env fields. Without it, any env field would
+      // force "env" mode.
+      const preferLogin = !!checkReady.prefer_login && !!loginCommand
+      const authMode: OnboardingAgent["authMode"] = preferLogin
+        ? "login"
+        : envFields.length > 0
+          ? "env"
+          : loginCommand
+            ? "login"
+            : "none"
+      return {
+        name: type,
+        label:
+          (cat?.label as string) || (reg?.label as string) || type,
+        description:
+          (cat?.description as string) ||
+          (reg?.description as string) ||
+          "",
+        featured: !!(cat?.featured ?? reg?.featured),
+        order: (cat?.order as number) ?? (reg?.order as number) ?? 99,
+        installed: !!cat?.installed,
+        authMode,
+        loginCommand,
+        envFields,
+        docsUrl:
+          (cat?.homepage as string) ||
+          (cat?.docs as string) ||
+          (reg?.homepage as string) ||
+          null,
+        notReadyMessage: checkReady.not_ready_message || null,
+      }
+    })
+
+    result.sort((a, b) => {
+      if ((b.featured ? 1 : 0) !== (a.featured ? 1 : 0))
+        return (b.featured ? 1 : 0) - (a.featured ? 1 : 0)
+      return a.order - b.order
+    })
+    return result
+  }
+
+  /**
+   * Atomically provision the onboarding agent and (optionally) a workspace.
+   * Ordering and verification live here in the main process so failures surface
+   * as precise errors instead of a misleading "not found" downstream:
+   *   1. validate the type is runnable
+   *   2. ensure the agent instance exists in daemon.yaml (idempotent) + verify
+   *   3. if a workspace name is given, create it, persist the network locally,
+   *      and bind the agent by SLUG. This step is best-effort: the agent is
+   *      already usable, so a workspace-service failure returns a warning
+   *      rather than aborting onboarding.
+   */
+  async provisionFirstAgent(opts: {
+    agentType: string
+    agentName: string
+    workspaceName?: string | null
+  }): Promise<{
+    agentName: string
+    workspaceSlug: string | null
+    workspaceName: string | null
+    warning: string | null
+  }> {
+    this._ensureConnector()
+    const type = (opts.agentType || "").trim()
+    const name = (opts.agentName || "").trim()
+    if (!type) throw new Error("No agent type was selected")
+    if (!name) throw new Error("Missing agent name")
+
+    const supported = this.getSupportedAgentTypes()
+    if (supported.length > 0 && !supported.includes(type)) {
+      throw new Error(
+        `Agent type '${type}' isn't supported by the installed runtime. ` +
+          `Update the Launcher and try again.`,
+      )
+    }
+
+    // 1 + 2. Ensure the agent exists, idempotently, then verify it persisted.
+    const listAgents = this._connector!.listAgents as () => Array<{
+      name: string
+    }>
+    const agentExists = (): boolean =>
+      (listAgents.call(this._connector) || []).some((a) => a.name === name)
+
+    if (!agentExists()) {
+      const addAgent = this._connector!.addAgent as (o: unknown) => void
+      addAgent.call(this._connector, { name, type, role: "worker" })
+      this._agentsCache = { value: [], at: 0 }
+    }
+    if (!agentExists()) {
+      throw new Error(
+        `Failed to register agent '${name}' — the runtime did not persist it.`,
+      )
+    }
+
+    // 3. Optional workspace — best-effort.
+    const wsName = (opts.workspaceName || "").trim()
+    if (!wsName) {
+      this.signalReload()
+      return {
+        agentName: name,
+        workspaceSlug: null,
+        workspaceName: null,
+        warning: null,
+      }
+    }
+
+    try {
+      const createWorkspace = this._connector!.createWorkspace as (
+        o: unknown,
+      ) => Promise<{
+        slug?: string
+        token?: string
+        id?: string
+        name?: string
+        endpoint?: string
+      }>
+      const ws = await createWorkspace.call(this._connector, { name: wsName })
+      const slug = ws?.slug
+      if (!slug) throw new Error("workspace service returned no slug")
+
+      // Persist the network locally so the Workspaces tab is populated and the
+      // agent can resolve it without another round-trip.
+      const config = this._connector!.config as Record<string, unknown>
+      const addNetwork = config.addNetwork as (o: unknown) => void
+      addNetwork.call(config, {
+        // The workspace service may return only a slug (no id). Persisting
+        // id: null makes the daemon adapter join a null network → every
+        // poll/heartbeat fails "Network not found". Fall back to the slug,
+        // which is the server's canonical workspace identifier.
+        id: ws.id || slug,
+        slug,
+        name: ws.name || wsName,
+        endpoint: ws.endpoint || this.configuredWorkspaceEndpoint(),
+        token: ws.token,
+      })
+
+      // Bind by slug (NOT token). The agent is verified above, so the core's
+      // setAgentNetwork lookup-by-name can't miss.
+      const connect = this._connector!.connectWorkspace as (
+        n: string,
+        s: string,
+      ) => void
+      connect.call(this._connector, name, slug)
+      this.signalReload()
+      return {
+        agentName: name,
+        workspaceSlug: slug,
+        workspaceName: ws.name || wsName,
+        warning: null,
+      }
+    } catch (e) {
+      this.signalReload()
+      return {
+        agentName: name,
+        workspaceSlug: null,
+        workspaceName: null,
+        warning: `Agent is ready, but workspace setup failed: ${
+          (e as Error).message
+        }. You can create one later from the Workspaces tab.`,
+      }
+    }
   }
 
   async checkAgentType(agentType: string): Promise<unknown> {
@@ -1334,7 +2698,6 @@ export class AgentManager extends EventEmitter {
     const { spawn } = require("child_process") as typeof import("child_process")
     const prefixDir = path.join(CONFIG_DIR, "runtimes", agentType)
     fs.mkdirSync(prefixDir, { recursive: true })
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm"
     const args = [
       "install",
       "--save",
@@ -1343,13 +2706,19 @@ export class AgentManager extends EventEmitter {
       `${npmPkg}@${target}`,
     ]
 
-    if (onData) onData(`$ ${npmCmd} ${args.join(" ")}\n\n`)
+    // Invoke bundled `node npm-cli.js` directly (no shell) so non-ASCII home
+    // paths survive on Windows; see resolveNpmInvocation().
+    const inv = resolveNpmInvocation()
+    const portableNodeDir = path.join(os.homedir(), ".openagents", "nodejs")
+    if (onData) onData(`$ npm ${args.join(" ")}\n\n`)
 
     return new Promise((resolve) => {
-      const proc = spawn(npmCmd, args, {
-        shell: true,
+      const proc = spawn(inv.cmd, [...inv.preArgs, ...args], {
+        shell: inv.useShell,
         cwd: prefixDir,
         stdio: ["ignore", "pipe", "pipe"],
+        env: withPathEnv(portableNodeDir + path.delimiter + readPathEnv()),
+        windowsHide: true,
       })
       proc.stdout?.setEncoding("utf-8")
       proc.stderr?.setEncoding("utf-8")
@@ -1652,6 +3021,10 @@ export class AgentManager extends EventEmitter {
   }
 
   healthCheck(type: string): unknown {
+    // Hosted-login agents (e.g. Cursor, Hermes): answer from the CLI's own
+    // sign-in state (cached probe) rather than the core's check_ready. The
+    // Configure dialog gets a guaranteed-fresh read via refreshHostedLogin().
+    if (HOSTED_LOGIN_AGENTS[type]) return this._hostedLoginHealth(type)
     const healthCheck = this._connector!.healthCheck as (
       type: string,
     ) => unknown
@@ -1691,8 +3064,9 @@ export class AgentManager extends EventEmitter {
       const getDaemonPid = this._connector?.getDaemonPid as
         | (() => number | null)
         | undefined
-      const pid = getDaemonPid ? getDaemonPid.call(this._connector) : null
-      if (!pid) return null
+      const pidFromFile = getDaemonPid
+        ? getDaemonPid.call(this._connector)
+        : null
 
       const pidFileAge = (() => {
         try {
@@ -1713,21 +3087,46 @@ export class AgentManager extends EventEmitter {
         }
       })()
 
-      // A live PID alone is not enough on Windows because stale PIDs can be
-      // reused by unrelated processes. The daemon writes status every 5s; once
-      // the pid file is older than the startup grace period, require matching
-      // fresh status as proof that this is really our daemon.
+      // The pid file gets truncated/empty under races (the launcher used to
+      // delete it, and multiple foreground daemons clobber it), which made us
+      // report a perfectly healthy daemon as "stopped". The daemon rewrites the
+      // status file — including its own pid — every 5s, so treat that as an
+      // equally authoritative source and fall back to it when the pid file is
+      // missing or points at a dead process.
       const startupGraceMs = 15_000
       const statusFreshMs = 20_000
-      const hasFreshMatchingStatus =
-        statusInfo.pid === pid && statusInfo.age < statusFreshMs
-      if (
-        isPidAlive(pid) &&
-        (pidFileAge < startupGraceMs || hasFreshMatchingStatus)
-      )
-        return pid
+      const candidates: number[] = []
+      if (pidFromFile) candidates.push(pidFromFile)
+      if (statusInfo.pid && statusInfo.pid !== pidFromFile)
+        candidates.push(statusInfo.pid)
 
-      appendDaemonLog(`removing stale daemon pid ${pid}`)
+      for (const pid of candidates) {
+        // A live PID alone is not enough on Windows because stale PIDs can be
+        // reused. Require either a young pid file (startup grace, before the
+        // first status write) or a fresh status file written by THIS pid.
+        const hasFreshMatchingStatus =
+          statusInfo.pid === pid && statusInfo.age < statusFreshMs
+        if (
+          isPidAlive(pid) &&
+          (pidFileAge < startupGraceMs || hasFreshMatchingStatus)
+        ) {
+          // Heal an empty/stale pid file so the daemon's own singleton guard
+          // (which reads daemon.pid) keeps working and we don't spawn a second.
+          if (pidFromFile !== pid) {
+            try {
+              fs.writeFileSync(DAEMON_PID_FILE, String(pid), "utf-8")
+            } catch {}
+          }
+          return pid
+        }
+      }
+
+      // Genuinely no live daemon — clean up so a fresh start isn't blocked.
+      if (pidFromFile || statusInfo.pid) {
+        appendDaemonLog(
+          `removing stale daemon pid ${pidFromFile || statusInfo.pid}`,
+        )
+      }
       for (const file of [
         DAEMON_PID_FILE,
         DAEMON_STATUS_FILE,

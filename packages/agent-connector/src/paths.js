@@ -10,6 +10,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { execSync } = require('child_process');
 
 const IS_WINDOWS = process.platform === 'win32';
@@ -107,7 +108,13 @@ function getEnhancedEnv(baseEnv) {
   const env = { ...(baseEnv || process.env) };
   const extra = getExtraBinDirs();
   if (extra.length > 0) {
-    env.PATH = extra.join(SEP) + SEP + (env.PATH || '');
+    // Spreading process.env on Windows yields a "Path" key (not "PATH"), so a
+    // bare `env.PATH = …` would create a SECOND key holding only the extra dirs
+    // — no System32 — and libuv picks that truncated one when resolving spawned
+    // executables (cmd.exe / where.exe become unfindable). Update the existing
+    // case-insensitive path key in place instead.
+    const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
+    env[pathKey] = extra.join(SEP) + SEP + (env[pathKey] || '');
   }
   if (IS_WINDOWS) {
     // Force UTF-8 output from child processes on non-English Windows locales
@@ -189,6 +196,15 @@ function _addWindowsPaths(dirs) {
   _push(dirs, path.join(HOME, '.cursor', 'bin'));
   if (localAppData) _push(dirs, path.join(localAppData, 'cursor-agent'));
   _push(dirs, path.join(HOME, '.local', 'bin'));
+
+  // Hermes CLI native (no-WSL) installer drops hermes.exe in the portable
+  // venv's Scripts dir and the uv shim in %LOCALAPPDATA%\hermes\bin. Same
+  // registry-PATH staleness as Cursor — add explicitly so an already-running
+  // daemon resolves hermes via `where` without a reboot.
+  if (localAppData) {
+    _push(dirs, path.join(localAppData, 'hermes', 'hermes-agent', 'venv', 'Scripts'));
+    _push(dirs, path.join(localAppData, 'hermes', 'bin'));
+  }
 
   // Node.js install
   _push(dirs, path.join(programFiles, 'nodejs'));
@@ -348,6 +364,28 @@ function getCorePrefix() {
 }
 
 /**
+ * A guaranteed-writable working directory for an agent that has no explicit
+ * `path` configured.
+ *
+ * NEVER fall back to process.cwd() for this: on a packaged Windows launcher the
+ * daemon (and the agent CLIs it spawns) inherit a cwd of C:\WINDOWS\system32
+ * (or the app's Program Files dir), so writing .claude/skills, .claude/plans,
+ * etc. relative to cwd fails with `EPERM: operation not permitted, mkdir`.
+ *
+ * Rooted under ~/.openagents — the same writable tree the daemon already uses
+ * for its pid/status/log files — with one isolated subdir per agent. Uses
+ * os.homedir() (OS-account based, reliable even when HOME/USERPROFILE are
+ * stripped from a child process's environment) rather than the env-derived
+ * HOME above.
+ */
+function defaultAgentWorkdir(agentName) {
+  const safe = String(agentName || 'default').replace(/[^A-Za-z0-9._-]/g, '_') || 'default';
+  const dir = path.join(os.homedir(), '.openagents', 'workspaces', safe);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  return dir;
+}
+
+/**
  * Reset the two 30s caches that back binary detection. Call this after
  * install / uninstall so a freshly-created bin dir (e.g. ~/.cursor/bin)
  * isn't masked by a pre-install snapshot of getExtraBinDirs(), and so a
@@ -366,6 +404,7 @@ module.exports = {
   clearBinaryLookupCache,
   getRuntimePrefix,
   getCorePrefix,
+  defaultAgentWorkdir,
   IS_WINDOWS,
   IS_MACOS,
   SEP,

@@ -144,6 +144,11 @@ class Channel(Base):
 
     __table_args__ = (
         Index("uq_channels_ws_name", "workspace_id", "name", unique=True),
+        # Serves /v1/discover's `WHERE workspace_id = ? AND status != 'deleted'`.
+        Index("idx_channels_workspace_status", "workspace_id", "status"),
+        # Serves the timer-loop auto-archive scan
+        # (`status = 'active' AND last_event_at < cutoff`).
+        Index("idx_channels_status_last_event", "status", "last_event_at"),
     )
 
 
