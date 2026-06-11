@@ -224,35 +224,76 @@ export class CredentialsStore {
     this._loaded = true
   }
 
+  /**
+   * Whether to wrap the credentials key with the OS keychain via Electron's
+   * safeStorage. DISABLED by default.
+   *
+   * safeStorage stores a master key in the OS keychain ("OpenAgents Launcher
+   * Safe Storage"), whose access ACL is bound to the running binary's code
+   * signature. That makes macOS pop a "wants to access the keychain" prompt
+   * repeatedly — every Electron upgrade / unsigned dev run changes the
+   * signature and re-triggers it — and a denied/locked keychain previously
+   * bricked the stored credentials. The security upside is marginal (the key
+   * sits next to the data either way), so we keep the master key in the
+   * 0600-permission credentials file instead. Opt back in with
+   * OPENAGENTS_USE_KEYCHAIN=1 if you specifically want OS-level wrapping.
+   */
+  private _useKeychain(): boolean {
+    if (process.env.OPENAGENTS_USE_KEYCHAIN !== '1') return false
+    try {
+      return safeStorage.isEncryptionAvailable()
+    } catch {
+      return false
+    }
+  }
+
   private _ensureKey(): void {
+    const useKeychain = this._useKeychain()
+
+    // 1) Reuse an existing wrapped key when we can.
     if (this._data.wrappedKey) {
-      try {
-        if (safeStorage.isEncryptionAvailable()) {
+      if (useKeychain) {
+        try {
           const keyB64 = safeStorage.decryptString(
             Buffer.from(this._data.wrappedKey, 'base64'),
           )
           this._key = Buffer.from(keyB64, 'base64')
-        } else {
-          this._key = Buffer.from(this._data.wrappedKey, 'base64')
+        } catch (err) {
+          // Keychain unavailable or the user denied access. Degrade WITHOUT
+          // overwriting the existing wrappedKey — clobbering it would make
+          // every already-encrypted credential permanently undecryptable.
+          // Leaving _key null makes reads/writes fail loudly until the
+          // keychain is reachable again, instead of silently losing data.
+          this._key = null
+          console.error(
+            'safeStorage decrypt failed; credentials locked:',
+            (err as Error).message,
+          )
         }
-      } catch {
-        this._key = null
+      } else {
+        // Not using the keychain: wrappedKey is the plaintext base64 key.
+        this._key = Buffer.from(this._data.wrappedKey, 'base64')
       }
+      if (this._key) return
+      // Only safe to mint a fresh key if there's nothing encrypted to lose.
+      if (this._data.credentials.length > 0) return
     }
-    if (!this._key) {
-      this._key = crypto.randomBytes(32)
-      const keyB64 = this._key.toString('base64')
+
+    // 2) Fresh install (or nothing to lose): generate and persist a new key.
+    this._key = crypto.randomBytes(32)
+    const keyB64 = this._key.toString('base64')
+    if (useKeychain) {
       try {
-        if (safeStorage.isEncryptionAvailable()) {
-          this._data.wrappedKey = safeStorage.encryptString(keyB64).toString('base64')
-        } else {
-          this._data.wrappedKey = keyB64
-        }
+        this._data.wrappedKey = safeStorage
+          .encryptString(keyB64)
+          .toString('base64')
       } catch {
         this._data.wrappedKey = keyB64
       }
-      this._save()
+    } else {
+      this._data.wrappedKey = keyB64
     }
+    this._save()
   }
 
   private _save(): void {

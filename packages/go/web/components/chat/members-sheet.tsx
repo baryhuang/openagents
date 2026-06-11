@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { useWorkspace } from '@/lib/workspace-context';
+import { isRoutineChannel } from '@/lib/helpers';
 
 interface Props {
   open: boolean;
@@ -32,7 +33,7 @@ export function MembersSheet({ open, onOpenChange, sessionId }: Props) {
   if (!session) return null;
 
   const participants = session.participants ?? [];
-  const isRoutine = session.sessionId.startsWith('routines:');
+  const isRoutine = isRoutineChannel(session.sessionId);
 
   const members = agents.filter((a) => participants.includes(a.agentName));
   const onlineCandidates = agents.filter(

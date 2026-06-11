@@ -152,7 +152,7 @@ async def put_todos(
 # ---------------------------------------------------------------------------
 
 @router.get("/todos")
-async def get_todos(
+def get_todos(
     network: str = Query(...),
     channel: Optional[str] = Query(None),
     thread_id: Optional[str] = Query(None),

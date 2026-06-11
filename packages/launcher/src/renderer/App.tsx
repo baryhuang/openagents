@@ -9,6 +9,7 @@ import Sidebar from "./components/Sidebar"
 import { ToastContainer } from "./components/ui/Toast"
 import { CommandPalette } from "./components/command-palette/CommandPalette"
 import { OnboardingFlow, shouldShowOnboarding } from "./components/onboarding/OnboardingFlow"
+import { GuidedTour, shouldShowGuidedTour } from "./components/onboarding/GuidedTour"
 import Dashboard from "./pages/dashboard"
 import Agents from "./pages/agents"
 import Chat from "./pages/chat"
@@ -31,13 +32,41 @@ export default function App(): React.JSX.Element {
   const initTheme = useThemeStore((s) => s.init)
   const initNotifications = useNotificationsStore((s) => s.init)
   const { showToast } = useToasts()
+  const startTour = useUiStore((s) => s.startTour)
   const [onboardingOpen, setOnboardingOpen] = React.useState(false)
 
   useEffect(() => {
     initTheme()
     void initNotifications()
-    setOnboardingOpen(shouldShowOnboarding())
-  }, [initTheme, initNotifications])
+    // After an upgrade the main process flags a one-time onboarding reset. We
+    // MUST resolve that flag before deciding whether to show onboarding or to
+    // auto-run the spotlight tour: otherwise a returning user (onboarding
+    // already complete, tour never seen) would auto-start the tour
+    // synchronously, and the async reset would then re-open the onboarding
+    // wizard on top of it — showing both at once. Serializing the decision
+    // against the final localStorage state avoids that race entirely.
+    void window.api
+      .consumeOnboardingReset()
+      .catch(() => false)
+      .then((reset) => {
+        if (reset) {
+          // Clear saved onboarding state so returning users walk through the
+          // new key-based configuration steps from the top.
+          try {
+            localStorage.removeItem("onboarding_completed")
+            localStorage.removeItem("onboarding_step")
+            localStorage.removeItem("last_selected_agent")
+          } catch {}
+        }
+        const showOnboarding = shouldShowOnboarding()
+        setOnboardingOpen(showOnboarding)
+        // Returning users who already finished onboarding but never saw the
+        // spotlight tour get it once now. New users (and post-reset users) get
+        // it only after the provisioning wizard closes — see OnboardingFlow's
+        // onClose handler — so the tour never overlaps the wizard.
+        if (!showOnboarding && shouldShowGuidedTour()) startTour()
+      })
+  }, [initTheme, initNotifications, startTour])
 
   // Global install:progress + install:output subscription
   useInstallProgress()
@@ -101,6 +130,7 @@ export default function App(): React.JSX.Element {
             onOpenConnectWorkspace={() => {}}
           />
         )}
+
         {currentTab === "chat" && <Chat showToast={showToast} />}
         {currentTab === "agents" && <Agents showToast={showToast} />}
         {currentTab === "workspaces" && <Workspaces showToast={showToast} />}
@@ -123,9 +153,18 @@ export default function App(): React.JSX.Element {
       <CommandPalette />
       <OnboardingFlow
         open={onboardingOpen}
-        onClose={() => setOnboardingOpen(false)}
+        onClose={() => {
+          setOnboardingOpen(false)
+          // Right after the wizard, run the spotlight tour once to show where
+          // each step lives in the sidebar.
+          if (shouldShowGuidedTour()) startTour()
+        }}
         showToast={showToast}
       />
+      {/* Never mount the tour while the onboarding wizard is open — they are
+          mutually exclusive, and this guarantees the spotlight can never render
+          on top of the wizard even if a stray startTour() slips through. */}
+      {!onboardingOpen && <GuidedTour />}
     </div>
   )
 }

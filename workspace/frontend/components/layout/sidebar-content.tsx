@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Plus, MessageSquare, FileText, Globe, PlusSquare,
-  Settings, Copy, Check, ListTodo, CalendarClock,
-  LogIn, LogOut, Shield, Moon, Sun, KeyRound, Share2, X, Crown,
+  Plus, MessageSquare, FileText, Globe, PlusSquare, Sparkles, BookOpen,
+  Settings, Copy, Check, ListTodo, CalendarClock, Inbox,
+  LogIn, LogOut, Shield, Moon, Sun, KeyRound, X, Crown, Users,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -71,14 +71,13 @@ function NavButton({
 
 export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
-  const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace, todos, routines } = useWorkspace();
+  const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace, todos, routines, knowledge, currentUser, onlineUsers, unreadNotificationCount } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [newThreadOpen, setNewThreadOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
@@ -241,45 +240,74 @@ export function SidebarContent() {
               ))}
             </div>
 
+            {/* Online Users */}
+            {onlineUsers.length > 0 && (
+              <>
+                <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5 mt-6">
+                  <Users className="size-3 inline-block mr-1 -mt-0.5" />
+                  Online ({onlineUsers.length})
+                </p>
+                <div className="space-y-0.5">
+                  {onlineUsers.map((u) => (
+                    <div
+                      key={u.id}
+                      className="flex items-center gap-2 px-2 h-8 rounded-lg text-[13px]"
+                    >
+                      <div className="size-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="truncate text-foreground">
+                        {u.id === currentUser.id ? `${u.name} (you)` : u.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             {/* Collaboration */}
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5 mt-6">
               Collaboration
             </p>
             <div className="space-y-0.5">
-              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.length} onClick={() => setViewMode('threads')} />
-              <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
-              <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
-              <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
-              <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
+              {recentAgents.length > 0 && (
+                <>
+                  <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
+                  <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+                  <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
+                  <NavButton active={viewMode === 'knowledge'} icon={<BookOpen className="size-[15px]" />} label="Knowledge" count={knowledge.length} onClick={() => setViewMode('knowledge')} />
+                  <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
+                  <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="Inbox" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
+                  <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
+                </>
+              )}
             </div>
 
-            {/* Actions */}
-            <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5 mt-6">
-              Actions
-            </p>
-            <div className="space-y-0.5">
-              <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
-              <NavButton icon={<Share2 className="size-[15px]" />} label="Share" onClick={() => setShareOpen(true)} />
-              {token && (
-                <NavButton
-                  icon={tokenCopied ? <Check className="size-[15px]" /> : <KeyRound className="size-[15px]" />}
-                  label={tokenCopied ? 'Copied!' : 'Copy Token'}
-                  onClick={handleCopyToken}
-                />
-              )}
-              <NavButton icon={<Settings className="size-[15px]" />} label="Settings" onClick={() => setSettingsOpen(true)} />
-            </div>
           </div>
         </ScrollArea>
 
         {/* Bottom section — pinned to bottom */}
-        <div className="shrink-0 border-t border-border px-2.5 py-3 space-y-0.5">
-          {/* OpenAgents login/user section */}
-          {isOpenAgentsDomain && !user && (
-            <NavButton icon={<LogIn className="size-[15px]" />} label="Sign in" onClick={signIn} />
+        <div className="shrink-0 px-2.5 pb-1">
+          {recentAgents.length === 0 ? (
+            <button
+              onClick={() => setViewMode('connect')}
+              className={cn(
+                'w-full flex items-center justify-center gap-2 h-9 rounded-lg text-[13px] font-medium transition-colors',
+                viewMode === 'connect'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-primary/10 text-primary hover:bg-primary/20',
+              )}
+            >
+              <PlusSquare className="size-4" />
+              Connect Your First Agent
+            </button>
+          ) : (
+            <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
           )}
+        </div>
+        <div className="shrink-0 border-t border-border px-2.5 py-2.5 space-y-1">
+          {/* Logged-in user details */}
           {isOpenAgentsDomain && user && (
-            <div className="px-2 py-2 space-y-2">
+            <div className="px-2 py-1.5 space-y-2">
               <div className="flex items-center gap-2">
                 <div className="size-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-bold shrink-0">
                   {user.email[0].toUpperCase()}
@@ -306,15 +334,49 @@ export function SidebarContent() {
               )}
             </div>
           )}
-          <NavButton icon={isDark ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />} label={isDark ? 'Light Mode' : 'Dark Mode'} onClick={toggleTheme} />
+
+          {/* Bottom row: Sign in (left) + icon buttons (right) */}
+          <div className="flex items-center gap-1 px-1">
+            {isOpenAgentsDomain && !user && (
+              <button
+                onClick={signIn}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <LogIn className="size-[15px]" />
+                <span className="text-xs">Sign in</span>
+              </button>
+            )}
+            <div className="flex-1" />
+            <button
+              onClick={toggleTheme}
+              className="size-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+              title={isDark ? 'Light Mode' : 'Dark Mode'}
+            >
+              {isDark ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />}
+            </button>
+            {token && (
+              <button
+                onClick={handleCopyToken}
+                className="size-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                title={tokenCopied ? 'Copied!' : 'Copy workspace token'}
+              >
+                {tokenCopied ? <Check className="size-[15px]" /> : <KeyRound className="size-[15px]" />}
+              </button>
+            )}
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="size-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+              title="Settings"
+            >
+              <Settings className="size-[15px]" />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Settings Dialog */}
       <SettingsDialogPortal open={settingsOpen} onOpenChange={setSettingsOpen} workspace={workspace} refreshWorkspace={refreshWorkspace} />
 
-      {/* Share Dialog */}
-      <ShareDialogPortal open={shareOpen} onOpenChange={setShareOpen} />
 
 
       {/* New Thread Dialog (agent picker) */}
@@ -332,126 +394,6 @@ export function SidebarContent() {
   );
 }
 
-// ── Share Dialog (email-based collaborators) ──
-
-function ShareDialogPortal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [email, setEmail] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [collaborators, setCollaborators] = useState<WorkspaceCollaborator[]>([]);
-  const [owner, setOwner] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const loadCollaborators = async () => {
-    setLoading(true);
-    try {
-      const data = await workspaceApi.listCollaborators();
-      setCollaborators(data.collaborators);
-      setOwner(data.owner);
-    } catch { /* */ }
-    setLoading(false);
-  };
-
-  useEffect(() => { if (open) loadCollaborators(); }, [open]);
-
-  const handleAdd = async () => {
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed || !trimmed.includes('@')) return;
-    setAdding(true);
-    try {
-      await workspaceApi.addCollaborator(trimmed, 'editor');
-      toast.success(`Shared with ${trimmed}`);
-      setEmail('');
-      loadCollaborators();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to add collaborator');
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const handleRemove = async (emailToRemove: string) => {
-    try {
-      await workspaceApi.removeCollaborator(emailToRemove);
-      setCollaborators((prev) => prev.filter((c) => c.email !== emailToRemove));
-      toast.success(`Removed ${emailToRemove}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to remove');
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Share Workspace</DialogTitle></DialogHeader>
-        <div className="space-y-4 py-4">
-          <p className="text-xs text-muted-foreground">
-            Add people by email. They can access this workspace by signing in — no token needed.
-          </p>
-
-          {/* Add collaborator form */}
-          <div className="space-y-2">
-            <Label>Email address</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="colleague@example.com"
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
-                className="flex-1"
-              />
-              <Button onClick={handleAdd} disabled={adding || !email.trim()}>
-                {adding ? 'Adding...' : 'Add'}
-              </Button>
-            </div>
-          </div>
-
-          {/* People with access */}
-          <div className="space-y-2">
-            <Label variant="secondary">People with access</Label>
-            <div className="space-y-1.5 max-h-60 overflow-y-auto">
-              {/* Owner */}
-              {owner && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/30">
-                  <Crown className="size-3.5 text-amber-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{owner}</p>
-                    <p className="text-xs text-muted-foreground">Owner</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Collaborators */}
-              {loading && collaborators.length === 0 && (
-                <p className="text-xs text-muted-foreground px-3 py-2">Loading...</p>
-              )}
-              {collaborators.map((c) => (
-                <div key={c.email} className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/30">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{c.email}</p>
-                    <p className="text-xs text-muted-foreground">Full access</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 shrink-0"
-                    onClick={() => handleRemove(c.email)}
-                    title="Remove access"
-                  >
-                    <X className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
-
-              {!loading && !owner && collaborators.length === 0 && (
-                <p className="text-xs text-muted-foreground px-3 py-2">No one has been added yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 // ── Controlled Settings Dialog ──
 
@@ -468,11 +410,21 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   const { isCopied: tokenCopied, copyToClipboard: copyToken } = useCopyToClipboard();
   const { notificationSound, setNotificationSound } = useWorkspace();
   const { splitBrowser, setSplitBrowser } = useLayout();
+  const [collabEmail, setCollabEmail] = useState('');
+  const [collabAdding, setCollabAdding] = useState(false);
+  const [collaborators, setCollaborators] = useState<WorkspaceCollaborator[]>([]);
+  const [collabOwner, setCollabOwner] = useState<string | null>(null);
+  const [bfApiKey, setBfApiKey] = useState('');
 
   useEffect(() => {
     if (open && workspace) {
       setName(workspace.name);
       setMonitorMode(!!(workspace.settings?.monitorMode));
+      setBfApiKey('');
+      workspaceApi.listCollaborators().then((d) => {
+        setCollaborators(d.collaborators);
+        setCollabOwner(d.owner);
+      }).catch(() => {});
     }
   }, [open, workspace]);
 
@@ -486,7 +438,9 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await workspaceApi.updateWorkspace({ name: name.trim(), settings: { ...workspace.settings, monitorMode } });
+      const wsUpdates: Record<string, unknown> = { name: name.trim(), settings: { ...workspace.settings, monitorMode } };
+      if (bfApiKey.trim()) wsUpdates.browserfabric_api_key = bfApiKey.trim();
+      await workspaceApi.updateWorkspace(wsUpdates);
       await refreshWorkspace();
       toast.success('Settings saved');
       onOpenChange(false);
@@ -566,6 +520,104 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
             <Switch checked={splitBrowser} onCheckedChange={setSplitBrowser} size="sm" />
           </div>
 
+          {/* Collaborators */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Users className="size-4 text-muted-foreground" />
+              <Label>Collaborators</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Add people by email. They can access this workspace by signing in.
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                value={collabEmail}
+                onChange={(e) => setCollabEmail(e.target.value)}
+                placeholder="colleague@example.com"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && collabEmail.trim()) {
+                    setCollabAdding(true);
+                    workspaceApi.addCollaborator(collabEmail.trim().toLowerCase(), 'editor')
+                      .then(() => {
+                        toast.success(`Added ${collabEmail.trim()}`);
+                        setCollabEmail('');
+                        return workspaceApi.listCollaborators();
+                      })
+                      .then((d) => setCollaborators(d.collaborators))
+                      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed'))
+                      .finally(() => setCollabAdding(false));
+                  }
+                }}
+                className="flex-1"
+              />
+              <Button
+                onClick={() => {
+                  if (!collabEmail.trim()) return;
+                  setCollabAdding(true);
+                  workspaceApi.addCollaborator(collabEmail.trim().toLowerCase(), 'editor')
+                    .then(() => {
+                      toast.success(`Added ${collabEmail.trim()}`);
+                      setCollabEmail('');
+                      return workspaceApi.listCollaborators();
+                    })
+                    .then((d) => setCollaborators(d.collaborators))
+                    .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed'))
+                    .finally(() => setCollabAdding(false));
+                }}
+                disabled={collabAdding || !collabEmail.trim()}
+                size="sm"
+              >
+                {collabAdding ? '...' : 'Add'}
+              </Button>
+            </div>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {collabOwner && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/30 text-sm">
+                  <Crown className="size-3.5 text-amber-500 shrink-0" />
+                  <span className="truncate flex-1">{collabOwner}</span>
+                  <span className="text-xs text-muted-foreground">Owner</span>
+                </div>
+              )}
+              {collaborators.map((c) => (
+                <div key={c.email} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/30 text-sm">
+                  <span className="truncate flex-1">{c.email}</span>
+                  <button
+                    onClick={() => {
+                      workspaceApi.removeCollaborator(c.email)
+                        .then(() => setCollaborators((prev) => prev.filter((x) => x.email !== c.email)))
+                        .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed'));
+                    }}
+                    className="size-5 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Browser Fabric API Key */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Globe className="size-4 text-muted-foreground" />
+              <Label>Browser Fabric API Key</Label>
+            </div>
+            {workspace.browserfabricApiKey && (
+              <p className="text-xs text-muted-foreground font-mono">
+                Current: {workspace.browserfabricApiKey}
+              </p>
+            )}
+            <Input
+              value={bfApiKey}
+              onChange={(e) => setBfApiKey(e.target.value)}
+              placeholder={workspace.browserfabricApiKey ? 'Enter new key to replace' : 'bf_... (optional — auto-provisioned if empty)'}
+              className="text-xs font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              Each workspace gets a free-tier key automatically. Set a custom key to use your own BrowserFabric account.
+            </p>
+          </div>
+
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -575,4 +627,3 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
     </Dialog>
   );
 }
-

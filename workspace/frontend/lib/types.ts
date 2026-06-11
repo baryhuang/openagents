@@ -4,6 +4,7 @@ export interface Workspace {
   name: string;
   creatorEmail: string | null;
   settings: Record<string, unknown>;
+  browserfabricApiKey: string | null;
   status: string;
   createdAt: string | null;
   lastActivityAt: string | null;
@@ -17,9 +18,32 @@ export interface WorkspaceAgent {
   serverHost: string | null;
   workingDir: string | null;
   description: string | null;
+  // Workspace modules map to booleans; `installed` is a string[] of skill ids;
+  // `skill_status` maps skill id → install status. Hence the union value type.
+  enabledSkills: Record<string, unknown> | null;
   status: string;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
+}
+
+/** Per-skill install status stored under enabledSkills.skill_status[skillId]. */
+export type SkillState = 'installing' | 'installed' | 'failed' | 'uninstalled';
+export interface SkillStatusEntry {
+  state: SkillState;
+  updated_at?: number;
+  path?: string;
+  error?: string;
+}
+
+export interface SkillCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  source_repo: string;
+  source_path: string;
+  author: string;
 }
 
 export interface WorkspaceSession {
@@ -38,6 +62,7 @@ export interface WorkspaceSession {
 export interface WorkspaceMessage {
   messageId: string;
   sessionId: string;
+  senderId?: string | null;
   senderType: string;
   senderName: string;
   content: string;
@@ -46,6 +71,19 @@ export interface WorkspaceMessage {
   messageType: string;
   metadata: Record<string, unknown>;
   createdAt: string | null;
+}
+
+export interface WorkspaceIdentity {
+  id: string;
+  name: string;
+  isAuthenticated: boolean;
+}
+
+export interface OnlineUser {
+  id: string;
+  name: string;
+  status: 'online';
+  lastSeen: number;
 }
 
 export interface WorkspaceCollaborator {
@@ -77,6 +115,19 @@ export interface WorkspaceFile {
   createdAt: string | null;
 }
 
+export interface KnowledgeEntry {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  contentSize: number | null;
+  createdBy: string;
+  updatedBy: string | null;
+  status: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface BrowserTab {
   id: string;
   url: string;
@@ -100,6 +151,36 @@ export interface BrowserPersistentContext {
   sharedWith: string[];
   createdAt: string | null;
   lastUsedAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Shared conversation snapshots
+// ---------------------------------------------------------------------------
+
+export interface SharedSnapshotMessage {
+  sender_name: string;
+  sender_type: string;
+  content: string;
+  created_at: string | null;
+}
+
+export interface SharedSnapshot {
+  id: string;
+  title: string | null;
+  messages: SharedSnapshotMessage[];
+  messageCount: number;
+  createdAt: string | null;
+}
+
+export interface ShareSummary {
+  id: string;
+  workspaceId: string;
+  channelName: string;
+  title: string | null;
+  shareToken: string;
+  messageCount: number;
+  status: string;
+  createdAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +230,25 @@ export interface RoutineItem {
 }
 
 // ---------------------------------------------------------------------------
+// Inbox / Notifications
+// ---------------------------------------------------------------------------
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  priority: 'low' | 'normal' | 'high';
+  isRead: boolean;
+  createdBy: string;
+  channelName: string | null;
+  threadId: string | null;
+  linkUrl: string | null;
+  status: string;
+  createdAt: string | null;
+  readAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Agent catalog (supported client types)
 // ---------------------------------------------------------------------------
 
@@ -160,6 +260,35 @@ export interface AgentCatalogEntry {
   homepage: string;
   tags: string[];
   builtin: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Cloud agents
+// ---------------------------------------------------------------------------
+
+export interface CloudAgentProvider {
+  name: string;
+  label: string;
+  models: CloudAgentModel[];
+}
+
+export interface CloudAgentModel {
+  id: string;
+  category: 'chat' | 'image' | 'audio';
+  label: string;
+}
+
+export interface CloudAgentConfig {
+  agentName: string;
+  provider: string;
+  model: string;
+  category: 'chat' | 'image' | 'audio';
+  apiKeyMasked: string;
+  baseUrl: string | null;
+  systemPrompt: string | null;
+  maxTokens: number | null;
+  status: string;
+  createdAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +321,7 @@ export interface NetworkAgent {
   server_host: string | null;
   working_dir: string | null;
   description: string | null;
+  enabled_skills: Record<string, unknown> | null;
   last_heartbeat_at: string | null;
   joined_at: string | null;
 }
@@ -266,11 +396,12 @@ export interface DMConversation {
 /** Convert an ONM event to a WorkspaceMessage for the chat UI. */
 export function eventToMessage(event: ONMEvent): WorkspaceMessage {
   const isHuman = event.source.startsWith('human:');
-  const senderName = event.source.replace(/^(openagents:|human:)/, '');
   const payload = (event.payload || {}) as Record<string, unknown>;
+  const senderName = (payload.sender_name as string) || event.source.replace(/^(openagents:|human:)/, '');
 
   return {
     messageId: event.id,
+    senderId: (payload.sender_id as string) || null,
     sessionId: event.target.replace(/^channel\//, ''),
     senderType: isHuman ? 'human' : 'agent',
     senderName,
@@ -296,6 +427,7 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
     serverHost: agent.server_host || null,
     workingDir: agent.working_dir || null,
     description: agent.description || null,
+    enabledSkills: agent.enabled_skills || null,
     status: agent.status,
     lastHeartbeatAt: agent.last_heartbeat_at || null,
     joinedAt: agent.joined_at || null,

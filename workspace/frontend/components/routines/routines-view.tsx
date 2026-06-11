@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
-import { CalendarClock, RefreshCw, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CalendarClock, RefreshCw, Trash2, Plus } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
+import { useLayout } from '@/components/layout/layout-context';
 import { workspaceApi } from '@/lib/api';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { CreateRoutineDialog } from './create-routine-dialog';
 import type { RoutineItem } from '@/lib/types';
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -54,7 +56,9 @@ function timeUntil(dateStr: string): string {
 }
 
 export function RoutinesView() {
-  const { routines, refreshRoutines, sessions, agents } = useWorkspace();
+  const { routines, refreshRoutines, createRoutine, sessions, agents, setCurrentSessionId } = useWorkspace();
+  const { setViewMode } = useLayout();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   useEffect(() => {
     refreshRoutines();
@@ -64,6 +68,11 @@ export function RoutinesView() {
     () => routines.filter((r) => r.status === 'active'),
     [routines],
   );
+
+  const handleOpenThread = (channelName: string) => {
+    setCurrentSessionId(channelName);
+    setViewMode('threads');
+  };
 
   const handleCancel = async (routineId: string) => {
     try {
@@ -87,12 +96,21 @@ export function RoutinesView() {
             </span>
           )}
         </div>
-        <button
-          onClick={refreshRoutines}
-          className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
-        >
-          <RefreshCw className="size-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setShowCreateDialog(true)}
+            className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
+            title="Create routine"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          <button
+            onClick={refreshRoutines}
+            className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -113,7 +131,8 @@ export function RoutinesView() {
               return (
                 <div
                   key={routine.id}
-                  className="rounded-lg border border-border bg-card overflow-hidden"
+                  className="rounded-lg border border-border bg-card overflow-hidden cursor-pointer hover:border-primary/40 transition-colors"
+                  onClick={() => handleOpenThread(routine.channelName)}
                 >
                   {/* Routine header */}
                   <div className="px-3 py-2.5 flex items-start gap-2.5">
@@ -148,7 +167,7 @@ export function RoutinesView() {
                       </div>
                     </div>
                     <button
-                      onClick={() => handleCancel(routine.id)}
+                      onClick={(e) => { e.stopPropagation(); handleCancel(routine.id); }}
                       className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
                       title="Cancel routine"
                     >
@@ -161,6 +180,13 @@ export function RoutinesView() {
           </div>
         )}
       </div>
+
+      <CreateRoutineDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        agents={agents}
+        onCreateRoutine={createRoutine}
+      />
     </div>
   );
 }

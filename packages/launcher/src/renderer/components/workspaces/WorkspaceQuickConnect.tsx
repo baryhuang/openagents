@@ -5,6 +5,7 @@ import { Button } from "../ui/Button"
 import { Input } from "../ui/Input"
 import { Label } from "../ui/Label"
 import type { ToastType } from "../../hooks/useToast"
+import { capture } from "../../lib/analytics"
 
 function humanizeError(err: unknown): string {
   const raw = (err as Error)?.message ?? String(err)
@@ -117,6 +118,7 @@ export function WorkspaceQuickConnect({
         slug?: string
       }
       setResult(r)
+      capture("workspace_created", { source: "quick_connect" })
       onCreated()
       showToast("Workspace created", "success")
     } catch (err) {

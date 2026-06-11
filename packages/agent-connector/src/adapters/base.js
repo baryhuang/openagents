@@ -19,6 +19,7 @@
 
 const { WorkspaceClient, SessionRevokedError } = require('../workspace-client');
 const { generateSessionTitle, SESSION_DEFAULT_RE } = require('./utils');
+const { defaultAgentWorkdir } = require('../paths');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
 
@@ -82,12 +83,28 @@ class BaseAdapter {
         network: this.workspaceId,
         agentType: this.agentType || 'agent',
         serverHost: require('os').hostname(),
-        workingDir: this.workingDir || process.cwd(),
+        workingDir: this.workingDir || defaultAgentWorkdir(this.agentName),
       });
       this._sessionId = (joinResult && joinResult.session_id) || null;
       this._log(`Joined workspace ${this.workspaceId}${this._sessionId ? ` (session ${this._sessionId.slice(0, 8)})` : ''}`);
     } catch (e) {
       this._log(`Warning: join failed: ${e.message} \nStack: ${e.stack}`);
+    }
+
+    // Sync workspace-managed skills into disabledModules
+    try {
+      const agents = await Promise.race([
+        this.client.getAgents(this.workspaceId, this.token),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('skill sync timed out (10s)')), 10000)),
+      ]);
+      const self = agents.find((a) => a.agentName === this.agentName);
+      if (self && self.enabledSkills) {
+        const { skillsToDisabledModules } = require('../skill-catalog');
+        this.disabledModules = skillsToDisabledModules(self.enabledSkills);
+        this._log(`Synced skills from workspace: disabled=[${[...this.disabledModules].join(',')}]`);
+      }
+    } catch (e) {
+      this._log(`Warning: skill sync failed (non-fatal): ${e.message}`);
     }
 
     // Fast-path operations (control-event cursor + heartbeat + control poll)
@@ -217,8 +234,108 @@ class BaseAdapter {
       await this._postStatusReport(payload);
     } else if (action === 'routines') {
       await this._postRoutinesReport(payload);
+    } else if (action === 'skill.install') {
+      await this._handleSkillInstall(payload);
+    } else if (action === 'skill.uninstall') {
+      await this._handleSkillUninstall(payload);
     }
   }
+
+  /**
+   * Install a Skill Hub catalog skill into this agent's local skills
+   * directory, then report the result back to the workspace so the UI can
+   * show installing → installed / failed. Errors are logged loudly and
+   * surfaced as a `failed` status — never swallowed.
+   *
+   * payload: { action: "skill.install", skill: { id, name, source_repo, source_path } }
+   */
+  async _handleSkillInstall(payload) {
+    const installer = require('../skill-installer');
+    const skill = (payload && payload.skill) || null;
+    const skillId = skill && (skill.id || skill.skill_id);
+    if (!skillId) {
+      this._log('skill.install: missing skill metadata in payload — ignoring');
+      return;
+    }
+    this._log(`skill.install: starting install of "${skillId}" (type=${this.agentType}, dir=${this.workingDir || defaultAgentWorkdir(this.agentName)})`);
+
+    // Best-effort "installing" ping so the UI flips immediately even if the
+    // initial DB write from the request hasn't propagated to this client.
+    try {
+      await this.client.reportSkillStatus(this.workspaceId, this.agentName, this.token, {
+        skillId, state: 'installing',
+      });
+    } catch (e) {
+      this._log(`skill.install: could not report 'installing' (non-fatal): ${e && e.message ? e.message : e}`);
+    }
+
+    try {
+      const result = installer.installSkill({
+        skill,
+        agentType: this.agentType,
+        workingDir: this.workingDir,
+        log: (m) => this._log(`skill.install: ${m}`),
+      });
+      try {
+        await this.client.reportSkillStatus(this.workspaceId, this.agentName, this.token, {
+          skillId, state: 'installed', path: result.path, partial: result.partial === true,
+        });
+      } catch (e) {
+        this._log(`skill.install: installed on disk but failed to report 'installed': ${e && e.message ? e.message : e}`);
+      }
+      this._log(`skill.install: SUCCESS "${skillId}" → ${result.path}${result.partial ? ' (partial)' : ''}`);
+      await this._onSkillsChanged();
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      this._log(`skill.install: FAILED "${skillId}": ${msg}`);
+      try {
+        await this.client.reportSkillStatus(this.workspaceId, this.agentName, this.token, {
+          skillId, state: 'failed', error: msg,
+        });
+      } catch (e2) {
+        this._log(`skill.install: also failed to report 'failed': ${e2 && e2.message ? e2.message : e2}`);
+      }
+    }
+  }
+
+  /**
+   * Remove a previously-installed skill from disk and report `uninstalled`.
+   */
+  async _handleSkillUninstall(payload) {
+    const installer = require('../skill-installer');
+    const skill = (payload && payload.skill) || null;
+    const skillId = skill && (skill.id || skill.skill_id);
+    if (!skillId) {
+      this._log('skill.uninstall: missing skill metadata in payload — ignoring');
+      return;
+    }
+    try {
+      const result = installer.uninstallSkill({
+        skill,
+        agentType: this.agentType,
+        workingDir: this.workingDir,
+        log: (m) => this._log(`skill.uninstall: ${m}`),
+      });
+      this._log(`skill.uninstall: "${skillId}" removed=${result.removed}`);
+      try {
+        await this.client.reportSkillStatus(this.workspaceId, this.agentName, this.token, {
+          skillId, state: 'uninstalled',
+        });
+      } catch (e) {
+        this._log(`skill.uninstall: failed to report status: ${e && e.message ? e.message : e}`);
+      }
+      await this._onSkillsChanged();
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      this._log(`skill.uninstall: FAILED "${skillId}": ${msg}`);
+    }
+  }
+
+  /**
+   * Hook for subclasses to react to a change in the installed-skills set
+   * (e.g. rebuild prompt context). Default: no-op.
+   */
+  async _onSkillsChanged() {}
 
   /**
    * Post a chat message back to the requesting channel summarizing agent

@@ -12,7 +12,7 @@ One workspace where all your AI agents collaborate. Open source. No account requ
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865f2?logo=discord&logoColor=white)](https://discord.gg/openagents)
 [![Twitter](https://img.shields.io/badge/Twitter-Follow-1da1f2?logo=x&logoColor=white)](https://twitter.com/OpenAgentsAI)
 
-[**Try the Workspace →**](https://openagents.org/workspace) · [Official Website — openagents.org](https://openagents.org) · [Docs](https://openagents.org/docs/getting-started/overview) · [Discord](https://discord.gg/openagents)
+[⭐ **Open my workspace**](https://openagents.org/api/create-workspace) · [openagents.org](https://openagents.org) · [Setup Tutorial](https://openagents.org/docs)
 
 </div>
 
@@ -99,6 +99,7 @@ agn install openclaw                      # install a runtime
 agn create my-agent --type openclaw       # create an instance
 agn env openclaw --set LLM_API_KEY=sk-... # set credentials
 agn up                                    # start the daemon
+agn connect my-agent <workspace-token>    # connect agent into workspace
 ```
 
 `agn create` only writes the agent config. Use `agn install <type>` first, or pass `--install` during creation if you want the CLI to install the runtime in the same step.

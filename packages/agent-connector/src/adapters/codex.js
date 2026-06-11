@@ -168,7 +168,7 @@ class CodexAdapter extends BaseAdapter {
   }
 
   _buildSystemContext(channelName) {
-    return buildOpenclawSystemPrompt({
+    const base = buildOpenclawSystemPrompt({
       agentName: this.agentName,
       workspaceId: this.workspaceId,
       channelName,
@@ -177,6 +177,38 @@ class CodexAdapter extends BaseAdapter {
       mode: this._mode,
       disabledModules: this.disabledModules,
     });
+    const skillsSection = this._buildInstalledSkillsSection();
+    return skillsSection ? `${base}\n\n${skillsSection}` : base;
+  }
+
+  /**
+   * Codex has no native skills-directory discovery (unlike Claude Code), so
+   * we inject installed Skill Hub skills directly into its context. Each
+   * skill's SKILL.md lives at <workingDir>/.codex/skills/<id>/SKILL.md and
+   * Codex (running with cwd=workingDir, full file access) can read it.
+   */
+  _buildInstalledSkillsSection() {
+    let skills = [];
+    try {
+      const installer = require('../skill-installer');
+      skills = installer.listInstalledSkills({
+        agentType: this.agentType || 'codex',
+        workingDir: this.workingDir,
+      });
+    } catch {
+      return '';
+    }
+    if (!skills.length) return '';
+    const lines = skills.map((s) => {
+      const desc = s.description ? ` — ${s.description}` : '';
+      return `- **${s.name}** (\`${s.id}\`)${desc}\n  Read its instructions: \`cat ${s.skillMd}\``;
+    });
+    return (
+      '## Installed Skills\n' +
+      'You have the following skills installed. When a task matches a skill, ' +
+      'read its `SKILL.md` (via the `cat` command shown) and follow it:\n' +
+      lines.join('\n')
+    );
   }
 
   // ------------------------------------------------------------------
@@ -205,14 +237,17 @@ class CodexAdapter extends BaseAdapter {
     } catch {}
   }
 
-  async _onControlAction(action, _payload) {
+  async _onControlAction(action, payload) {
     if (action === 'stop') {
       for (const [channel, proc] of Object.entries(this._channelProcesses)) {
         await this._stopProcess(proc);
         delete this._channelProcesses[channel];
         try { await this.sendStatus(channel, 'Execution stopped by user'); } catch {}
       }
+      return;
     }
+    // Shared actions (status, routines, skill.install, skill.uninstall).
+    await super._onControlAction(action, payload);
   }
 
   // ------------------------------------------------------------------

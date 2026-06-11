@@ -235,111 +235,202 @@ function buildToolDefs(disabledModules) {
     );
   }
 
-  // -- Todos & Timers (always enabled) --
-  tools.push(
-    {
-      name: 'workspace_put_todos',
-      description: 'Update your to-do list. Replaces the entire list each time (send full list with current statuses). Channel is auto-resolved.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          todos: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                content: { type: 'string', description: 'Task description' },
-                status: { type: 'string', enum: ['pending', 'in_progress', 'completed'], description: 'Task status' },
-                assignee: { type: 'string', description: 'Agent name to assign to (defaults to self)' },
+  // -- Todos --
+  if (!disabledModules.has('todos')) {
+    tools.push(
+      {
+        name: 'workspace_put_todos',
+        description: 'Update your to-do list. Replaces the entire list each time (send full list with current statuses). Channel is auto-resolved.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            todos: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  content: { type: 'string', description: 'Task description' },
+                  status: { type: 'string', enum: ['pending', 'in_progress', 'completed'], description: 'Task status' },
+                  assignee: { type: 'string', description: 'Agent name to assign to (defaults to self)' },
+                },
+                required: ['content', 'status'],
               },
-              required: ['content', 'status'],
+              description: 'Full to-do list with current statuses',
             },
-            description: 'Full to-do list with current statuses',
+          },
+          required: ['todos'],
+        },
+      },
+      {
+        name: 'workspace_get_todos',
+        description: 'Get to-do items for the current channel. Use all=true to see all agents\' todos.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            agent: { type: 'string', description: 'Filter by agent name' },
+            all: { type: 'boolean', description: 'Get all agents\' todos (default: own only)' },
           },
         },
-        required: ['todos'],
       },
-    },
-    {
-      name: 'workspace_get_todos',
-      description: 'Get to-do items for the current channel. Use all=true to see all agents\' todos.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          agent: { type: 'string', description: 'Filter by agent name' },
-          all: { type: 'boolean', description: 'Get all agents\' todos (default: own only)' },
-        },
-      },
-    },
-    {
-      name: 'workspace_create_timer',
-      description: 'Set a timer that posts a message to the channel after the specified delay.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          delay: { type: 'integer', description: 'Seconds until the timer fires (1-86400)' },
-          message: { type: 'string', description: 'Message to post when the timer fires' },
-        },
-        required: ['delay', 'message'],
-      },
-    },
-    {
-      name: 'workspace_list_timers',
-      description: 'List active timers in the current channel.',
-      inputSchema: { type: 'object', properties: {} },
-    },
-    {
-      name: 'workspace_cancel_timer',
-      description: 'Cancel an active timer by its ID.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          timer_id: { type: 'string', description: 'Timer ID to cancel' },
-        },
-        required: ['timer_id'],
-      },
-    },
-    {
-      name: 'workspace_create_routine',
-      description: 'Create a recurring scheduled routine. Each routine gets its own dedicated thread with full context. Two schedule modes: daily (hour+minute, optional days) or interval (every N minutes).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: 'Human-readable label for the routine (e.g. "Daily PR Review")' },
-          message: { type: 'string', description: 'Short trigger message posted each time the routine fires' },
-          context: { type: 'string', description: 'Comprehensive context for the routine: what it should do, background info, goals, relevant details from the current conversation. This is posted at the start of the routine\'s dedicated thread so you have full background every time it fires. Be thorough — this is your only memory of why this routine exists.' },
-          hour: { type: 'integer', description: 'Daily mode: hour in UTC (0-23). Omit if using interval_minutes.' },
-          minute: { type: 'integer', description: 'Daily mode: minute (0-59). Omit if using interval_minutes.' },
-          days: {
-            type: 'array',
-            items: { type: 'integer' },
-            description: 'Daily mode: days of week to fire (0=Mon, 6=Sun). Omit for every day. Not allowed in interval mode.',
+    );
+  }
+
+  // -- Timers --
+  if (!disabledModules.has('timers')) {
+    tools.push(
+      {
+        name: 'workspace_create_timer',
+        description: 'Set a timer that posts a message to the channel after the specified delay.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            delay: { type: 'integer', description: 'Seconds until the timer fires (1-86400)' },
+            message: { type: 'string', description: 'Message to post when the timer fires' },
           },
-          interval_minutes: {
-            type: 'integer',
-            description: 'Interval mode: fire every N minutes (1-1440). Mutually exclusive with hour/minute.',
+          required: ['delay', 'message'],
+        },
+      },
+      {
+        name: 'workspace_list_timers',
+        description: 'List active timers in the current channel.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workspace_cancel_timer',
+        description: 'Cancel an active timer by its ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            timer_id: { type: 'string', description: 'Timer ID to cancel' },
+          },
+          required: ['timer_id'],
+        },
+      },
+    );
+  }
+
+  // -- Routines --
+  if (!disabledModules.has('routines')) {
+    tools.push(
+      {
+        name: 'workspace_create_routine',
+        description: 'Create a recurring scheduled routine. Each routine gets its own dedicated thread with full context. Two schedule modes: daily (hour+minute, optional days) or interval (every N minutes).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Human-readable label for the routine (e.g. "Daily PR Review")' },
+            message: { type: 'string', description: 'Short trigger message posted each time the routine fires' },
+            context: { type: 'string', description: 'Comprehensive context for the routine: what it should do, background info, goals, relevant details from the current conversation. This is posted at the start of the routine\'s dedicated thread so you have full background every time it fires. Be thorough — this is your only memory of why this routine exists.' },
+            hour: { type: 'integer', description: 'Daily mode: hour in UTC (0-23). Omit if using interval_minutes.' },
+            minute: { type: 'integer', description: 'Daily mode: minute (0-59). Omit if using interval_minutes.' },
+            days: {
+              type: 'array',
+              items: { type: 'integer' },
+              description: 'Daily mode: days of week to fire (0=Mon, 6=Sun). Omit for every day. Not allowed in interval mode.',
+            },
+            interval_minutes: {
+              type: 'integer',
+              description: 'Interval mode: fire every N minutes (1-1440). Mutually exclusive with hour/minute.',
+            },
+          },
+          required: ['name', 'message', 'context'],
+        },
+      },
+      {
+        name: 'workspace_list_routines',
+        description: 'List active routines in the current channel.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workspace_cancel_routine',
+        description: 'Cancel a recurring routine by its ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            routine_id: { type: 'string', description: 'Routine ID to cancel' },
+          },
+          required: ['routine_id'],
+        },
+      },
+    );
+  }
+
+  // -- Notifications --
+  if (!disabledModules.has('notifications')) {
+    tools.push(
+      {
+        name: 'workspace_send_notification',
+        description: 'Send a notification to the workspace inbox. Use this to alert humans about completed tasks, important findings, or anything that needs their attention outside the chat stream.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Short notification title (e.g. "News scan complete")' },
+            message: { type: 'string', description: 'Notification body with details' },
+            priority: { type: 'string', enum: ['low', 'normal', 'high'], description: 'Notification priority (default: normal)' },
+            channel: { type: 'string', description: 'Related channel/thread name (for navigation link)' },
+          },
+          required: ['title', 'message'],
+        },
+      },
+      {
+        name: 'workspace_get_notifications',
+        description: 'List notifications you have sent to the workspace inbox.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: { type: 'integer', description: 'Number of notifications to return (default 20)' },
           },
         },
-        required: ['name', 'message', 'context'],
       },
-    },
-    {
-      name: 'workspace_list_routines',
-      description: 'List active routines in the current channel.',
-      inputSchema: { type: 'object', properties: {} },
-    },
-    {
-      name: 'workspace_cancel_routine',
-      description: 'Cancel a recurring routine by its ID.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          routine_id: { type: 'string', description: 'Routine ID to cancel' },
+    );
+  }
+
+  // -- Knowledge Base --
+  if (!disabledModules.has('knowledge')) {
+    tools.push(
+      {
+        name: 'workspace_list_knowledge',
+        description: 'List knowledge base entries shared in the workspace.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'workspace_read_knowledge',
+        description: 'Read a knowledge base entry by ID or slug. Returns the full markdown content.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            entry_id: { type: 'string', description: 'Knowledge entry ID' },
+            slug: { type: 'string', description: 'Knowledge entry slug (alternative to entry_id)' },
+          },
         },
-        required: ['routine_id'],
       },
-    },
-  );
+      {
+        name: 'workspace_write_knowledge',
+        description: 'Create or update a knowledge base entry. Knowledge entries are workspace-global markdown documents accessible to all agents via @knowledge:slug mentions.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Entry title' },
+            content: { type: 'string', description: 'Markdown content of the knowledge entry' },
+            description: { type: 'string', description: 'Short summary (optional)' },
+            entry_id: { type: 'string', description: 'Existing entry ID to update (omit to create new)' },
+          },
+          required: ['title', 'content'],
+        },
+      },
+      {
+        name: 'workspace_delete_knowledge',
+        description: 'Delete a knowledge base entry by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            entry_id: { type: 'string', description: 'Knowledge entry ID to delete' },
+          },
+          required: ['entry_id'],
+        },
+      },
+    );
+  }
 
   return tools;
 }
@@ -806,6 +897,82 @@ class McpServer {
       case 'workspace_cancel_routine': {
         await this.ws.cancelRoutine(this.workspaceId, this.token, args.routine_id);
         return text(`Routine cancelled: ${args.routine_id}`);
+      }
+
+      case 'workspace_send_notification': {
+        const result = await this.ws.createNotification(
+          this.workspaceId, this.token,
+          {
+            title: args.title,
+            message: args.message,
+            priority: args.priority || 'normal',
+            channel: args.channel || this.channelName,
+            source: `openagents:${this.agentName}`,
+          },
+        );
+        return text(`Notification sent: "${args.title}" (id: ${result.id})`);
+      }
+
+      case 'workspace_get_notifications': {
+        const data = await this.ws.listNotifications(this.workspaceId, this.token, {
+          limit: args.limit || 20,
+        });
+        const notifications = (data && data.notifications) || [];
+        if (!notifications.length) return text('No notifications.');
+        const lines = notifications.map((n) => {
+          const readStatus = n.is_read ? '[read]' : '[unread]';
+          const prio = n.priority !== 'normal' ? ` [${n.priority}]` : '';
+          return `- ${readStatus}${prio} ${n.title}: ${n.message.slice(0, 80)}${n.message.length > 80 ? '...' : ''} (${n.created_at})`;
+        });
+        return text(lines.join('\n'));
+      }
+
+      // ── Knowledge Base ──
+
+      case 'workspace_list_knowledge': {
+        const data = await this.ws.listKnowledge(this.workspaceId, this.token);
+        const entries = (data && data.entries) || [];
+        if (!entries.length) return text('No knowledge entries yet.');
+        const lines = entries.map((e) =>
+          `- ${e.title} (slug: ${e.slug}, id: ${e.id})`
+        );
+        return text(lines.join('\n'));
+      }
+
+      case 'workspace_read_knowledge': {
+        let data;
+        if (args.slug) {
+          data = await this.ws.getKnowledgeBySlug(this.workspaceId, this.token, args.slug);
+        } else if (args.entry_id) {
+          data = await this.ws.getKnowledge(this.workspaceId, this.token, args.entry_id);
+        } else {
+          throw new Error('Either entry_id or slug is required');
+        }
+        return text(`# ${data.title}\n\n${data.content || '(empty)'}`);
+      }
+
+      case 'workspace_write_knowledge': {
+        let result;
+        if (args.entry_id) {
+          result = await this.ws.updateKnowledge(
+            this.workspaceId, this.token, args.entry_id,
+            { title: args.title, content: args.content, description: args.description,
+              source: `openagents:${this.agentName}` },
+          );
+          return text(`Knowledge updated: "${result.title}" (slug: ${result.slug})`);
+        } else {
+          result = await this.ws.createKnowledge(
+            this.workspaceId, this.token,
+            { title: args.title, content: args.content, description: args.description,
+              source: `openagents:${this.agentName}` },
+          );
+          return text(`Knowledge created: "${result.title}" (slug: ${result.slug}, id: ${result.id})`);
+        }
+      }
+
+      case 'workspace_delete_knowledge': {
+        await this.ws.deleteKnowledge(this.workspaceId, this.token, args.entry_id);
+        return text(`Knowledge entry deleted: ${args.entry_id}`);
       }
 
       default:

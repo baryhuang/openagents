@@ -25,27 +25,35 @@ if _is_sqlite:
         SQLiteTypeCompiler.visit_JSONB = lambda self, type_, **kw: "JSON"
         SQLiteTypeCompiler.visit_UUID = lambda self, type_, **kw: "TEXT"
 
-# PgBouncer (e.g. Supabase port 6543) maintains its own connection pool;
-# app-level pooling is redundant and causes stale-connection failures
+# A PgBouncer pooler in front of Postgres maintains its own backend pool,
+# so app-level pooling is redundant and causes stale-connection failures
 # ("SSL connection has been closed unexpectedly") because pgbouncer may
 # rotate or idle-kill the TCP connection our app still thinks is fresh.
 # Use NullPool in pgbouncer mode: each request opens a short-lived conn
-# that goes straight to pgbouncer (local to Supabase, ~1-2ms overhead).
-_is_pgbouncer = ":6543/" in config.DATABASE_URL
+# that goes straight to pgbouncer (co-located, ~1ms overhead), and pgbouncer
+# multiplexes those onto a small fixed set of real Postgres backends — which
+# lifts the ~100-connection Postgres ceiling that forced the app pool down.
+#
+# Detected by Supabase's pooler port (:6543) OR an explicit DB_PGBOUNCER
+# flag. A self-hosted/Railway pgbouncer listens on a different port (commonly
+# 6432), so the port alone isn't a reliable signal — the flag is.
+_is_pgbouncer = (
+    ":6543/" in config.DATABASE_URL
+    or os.environ.get("DB_PGBOUNCER", "").strip().lower() in ("1", "true", "yes")
+)
 
 _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite or _is_pgbouncer
     # Direct-PG mode (port 5432): keep a bounded per-worker pool.
     # Sized for Railway Postgres max_connections=200 at 2 replicas × 2
-    # workers (WEB_CONCURRENCY=2): 2 × 2 × (40 + 8) = 192 max DB conns,
-    # leaves 8 for admin/migrations. Multiple workers per replica keep
-    # event-loop parallelism — one slow query on worker A doesn't stall
-    # /health on worker B.
+    # workers (WEB_CONCURRENCY=2): 2 × 2 × (20 + 4) = 96 max DB conns
+    # steady-state, leaving headroom for a rolling deploy (old + new
+    # replicas briefly coexist → up to 192 conns, still under 200).
     # pool_timeout is short (2s) because SQLAlchemy sync calls inside
     # FastAPI async handlers block the event loop — a longer queue
     # wait would stall every request on that worker.
-    else {"pool_pre_ping": True, "pool_size": 40, "max_overflow": 8, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
+    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 4, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
 )
 
 # Keep the TCP connection alive to survive NAT / firewall idle timeouts

@@ -2,9 +2,28 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!--
+    Apple Silicon + Hardened Runtime 下 V8 JIT 编译必需。缺失这个 entitlement
+    会导致应用一启动就在 v8::Isolate::Initialize 阶段触发 SIGTRAP / brk 0
+    崩溃（V8 申请可执行内存被系统拒绝，内部检查触发硬件断点）。在 macOS
+    Tahoe (26.x) 上对此检查更严格。
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!--
+    Intel 上的回退路径以及部分 native 模块（如 ffmpeg、Electron 自身 helper）
+    需要这个。allow-jit 在 Apple Silicon 上是必需，allow-unsigned-executable-
+    memory 让 x64 构建也保持兼容。
+  -->
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
   <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!--
+    Electron 内部以及子进程（agent-launcher daemon、portable node）需要读取
+    DYLD_* / NODE_OPTIONS 等环境变量来正确加载模块。
+  -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
   <true/>
   <key>com.apple.security.network.client</key>
   <true/>

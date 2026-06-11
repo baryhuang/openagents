@@ -180,11 +180,8 @@ export function ThreadList() {
 
   // Sort sessions by backend last_event_at (stable, no client-side jumping)
   const sortedSessions = [...sessions]
-    .filter((s) => s.status !== 'deleted')
+    .filter((s) => s.status !== 'deleted' && (!s.sessionId.startsWith('routine:') || s.sessionId === currentSessionId))
     .sort((a, b) => {
-      // Starred items first
-      if (a.starred && !b.starred) return -1;
-      if (!a.starred && b.starred) return 1;
       const aTime = a.lastEventAt || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
       const bTime = b.lastEventAt || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
       return bTime - aTime;

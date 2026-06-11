@@ -1,6 +1,6 @@
 {
   "name": "openagents-launcher",
-  "version": "0.7.2",
+  "version": "0.8.4",
   "description": "OpenAgents Launcher — install, configure, and manage your AI agents",
   "main": "out/main/index.js",
   "homepage": "https://github.com/openagents-org/openagents",
@@ -16,6 +16,8 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
@@ -27,8 +29,10 @@
     "dist": "npm run build && electron-builder --publish always"
   },
   "dependencies": {
+    "@openagents-org/agent-launcher": "0.2.141",
     "clsx": "^2.1.1",
     "lucide-react": "^0.460.0",
+    "posthog-js": "^1.376.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.2",
@@ -36,16 +40,22 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.17.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
+    "electron": "^42.3.3",
+    "electron-builder": "^26.0.0",
     "electron-vite": "^2.3.0",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.2",
-    "vite": "^5.4.8"
+    "vite": "^5.4.8",
+    "vitest": "^4.1.7"
   },
   "build": {
     "appId": "com.openagents.launcher",
@@ -53,7 +63,15 @@
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/@openagents-org/**/*",
+      "node_modules/ws/**/*",
+      "node_modules/blessed/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/@openagents-org/**/*",
+      "node_modules/ws/**/*",
+      "node_modules/blessed/**/*"
     ],
     "directories": {
       "buildResources": "assets",
@@ -61,20 +79,8 @@
     },
     "mac": {
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        "dmg",
+        "zip"
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools",
@@ -133,10 +139,7 @@
         }
       ],
       "icon": "assets/icon.png",
-      "category": "Development",
-      "desktop": {
-        "StartupNotify": "true"
-      }
+      "category": "Development"
     },
     "publish": {
       "provider": "github",

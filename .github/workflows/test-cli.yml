@@ -47,8 +47,8 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           Get-Location
-          Get-ChildItem install.ps1
-          powershell -ExecutionPolicy Bypass -File install.ps1
+          Get-ChildItem scripts/install.ps1
+          powershell -ExecutionPolicy Bypass -File scripts/install.ps1
         shell: powershell
         continue-on-error: true
       - name: Verify CLI installed

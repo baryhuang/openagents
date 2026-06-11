@@ -55,8 +55,9 @@ export function formatDate(input: Date | string | number): string {
 const STALE_AGENT_THRESHOLD = 60 * 60 * 1000; // 1 hour
 
 /** Returns true if agent should be visible in sidebar (online or recently seen). */
-export function isRecentAgent(agent: { status: string; lastHeartbeatAt: string | null }): boolean {
+export function isRecentAgent(agent: { status: string; agentType?: string | null; lastHeartbeatAt: string | null }): boolean {
   if (agent.status === 'online') return true;
+  if (agent.agentType?.startsWith('cloud:')) return true;
   if (!agent.lastHeartbeatAt) return false;
   const elapsed = Date.now() - new Date(agent.lastHeartbeatAt).getTime();
   return elapsed < STALE_AGENT_THRESHOLD;

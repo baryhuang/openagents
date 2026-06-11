@@ -136,6 +136,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   const caps = [];
   if (!disabled.has('files')) caps.push('share and read files with other agents and users');
   if (!disabled.has('browser')) caps.push('browse websites in a shared browser');
+  if (!disabled.has('knowledge')) caps.push('create and access a shared knowledge base');
   caps.push('discover other agents in the workspace');
 
   sections.push(
@@ -292,7 +293,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   }
 
   // To-Dos (planning)
-  if (!isPlan) {
+  if (!isPlan && !disabled.has('todos')) {
     sections.push(
       '\n### To-Do List (Planning)\n\n' +
       'Create or update your to-do list to track progress. The entire list ' +
@@ -315,7 +316,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   }
 
   // Timers
-  if (!isPlan) {
+  if (!isPlan && !disabled.has('timers')) {
     sections.push(
       '\n### Timers\n\n' +
       'Set a timer that will send you a message after a delay, waking you up ' +
@@ -336,7 +337,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   }
 
   // Routines (recurring scheduled tasks)
-  if (!isPlan) {
+  if (!isPlan && !disabled.has('routines')) {
     sections.push(
       '\n### Routines (Recurring Tasks)\n\n' +
       'Create a recurring routine that fires on a schedule. Each routine gets ' +
@@ -363,6 +364,52 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `\`${curl} -s -H "${h}" "${baseUrl}/v1/routines?network=${workspaceId}"\`\n\n` +
       '**Cancel a routine:**\n' +
       `\`${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/routines/ROUTINE_ID\`\n`
+    );
+  }
+
+  // Notifications / Inbox
+  if (!isPlan && !disabled.has('notifications')) {
+    sections.push(
+      '\n### Notifications (Inbox)\n\n' +
+      'Send notifications to the workspace inbox. Notifications appear in a ' +
+      'dedicated panel separate from the chat stream. Use for task completions, ' +
+      'important findings, or anything that needs human attention.\n\n' +
+      '**Send a notification:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/notifications -d '{"title":"Task Complete","message":"The analysis is ready.",` +
+      `"priority":"normal","channel":"${channelName}",` +
+      `"network":"${workspaceId}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**Priority values:** `low`, `normal`, `high`\n\n' +
+      '**List notifications:**\n' +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/notifications?network=${workspaceId}"\`\n`
+    );
+  }
+
+  // Knowledge Base
+  if (!isPlan && !disabled.has('knowledge')) {
+    sections.push(
+      '\n### Knowledge Base\n\n' +
+      'The workspace has a shared knowledge base of markdown documents. ' +
+      'Use it to store and retrieve shared information like API docs, ' +
+      'design decisions, project conventions, and other reference material. ' +
+      'Knowledge entries are accessible to all agents via @knowledge:slug mentions.\n\n' +
+      '**Create a knowledge entry:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/knowledge -d '{"title":"API Design Patterns","content":"# API Design Patterns\\n\\n...",` +
+      `"description":"Common API patterns used in this project",` +
+      `"network":"${workspaceId}",` +
+      `"source":"openagents:${agentName}"}'\`\n\n` +
+      '**List knowledge entries:**\n' +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/knowledge?network=${workspaceId}"\`\n\n` +
+      '**Read a knowledge entry by slug:**\n' +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/knowledge/by-slug/api-design-patterns?network=${workspaceId}"\`\n\n` +
+      '**Update a knowledge entry:**\n' +
+      `\`${curl} -s -X PUT -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/knowledge/ENTRY_ID -d '{"title":"Updated Title","content":"# Updated\\n\\n...",` +
+      `"network":"${workspaceId}","source":"openagents:${agentName}"}'\`\n\n` +
+      '**Delete a knowledge entry:**\n' +
+      `\`${curl} -s -X DELETE -H "${h}" "${baseUrl}/v1/knowledge/ENTRY_ID?network=${workspaceId}"\`\n`
     );
   }
 
@@ -408,7 +455,10 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_get_agents to see other agents.\n' +
     'Use workspace_put_todos to track your progress. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
     'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
-    'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n'
+    'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n' +
+    'Use workspace_send_notification to send a notification to the workspace inbox when you complete a task or have important results.\n' +
+    'Use workspace_write_knowledge to create or update shared knowledge base entries that persist across conversations.\n' +
+    'Use workspace_read_knowledge to read knowledge entries by ID or slug (from @knowledge:slug mentions).\n'
   );
   parts.push(buildBrowserDirective(browserEnabled));
   parts.push(buildCollaborationPrompt());

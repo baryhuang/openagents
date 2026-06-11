@@ -3,9 +3,16 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon } from 'lucide-react';
-import type { WorkspaceAgent } from '@/lib/types';
+import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon, Plus, CalendarClock } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import type { WorkspaceAgent, KnowledgeEntry } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { BookOpen } from 'lucide-react';
 
 export interface PendingFile {
   file: File;
@@ -17,18 +24,20 @@ interface ChatInputProps {
   disabled?: boolean;
   className?: string;
   agents?: WorkspaceAgent[];
+  knowledge?: KnowledgeEntry[];
   draft?: string;
   onDraftChange?: (draft: string) => void;
   onFocusChange?: (focused: boolean) => void;
   /** Auto-focus the textarea when mounted or when this key changes. */
   focusKey?: number;
+  onCreateRoutine?: () => void;
 }
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-export function ChatInput({ onSend, disabled, className, agents = [], draft, onDraftChange, onFocusChange, focusKey }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, className, agents = [], knowledge = [], draft, onDraftChange, onFocusChange, focusKey, onCreateRoutine }: ChatInputProps) {
   const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
@@ -72,6 +81,20 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     (a) => a.status === 'online' && a.agentName.toLowerCase().includes(mentionFilter.toLowerCase())
   );
 
+  const filteredKnowledge = knowledge.filter(
+    (k) => k.title.toLowerCase().includes(mentionFilter.toLowerCase()) ||
+           k.slug.toLowerCase().includes(mentionFilter.toLowerCase())
+  );
+
+  type MentionItem =
+    | { type: 'agent'; agent: WorkspaceAgent }
+    | { type: 'knowledge'; entry: KnowledgeEntry };
+
+  const mentionItems: MentionItem[] = [
+    ...filteredAgents.map((agent): MentionItem => ({ type: 'agent', agent })),
+    ...filteredKnowledge.map((entry): MentionItem => ({ type: 'knowledge', entry })),
+  ];
+
   const addFiles = React.useCallback((files: FileList | File[]) => {
     const newFiles: PendingFile[] = [];
     for (const file of Array.from(files)) {
@@ -113,7 +136,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     }
   };
 
-  const insertMention = (agentName: string) => {
+  const insertMention = (mentionText: string) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
@@ -121,42 +144,48 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     const textBefore = message.slice(0, cursorPos);
     const textAfter = message.slice(cursorPos);
 
-    // Find the @ that triggered the mention
     const atIndex = textBefore.lastIndexOf('@');
     if (atIndex === -1) return;
 
-    const newText = textBefore.slice(0, atIndex) + `@${agentName} ` + textAfter;
+    const newText = textBefore.slice(0, atIndex) + `@${mentionText} ` + textAfter;
     setMessage(newText);
     onDraftChange?.(newText);
     setShowMentions(false);
     setMentionFilter('');
 
-    // Restore focus
     setTimeout(() => {
       textarea.focus();
-      const newCursorPos = atIndex + agentName.length + 2;
+      const newCursorPos = atIndex + mentionText.length + 2;
       textarea.setSelectionRange(newCursorPos, newCursorPos);
     }, 0);
+  };
+
+  const insertMentionItem = (item: MentionItem) => {
+    if (item.type === 'agent') {
+      insertMention(item.agent.agentName);
+    } else {
+      insertMention(`knowledge:${item.entry.slug}`);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Ignore Enter during IME composition (Chinese, Japanese, Korean input)
     if (e.nativeEvent.isComposing || e.key === 'Process') return;
 
-    if (showMentions && filteredAgents.length > 0) {
+    if (showMentions && mentionItems.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setMentionIndex((prev) => (prev + 1) % filteredAgents.length);
+        setMentionIndex((prev) => (prev + 1) % mentionItems.length);
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setMentionIndex((prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length);
+        setMentionIndex((prev) => (prev - 1 + mentionItems.length) % mentionItems.length);
         return;
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        insertMention(filteredAgents[mentionIndex].agentName);
+        insertMentionItem(mentionItems[mentionIndex]);
         return;
       }
       if (e.key === 'Escape') {
@@ -190,8 +219,8 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
     // Detect @mention trigger
     const cursorPos = textarea.selectionStart;
     const textBefore = value.slice(0, cursorPos);
-    const atMatch = textBefore.match(/@([\w-]*)$/);
-    if (atMatch && agents.length > 1) {
+    const atMatch = textBefore.match(/@([\w:-]*)$/);
+    if (atMatch && (agents.length > 1 || knowledge.length > 0)) {
       setMentionFilter(atMatch[1]);
       setMentionIndex(0);
       setShowMentions(true);
@@ -271,14 +300,19 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
       onDrop={handleDrop}
     >
       {/* @mention autocomplete dropdown */}
-      {showMentions && filteredAgents.length > 0 && (
-        <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden">
-          {filteredAgents.map((agent, i) => (
+      {showMentions && mentionItems.length > 0 && (
+        <div className="absolute bottom-full mb-2 left-0 right-0 bg-popover border rounded-lg shadow-lg z-50 overflow-hidden max-h-[280px] overflow-y-auto">
+          {filteredAgents.length > 0 && filteredKnowledge.length > 0 && (
+            <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border">Agents</div>
+          )}
+          {filteredAgents.map((agent) => {
+            const idx = mentionItems.findIndex((m) => m.type === 'agent' && m.agent.agentName === agent.agentName);
+            return (
               <button
                 key={agent.agentName}
                 className={cn(
                   'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-accent transition-colors',
-                  i === mentionIndex && 'bg-accent'
+                  idx === mentionIndex && 'bg-accent'
                 )}
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -300,7 +334,37 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
                   agent.status === 'online' ? 'bg-green-500' : 'bg-zinc-400'
                 )} />
               </button>
-          ))}
+            );
+          })}
+          {filteredKnowledge.length > 0 && (
+            <>
+              {filteredAgents.length > 0 && (
+                <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-t border-border">Knowledge</div>
+              )}
+              {filteredKnowledge.map((entry) => {
+                const idx = mentionItems.findIndex((m) => m.type === 'knowledge' && m.entry.id === entry.id);
+                return (
+                  <button
+                    key={entry.id}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-accent transition-colors',
+                      idx === mentionIndex && 'bg-accent'
+                    )}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertMention(`knowledge:${entry.slug}`);
+                    }}
+                  >
+                    <div className="size-6 rounded-md bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                      <BookOpen className="size-3.5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <span className="font-medium truncate">{entry.title}</span>
+                    <span className="text-[10px] text-muted-foreground ml-auto font-mono shrink-0">@knowledge:{entry.slug}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
 
@@ -358,7 +422,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
             onPaste={handlePaste}
             onFocus={() => { setIsFocused(true); onFocusChange?.(true); }}
             onBlur={() => { setIsFocused(false); onFocusChange?.(false); }}
-            placeholder={agents.length > 1 ? 'Message... (use @ to mention an agent)' : 'Message...'}
+            placeholder={agents.length > 1 || knowledge.length > 0 ? 'Message... (use @ to mention agents or knowledge)' : 'Message...'}
             rows={1}
             disabled={disabled}
             data-chat-input
@@ -418,6 +482,22 @@ export function ChatInput({ onSend, disabled, className, agents = [], draft, onD
             >
               <ImageIcon className="size-4" />
             </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="More actions"
+                >
+                  <Plus className="size-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top" className="min-w-[180px]">
+                <DropdownMenuItem onSelect={() => onCreateRoutine?.()}>
+                  <CalendarClock className="size-4 mr-2" />
+                  Create Routine
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <Button
             variant={hasContent ? 'primary' : 'secondary'}

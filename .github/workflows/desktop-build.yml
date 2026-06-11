@@ -2,6 +2,11 @@ name: Build OpenAgents Launcher
 
 on:
   workflow_dispatch:
+    inputs:
+      sign_windows:
+        description: "Sign Windows EXE/MSI via SignPath (consumes yearly artifact quota)"
+        type: boolean
+        default: false
   push:
     tags:
       - 'launcher-v*'
@@ -16,13 +21,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13
-            arch: x64
+          - arch: x64
             build_script: build:mac:x64
-          - os: macos-latest
-            arch: arm64
+          - arch: arm64
             build_script: build:mac:arm64
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     defaults:
       run:
         working-directory: packages/launcher
@@ -35,6 +38,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('packages/launcher/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-
 
       - name: Install dependencies
         run: |
@@ -66,13 +79,25 @@ jobs:
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          # Pull electron-builder helper binaries (winCodeSign, etc.) and the
+          # electron dist + its SHASUMS checksum from a mirror instead of the
+          # GitHub Release CDN, which intermittently 504s.
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
         run: |
           # Write API key to file for electron-builder notarization
           API_KEY_PATH=$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8
           echo "${{ secrets.APPLE_API_KEY }}" | base64 --decode > "$API_KEY_PATH"
           export APPLE_API_KEY="$API_KEY_PATH"
 
-          npm run ${{ matrix.build_script }}
+          # Retry to ride out transient electron-builder binary-download 504s.
+          for i in 1 2 3; do
+            npm run ${{ matrix.build_script }} && exit 0
+            echo "::warning::macOS build attempt $i failed (likely a transient electron-builder binary download); retrying in 25s…"
+            sleep 25
+          done
+          echo "macOS build failed after 3 attempts." >&2
+          exit 1
 
       - name: Verify macOS artifacts
         run: |
@@ -109,13 +134,37 @@ jobs:
         with:
           node-version: 22
 
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('packages/launcher/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-
+
       - name: Install dependencies
         run: |
           npm cache clean --force
           npm install
 
       - name: Build Windows app
-        run: npm run build:win
+        shell: bash
+        env:
+          # Avoid the GitHub Release CDN (intermittent 504) for builder binaries
+          # and the electron dist + checksum.
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
+        run: |
+          # Retry to ride out transient electron-builder binary-download 504s.
+          for i in 1 2 3; do
+            npm run build:win && exit 0
+            echo "::warning::Windows build attempt $i failed (likely a transient electron-builder binary download); retrying in 25s…"
+            sleep 25
+          done
+          echo "Windows build failed after 3 attempts." >&2
+          exit 1
 
       - name: Upload unsigned artifacts
         uses: actions/upload-artifact@v4
@@ -129,7 +178,7 @@ jobs:
   sign-windows:
     needs: build-windows
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/launcher-v') || startsWith(github.ref, 'refs/tags/desktop-v') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.sign_windows
     env:
       SIGNPATH_API: https://app.signpath.io/API/v1/298e12fc-6d10-491f-814d-3418cd924ec8
 
@@ -242,13 +291,38 @@ jobs:
         with:
           node-version: 22
 
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('packages/launcher/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-
+
       - name: Install dependencies
         run: |
           npm cache clean --force
           npm install
 
       - name: Build Linux app
-        run: npm run build:linux
+        shell: bash
+        env:
+          # The .deb target downloads fpm and AppImage its runtime from the
+          # GitHub Release CDN, which intermittently 504s — use a mirror instead
+          # (also mirror the electron dist + its checksum).
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
+        run: |
+          # Retry to ride out transient electron-builder binary-download 504s.
+          for i in 1 2 3; do
+            npm run build:linux && exit 0
+            echo "::warning::Linux build attempt $i failed (likely a transient electron-builder binary download); retrying in 25s…"
+            sleep 25
+          done
+          echo "Linux build failed after 3 attempts." >&2
+          exit 1
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -260,16 +334,40 @@ jobs:
           if-no-files-found: warn
 
   release:
-    needs: [build-macos, sign-windows, build-linux]
+    needs: [build-macos, build-windows, sign-windows, build-linux]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/launcher-v') || startsWith(github.ref, 'refs/tags/desktop-v')
+    if: always() && (startsWith(github.ref, 'refs/tags/launcher-v') || startsWith(github.ref, 'refs/tags/desktop-v')) && !failure() && !cancelled()
 
     steps:
-      - name: Download all artifacts
+      - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: launcher-macos-*
           path: artifacts
           merge-multiple: true
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: launcher-linux
+          path: artifacts
+
+      - name: Download signed Windows artifacts
+        if: needs.sign-windows.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: launcher-windows
+          path: artifacts
+
+      - name: Download unsigned Windows artifacts (signing skipped)
+        if: needs.sign-windows.result != 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: launcher-windows-unsigned
+          path: artifacts
+
+      - name: List release artifacts
+        run: ls -la artifacts/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

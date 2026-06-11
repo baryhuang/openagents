@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('api', {
   uninstallAgentType: (type: string) => ipcRenderer.invoke('agents:uninstall-type', type),
   uninstallAgentTypeStreaming: (type: string) => ipcRenderer.invoke('agents:uninstall-type-streaming', type),
   checkAgentType: (type: string) => ipcRenderer.invoke('agents:check-type', type),
-  getCatalog: () => ipcRenderer.invoke('agents:catalog'),
+  getCatalog: (force?: boolean) => ipcRenderer.invoke('agents:catalog', !!force),
   getInstalledAgents: () => ipcRenderer.invoke('agents:installed-list'),
   checkAgentUpdates: () => ipcRenderer.invoke('agents:check-updates'),
   rollbackAgentType: (type: string) => ipcRenderer.invoke('agents:rollback', type),
@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('api', {
   getEnvFields: (type: string) => ipcRenderer.invoke('agents:env-fields', type),
   getAgentEnv: (type: string) => ipcRenderer.invoke('agents:get-env', type),
   saveAgentEnv: (type: string, env: unknown) => ipcRenderer.invoke('agents:save-env', type, env),
+  deleteAgentEnv: (type: string) => ipcRenderer.invoke('agents:delete-env', type),
   getAgentInstanceEnv: (name: string) => ipcRenderer.invoke('agents:get-instance-env', name),
   saveAgentInstanceEnv: (name: string, env: unknown) => ipcRenderer.invoke('agents:save-instance-env', name, env),
   testLLM: (env: unknown) => ipcRenderer.invoke('agents:test-llm', env),
@@ -51,6 +52,10 @@ contextBridge.exposeInMainWorld('api', {
   removeWorkspace: (slug: string) => ipcRenderer.invoke('workspace:remove', slug),
   listWorkspaces: () => ipcRenderer.invoke('workspace:list'),
   createWorkspace: (name: string) => ipcRenderer.invoke('workspace:create', name),
+  getOnboardingAgents: () => ipcRenderer.invoke('onboarding:agents'),
+  consumeOnboardingReset: () => ipcRenderer.invoke('onboarding:consume-reset'),
+  provisionFirstAgent: (opts: { agentType: string; agentName: string; workspaceName?: string | null }) =>
+    ipcRenderer.invoke('onboarding:provision', opts),
   registerWorkspaceFromToken: (input: { url?: string; token?: string; slug?: string }) =>
     ipcRenderer.invoke('workspace:register-from-token', input),
 
@@ -64,6 +69,9 @@ contextBridge.exposeInMainWorld('api', {
   showPath: (p: string) => ipcRenderer.invoke('paths:show', p),
 
   healthCheck: (type: string) => ipcRenderer.invoke('agents:health-check', type),
+  refreshLogin: (type: string) => ipcRenderer.invoke('agents:login-refresh', type),
+  clearLoginKey: (type: string, agentName?: string) =>
+    ipcRenderer.invoke('agents:login-clear-key', type, agentName),
 
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   shellExec: (cmd: string) => ipcRenderer.invoke('shell:exec', cmd),

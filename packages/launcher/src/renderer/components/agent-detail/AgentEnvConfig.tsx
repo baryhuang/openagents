@@ -36,9 +36,21 @@ export function AgentEnvConfig({
   if (fields.length === 0) return null
 
   async function saveEnv(): Promise<void> {
+    // The inputs display `f.default` as a fallback, but an untouched field is
+    // absent from `values` — fold defaults in so a pre-filled value is actually
+    // persisted, then enforce required fields against the resolved payload.
+    const payload: Record<string, string> = {}
+    for (const f of fields) {
+      payload[f.name] = (values[f.name] ?? f.default ?? "").trim()
+    }
+    const missing = fields.find((f) => f.required && !payload[f.name])
+    if (missing) {
+      showToast(`${missing.description || missing.name} is required`, "warning")
+      return
+    }
     setSaving(true)
     try {
-      await window.api.saveAgentEnv(agentName, values)
+      await window.api.saveAgentEnv(agentName, payload)
       showToast("Configuration saved", "success")
     } catch (e: unknown) {
       showToast(`Error: ${(e as Error).message}`, "error")

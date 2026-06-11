@@ -17,7 +17,7 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
             "flex w-full rounded-sm border border-transparent",
             "bg-(--bg-input) text-(--text-primary) pl-[14px] pr-9 py-[9px] text-[13px] outline-none",
             "placeholder:text-(--text-tertiary) transition-all duration-150",
-            "focus:border-(--accent) focus:bg-white focus:shadow-[0_0_0_3px_var(--accent-bg)]",
+            "focus:border-(--accent) focus:bg-(--bg-secondary) focus:shadow-[0_0_0_3px_var(--accent-bg)]",
             "disabled:cursor-not-allowed disabled:opacity-50",
             className,
           )}

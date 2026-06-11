@@ -649,7 +649,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                   type="button"
                   className="bg-transparent border-0 p-0 text-(--accent) underline cursor-pointer"
                   onClick={() => {
-                    window.api.openExternal("https://docs.openagents.com")
+                    window.api.openExternal("https://openagents.org/docs")
                   }}
                 >
                   Documentation

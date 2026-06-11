@@ -9,6 +9,7 @@ import { useWorkspace } from '@/lib/workspace-context';
 import { useMessagePolling } from '@/hooks/use-polling';
 import { useComposingSignal } from '@/hooks/use-composing-signal';
 import { workspaceApi } from '@/lib/api';
+import { capture } from '@/lib/analytics';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,10 +18,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, CalendarClock, Zap, Eye, Square, ChevronLeft, X, Plus, Globe, Share2 } from 'lucide-react';
+import { ShareDialog } from './share-dialog';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { CreateRoutineDialog } from '@/components/routines/create-routine-dialog';
 import { eventToMessage } from '@/lib/types';
 import type { WorkspaceMessage } from '@/lib/types';
 
@@ -84,10 +87,12 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus } = useWorkspace();
+  const { agents, currentUser, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus, createRoutine, knowledge } = useWorkspace();
+  const [showCreateRoutine, setShowCreateRoutine] = useState(false);
   const {
     isMobile,
     openMobileList,
+    viewMode,
     splitBrowser,
     setSplitBrowser,
     showBrowserPreview,
@@ -147,6 +152,7 @@ export function ChatView() {
   });
   const { notifyFocus, notifyBlur, notifyTyping } = useComposingSignal(currentSessionId);
   const [showAllSteps, setShowAllSteps] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -315,6 +321,7 @@ export function ChatView() {
   const handleSend = useCallback(
     async (content: string, mentions: string[] = [], files: PendingFile[] = []) => {
       if (!currentSessionId) return;
+      if (!currentUser.id || !currentUser.name.trim()) return;
 
       // Create optimistic messages for instant feedback
       const timestamp = Date.now();
@@ -322,8 +329,9 @@ export function ChatView() {
       const userOptimisticMsg: WorkspaceMessage = {
         messageId: `optimistic-user-${timestamp}`,
         sessionId: currentSessionId,
-        senderName: 'You',
-        senderType: 'user',
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        senderType: 'human',
         content: userContent,
         messageType: 'chat',
         mentions: [],
@@ -366,10 +374,16 @@ export function ChatView() {
         await workspaceApi.sendMessage(
           currentSessionId,
           content || (attachments ? attachments.map((a) => a.filename).join(', ') : ''),
-          'user',
+          currentUser.name,
           mentions.length > 0 ? mentions : undefined,
           attachments,
+          currentUser.id,
         );
+        capture('message_sent', {
+          has_attachments: (attachments?.length ?? 0) > 0,
+          has_mentions: mentions.length > 0,
+          attachment_count: attachments?.length ?? 0,
+        });
         forceRefresh();
       } catch {
         // Error is visible via missing message
@@ -377,19 +391,20 @@ export function ChatView() {
         setOptimisticMessages([]);
       }
     },
-    [currentSessionId, forceRefresh, agents]
+    [currentSessionId, currentUser.id, currentUser.name, forceRefresh, agents]
   );
 
   const hasStatusMessages = displayMessages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
 
   if (!currentSessionId) {
+    const isRoutinesView = viewMode === 'routines';
     return (
       <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
         <div className="opacity-20 mb-3">
-          <MessageSquare className="size-10" />
+          {isRoutinesView ? <CalendarClock className="size-10" /> : <MessageSquare className="size-10" />}
         </div>
-        <p className="text-sm font-medium">Select a thread</p>
-        <p className="text-xs mt-1">Choose a thread from the list or create a new one.</p>
+        <p className="text-sm font-medium">{isRoutinesView ? 'No routines yet' : 'Select a thread'}</p>
+        <p className="text-xs mt-1">{isRoutinesView ? 'Create a routine to get started.' : 'Choose a thread from the list or create a new one.'}</p>
       </div>
     );
   }
@@ -581,6 +596,17 @@ export function ChatView() {
             </Button>
           )}
 
+          {/* Share conversation */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShareDialogOpen(true)}
+            className="gap-1.5 h-7 text-xs font-medium"
+            title="Share conversation"
+          >
+            <Share2 className="size-3.5" />
+          </Button>
+
           {/* Manage agents dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -679,13 +705,37 @@ export function ChatView() {
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
+                knowledge={knowledge}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}
                 focusKey={focusKey}
+                onCreateRoutine={() => setShowCreateRoutine(true)}
+                disabled={!currentUser.name.trim()}
               />
             </div>
           </div>
+        )}
+
+        <CreateRoutineDialog
+          open={showCreateRoutine}
+          onOpenChange={setShowCreateRoutine}
+          agents={agents}
+          conversationHistory={(() => {
+            if (!messages.length) return undefined;
+            const recent = messages.filter((m) => m.messageType === 'chat').slice(-20);
+            if (!recent.length) return undefined;
+            return recent.map((m) => `${m.senderName}: ${m.content}`).join('\n');
+          })()}
+          onCreateRoutine={createRoutine}
+        />
+
+        {currentSessionId && (
+          <ShareDialog
+            open={shareDialogOpen}
+            onOpenChange={setShareDialogOpen}
+            sessionId={currentSessionId}
+          />
         )}
       </div>
     </div>

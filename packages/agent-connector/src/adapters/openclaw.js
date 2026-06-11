@@ -354,22 +354,38 @@ class OpenClawAdapter extends BaseAdapter {
         } catch {}
       }, 500);
 
+      // 'error' and 'exit' can BOTH fire for a single failed spawn. Closing
+      // stderrFd twice throws EBADF from inside the event callback, which —
+      // with no daemon-level handler — used to crash the entire daemon. Guard
+      // so the fd is closed once and the promise settles once.
+      let settled = false;
+      const closeFd = () => { try { fs.closeSync(stderrFd); } catch {} };
+
       const killTimeout = setTimeout(() => {
-        proc.kill();
+        if (settled) return;
+        settled = true;
+        clearInterval(pollInterval);
+        closeFd();
+        try { fs.unlinkSync(stderrFile); } catch {}
+        try { proc.kill(); } catch {}
         reject(new Error('CLI timed out after 600 seconds'));
       }, 600000);
 
       proc.on('error', (err) => {
+        if (settled) return;
+        settled = true;
         clearInterval(pollInterval);
         clearTimeout(killTimeout);
-        fs.closeSync(stderrFd);
+        closeFd();
         try { fs.unlinkSync(stderrFile); } catch {}
         reject(err);
       });
       proc.on('exit', (code) => {
+        if (settled) return;
+        settled = true;
         clearInterval(pollInterval);
         clearTimeout(killTimeout);
-        fs.closeSync(stderrFd);
+        closeFd();
         // Read full stderr content (contains JSON output + trace lines)
         let stderrContent = '';
         try {

@@ -17,7 +17,7 @@ const { execSync, spawnSync } = require('child_process');
 
 const PKG_NAME = '@openagents-org/agent-launcher';
 const CACHE_FILE = path.join(os.homedir(), '.openagents', '.update-check.json');
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function currentVersion() {
   return require('../package.json').version;
@@ -104,32 +104,80 @@ function detectInstallPrefix() {
   return null;
 }
 
-function findNpmBin() {
-  const nodeDir = path.dirname(process.execPath);
-  for (const name of ['npm', 'npm.cmd']) {
+/**
+ * Locate the npm executable next to the running node binary, falling back to
+ * a PATH lookup. On Windows the runnable file is `npm.cmd`; the extensionless
+ * `npm` shipped alongside it is a Unix shell script that cmd.exe / PowerShell
+ * cannot execute, so it must be checked AFTER `npm.cmd`. The opts are injectable
+ * to keep this testable across platforms.
+ */
+function findNpmBin(opts = {}) {
+  const platform = opts.platform || process.platform;
+  const nodeDir = opts.nodeDir || path.dirname(process.execPath);
+  const exists = opts.exists || fs.existsSync;
+  const names = platform === 'win32' ? ['npm.cmd', 'npm'] : ['npm'];
+  for (const name of names) {
     const candidate = path.join(nodeDir, name);
-    if (fs.existsSync(candidate)) return candidate;
+    if (exists(candidate)) return candidate;
   }
-  try {
-    return execSync(process.platform === 'win32' ? 'where npm' : 'which npm', {
+  // PATH fallback (injectable so tests can exercise the hard fallback
+  // deterministically regardless of the host OS).
+  const lookup = opts.lookup || (() =>
+    execSync(platform === 'win32' ? 'where npm' : 'which npm', {
       encoding: 'utf-8', timeout: 3000,
-    }).trim().split(/\r?\n/)[0];
-  } catch { return 'npm'; }
+    }).trim().split(/\r?\n/)[0]);
+  try {
+    return lookup() || (platform === 'win32' ? 'npm.cmd' : 'npm');
+  } catch { return platform === 'win32' ? 'npm.cmd' : 'npm'; }
 }
 
 /**
  * Run npm install to update to the latest version. Blocking.
- * Returns true on success.
+ * Returns true on success. `opts` are injectable for testing.
  */
-function runUpdate() {
-  const prefix = detectInstallPrefix();
-  const npmBin = findNpmBin();
-  const args = ['install', '--no-save', `${PKG_NAME}@latest`];
+function runUpdate(opts = {}) {
+  const platform = opts.platform || process.platform;
+  const spawn = opts.spawn || spawnSync;
+  const npmBin = opts.npmBin || findNpmBin({ platform });
+  const prefix = opts.prefix !== undefined ? opts.prefix : detectInstallPrefix();
+  // Use a GLOBAL install (-g). A LOCAL install (`npm install <pkg> --prefix
+  // <dir>`) treats <dir> as a project root and prunes every node_modules entry
+  // not reachable from its package.json. When the prefix is the portable node
+  // dir, that deletes node's own bundled npm/corepack (and other agent runtimes),
+  // breaking every subsequent `agn` command. A global install only adds/updates
+  // the named package into <prefix>/node_modules and never prunes its siblings.
+  const args = ['install', '-g', `${PKG_NAME}@latest`];
   if (prefix) args.push('--prefix', prefix);
-  else args.push('-g');
+
+  // On Windows, npm.cmd is a batch file and must be invoked through cmd.exe.
+  // Passing the args via cmd.exe with shell:false lets Node quote paths that
+  // contain spaces (e.g. C:\Program Files\nodejs\npm.cmd) correctly.
+  let cmd, cmdArgs;
+  if (platform === 'win32') {
+    cmd = process.env.ComSpec || 'cmd.exe';
+    cmdArgs = ['/d', '/s', '/c', npmBin, ...args];
+  } else {
+    cmd = npmBin;
+    cmdArgs = args;
+  }
+
   process.stderr.write(`[launcher] Running: ${npmBin} ${args.join(' ')}\n`);
-  const r = spawnSync(npmBin, args, { stdio: 'inherit' });
-  return r.status === 0;
+  const r = spawn(cmd, cmdArgs, { stdio: 'inherit' });
+
+  // spawn failed to even start the process (ENOENT / EINVAL / EACCES ...).
+  if (r && r.error) {
+    process.stderr.write(`[launcher] Failed to run npm (${cmd}): ${r.error.message}\n`);
+    return false;
+  }
+  // npm started but exited non-zero. Its own stderr was already streamed via
+  // stdio:'inherit'; surface the exit code so the failure isn't silent.
+  if (!r || r.status !== 0) {
+    const code = r ? r.status : 'unknown';
+    const sig = r && r.signal ? ` (signal ${r.signal})` : '';
+    process.stderr.write(`[launcher] npm exited with code ${code}${sig}\n`);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -161,8 +209,8 @@ function promptYes(question, timeoutMs = 30000) {
 }
 
 /**
- * Check, notify, and offer to update. Exits the process on successful update.
- * Safe to call at the top of any user-facing CLI command.
+ * Check and print a warning if a newer version is available.
+ * Never prompts or auto-updates — users run `agn update` explicitly.
  */
 async function notifyAndMaybeUpdate() {
   let info;
@@ -170,34 +218,15 @@ async function notifyAndMaybeUpdate() {
   if (!info || !info.isNewer) return;
 
   process.stderr.write(
-    `\n[launcher] Update available: ${info.current} → ${info.latest}\n`
+    `\n[launcher] Update available: ${info.current} → ${info.latest}\n` +
+    '[launcher] Run `agn update` to upgrade.\n\n'
   );
-
-  const interactive = process.stdin.isTTY && process.stdout.isTTY;
-  if (!interactive) {
-    process.stderr.write(
-      '[launcher] Run `agn update` (or re-run install.sh) to upgrade.\n\n'
-    );
-    return;
-  }
-
-  const accepted = await promptYes('[launcher] Update now? [Y/n] ');
-  if (!accepted) {
-    process.stderr.write('[launcher] Skipped. Run `agn update` later to upgrade.\n\n');
-    return;
-  }
-
-  const ok = runUpdate();
-  if (ok) {
-    process.stderr.write(`[launcher] Updated to ${info.latest}. Re-run your command.\n`);
-    process.exit(0);
-  }
-  process.stderr.write('[launcher] Update failed — continuing with current version.\n\n');
 }
 
 module.exports = {
   checkForUpdate,
   notifyAndMaybeUpdate,
   runUpdate,
+  findNpmBin,
   currentVersion,
 };

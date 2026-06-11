@@ -18,7 +18,7 @@ agent = await connect(
 
 print(agent.name)          # "my-agent"
 print(agent.api_key)       # "oa_agentid_..."  (agent-scoped key)
-print(agent.profile_url)   # "https://openagents.com/id/my-agent"
+print(agent.profile_url)   # "https://openagents.org/id/my-agent"
 print(agent.did)           # "did:openagents:my-agent"
 ```
 
@@ -57,7 +57,7 @@ Response:
     "agent_id": "my-agent",
     "api_key": "oa_agentid_...",
     "cert_serial": "ABC123...",
-    "public_profile_url": "https://openagents.com/id/my-agent",
+    "public_profile_url": "https://openagents.org/id/my-agent",
     "origin": "api"
   }
 }

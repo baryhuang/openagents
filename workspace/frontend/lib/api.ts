@@ -3,12 +3,17 @@ import type {
   ApiResponse,
   BrowserPersistentContext,
   BrowserTab,
+  CloudAgentConfig,
+  CloudAgentProvider,
   DMConversation,
   EventPollResponse,
+  KnowledgeEntry,
   MessagePollResponse,
   NetworkDiscovery,
   NetworkProfile,
+  NotificationItem,
   ONMEvent,
+  ShareSummary,
   TimerItem,
   TodoItem,
   Workspace,
@@ -51,6 +56,34 @@ class WorkspaceApi {
     this.bearerToken = bearerToken;
   }
 
+  getSSEUrl(channelName: string): string {
+    const params = new URLSearchParams({
+      network: this.workspaceId,
+      channel: channelName,
+    });
+    if (this.token) params.set('token', this.token);
+    return `${API_URL}/v1/events/stream?${params}`;
+  }
+
+  /** Whether configure() has run with a non-empty workspace id. */
+  isConfigured(): boolean {
+    return this.workspaceId !== '';
+  }
+
+  /**
+   * Guard against firing requests before configure() has populated
+   * workspaceId. configure() runs in a useEffect that fires *after* the
+   * first render, so any event sent during initial mount would otherwise
+   * POST `network: ""` and get a 400 ("Missing required field: network")
+   * from the backend. Throw a clear error instead of a confusing 400.
+   */
+  private requireWorkspace(): string {
+    if (this.workspaceId === '') {
+      throw new Error('WorkspaceApi not configured yet (workspaceId is empty)');
+    }
+    return this.workspaceId;
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const authHeaders: Record<string, string> = {};
     if (this.token) {
@@ -88,7 +121,7 @@ class WorkspaceApi {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`);
   }
 
-  async updateWorkspace(updates: { name?: string; settings?: Record<string, unknown> }): Promise<Workspace> {
+  async updateWorkspace(updates: { name?: string; settings?: Record<string, unknown>; browserfabric_api_key?: string }): Promise<Workspace> {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
@@ -101,10 +134,28 @@ class WorkspaceApi {
     });
   }
 
-  async updateMember(agentName: string, updates: { description?: string; role?: string }): Promise<unknown> {
+  async updateMember(agentName: string, updates: { description?: string; role?: string; enabled_skills?: Record<string, boolean> }): Promise<unknown> {
     return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
+    });
+  }
+
+  async getSkillCatalog(): Promise<import('./types').SkillCatalogEntry[]> {
+    return this.request<import('./types').SkillCatalogEntry[]>('/v1/workspaces/skill-catalog');
+  }
+
+  async installSkill(agentName: string, skillId: string): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}/skills/install`, {
+      method: 'POST',
+      body: JSON.stringify({ skill_id: skillId }),
+    });
+  }
+
+  async uninstallSkill(agentName: string, skillId: string): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}/skills/uninstall`, {
+      method: 'POST',
+      body: JSON.stringify({ skill_id: skillId }),
     });
   }
 
@@ -199,14 +250,17 @@ class WorkspaceApi {
     senderName = 'user',
     mentions?: string[],
     attachments?: { fileId: string; filename: string; contentType: string; url: string }[],
+    senderId?: string,
   ): Promise<ONMEvent> {
     return this.sendEvent({
       type: 'workspace.message.posted',
-      source: `human:${senderName}`,
+      source: `human:${senderId || senderName}`,
       target: `channel/${channelName}`,
       payload: {
         content,
         sender_type: 'human',
+        ...(senderId ? { sender_id: senderId } : {}),
+        sender_name: senderName,
         ...(mentions && mentions.length > 0 ? { mentions } : {}),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       },
@@ -319,6 +373,102 @@ class WorkspaceApi {
   /** Delete a file. */
   async deleteFile(fileId: string): Promise<void> {
     await this.request<unknown>(`/v1/files/${fileId}`, { method: 'DELETE' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Knowledge Base
+  // ---------------------------------------------------------------------------
+
+  async listKnowledge(): Promise<{ entries: KnowledgeEntry[]; total: number }> {
+    const raw = await this.request<{ entries: Record<string, unknown>[]; total: number }>(
+      `/v1/knowledge?network=${this.workspaceId}`
+    );
+    return {
+      entries: (raw.entries || []).map((e): KnowledgeEntry => ({
+        id: e.id as string,
+        slug: e.slug as string,
+        title: e.title as string,
+        description: (e.description ?? null) as string | null,
+        contentSize: (e.content_size ?? null) as number | null,
+        createdBy: (e.created_by || '') as string,
+        updatedBy: (e.updated_by ?? null) as string | null,
+        status: (e.status || 'active') as string,
+        createdAt: (e.created_at || null) as string | null,
+        updatedAt: (e.updated_at || null) as string | null,
+      })),
+      total: raw.total || 0,
+    };
+  }
+
+  async getKnowledgeEntry(entryId: string): Promise<KnowledgeEntry & { content: string }> {
+    const raw = await this.request<Record<string, unknown>>(`/v1/knowledge/${entryId}`);
+    return {
+      id: raw.id as string,
+      slug: raw.slug as string,
+      title: raw.title as string,
+      description: (raw.description ?? null) as string | null,
+      contentSize: (raw.content_size ?? null) as number | null,
+      createdBy: (raw.created_by || '') as string,
+      updatedBy: (raw.updated_by ?? null) as string | null,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+      updatedAt: (raw.updated_at || null) as string | null,
+      content: (raw.content || '') as string,
+    };
+  }
+
+  async createKnowledge(params: { title: string; content: string; description?: string }): Promise<KnowledgeEntry> {
+    const raw = await this.request<Record<string, unknown>>('/v1/knowledge', {
+      method: 'POST',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        title: params.title,
+        content: params.content,
+        description: params.description || null,
+        source: 'human:user',
+      }),
+    });
+    return {
+      id: raw.id as string,
+      slug: raw.slug as string,
+      title: raw.title as string,
+      description: (raw.description ?? null) as string | null,
+      contentSize: (raw.content_size ?? null) as number | null,
+      createdBy: (raw.created_by || '') as string,
+      updatedBy: (raw.updated_by ?? null) as string | null,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+      updatedAt: (raw.updated_at || null) as string | null,
+    };
+  }
+
+  async updateKnowledge(entryId: string, params: { title?: string; content?: string; description?: string }): Promise<KnowledgeEntry> {
+    const raw = await this.request<Record<string, unknown>>(`/v1/knowledge/${entryId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        ...params.title !== undefined && { title: params.title },
+        ...params.content !== undefined && { content: params.content },
+        ...params.description !== undefined && { description: params.description },
+        source: 'human:user',
+      }),
+    });
+    return {
+      id: raw.id as string,
+      slug: raw.slug as string,
+      title: raw.title as string,
+      description: (raw.description ?? null) as string | null,
+      contentSize: (raw.content_size ?? null) as number | null,
+      createdBy: (raw.created_by || '') as string,
+      updatedBy: (raw.updated_by ?? null) as string | null,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+      updatedAt: (raw.updated_at || null) as string | null,
+    };
+  }
+
+  async deleteKnowledge(entryId: string): Promise<void> {
+    await this.request<unknown>(`/v1/knowledge/${entryId}?network=${this.workspaceId}`, { method: 'DELETE' });
   }
 
   // ---------------------------------------------------------------------------
@@ -461,6 +611,7 @@ class WorkspaceApi {
       serverHost: a.server_host || null,
       workingDir: a.working_dir || null,
       description: a.description || null,
+      enabledSkills: a.enabled_skills || null,
       status: a.status,
       lastHeartbeatAt: null,
       joinedAt: null,
@@ -480,6 +631,72 @@ class WorkspaceApi {
     await this.request<unknown>('/v1/remove', {
       method: 'POST',
       body: JSON.stringify({ agent_name: agentName, network: this.workspaceId }),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cloud agents
+  // ---------------------------------------------------------------------------
+
+  async getCloudProviders(): Promise<CloudAgentProvider[]> {
+    const res = await this.request<{ providers: CloudAgentProvider[] }>('/v1/cloud-agents/providers');
+    return res.providers;
+  }
+
+  async listCloudAgents(): Promise<CloudAgentConfig[]> {
+    const res = await this.request<{ cloud_agents: CloudAgentConfig[] }>(
+      `/v1/cloud-agents?network=${this.workspaceId}`
+    );
+    return res.cloud_agents;
+  }
+
+  async addCloudAgent(params: {
+    agentName: string;
+    provider: string;
+    model: string;
+    apiKey: string;
+    baseUrl?: string;
+    systemPrompt?: string;
+    maxTokens?: number;
+  }): Promise<CloudAgentConfig> {
+    return this.request<CloudAgentConfig>('/v1/cloud-agents', {
+      method: 'POST',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        agent_name: params.agentName,
+        provider: params.provider,
+        model: params.model,
+        api_key: params.apiKey,
+        base_url: params.baseUrl || null,
+        system_prompt: params.systemPrompt || null,
+        max_tokens: params.maxTokens || null,
+      }),
+    });
+  }
+
+  async updateCloudAgent(agentName: string, updates: {
+    model?: string;
+    apiKey?: string;
+    systemPrompt?: string;
+    maxTokens?: number;
+    status?: string;
+  }): Promise<CloudAgentConfig> {
+    return this.request<CloudAgentConfig>(`/v1/cloud-agents/${agentName}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        ...updates.model !== undefined && { model: updates.model },
+        ...updates.apiKey !== undefined && { api_key: updates.apiKey },
+        ...updates.systemPrompt !== undefined && { system_prompt: updates.systemPrompt },
+        ...updates.maxTokens !== undefined && { max_tokens: updates.maxTokens },
+        ...updates.status !== undefined && { status: updates.status },
+      }),
+    });
+  }
+
+  async removeCloudAgent(agentName: string): Promise<void> {
+    await this.request<unknown>(`/v1/cloud-agents/${agentName}?network=${this.workspaceId}`, {
+      method: 'DELETE',
     });
   }
 
@@ -534,9 +751,10 @@ class WorkspaceApi {
     metadata?: Record<string, unknown>;
     visibility?: string;
   }): Promise<ONMEvent> {
+    const network = this.requireWorkspace();
     return this.request<ONMEvent>('/v1/events', {
       method: 'POST',
-      body: JSON.stringify({ ...event, network: this.workspaceId }),
+      body: JSON.stringify({ ...event, network }),
     });
   }
 
@@ -551,7 +769,7 @@ class WorkspaceApi {
     sort?: 'asc' | 'desc';
     limit?: number;
   } = {}): Promise<EventPollResponse> {
-    const params = new URLSearchParams({ network: this.workspaceId });
+    const params = new URLSearchParams({ network: this.requireWorkspace() });
     if (opts.after) params.set('after', opts.after);
     if (opts.before) params.set('before', opts.before);
     if (opts.target) params.set('target', opts.target);
@@ -721,8 +939,116 @@ class WorkspaceApi {
     };
   }
 
+  async createRoutine(params: {
+    name: string;
+    message: string;
+    source: string;
+    hour?: number;
+    minute?: number;
+    days?: number[];
+    interval_minutes?: number;
+    conversation_history?: string;
+  }): Promise<import('./types').RoutineItem> {
+    const raw = await this.request<Record<string, unknown>>('/v1/routines', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...params,
+        network: this.workspaceId,
+      }),
+    });
+    return {
+      id: raw.id as string,
+      name: raw.name as string,
+      message: raw.message as string,
+      context: (raw.context || null) as string | null,
+      scheduleHour: (raw.schedule_hour || 0) as number,
+      scheduleMinute: (raw.schedule_minute || 0) as number,
+      scheduleDays: (raw.schedule_days || null) as number[] | null,
+      scheduleIntervalMinutes: (raw.schedule_interval_minutes || null) as number | null,
+      timezone: (raw.timezone || 'UTC') as string,
+      nextFiresAt: (raw.next_fires_at || '') as string,
+      lastFiredAt: (raw.last_fired_at || null) as string | null,
+      status: (raw.status || 'active') as string,
+      createdBy: (raw.created_by || '') as string,
+      channelName: (raw.channel_name || '') as string,
+      createdAt: (raw.created_at || null) as string | null,
+    };
+  }
+
   async cancelRoutine(routineId: string): Promise<void> {
     await this.request<unknown>(`/v1/routines/${routineId}`, { method: 'DELETE' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notifications / Inbox
+  // ---------------------------------------------------------------------------
+
+  async listNotifications(opts?: { status?: string; isRead?: boolean; limit?: number }): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
+    const params = new URLSearchParams({ network: this.workspaceId });
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.isRead !== undefined) params.set('is_read', String(opts.isRead));
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    const raw = await this.request<{ notifications: Record<string, unknown>[]; unread_count: number }>(`/v1/notifications?${params}`);
+    return {
+      notifications: (raw.notifications || []).map((n): NotificationItem => ({
+        id: n.id as string,
+        title: n.title as string,
+        message: n.message as string,
+        priority: (n.priority || 'normal') as NotificationItem['priority'],
+        isRead: !!(n.is_read),
+        createdBy: (n.created_by || '') as string,
+        channelName: (n.channel_name ?? null) as string | null,
+        threadId: (n.thread_id ?? null) as string | null,
+        linkUrl: (n.link_url ?? null) as string | null,
+        status: (n.status || 'active') as string,
+        createdAt: (n.created_at || null) as string | null,
+        readAt: (n.read_at || null) as string | null,
+      })),
+      unreadCount: raw.unread_count || 0,
+    };
+  }
+
+  async markNotificationRead(notificationId: string): Promise<void> {
+    await this.request<unknown>(`/v1/notifications/${notificationId}/read`, { method: 'PATCH' });
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    await this.request<unknown>(`/v1/notifications/read-all?network=${this.workspaceId}`, { method: 'PATCH' });
+  }
+
+  async dismissNotification(notificationId: string): Promise<void> {
+    await this.request<unknown>(`/v1/notifications/${notificationId}`, { method: 'DELETE' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shares (conversation snapshots)
+  // ---------------------------------------------------------------------------
+
+  async createShare(channelName: string, createdBy?: string): Promise<ShareSummary> {
+    const raw = await this.request<Record<string, unknown>>('/v1/shares', {
+      method: 'POST',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        channel: channelName,
+        created_by: createdBy || 'human:user',
+      }),
+    });
+    return {
+      id: raw.id as string,
+      workspaceId: (raw.workspace_id || '') as string,
+      channelName: (raw.channel_name || '') as string,
+      title: (raw.title || null) as string | null,
+      shareToken: raw.share_token as string,
+      messageCount: (raw.message_count || 0) as number,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+    };
+  }
+
+  async deleteShare(shareId: string): Promise<void> {
+    await this.request<unknown>(`/v1/shares/${shareId}?network=${this.workspaceId}`, {
+      method: 'DELETE',
+    });
   }
 
   async cancelChannelTodos(channel: string, source: string): Promise<void> {
