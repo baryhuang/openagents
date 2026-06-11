@@ -18,8 +18,13 @@ const { execSync, spawn } = require('child_process');
 const BaseAdapter = require('./base');
 const { formatAttachmentsForPrompt } = require('./utils');
 const { buildOpenCodeSkillMd, buildOpenCodeSystemPrompt } = require('./workspace-prompt');
+const { whichBinary, getEnhancedEnv } = require('../paths');
 
 const IS_WINDOWS = process.platform === 'win32';
+
+// Max wall-clock for a single `opencode run`. When it fires, Node kills the
+// child with SIGTERM, the 'close' handler sees signal='SIGTERM' / code=null.
+const TIMEOUT_MS = 300000; // 5 minutes
 
 class OpenCodeAdapter extends BaseAdapter {
   /**
@@ -153,25 +158,55 @@ class OpenCodeAdapter extends BaseAdapter {
   // ------------------------------------------------------------------
 
   _findOpencodeBinary() {
-    // Tier 1: PATH
+    const home = os.homedir();
+    const ext = IS_WINDOWS ? '.cmd' : '';
+
+    // Tier 0: the actual native binary the opencode-ai package ships, NOT the
+    // npm `.cmd`/`.bin` shim. opencode-ai's `bin` is a single self-contained
+    // executable named `opencode.exe` on every platform (on macOS/Linux it's
+    // the native Mach-O/ELF binary — the .exe suffix is just how the package
+    // names it). Returning it directly lets us spawn it without going through
+    // `cmd.exe /C opencode.cmd`, which on Windows is what flashed a console
+    // window — and an attached console makes opencode drop into its interactive
+    // TUI instead of non-interactive `run`, so it hung waiting for keypresses.
+    const nativeExe = path.join(home, '.openagents', 'runtimes', 'opencode', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe');
+    if (fs.existsSync(nativeExe)) return nativeExe;
+
+    // Tier 0b: Isolated runtime prefix shim — where the launcher installs agents
+    // (~/.openagents/runtimes/opencode/node_modules/.bin). Every other adapter
+    // checks this first; opencode was the lone exception, so a launcher-managed
+    // install was invisible unless its .bin happened to be on PATH — which is
+    // exactly why the workspace failed with "opencode CLI not found" even though
+    // the marketplace showed it installed.
+    const runtimeBin = path.join(home, '.openagents', 'runtimes', 'opencode', 'node_modules', '.bin', `opencode${ext}`);
+    if (fs.existsSync(runtimeBin)) return runtimeBin;
+
+    // Tier 0b: Legacy shared portable prefix.
+    const legacyBin = path.join(home, '.openagents', 'nodejs', 'node_modules', '.bin', `opencode${ext}`);
+    if (fs.existsSync(legacyBin)) return legacyBin;
+
+    // Tier 1: PATH. Use the ENRICHED env (node-version-manager/homebrew/npm
+    // dirs the launcher adds) so the lookup matches a packaged daemon's real
+    // reach; windowsHide stops a console window from flashing on Windows.
     try {
+      const env = getEnhancedEnv();
       if (IS_WINDOWS) {
-        const r = execSync('where opencode.cmd 2>nul || where opencode.exe 2>nul || where opencode 2>nul', {
-          encoding: 'utf-8', timeout: 5000,
+        const r = execSync('where opencode.exe 2>nul || where opencode.cmd 2>nul || where opencode 2>nul', {
+          encoding: 'utf-8', timeout: 5000, windowsHide: true, env,
         });
-        return r.split(/\r?\n/)[0].trim();
+        const hit = r.split(/\r?\n/)[0].trim();
+        if (hit) return hit;
       } else {
-        return execSync('which opencode', { encoding: 'utf-8', timeout: 5000 }).trim();
+        const hit = execSync('which opencode', { encoding: 'utf-8', timeout: 5000, windowsHide: true, env }).trim();
+        if (hit) return hit;
       }
     } catch {}
 
     // Tier 2: Next to Node.js
-    const ext = IS_WINDOWS ? '.cmd' : '';
     const nearNode = path.join(path.dirname(process.execPath), `opencode${ext}`);
     if (fs.existsSync(nearNode)) return nearNode;
 
     // Tier 3: Common locations
-    const home = os.homedir();
     const candidates = IS_WINDOWS ? [
       path.join(process.env.APPDATA || '', 'npm', 'opencode.cmd'),
     ] : [
@@ -183,6 +218,13 @@ class OpenCodeAdapter extends BaseAdapter {
     for (const c of candidates) {
       if (fs.existsSync(c)) return c;
     }
+
+    // Tier 4: Deep scan of every known bin dir (nvm/fnm/volta node-global,
+    // homebrew, …) — catches an `opencode` installed as a global npm package
+    // under a version-managed Node, which the fixed-PATH tiers above miss.
+    const viaWhich = whichBinary('opencode');
+    if (viaWhich) return viaWhich;
+
     return null;
   }
 
@@ -219,7 +261,12 @@ class OpenCodeAdapter extends BaseAdapter {
       if (responseText) {
         await this.sendResponse(msgChannel, responseText);
       } else {
-        await this.sendResponse(msgChannel, 'No response generated. Please try again.');
+        // Exit 0 with no assistant text almost always means OpenCode has no
+        // model/provider configured (it emits only step_start then stops).
+        await this.sendResponse(
+          msgChannel,
+          'OpenCode ran but produced no response. This usually means no model/provider is configured — set one up (e.g. `opencode auth login` or configure a provider/API key) and try again.'
+        );
       }
     } catch (e) {
       if (this._stoppingChannels.has(msgChannel)) {
@@ -306,6 +353,23 @@ class OpenCodeAdapter extends BaseAdapter {
       if (text) texts.push(text);
     }
     return texts.length ? texts.join('\n').trim() : raw.trim();
+  }
+
+  /**
+   * True when `raw` is opencode JSON that carries ONLY control events
+   * (step_start / step_finish / tool_use) and no assistant text — which is what
+   * opencode emits when no model/provider is configured. In that case
+   * _extractTextFromJson falls back to returning the raw event JSON, which we
+   * must NOT post to the channel as if it were a reply. Non-JSON output (real
+   * plain text) returns false so it is kept.
+   */
+  static _isOnlyControlJson(raw) {
+    const events = OpenCodeAdapter._splitJsonObjects(raw);
+    if (!events.length) return false;
+    for (const ev of events) {
+      if (OpenCodeAdapter._extractTextFromEvent(ev)) return false;
+    }
+    return true;
   }
 
   /**
@@ -405,6 +469,32 @@ class OpenCodeAdapter extends BaseAdapter {
   // Subprocess execution
   // ------------------------------------------------------------------
 
+  /**
+   * Build the `--model` value (provider/model) for `opencode run`.
+   *
+   * CRITICAL: opencode-ai does NOT read the OPENCODE_MODEL env var. When no
+   * model is given on the command line AND none is set in opencode.json, the
+   * non-interactive `run` command hangs forever waiting for interactive
+   * provider/model selection — it emits zero output until the spawn timeout
+   * kills it with SIGTERM (surfaced as the misleading "exited with code null").
+   * Passing `--model` explicitly is what makes headless runs actually work.
+   */
+  _resolveModel() {
+    const env = this.agentEnv || process.env;
+    const model = (env.OPENCODE_MODEL || env.LLM_MODEL || '').trim();
+    if (!model) return '';
+    // Already provider-qualified (e.g. "openai/gpt-4o", "anthropic/claude-…").
+    if (model.includes('/')) return model;
+    // Infer the provider from which key/base URL the env resolved to. The
+    // registry maps LLM_* → OPENAI_* for OpenAI-compatible endpoints, so
+    // "openai" is the right default; only switch for an Anthropic endpoint.
+    const baseUrl = (env.OPENAI_BASE_URL || env.LLM_BASE_URL || '').toLowerCase();
+    const provider = (env.ANTHROPIC_API_KEY || baseUrl.includes('anthropic'))
+      ? 'anthropic'
+      : 'openai';
+    return `${provider}/${model}`;
+  }
+
   _runOpencode(content, msgChannel) {
     const binary = this._opencodeBinary || this._findOpencodeBinary();
     if (binary) this._opencodeBinary = binary;
@@ -415,6 +505,19 @@ class OpenCodeAdapter extends BaseAdapter {
     }
 
     const cmd = [binary, 'run', '--format', 'json', '--dir', this.agentHome];
+
+    // Pin the model explicitly — without it opencode hangs waiting for
+    // interactive selection (see _resolveModel). Harmless when resuming a
+    // session (opencode keeps the session's model); essential for new ones.
+    const model = this._resolveModel();
+    if (model) {
+      cmd.push('--model', model);
+    } else {
+      this._log(
+        'WARNING: no model configured (set LLM_MODEL / OPENCODE_MODEL). ' +
+        'opencode may hang or produce no response.'
+      );
+    }
 
     const sessionId = this._channelSessions[msgChannel];
     let fullPrompt;
@@ -427,12 +530,14 @@ class OpenCodeAdapter extends BaseAdapter {
       fullPrompt = `${context}\n\n---\n\n${content}`;
     }
 
-    this._log(`CLI: ${binary} ${cmd.slice(1, 5).join(' ')} ...`);
+    this._log(`CLI: ${binary} run --format json --dir … --model ${model || '(none)'}`);
 
     const spawnEnv = { ...(this.agentEnv || process.env) };
 
     let spawnBinary = cmd[0];
     let spawnArgs = cmd.slice(1);
+    // Only the npm `.cmd` shim needs a cmd.exe host. The native opencode.exe
+    // (preferred by _findOpencodeBinary) is spawned directly — no console host.
     if (IS_WINDOWS && spawnBinary.toLowerCase().endsWith('.cmd')) {
       spawnArgs = ['/C', spawnBinary, ...spawnArgs];
       spawnBinary = process.env.COMSPEC || 'cmd.exe';
@@ -443,8 +548,11 @@ class OpenCodeAdapter extends BaseAdapter {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: spawnEnv,
         cwd: this.agentHome,
-        timeout: 300000, // 5 minutes
+        timeout: TIMEOUT_MS,
         detached: !IS_WINDOWS,
+        // Never let a console window appear. Besides being ugly, an attached
+        // console makes opencode start its interactive TUI and hang instead of
+        // running headless — the root cause of "stuck on thinking…" on Windows.
         windowsHide: true,
       });
 
@@ -453,53 +561,76 @@ class OpenCodeAdapter extends BaseAdapter {
       let stdout = '';
       let stderr = '';
       let settled = false;
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        if (this._channelProcesses[msgChannel] === proc) {
+          delete this._channelProcesses[msgChannel];
+        }
+        fn(arg);
+      };
 
       if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
       if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; });
 
+      // Send the prompt via stdin, then close it so opencode knows the message
+      // is complete and never blocks waiting for more input. Guard the write:
+      // if the child already died, writing to its stdin throws EPIPE.
       if (proc.stdin) {
-        proc.stdin.write(fullPrompt, 'utf-8');
-        proc.stdin.end();
+        proc.stdin.on('error', () => {});
+        try {
+          proc.stdin.write(fullPrompt, 'utf-8');
+          proc.stdin.end();
+        } catch { /* child gone — the exit/error handler reports it */ }
       }
 
-      proc.on('error', (err) => {
-        if (settled) return;
-        settled = true;
-        if (this._channelProcesses[msgChannel] === proc) {
-          delete this._channelProcesses[msgChannel];
-        }
-        reject(err);
-      });
-
-      proc.on('exit', (code) => {
-        if (settled) return;
-        settled = true;
-
-        if (this._channelProcesses[msgChannel] === proc) {
-          delete this._channelProcesses[msgChannel];
-        }
-
+      proc.on('error', (err) => finish(reject, err));
+      // 'close' (not 'exit') fires after stdout/stderr have fully drained, so we
+      // never parse a truncated response. The handler receives (code, signal):
+      // when the spawn timeout kills the child, code is null and signal is the
+      // signal name — report that as a timeout rather than "exited with code null".
+      proc.on('close', (code, signal) => {
         if (this._stoppingChannels.has(msgChannel)) {
-          resolve('');
-          return;
+          this._stoppingChannels.delete(msgChannel);
+          return finish(resolve, '');
         }
 
         stdout = stdout.trim();
         stderr = stderr.trim();
 
+        if (signal) {
+          this._log(`opencode killed by signal ${signal} after ${TIMEOUT_MS / 1000}s (no output: ${!stdout})`);
+          return finish(reject, new Error(
+            stderr ? stderr.slice(0, 500)
+              : `opencode timed out after ${TIMEOUT_MS / 1000}s with no response. ` +
+                'This usually means no model/provider is configured — check LLM_MODEL / LLM_API_KEY.'
+          ));
+        }
+
         if (code !== 0) {
           this._log(`opencode exited with code ${code}: ${stderr.slice(0, 300)}`);
+          // Surface the real failure instead of a generic "No response" so the
+          // user can see (e.g.) a missing model/provider or auth error.
+          return finish(reject, new Error(
+            stderr ? stderr.slice(0, 500) : `opencode exited with code ${code}`
+          ));
         }
 
         if (stdout) {
           this._persistSessionId(msgChannel, stdout);
-          resolve(OpenCodeAdapter._extractTextFromJson(stdout));
-        } else {
-          if (stderr) {
-            this._log(`opencode stderr: ${stderr.slice(0, 300)}`);
+          const text = OpenCodeAdapter._extractTextFromJson(stdout);
+          // Exit 0 but no assistant text usually means no model/provider is
+          // configured (opencode emits only step_start then stops). Tell the
+          // user how to fix it rather than echoing raw event JSON.
+          if (!text || OpenCodeAdapter._isOnlyControlJson(stdout)) {
+            this._log(`opencode produced no assistant text. stdout head: ${stdout.slice(0, 300)}`);
+            return finish(resolve, '');
           }
-          resolve('');
+          return finish(resolve, text);
         }
+
+        if (stderr) this._log(`opencode stderr: ${stderr.slice(0, 300)}`);
+        finish(resolve, '');
       });
     });
   }

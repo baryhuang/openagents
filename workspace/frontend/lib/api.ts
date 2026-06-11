@@ -7,6 +7,7 @@ import type {
   CloudAgentProvider,
   DMConversation,
   EventPollResponse,
+  KnowledgeEntry,
   MessagePollResponse,
   NetworkDiscovery,
   NetworkProfile,
@@ -53,6 +54,34 @@ class WorkspaceApi {
 
   setBearerToken(bearerToken: string) {
     this.bearerToken = bearerToken;
+  }
+
+  getSSEUrl(channelName: string): string {
+    const params = new URLSearchParams({
+      network: this.workspaceId,
+      channel: channelName,
+    });
+    if (this.token) params.set('token', this.token);
+    return `${API_URL}/v1/events/stream?${params}`;
+  }
+
+  /** Whether configure() has run with a non-empty workspace id. */
+  isConfigured(): boolean {
+    return this.workspaceId !== '';
+  }
+
+  /**
+   * Guard against firing requests before configure() has populated
+   * workspaceId. configure() runs in a useEffect that fires *after* the
+   * first render, so any event sent during initial mount would otherwise
+   * POST `network: ""` and get a 400 ("Missing required field: network")
+   * from the backend. Throw a clear error instead of a confusing 400.
+   */
+  private requireWorkspace(): string {
+    if (this.workspaceId === '') {
+      throw new Error('WorkspaceApi not configured yet (workspaceId is empty)');
+    }
+    return this.workspaceId;
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -114,6 +143,20 @@ class WorkspaceApi {
 
   async getSkillCatalog(): Promise<import('./types').SkillCatalogEntry[]> {
     return this.request<import('./types').SkillCatalogEntry[]>('/v1/workspaces/skill-catalog');
+  }
+
+  async installSkill(agentName: string, skillId: string): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}/skills/install`, {
+      method: 'POST',
+      body: JSON.stringify({ skill_id: skillId }),
+    });
+  }
+
+  async uninstallSkill(agentName: string, skillId: string): Promise<unknown> {
+    return this.request(`/v1/workspaces/${this.workspaceId}/members/${agentName}/skills/uninstall`, {
+      method: 'POST',
+      body: JSON.stringify({ skill_id: skillId }),
+    });
   }
 
   async updateChannel(channelName: string, updates: { title?: string; status?: string; starred?: boolean }): Promise<unknown> {
@@ -330,6 +373,102 @@ class WorkspaceApi {
   /** Delete a file. */
   async deleteFile(fileId: string): Promise<void> {
     await this.request<unknown>(`/v1/files/${fileId}`, { method: 'DELETE' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Knowledge Base
+  // ---------------------------------------------------------------------------
+
+  async listKnowledge(): Promise<{ entries: KnowledgeEntry[]; total: number }> {
+    const raw = await this.request<{ entries: Record<string, unknown>[]; total: number }>(
+      `/v1/knowledge?network=${this.workspaceId}`
+    );
+    return {
+      entries: (raw.entries || []).map((e): KnowledgeEntry => ({
+        id: e.id as string,
+        slug: e.slug as string,
+        title: e.title as string,
+        description: (e.description ?? null) as string | null,
+        contentSize: (e.content_size ?? null) as number | null,
+        createdBy: (e.created_by || '') as string,
+        updatedBy: (e.updated_by ?? null) as string | null,
+        status: (e.status || 'active') as string,
+        createdAt: (e.created_at || null) as string | null,
+        updatedAt: (e.updated_at || null) as string | null,
+      })),
+      total: raw.total || 0,
+    };
+  }
+
+  async getKnowledgeEntry(entryId: string): Promise<KnowledgeEntry & { content: string }> {
+    const raw = await this.request<Record<string, unknown>>(`/v1/knowledge/${entryId}`);
+    return {
+      id: raw.id as string,
+      slug: raw.slug as string,
+      title: raw.title as string,
+      description: (raw.description ?? null) as string | null,
+      contentSize: (raw.content_size ?? null) as number | null,
+      createdBy: (raw.created_by || '') as string,
+      updatedBy: (raw.updated_by ?? null) as string | null,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+      updatedAt: (raw.updated_at || null) as string | null,
+      content: (raw.content || '') as string,
+    };
+  }
+
+  async createKnowledge(params: { title: string; content: string; description?: string }): Promise<KnowledgeEntry> {
+    const raw = await this.request<Record<string, unknown>>('/v1/knowledge', {
+      method: 'POST',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        title: params.title,
+        content: params.content,
+        description: params.description || null,
+        source: 'human:user',
+      }),
+    });
+    return {
+      id: raw.id as string,
+      slug: raw.slug as string,
+      title: raw.title as string,
+      description: (raw.description ?? null) as string | null,
+      contentSize: (raw.content_size ?? null) as number | null,
+      createdBy: (raw.created_by || '') as string,
+      updatedBy: (raw.updated_by ?? null) as string | null,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+      updatedAt: (raw.updated_at || null) as string | null,
+    };
+  }
+
+  async updateKnowledge(entryId: string, params: { title?: string; content?: string; description?: string }): Promise<KnowledgeEntry> {
+    const raw = await this.request<Record<string, unknown>>(`/v1/knowledge/${entryId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        ...params.title !== undefined && { title: params.title },
+        ...params.content !== undefined && { content: params.content },
+        ...params.description !== undefined && { description: params.description },
+        source: 'human:user',
+      }),
+    });
+    return {
+      id: raw.id as string,
+      slug: raw.slug as string,
+      title: raw.title as string,
+      description: (raw.description ?? null) as string | null,
+      contentSize: (raw.content_size ?? null) as number | null,
+      createdBy: (raw.created_by || '') as string,
+      updatedBy: (raw.updated_by ?? null) as string | null,
+      status: (raw.status || 'active') as string,
+      createdAt: (raw.created_at || null) as string | null,
+      updatedAt: (raw.updated_at || null) as string | null,
+    };
+  }
+
+  async deleteKnowledge(entryId: string): Promise<void> {
+    await this.request<unknown>(`/v1/knowledge/${entryId}?network=${this.workspaceId}`, { method: 'DELETE' });
   }
 
   // ---------------------------------------------------------------------------
@@ -612,9 +751,10 @@ class WorkspaceApi {
     metadata?: Record<string, unknown>;
     visibility?: string;
   }): Promise<ONMEvent> {
+    const network = this.requireWorkspace();
     return this.request<ONMEvent>('/v1/events', {
       method: 'POST',
-      body: JSON.stringify({ ...event, network: this.workspaceId }),
+      body: JSON.stringify({ ...event, network }),
     });
   }
 
@@ -629,7 +769,7 @@ class WorkspaceApi {
     sort?: 'asc' | 'desc';
     limit?: number;
   } = {}): Promise<EventPollResponse> {
-    const params = new URLSearchParams({ network: this.workspaceId });
+    const params = new URLSearchParams({ network: this.requireWorkspace() });
     if (opts.after) params.set('after', opts.after);
     if (opts.before) params.set('before', opts.before);
     if (opts.target) params.set('target', opts.target);

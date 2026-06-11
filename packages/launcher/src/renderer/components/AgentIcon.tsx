@@ -12,12 +12,12 @@ const BUNDLED_SLUGS = new Set([
   "default",
   "gemini",
   "goose",
+  "hermes",
   "kimi",
   "nanoclaw",
   "openai",
   "openclaw",
   "opencode",
-  "swebench",
   "yaml-agent",
 ])
 

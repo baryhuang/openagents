@@ -783,7 +783,7 @@ async def get_snapshot(
 # ---------------------------------------------------------------------------
 
 @router.post("/tabs/{tab_id}/share")
-async def share_tab(
+def share_tab(
     tab_id: str,
     body: ShareRequest,
     x_workspace_token: Optional[str] = Header(None),
@@ -973,7 +973,7 @@ async def unpersist_tab(
 # ---------------------------------------------------------------------------
 
 @router.get("/contexts")
-async def list_contexts(
+def list_contexts(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     status: str = Query("active"),
     x_workspace_token: Optional[str] = Header(None),
@@ -1115,7 +1115,7 @@ async def close_tab(
 # ---------------------------------------------------------------------------
 
 @router.get("/usage")
-async def get_usage(
+def get_usage(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     days: int = Query(30, description="Number of days to look back"),
     x_workspace_token: Optional[str] = Header(None),

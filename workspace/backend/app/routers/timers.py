@@ -64,7 +64,7 @@ def _serialize_timer(t: TimerRecord) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("/timers")
-async def create_timer(
+def create_timer(
     body: CreateTimerRequest,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -106,7 +106,7 @@ async def create_timer(
 # ---------------------------------------------------------------------------
 
 @router.get("/timers")
-async def list_timers(
+def list_timers(
     network: str = Query(...),
     channel: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -138,7 +138,7 @@ async def list_timers(
 # ---------------------------------------------------------------------------
 
 @router.delete("/timers/{timer_id}")
-async def cancel_timer(
+def cancel_timer(
     timer_id: str = Path(...),
     network: Optional[str] = Query(None),
     db: Session = Depends(get_db),

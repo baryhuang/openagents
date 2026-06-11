@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog, Cloud, Trash2, KeyRound, RefreshCw } from 'lucide-react';
+import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog, Cloud, Trash2, KeyRound, RefreshCw, Sparkles, ExternalLink } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
-import { AgentSkillsSection } from '@/components/agents/agent-skills-section';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -298,8 +297,87 @@ export function AgentProfilePanel() {
             </div>
           )}
 
-          {/* Skills */}
-          <AgentSkillsSection agent={agent} />
+          {/* Installed Skills */}
+          {(() => {
+            const installed: string[] = (agent.enabledSkills as Record<string, unknown>)?.installed as string[] || [];
+            if (installed.length === 0) return null;
+            const SI = 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons';
+            const SKILL_LOGOS: Record<string, { name: string; logo: string }> = {
+              'claude-api': { name: 'Claude API', logo: `${SI}/anthropic.svg` },
+              'openai-sdk': { name: 'OpenAI SDK', logo: `${SI}/openai.svg` },
+              'langchain': { name: 'LangChain', logo: `${SI}/langchain.svg` },
+              'mcp-builder': { name: 'MCP Builder', logo: `${SI}/anthropic.svg` },
+              'skill-creator': { name: 'Skill Creator', logo: `${SI}/anthropic.svg` },
+              'ai-sdk': { name: 'Vercel AI SDK', logo: `${SI}/vercel.svg` },
+              'nextjs': { name: 'Next.js', logo: `${SI}/nextdotjs.svg` },
+              'angular': { name: 'Angular', logo: `${SI}/angular.svg` },
+              'vue': { name: 'Vue.js', logo: `${SI}/vuedotjs.svg` },
+              'svelte': { name: 'Svelte', logo: `${SI}/svelte.svg` },
+              'tailwindcss': { name: 'Tailwind CSS', logo: `${SI}/tailwindcss.svg` },
+              'frontend-design': { name: 'Frontend Design', logo: `${SI}/anthropic.svg` },
+              'fastapi': { name: 'FastAPI', logo: `${SI}/fastapi.svg` },
+              'django': { name: 'Django', logo: `${SI}/django.svg` },
+              'graphql': { name: 'GraphQL', logo: `${SI}/graphql.svg` },
+              'postgresql': { name: 'PostgreSQL', logo: `${SI}/postgresql.svg` },
+              'mongodb': { name: 'MongoDB', logo: `${SI}/mongodb.svg` },
+              'redis': { name: 'Redis', logo: `${SI}/redis.svg` },
+              'prisma': { name: 'Prisma', logo: `${SI}/prisma.svg` },
+              'supabase': { name: 'Supabase', logo: `${SI}/supabase.svg` },
+              'firebase': { name: 'Firebase', logo: `${SI}/firebase.svg` },
+              'github-actions': { name: 'GitHub Actions', logo: `${SI}/githubactions.svg` },
+              'sentry': { name: 'Sentry', logo: `${SI}/sentry.svg` },
+              'jest': { name: 'Jest', logo: `${SI}/jest.svg` },
+              'pytest': { name: 'pytest', logo: `${SI}/pytest.svg` },
+              'cypress': { name: 'Cypress', logo: `${SI}/cypress.svg` },
+              'stripe': { name: 'Stripe', logo: `${SI}/stripe.svg` },
+              'notion': { name: 'Notion', logo: `${SI}/notion.svg` },
+              'jira': { name: 'Jira', logo: `${SI}/jira.svg` },
+              'shopify': { name: 'Shopify', logo: `${SI}/shopify.svg` },
+              'zapier': { name: 'Zapier', logo: `${SI}/zapier.svg` },
+              'docx': { name: 'Word Documents', logo: `${SI}/microsoftword.svg` },
+              'xlsx': { name: 'Spreadsheets', logo: `${SI}/microsoftexcel.svg` },
+              'pptx': { name: 'Presentations', logo: `${SI}/microsoftpowerpoint.svg` },
+              'pdf': { name: 'PDF Processing', logo: `${SI}/adobeacrobatreader.svg` },
+              'sn-deep-research': { name: 'SenseNova Deep Research', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-infographic': { name: 'SenseNova Infographic', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-ppt-entry': { name: 'SenseNova PPT', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-da-excel-workflow': { name: 'SenseNova Excel Analysis', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-image-base': { name: 'SenseNova Image Gen', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+              'sn-md-to-html-report': { name: 'SenseNova HTML Report', logo: 'https://avatars.githubusercontent.com/u/215225587' },
+            };
+            return (
+              <div className="rounded-lg border overflow-hidden">
+                <div className="px-3.5 py-2.5 border-b flex items-center gap-1.5">
+                  <Sparkles className="size-3 text-amber-500" />
+                  <span className="text-xs font-medium">Installed Skills</span>
+                  <span className="text-[10px] text-muted-foreground ml-auto">{installed.length}</span>
+                </div>
+                <div className="divide-y">
+                  {installed.map(skillId => {
+                    const info = SKILL_LOGOS[skillId];
+                    return (
+                      <div key={skillId} className="flex items-center gap-2.5 px-3.5 py-2.5">
+                        <div className="size-6 rounded bg-muted/60 flex items-center justify-center shrink-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {info ? <img src={info.logo} alt="" className="h-3.5 w-3.5 object-contain dark:invert" /> : <Sparkles className="size-3 text-muted-foreground" />}
+                        </div>
+                        <span className="text-[13px] font-medium flex-1 truncate">{info?.name || skillId}</span>
+                        <a
+                          href={`https://github.com/${skillId.includes('-') ? 'TerminalSkills/skills/tree/main/skills/' : 'anthropics/skills/tree/main/skills/'}${skillId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <ExternalLink className="size-3" />
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
         </div>
 
         {/* Footer actions */}

@@ -328,7 +328,7 @@ async def composing_signal(
 # ---------------------------------------------------------------------------
 
 @router.post("/token/resolve")
-async def resolve_token(
+def resolve_token(
     body: TokenResolveRequest,
     db: Session = Depends(get_db),
 ):
@@ -355,7 +355,7 @@ async def resolve_token(
 # ---------------------------------------------------------------------------
 
 @router.get("/discover")
-async def discover(
+def discover(
     network: str = Query(..., description="Network (workspace) ID"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -433,7 +433,7 @@ async def discover(
 # ---------------------------------------------------------------------------
 
 @router.get("/profile")
-async def network_profile(
+def network_profile(
     network: str = Query(..., description="Network (workspace) ID"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -478,6 +478,7 @@ async def network_profile(
 # the source of truth is sdk/src/openagents/client/plugin_registry.py.
 
 _AGENT_CATALOG = [
+    # ── Featured agents (shown first, in order) ─────────────────────────
     {
         "name": "claude",
         "label": "Claude Code",
@@ -486,24 +487,8 @@ _AGENT_CATALOG = [
         "homepage": "https://claude.ai",
         "tags": ["coding", "anthropic", "cli"],
         "builtin": True,
-    },
-    {
-        "name": "codex",
-        "label": "OpenAI Codex CLI",
-        "description": "OpenAI's Codex CLI agent for the terminal",
-        "install_command": "npm install -g @openai/codex",
-        "homepage": "https://github.com/openai/codex",
-        "tags": ["coding", "openai", "cli"],
-        "builtin": True,
-    },
-    {
-        "name": "gemini",
-        "label": "Gemini CLI",
-        "description": "Google's open-source AI agent for the command line",
-        "install_command": "npm install -g @google/gemini-cli",
-        "homepage": "https://github.com/google-gemini/gemini-cli",
-        "tags": ["coding", "google", "open-source", "cli"],
-        "builtin": False,
+        "featured": True,
+        "order": 1,
     },
     {
         "name": "openclaw",
@@ -513,7 +498,77 @@ _AGENT_CATALOG = [
         "homepage": "https://github.com/qwibitai/openclaw",
         "tags": ["coding", "open-source", "cli"],
         "builtin": True,
+        "featured": True,
+        "order": 2,
     },
+    {
+        "name": "codex",
+        "label": "OpenAI Codex CLI",
+        "description": "OpenAI's Codex CLI agent for the terminal",
+        "install_command": "npm install -g @openai/codex",
+        "homepage": "https://github.com/openai/codex",
+        "tags": ["coding", "openai", "cli"],
+        "builtin": True,
+        "featured": True,
+        "order": 3,
+    },
+    {
+        "name": "cursor",
+        "label": "Cursor",
+        "description": "Cursor's AI coding agent for the terminal",
+        "install_command": "curl -fsSL https://cursor.com/install | bash",
+        "install_command_win": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm 'https://cursor.com/install?win32=true' | iex\"",
+        "homepage": "https://cursor.com",
+        "tags": ["coding", "cli", "cursor"],
+        "builtin": True,
+        "featured": True,
+        "order": 4,
+    },
+    {
+        "name": "opencode",
+        "label": "OpenCode",
+        "description": "Open-source terminal-native AI coding agent",
+        "install_command": "npm install -g opencode-ai@latest",
+        "homepage": "https://opencode.ai",
+        "tags": ["coding", "open-source", "cli", "terminal"],
+        "builtin": False,
+        "featured": True,
+        "order": 5,
+    },
+    {
+        "name": "hermes",
+        "label": "Hermes Agent",
+        "description": "Nous Research's self-improving AI agent with tools, profiles, memory, and messaging",
+        "install_command": "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup",
+        "homepage": "https://github.com/NousResearch/hermes-agent",
+        "tags": ["coding", "open-source", "nous-research", "self-improving"],
+        "builtin": True,
+        "featured": True,
+        "order": 6,
+    },
+    {
+        "name": "kimi",
+        "label": "Kimi",
+        "description": "Kimi agent powered by Moonshot AI, OpenAI-compatible API",
+        "install_command": "npm install -g @anthropic-ai/kimi",
+        "homepage": "https://platform.moonshot.ai",
+        "tags": ["coding", "moonshot", "cli"],
+        "builtin": True,
+        "featured": True,
+        "order": 7,
+    },
+    {
+        "name": "gemini",
+        "label": "Gemini CLI",
+        "description": "Google's open-source AI agent for the command line",
+        "install_command": "npm install -g @google/gemini-cli",
+        "homepage": "https://github.com/google-gemini/gemini-cli",
+        "tags": ["coding", "google", "open-source", "cli"],
+        "builtin": False,
+        "featured": True,
+        "order": 8,
+    },
+    # ── Other agents ─────────────────────────────────────────────────────
     {
         "name": "amp",
         "label": "Amp (Sourcegraph)",
@@ -560,15 +615,6 @@ _AGENT_CATALOG = [
         "builtin": False,
     },
     {
-        "name": "opencode",
-        "label": "OpenCode",
-        "description": "Open-source terminal-native AI coding agent",
-        "install_command": "npm install -g opencode-ai@latest",
-        "homepage": "https://opencode.ai",
-        "tags": ["coding", "open-source", "cli", "terminal"],
-        "builtin": False,
-    },
-    {
         "name": "nanoclaw",
         "label": "NanoClaw",
         "description": "Lightweight containerized coding agent built on Claude Agent SDK",
@@ -581,6 +627,6 @@ _AGENT_CATALOG = [
 
 
 @router.get("/agent-catalog")
-async def agent_catalog():
+def agent_catalog():
     """Return the catalog of supported agent client types."""
     return success_response(_AGENT_CATALOG)

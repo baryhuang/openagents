@@ -1,28 +1,74 @@
 'use client';
 
-import { use, Suspense } from 'react';
+import { use, Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace-context';
 import { LayoutProvider } from '@/components/layout/layout-context';
 import { Wrapper } from '@/components/layout/wrapper';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
-import { IdentityDialog } from '@/components/identity/identity-dialog';
+
+function WorkspaceLoadingSplash() {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-5">
+        <img
+          src="/logo-icon.png"
+          alt="OpenAgents"
+          className="size-16 animate-[pulse_2s_ease-in-out_infinite] dark:hidden"
+        />
+        <img
+          src="/logo-white.png"
+          alt="OpenAgents"
+          className="size-16 animate-[pulse_2s_ease-in-out_infinite] hidden dark:block"
+        />
+        <div className="text-center">
+          <h1 className="text-xl font-semibold tracking-tight">OpenAgents</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Workspace</p>
+        </div>
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-muted overflow-hidden">
+        <div className="h-full w-1/3 bg-primary rounded-full animate-[loading-bar_1.5s_ease-in-out_infinite]" />
+      </div>
+      <style>{`
+        @keyframes loading-bar {
+          0% { transform: translateX(-100%); }
+          50% { transform: translateX(150%); }
+          100% { transform: translateX(400%); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function setWorkspaceCookie(slug: string, token: string) {
+  const maxAge = 30 * 24 * 60 * 60;
+  const shared = `path=/;max-age=${maxAge};secure;samesite=lax;domain=.openagents.org`;
+  document.cookie = `oa_workspace=${encodeURIComponent(JSON.stringify({ slug, token }))};${shared}`;
+  document.cookie = `oa_has_workspace=1;${shared}`;
+}
 
 function IdentityGate({ children }: { children: React.ReactNode }) {
   const { currentUser, setUserName } = useWorkspace();
 
-  return (
-    <>
-      <IdentityDialog open={!currentUser.name.trim()} onSubmit={setUserName} />
-      {children}
-    </>
-  );
+  useEffect(() => {
+    if (!currentUser.name.trim()) {
+      setUserName('Guest');
+    }
+  }, [currentUser.name, setUserName]);
+
+  return <>{children}</>;
 }
 
 function WorkspaceContent({ workspaceId }: { workspaceId: string }) {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const { user, idToken, loading: authLoading, isOpenAgentsDomain, signIn } = useOpenAgentsAuth();
+
+  useEffect(() => {
+    if (token) {
+      setWorkspaceCookie(workspaceId, token);
+    }
+  }, [workspaceId, token]);
 
   // Has workspace token in URL — use it directly
   if (token) {
@@ -40,11 +86,7 @@ function WorkspaceContent({ workspaceId }: { workspaceId: string }) {
   // No token — check if user is logged in via OpenAgents
   if (isOpenAgentsDomain) {
     if (authLoading) {
-      return (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      );
+      return <WorkspaceLoadingSplash />;
     }
 
     if (user && idToken) {
@@ -104,13 +146,7 @@ export default function WorkspacePage({
   const { workspaceId } = use(params);
 
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={<WorkspaceLoadingSplash />}>
       <WorkspaceContent workspaceId={workspaceId} />
     </Suspense>
   );

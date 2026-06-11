@@ -144,6 +144,11 @@ class Channel(Base):
 
     __table_args__ = (
         Index("uq_channels_ws_name", "workspace_id", "name", unique=True),
+        # Serves /v1/discover's `WHERE workspace_id = ? AND status != 'deleted'`.
+        Index("idx_channels_workspace_status", "workspace_id", "status"),
+        # Serves the timer-loop auto-archive scan
+        # (`status = 'active' AND last_event_at < cutoff`).
+        Index("idx_channels_status_last_event", "status", "last_event_at"),
     )
 
 
@@ -158,6 +163,28 @@ class ChannelMember(Base):
 
     __table_args__ = (
         PrimaryKeyConstraint("channel_id", "agent_name"),
+    )
+
+
+class ChannelHumanMember(Base):
+    """Per-channel human participant — Slack-style thread membership.
+
+    Lives alongside `ChannelMember` (agents only) rather than mixing
+    `agent_name` + `user_email` into one row, which would muddy the
+    existing agent routing queries. Auto-populated by the workspace mod
+    on first human post in a channel; consulted by `services/push.py` to
+    decide whose devices get a banner for non-mention chat messages.
+    Mentions still wake the mentioned human regardless of membership.
+    """
+    __tablename__ = "channel_human_members"
+
+    channel_id = Column(UUID(as_uuid=False), ForeignKey("channels.id", ondelete="CASCADE"), nullable=False)
+    user_email = Column(Text, nullable=False)               # normalized lowercase
+    joined_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        PrimaryKeyConstraint("channel_id", "user_email"),
+        Index("idx_channel_human_members_email", "user_email"),
     )
 
 
@@ -186,6 +213,10 @@ class WorkspaceCollaborator(Base):
     role = Column(Text, default="editor")               # editor | viewer
     added_by = Column(Text, nullable=True)              # email of who added
     added_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    # Google `displayName` captured the first time the human posted in
+    # this workspace. Mention picker shows it; push.py uses it (along
+    # with the email local-part) to resolve "@bary" → device tokens.
+    display_name = Column(Text, nullable=True)
 
     workspace = relationship("Workspace", back_populates="collaborators")
 
@@ -193,6 +224,33 @@ class WorkspaceCollaborator(Base):
         UniqueConstraint("workspace_id", "email", name="uq_collaborator_workspace_email"),
         Index("idx_collaborators_workspace", "workspace_id"),
         Index("idx_collaborators_email", "email"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared knowledge base
+# ---------------------------------------------------------------------------
+
+class KnowledgeEntry(Base):
+    """A knowledge base entry — workspace-global markdown document."""
+    __tablename__ = "knowledge_entries"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    slug = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    storage_key = Column(Text, nullable=True)
+    content_size = Column(Integer, nullable=True)
+    created_by = Column(Text, nullable=False)
+    updated_by = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    updated_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_knowledge_workspace_slug"),
+        Index("idx_knowledge_workspace_status", "workspace_id", "status"),
     )
 
 
@@ -323,12 +381,19 @@ class DeviceToken(Base):
     fcm_token = Column(Text, nullable=False)
     device_type = Column(Text, nullable=False)            # "ios" | future: "android" | "macos"
     bundle_id = Column(Text, nullable=True)               # e.g. "com.openagents.go"
+    # Google email of the signed-in user on the device that registered.
+    # NULL for older clients without a user identity; populated by builds
+    # that started sending `userEmail` with /v1/devices/register. The push
+    # fan-out filters by this column when a @-mention resolves to a human
+    # collaborator so only that specific human's devices get woken up.
+    user_email = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
     last_seen_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "fcm_token", name="uq_device_token_workspace_fcm"),
         Index("idx_device_tokens_workspace", "workspace_id"),
+        Index("idx_device_tokens_workspace_user", "workspace_id", "user_email"),
     )
 
 

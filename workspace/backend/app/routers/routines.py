@@ -67,19 +67,21 @@ def _normalize_agent_name(source: str) -> str:
     return source or ""
 
 
-def _routine_channel_name(routine_id: str) -> str:
-    return f"routine:{routine_id}"
+def _routine_channel_name(agent: str) -> str:
+    return f"{ROUTINE_CHANNEL_PREFIX}{agent}"
 
 
-def _get_or_create_routine_channel(
-    db: Session, workspace: Workspace, agent: str, routine_id: str, routine_name: str,
-) -> Channel:
-    """Find-or-create a per-routine channel for this workspace.
+def _get_or_create_routine_channel(db: Session, workspace: Workspace, agent: str) -> Channel:
+    """Find-or-create the per-agent routine channel for this workspace.
 
-    Each routine gets its own dedicated channel so different routines
-    don't interfere, and the full context is preserved in the thread.
+    Single channel per agent — every routine the agent owns fires into
+    this one queue. master_agent is set so the existing routing /
+    discovery code treats this as the agent's own thread. (The previous
+    per-routine `routine:<id>` design fragmented activity across many
+    threads; reverted because the product surface — Inbox tab — is
+    organized per-agent.)
     """
-    name = _routine_channel_name(routine_id)
+    name = _routine_channel_name(agent)
     existing = db.execute(
         select(Channel).where(
             Channel.workspace_id == str(workspace.id),
@@ -92,7 +94,7 @@ def _get_or_create_routine_channel(
     channel = Channel(
         workspace_id=str(workspace.id),
         name=name,
-        title=f"Routine: {routine_name}",
+        title=agent,
         master_agent=agent,
         created_by="system:routine",
         status="active",
@@ -338,9 +340,7 @@ async def create_routine(
 
     import uuid as _uuid_mod
     routine_id = str(_uuid_mod.uuid4())
-    routine_channel = _get_or_create_routine_channel(
-        db, workspace, target_agent, routine_id, body.name,
-    )
+    routine_channel = _get_or_create_routine_channel(db, workspace, target_agent)
     next_fire = _compute_next_fires_at(body.hour, body.minute, body.days, body.interval_minutes)
 
     routine = RoutineRecord(
@@ -369,7 +369,7 @@ async def create_routine(
 # ---------------------------------------------------------------------------
 
 @router.get("/routines")
-async def list_routines(
+def list_routines(
     network: str = Query(...),
     channel: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
@@ -405,7 +405,7 @@ async def list_routines(
 # ---------------------------------------------------------------------------
 
 @router.delete("/routines/{routine_id}")
-async def cancel_routine(
+def cancel_routine(
     routine_id: str = Path(...),
     network: Optional[str] = Query(None),
     db: Session = Depends(get_db),

@@ -358,6 +358,30 @@ class WorkspaceClient {
   }
 
   /**
+   * Report skill-install progress/result back to the workspace.
+   *
+   * POST /v1/workspaces/{id}/members/{agentName}/skills/status
+   * Body: { skill_id, state: "installing"|"installed"|"failed"|"uninstalled",
+   *         path?, error? }
+   *
+   * The backend updates WorkspaceMember.enabled_skills.skill_status so the
+   * Skill Hub UI can render installing / installed / failed states. Best
+   * effort — returns the updated payload or throws (caller decides).
+   */
+  async reportSkillStatus(workspaceId, agentName, token, { skillId, state, path: installPath, error, partial } = {}) {
+    const body = { skill_id: skillId, state };
+    if (installPath) body.path = installPath;
+    if (error) body.error = String(error).slice(0, 2000);
+    if (partial) body.partial = true;
+    const data = await this._post(
+      `/v1/workspaces/${workspaceId}/members/${encodeURIComponent(agentName)}/skills/status`,
+      body,
+      this._wsHeaders(token),
+    );
+    return data.data || data;
+  }
+
+  /**
    * Get session/channel info via GET /v1/workspaces/{id}/channels/{name}.
    */
   async getSession(workspaceId, channelName, token) {
@@ -681,6 +705,50 @@ class WorkspaceClient {
       limit: String(limit),
     });
     const data = await this._get(`/v1/notifications?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  // ── Knowledge Base ──
+
+  async listKnowledge(workspaceId, token, { limit = 100 } = {}) {
+    const params = new URLSearchParams({
+      network: workspaceId,
+      limit: String(limit),
+    });
+    const data = await this._get(`/v1/knowledge?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async getKnowledge(workspaceId, token, entryId) {
+    const params = new URLSearchParams({ network: workspaceId });
+    const data = await this._get(`/v1/knowledge/${entryId}?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async getKnowledgeBySlug(workspaceId, token, slug) {
+    const params = new URLSearchParams({ network: workspaceId });
+    const data = await this._get(`/v1/knowledge/by-slug/${slug}?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async createKnowledge(workspaceId, token, { title, content, description, source } = {}) {
+    const body = { title, content, network: workspaceId, source: source || 'openagents:unknown' };
+    if (description) body.description = description;
+    const data = await this._post('/v1/knowledge', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async updateKnowledge(workspaceId, token, entryId, { title, content, description, source } = {}) {
+    const body = { network: workspaceId, source: source || 'openagents:unknown' };
+    if (title !== undefined) body.title = title;
+    if (content !== undefined) body.content = content;
+    if (description !== undefined) body.description = description;
+    const data = await this._put(`/v1/knowledge/${entryId}`, body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async deleteKnowledge(workspaceId, token, entryId) {
+    const data = await this._delete(`/v1/knowledge/${entryId}`, this._wsHeaders(token), workspaceId);
     return data.data || data;
   }
 

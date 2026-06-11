@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Copy, Check, ExternalLink, Loader2, Terminal, Cloud, Trash2, MessageSquare, Image as ImageIcon, Key, ChevronRight } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, Loader2, Terminal, Cloud, Trash2, MessageSquare, Image as ImageIcon, Volume2, Key, ChevronRight } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
@@ -31,6 +31,9 @@ const AGENT_BRANDS: Record<string, { bg: string; text: string }> = {
   copilot:   { bg: 'bg-indigo-500',  text: 'text-white' },
   opencode:  { bg: 'bg-teal-500',    text: 'text-white' },
   nanoclaw:  { bg: 'bg-pink-500',    text: 'text-white' },
+  cursor:    { bg: 'bg-zinc-800',    text: 'text-white' },
+  hermes:    { bg: 'bg-yellow-500',  text: 'text-white' },
+  kimi:      { bg: 'bg-sky-500',     text: 'text-white' },
 };
 
 const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string }> = {
@@ -46,6 +49,12 @@ function getAgentBrand(name: string) {
 
 function getProviderBrand(name: string) {
   return PROVIDER_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white', accent: 'border-zinc-300' };
+}
+
+function CategoryIcon({ category, className }: { category: string; className?: string }) {
+  if (category === 'image') return <ImageIcon className={cn('text-violet-500', className)} />;
+  if (category === 'audio') return <Volume2 className={cn('text-amber-500', className)} />;
+  return <MessageSquare className={cn('text-blue-500', className)} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +279,7 @@ export function ConnectAgentView() {
             selectedProvider={selectedProvider}
             selectedProviderInfo={selectedProviderInfo}
             isCustomProvider={isCustomProvider}
+            workspaceId={workspace?.workspaceId || ''}
             onSelectProvider={setSelectedProvider}
             cfgModel={cfgModel}
             setCfgModel={setCfgModel}
@@ -468,9 +478,27 @@ function LocalAgentsTab({
                   </div>
                 </div>
 
-                {/* Step 3: Connect */}
+                {/* Step 3: Create agent instance */}
                 <div>
-                  <span className="text-[11px] text-muted-foreground">3. Connect to this workspace</span>
+                  <span className="text-[11px] text-muted-foreground">3. Create an agent instance</span>
+                  <div className="relative group mt-1">
+                    <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
+                      <span className="text-zinc-500">$ </span>
+                      <span className="text-emerald-400">agn create my-{selectedEntry.name} --type {selectedEntry.name}</span>
+                    </pre>
+                    <button
+                      type="button"
+                      className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
+                      onClick={() => copyToClipboard(`agn create my-${selectedEntry.name} --type ${selectedEntry.name}`)}
+                    >
+                      {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step 4: Connect */}
+                <div>
+                  <span className="text-[11px] text-muted-foreground">4. Connect to this workspace</span>
                   <div className="relative group mt-1">
                     <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
                       <span className="text-zinc-500">$ </span>
@@ -479,6 +507,45 @@ function LocalAgentsTab({
                     <button
                       className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                       onClick={() => copyToClipboard(`agn connect my-${selectedEntry.name} ${token}`)}
+                    >
+                      {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step 5: Start daemon */}
+                <div>
+                  <span className="text-[11px] text-muted-foreground">5. Start the daemon</span>
+                  <div className="relative group mt-1">
+                    <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
+                      <span className="text-zinc-500">$ </span>
+                      <span className="text-emerald-400">agn up</span>
+                    </pre>
+                    <button
+                      type="button"
+                      className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
+                      onClick={() => copyToClipboard('agn up')}
+                    >
+                      {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    If the daemon is already running, connect will notify it automatically.
+                  </p>
+                </div>
+
+                {/* Step 6: Verify status */}
+                <div>
+                  <span className="text-[11px] text-muted-foreground">6. Verify the agent is running</span>
+                  <div className="relative group mt-1">
+                    <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
+                      <span className="text-zinc-500">$ </span>
+                      <span className="text-emerald-400">agn status</span>
+                    </pre>
+                    <button
+                      type="button"
+                      className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
+                      onClick={() => copyToClipboard('agn status')}
                     >
                       {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
                     </button>
@@ -533,6 +600,7 @@ function CloudAgentsTab({
   selectedProvider,
   selectedProviderInfo,
   isCustomProvider,
+  workspaceId,
   onSelectProvider,
   cfgModel,
   setCfgModel,
@@ -555,6 +623,7 @@ function CloudAgentsTab({
   selectedProvider: string | null;
   selectedProviderInfo: CloudAgentProvider | undefined;
   isCustomProvider: boolean;
+  workspaceId: string;
   onSelectProvider: (name: string | null) => void;
   cfgModel: string;
   setCfgModel: (v: string) => void;
@@ -572,46 +641,27 @@ function CloudAgentsTab({
   onAdd: () => void;
   onRemove: (name: string) => void;
 }) {
-  return (
-    <div className="p-4 space-y-4">
-      {/* Provider grid */}
-      <div className="grid grid-cols-2 gap-2">
-        {providers.map((p) => {
-          const brand = getProviderBrand(p.name);
-          const isSelected = selectedProvider === p.name;
-          const modelCount = p.models.length;
-          const hasChat = p.models.some((m) => m.category === 'chat');
-          const hasImage = p.models.some((m) => m.category === 'image');
-          return (
-            <button
-              key={p.name}
-              onClick={() => onSelectProvider(isSelected ? null : p.name)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-3.5 rounded-lg border text-left transition-all',
-                isSelected
-                  ? `${brand.accent} bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-foreground/10`
-                  : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30',
-              )}
-            >
-              <div className="size-9 shrink-0 flex items-center justify-center">
-                <ProviderIcon name={p.name} size={32} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium leading-tight">{p.label}</div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] text-muted-foreground">{modelCount} models</span>
-                  {hasChat && <MessageSquare className="size-2.5 text-muted-foreground/60" />}
-                  {hasImage && <ImageIcon className="size-2.5 text-muted-foreground/60" />}
-                </div>
-              </div>
-              {isSelected && <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />}
-            </button>
-          );
-        })}
-      </div>
+  const providerGroups = [
+    { label: 'Chat Models', names: ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'mistral', 'sensenova'] },
+    { label: 'Search & Agents', names: ['perplexity', 'manus'] },
+    { label: 'Fast Inference', names: ['groq', 'together', 'fireworks', 'openrouter', 'sambanova', 'cerebras'] },
+    { label: 'Image & Media', names: ['stability', 'replicate', 'fal', 'elevenlabs'] },
+    { label: 'Custom', names: ['custom'] },
+  ];
 
-      {/* Inline config for selected provider */}
-      {selectedProviderInfo && (
+  // When a provider is selected, show config view instead of grid
+  if (selectedProviderInfo) {
+    return (
+      <div className="p-4 space-y-4">
+        {/* Back button */}
+        <button
+          onClick={() => onSelectProvider(null)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronRight className="size-3 rotate-180" />
+          All providers
+        </button>
+
         <div className="rounded-lg border bg-zinc-50/50 dark:bg-zinc-900/50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="px-4 py-3 border-b bg-background">
             <div className="flex items-center gap-2.5">
@@ -670,11 +720,7 @@ function CloudAgentsTab({
                           : 'border-transparent hover:bg-background/60',
                       )}
                     >
-                      {m.category === 'image' ? (
-                        <ImageIcon className="size-3.5 text-violet-500 shrink-0" />
-                      ) : (
-                        <MessageSquare className="size-3.5 text-blue-500 shrink-0" />
-                      )}
+                      <CategoryIcon category={m.category} className="size-3.5 shrink-0" />
                       <span className="font-medium flex-1">{m.label}</span>
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
                         {m.category}
@@ -683,6 +729,29 @@ function CloudAgentsTab({
                   ))}
                 </div>
               </div>
+            )}
+
+            {/* Google OAuth option */}
+            {selectedProvider === 'google' && (
+              <>
+                <a
+                  href={`${process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.openagents.org'}/v1/cloud-agents/google/auth?network=${encodeURIComponent(workspaceId)}&agent_name=${encodeURIComponent(cfgName || 'gemini')}&model=${encodeURIComponent(cfgModel || 'gemini-3.5-flash')}`}
+                  className="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg border-2 border-blue-200 dark:border-blue-800 bg-white dark:bg-zinc-900 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors text-sm font-medium"
+                >
+                  <svg viewBox="0 0 24 24" className="size-4" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                  Sign in with Google
+                </a>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 border-t" />
+                  <span className="text-[10px] text-muted-foreground">or use API key</span>
+                  <div className="flex-1 border-t" />
+                </div>
+              </>
             )}
 
             {/* Agent name */}
@@ -745,14 +814,47 @@ function CloudAgentsTab({
             </Button>
           </div>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {/* Hint when nothing selected */}
-      {!selectedProviderInfo && cloudAgents.length === 0 && (
-        <p className="text-center text-xs text-muted-foreground py-4">
-          Select a provider to configure a cloud agent
-        </p>
-      )}
+  // Grid view — no provider selected
+  return (
+    <div className="p-4 space-y-3">
+      {providerGroups.map((group) => {
+        const groupProviders = group.names
+          .map((n) => providers.find((p) => p.name === n))
+          .filter(Boolean) as typeof providers;
+        if (groupProviders.length === 0) return null;
+        return (
+          <div key={group.label}>
+            <div className="flex items-center gap-2 mb-1.5 px-0.5">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{group.label}</span>
+              <div className="flex-1 border-t" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {groupProviders.map((p) => {
+                const brand = getProviderBrand(p.name);
+                return (
+                  <button
+                    key={p.name}
+                    onClick={() => onSelectProvider(p.name)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 text-left transition-all"
+                  >
+                    <div className="size-6 shrink-0 flex items-center justify-center">
+                      <ProviderIcon name={p.name} size={22} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium leading-tight truncate">{p.label}</div>
+                      <div className="text-[9px] text-muted-foreground">{p.models.length} models</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Connected cloud agents */}
       {cloudAgents.length > 0 && (
@@ -761,38 +863,31 @@ function CloudAgentsTab({
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Connected</span>
             <div className="flex-1 border-t" />
           </div>
-          {cloudAgents.map((agent) => {
-            const brand = getProviderBrand(agent.provider);
-            return (
-              <div
-                key={agent.agentName}
-                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-background"
-              >
-                <div className="size-7 flex items-center justify-center shrink-0">
-                  <ProviderIcon name={agent.provider} size={28} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium">@{agent.agentName}</span>
-                    {agent.category === 'image' ? (
-                      <ImageIcon className="size-2.5 text-violet-500" />
-                    ) : (
-                      <MessageSquare className="size-2.5 text-blue-500" />
-                    )}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">{agent.model}</div>
-                </div>
-                <span className="text-[10px] text-muted-foreground font-mono">{agent.apiKeyMasked}</span>
-                <button
-                  onClick={() => onRemove(agent.agentName)}
-                  className="size-6 flex items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 transition-colors"
-                  title="Remove"
-                >
-                  <Trash2 className="size-3" />
-                </button>
+          {cloudAgents.map((agent) => (
+            <div
+              key={agent.agentName}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-background"
+            >
+              <div className="size-7 flex items-center justify-center shrink-0">
+                <ProviderIcon name={agent.provider} size={28} />
               </div>
-            );
-          })}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium">@{agent.agentName}</span>
+                  <CategoryIcon category={agent.category} className="size-2.5" />
+                </div>
+                <div className="text-[10px] text-muted-foreground">{agent.model}</div>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-mono">{agent.apiKeyMasked}</span>
+              <button
+                onClick={() => onRemove(agent.agentName)}
+                className="size-6 flex items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 transition-colors"
+                title="Remove"
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

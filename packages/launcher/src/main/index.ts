@@ -40,13 +40,18 @@ import {
 function execFileAsync(
   file: string,
   args: string[],
-  opts: { timeout?: number; env?: NodeJS.ProcessEnv } = {},
+  opts: { timeout?: number; env?: NodeJS.ProcessEnv; maxBuffer?: number } = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       file,
       args,
-      { timeout: opts.timeout || 10000, env: opts.env, encoding: "utf-8" },
+      {
+        timeout: opts.timeout || 10000,
+        env: opts.env,
+        encoding: "utf-8",
+        maxBuffer: opts.maxBuffer,
+      },
       (err, stdout) => {
         if (err) reject(err)
         else resolve((stdout || "").toString().trim())
@@ -100,6 +105,16 @@ function canExecuteNodeBinary(binaryPath: string): boolean {
 }
 
 app.setName("OpenAgents Launcher")
+
+// Stop macOS from popping the "<App> wants to use the keychain Safe Storage"
+// password prompt. That entry is Chromium's OSCrypt key (shared with Electron's
+// safeStorage) used to encrypt cookies/local storage; its keychain ACL is bound
+// to the app's code signature, so every unsigned dev run / Electron upgrade
+// re-triggers the prompt. We don't keep anything security-critical in Chromium
+// storage, so route OSCrypt to an in-memory mock keychain — no prompt, no real
+// keychain access. (Our own credential secrets are encrypted separately; see
+// CredentialsStore.)
+app.commandLine.appendSwitch("use-mock-keychain")
 
 const isHeadless = process.argv.includes("--headless")
 if (process.argv.includes("--disable-gpu") || isHeadless) {
@@ -340,7 +355,7 @@ async function downloadNodejs(
   onProgress: (pct: number, detail: string) => void,
 ): Promise<void> {
   const https = require("https")
-  const nodeVersion = "v22.14.0"
+  const nodeVersion = "v22.22.3"
   const arch = nodeDistArch()
 
   try {
@@ -374,7 +389,7 @@ async function downloadNodejs(
       )
     }
 
-    const npmVersion = "10.9.2"
+    const npmVersion = "10.9.8"
     const npmUrl = `https://registry.npmjs.org/npm/-/npm-${npmVersion}.tgz`
     const npmTgz = path.join(os.tmpdir(), `npm-${npmVersion}.tgz`)
     const npmModDir = path.join(nodejsDir, "node_modules", "npm")
@@ -396,13 +411,18 @@ async function downloadNodejs(
 
     const npmCliPath = path.join(npmModDir, "bin", "npm-cli.js")
     if (fs.existsSync(npmCliPath)) {
+      // Reference node.exe / the cli via %~dp0 (this .cmd file's own dir),
+      // NOT an absolute path. cmd.exe reads a .cmd FILE from disk using the OEM
+      // code page (936/GBK on zh-CN), so an embedded "C:\Users\中文名\…" path
+      // would be corrupted; %~dp0 is resolved from the filesystem at runtime as
+      // Unicode and stays correct under a non-ASCII home dir.
       fs.writeFileSync(
         path.join(nodejsDir, "npm.cmd"),
-        `@echo off\r\n"${nodeExeDest}" "${npmCliPath}" %*\r\n`,
+        `@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\npm\\bin\\npm-cli.js" %*\r\n`,
       )
       fs.writeFileSync(
         path.join(nodejsDir, "npx.cmd"),
-        `@echo off\r\n"${nodeExeDest}" "${path.join(npmModDir, "bin", "npx-cli.js")}" %*\r\n`,
+        `@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\npm\\bin\\npx-cli.js" %*\r\n`,
       )
     }
   } else {
@@ -614,7 +634,7 @@ async function ensureCoreLibrary(): Promise<void> {
       const npmDir = path.join(PORTABLE_NODE_DIR, "node_modules", "npm")
       await downloadFile(
         https,
-        "https://registry.npmjs.org/npm/-/npm-10.9.2.tgz",
+        "https://registry.npmjs.org/npm/-/npm-10.9.8.tgz",
         npmTgz,
         null,
       )
@@ -696,6 +716,15 @@ function createWindow(): void {
   mainWindow.once("ready-to-show", () => {
     if (process.platform === "darwin" && app.dock) app.dock.show()
     mainWindow!.show()
+    // On Windows, splash window (`alwaysOnTop: true`) sometimes leaves
+    // focus on the desktop after it closes, so the main window appears but
+    // doesn't receive clicks until the user clicks the title bar. Force the
+    // focus to land on the launcher so onboarding is immediately
+    // interactive.
+    if (process.platform === "win32") {
+      mainWindow!.focus()
+      mainWindow!.moveTop()
+    }
     // DevTools — dev only. Production builds (`app.isPackaged === true`) skip
     // this so end users never see the inspector pop up.
     if (!app.isPackaged) {
@@ -1392,11 +1421,12 @@ function setupIPC(): void {
       return { installed: false, binary: null }
     }
   })
-  ipcMain.handle("agents:catalog", async () => {
+  ipcMain.handle("agents:catalog", async (_e, force?: boolean) => {
     if (!agentManager) return []
     try {
-      return await agentManager.getCatalog()
-    } catch {
+      return await agentManager.getCatalog(!!force)
+    } catch (err: unknown) {
+      slog(`agents:catalog failed: ${(err as Error)?.message || err}`)
       return []
     }
   })
@@ -1491,6 +1521,29 @@ function setupIPC(): void {
   ipcMain.handle("workspace:create", (_e, name) =>
     requireManager().createWorkspace(name),
   )
+
+  // ── Onboarding ──
+  // Runnable-only picker + atomic, verified provisioning. See agent-manager.ts.
+  ipcMain.handle("onboarding:agents", async () => {
+    if (!agentManager) return []
+    try {
+      return await agentManager.getOnboardingAgents()
+    } catch (err: unknown) {
+      slog(`onboarding:agents failed: ${(err as Error)?.message || err}`)
+      return []
+    }
+  })
+  ipcMain.handle("onboarding:provision", (_e, opts) =>
+    requireManager().provisionFirstAgent(opts),
+  )
+  // Renderer consumes the post-upgrade reset flag (set by the startup
+  // migration) to clear its onboarding localStorage and re-open the flow.
+  // Read-and-clear so it only fires once.
+  ipcMain.handle("onboarding:consume-reset", () => {
+    const pending = !!store.get("pendingOnboardingReset")
+    if (pending) store.delete("pendingOnboardingReset")
+    return pending
+  })
   ipcMain.handle("workspace:register-from-token", (_e, input) =>
     requireManager().registerWorkspaceFromToken(input),
   )
@@ -1821,20 +1874,49 @@ function setupIPC(): void {
     }
   })
 
-  ipcMain.handle("core:update", async () => {
-    const npmUnified = path.join(
-      PORTABLE_NODE_DIR,
-      process.platform === "win32" ? "npm.cmd" : "npm",
-    )
-    const npmBin = fs.existsSync(npmUnified)
-      ? npmUnified
-      : path.join(PORTABLE_NODE_DIR, "bin", "npm")
+  // Run a fresh sign-in probe for a hosted-login agent (Cursor/Hermes) and
+  // return its health. Used by the Configure dialog after the user confirms
+  // they completed the terminal login, so the result reflects reality.
+  ipcMain.handle("agents:login-refresh", async (_e, type) => {
+    if (!agentManager) return null
     try {
-      execSync(
-        `"${npmBin}" install --prefix "${PORTABLE_NODE_DIR}" ${CORE_PKG}@latest --ignore-scripts`,
+      return await agentManager.refreshHostedLogin(type)
+    } catch {
+      return null
+    }
+  })
+
+  // Drop a stale/invalid API key (e.g. CURSOR_API_KEY) so a hosted-login agent
+  // uses its browser-login session instead. See clearHostedLoginApiKey.
+  ipcMain.handle("agents:login-clear-key", (_e, type, agentName) => {
+    if (!agentManager) return { success: false }
+    try {
+      agentManager.clearHostedLoginApiKey(type, agentName || undefined)
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
+  ipcMain.handle("core:update", async () => {
+    // Run bundled `node npm-cli.js` directly (no shell, argv array) so a
+    // non-ASCII home path survives on Windows — the `.cmd` shim does not.
+    const npm = resolveNpmInvocation()
+    if (!npm) return { success: false, error: "npm runtime not found" }
+    try {
+      await execFileAsync(
+        npm.node,
+        [
+          ...npm.args,
+          "install",
+          "--prefix",
+          PORTABLE_NODE_DIR,
+          `${CORE_PKG}@latest`,
+          "--ignore-scripts",
+        ],
         {
-          stdio: "ignore",
           timeout: 120000,
+          maxBuffer: 64 * 1024 * 1024,
           env: withPathEnv(
             PORTABLE_NODE_DIR +
               (process.platform === "win32" ? ";" : ":") +
@@ -1861,6 +1943,15 @@ function setupIPC(): void {
   ipcMain.handle("shell:open-external", (_e, url) => shell.openExternal(url))
   ipcMain.handle("shell:open-terminal", (_e, cmd) => {
     const { spawn } = require("child_process")
+    // Resolve hosted-login CLIs (Cursor/Hermes) to an ABSOLUTE binary path so
+    // the login terminal never depends on PATH. The Windows native installer
+    // drops cursor-agent under %LOCALAPPDATA%\cursor-agent and only edits the
+    // *registry* PATH — a freshly-spawned terminal inherits that stale, so a
+    // bare `cursor-agent login` dies with "'cursor-agent' is not recognized as
+    // an internal or external command". An absolute path sidesteps it entirely.
+    const resolvedCmd = agentManager
+      ? agentManager.resolveLoginCommand(cmd)
+      : cmd
     if (process.platform === "win32") {
       const { execSync: exec } = require("child_process")
       const home = process.env.USERPROFILE || os.homedir()
@@ -1874,17 +1965,62 @@ function setupIPC(): void {
             runtimeBins.push(path.join(rd, d.name, "node_modules", ".bin"))
         }
       } catch {}
+      // Mirror the dirs the core adds to its own enhanced PATH so child tools
+      // the CLI spawns (and the fallback when abs-path resolution misses) still
+      // resolve without a reboot. Kept as a PATH fallback only — the command
+      // itself is already an absolute path via resolveLoginCommand above.
+      const localAppData =
+        process.env.LOCALAPPDATA || path.join(home, "AppData", "Local")
+      const cliBins = [
+        // Cursor: native win32 installer → %LOCALAPPDATA%\cursor-agent (the
+        // executables are copied to the root, not the versions\ subdir). The
+        // curl|bash layout uses ~/.local\bin or ~/.cursor\bin.
+        path.join(localAppData, "cursor-agent"),
+        path.join(home, ".local", "bin"),
+        path.join(home, ".cursor", "bin"),
+        // Hermes: native (no-WSL) installer puts hermes.exe in the portable
+        // venv's Scripts dir and the uv shim in %LOCALAPPDATA%\hermes\bin.
+        path.join(localAppData, "hermes", "hermes-agent", "venv", "Scripts"),
+        path.join(localAppData, "hermes", "bin"),
+      ]
       const allBins = [
         ...runtimeBins,
         path.join(portableNode, "node_modules", ".bin"),
         portableNode,
         npmBin,
-      ].join(";")
-      const setPath = `set PATH=${allBins};%PATH%`
-      exec(`start "" cmd /K "${setPath} && ${cmd}"`, {
-        stdio: "ignore",
-        shell: true,
-      })
+        ...cliBins,
+      ]
+        .filter((d) => {
+          try {
+            return !!d && fs.existsSync(d)
+          } catch {
+            return false
+          }
+        })
+        .join(";")
+      // Write the PATH prefix + command into a temp .cmd and launch a window
+      // that runs it. Putting the (long) PATH *inside the file* — not on an
+      // inline `set PATH=<huge> && cmd` on the `start` command line — avoids the
+      // cmd.exe command-line/env overflow ("Not enough memory resources") that
+      // silently aborted the `set`, leaving cursor-agent unresolved. The temp
+      // path is quoted so a space in the user's home dir survives.
+      try {
+        const lines = [
+          "@echo off",
+          "chcp 65001 >nul",
+          `set "PATH=${allBins};%PATH%"`,
+          resolvedCmd,
+        ]
+        const tmpCmd = path.join(
+          os.tmpdir(),
+          `openagents-login-${Date.now()}.cmd`,
+        )
+        fs.writeFileSync(tmpCmd, lines.join("\r\n"), "utf-8")
+        exec(`start "OpenAgents Login" cmd /K "${tmpCmd}"`, {
+          stdio: "ignore",
+          shell: true,
+        })
+      } catch {}
     } else if (process.platform === "darwin") {
       const home = os.homedir()
       const portableNode = path.join(home, ".openagents", "nodejs")
@@ -1905,7 +2041,7 @@ function setupIPC(): void {
         "/usr/local/bin",
       ].join(":")
       const setPath = `export PATH=${allBins}:$PATH`
-      const fullCmd = `${setPath} && ${cmd}`.replace(/"/g, '\\"')
+      const fullCmd = `${setPath} && ${resolvedCmd}`.replace(/"/g, '\\"')
       spawn(
         "osascript",
         ["-e", `tell app "Terminal" to do script "${fullCmd}"`],
@@ -1915,7 +2051,7 @@ function setupIPC(): void {
       const terminals = ["x-terminal-emulator", "gnome-terminal", "xterm"]
       for (const term of terminals) {
         try {
-          spawn(term, ["-e", cmd], { detached: true, stdio: "ignore" })
+          spawn(term, ["-e", resolvedCmd], { detached: true, stdio: "ignore" })
           return
         } catch {}
       }
@@ -1965,6 +2101,41 @@ app.whenReady().then(async () => {
 
   setupIPC()
   createTray()
+
+  // ── One-time upgrade migration ──
+  // A big version bump can leave DERIVED caches stale enough to misbehave, so
+  // on the first launch after an upgrade we clear (1) the agent catalog cache
+  // and (2) the downloaded core (ensureCoreLibrary below reinstalls @latest),
+  // and flag the renderer to re-run onboarding. USER DATA is never touched —
+  // API keys (~/.openagents/env), agents (daemon.yaml), workspaces, chat
+  // history and credentials all survive. A fresh install (no prior recorded
+  // version) skips cleanup and just records the current version.
+  try {
+    const currentVersion = getLauncherVersion()
+    const prevVersion = store.get("lastMigratedVersion") as string | undefined
+    if (prevVersion && prevVersion !== currentVersion) {
+      slog(
+        `Upgrade ${prevVersion} → ${currentVersion}: clearing derived caches`,
+      )
+      try {
+        fs.rmSync(
+          path.join(os.homedir(), ".openagents", "agent_catalog.json"),
+          { force: true },
+        )
+      } catch {}
+      try {
+        fs.rmSync(
+          path.join(GLOBAL_MODULES, "@openagents-org", "agent-launcher"),
+          { recursive: true, force: true },
+        )
+      } catch {}
+      store.set("pendingOnboardingReset", true)
+    }
+    if (prevVersion !== currentVersion)
+      store.set("lastMigratedVersion", currentVersion)
+  } catch (e) {
+    slog(`upgrade migration failed: ${(e as Error).message}`)
+  }
 
   // Detect a working bundled node, not just file presence. A previous
   // download interrupted by ECONNRESET leaves a corrupt node.exe at the
@@ -2077,7 +2248,7 @@ app.whenReady().then(async () => {
     updateSplash("Installing npm...", 55)
     try {
       const https = require("https")
-      const npmVersion = "10.9.2"
+      const npmVersion = "10.9.8"
       const npmTgz = path.join(os.tmpdir(), `npm-${npmVersion}.tgz`)
       const npmModDir = path.join(PORTABLE_NODE_DIR, "node_modules", "npm")
       await downloadFile(
@@ -2095,10 +2266,12 @@ app.whenReady().then(async () => {
         fs.unlinkSync(npmTgz)
       } catch {}
       if (process.platform === "win32") {
-        const nodeExe = path.join(PORTABLE_NODE_DIR, "node.exe")
+        // %~dp0-relative so cmd.exe (which reads this .cmd file with the OEM
+        // code page) never sees an embedded non-ASCII path. See the matching
+        // shim in downloadNodejs().
         fs.writeFileSync(
           path.join(PORTABLE_NODE_DIR, "npm.cmd"),
-          `@echo off\r\n"${nodeExe}" "${path.join(npmModDir, "bin", "npm-cli.js")}" %*\r\n`,
+          `@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\npm\\bin\\npm-cli.js" %*\r\n`,
         )
       }
       slog("npm installed")
@@ -2173,6 +2346,16 @@ app.whenReady().then(async () => {
     splash = null
   }
 
+  // Create the main window BEFORE loading the connector. AgentManager's
+  // constructor performs a synchronous `require()` of the agent-launcher
+  // core, which on Windows can take 1-2s while Defender scans the freshly
+  // extracted files. Doing it after the BrowserWindow exists lets the
+  // renderer load in parallel — the user sees the UI instead of a frozen
+  // post-splash desktop. IPC handlers safely return defaults while
+  // agentManager is still undefined; the onboarding catalog poll retries
+  // until it lands.
+  if (!isHeadless) createWindow()
+
   agentManager = new AgentManager(store)
   agentManager!._ensureDaemon().catch(() => {})
 
@@ -2183,8 +2366,6 @@ app.whenReady().then(async () => {
   })
 
   setInterval(() => updateTrayMenu(), 5000)
-
-  if (!isHeadless) createWindow()
 
   const FOUR_HOURS = 4 * 60 * 60 * 1000
   const ONE_HOUR = 60 * 60 * 1000

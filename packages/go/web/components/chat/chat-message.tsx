@@ -164,7 +164,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [], onA
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className="text-[15px] font-bold text-foreground">You</span>
+              <span className="text-[15px] font-bold text-foreground">{message.senderName || 'You'}</span>
               {timestamp && (
                 <span className="text-xs text-muted-foreground">{timestamp}</span>
               )}

@@ -6,7 +6,7 @@ import { capture } from './analytics';
 import { useOpenAgentsAuth } from './openagents-auth-context';
 import { generateUserId, getStoredIdentity, storeIdentity } from './identity';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, DMConversation, KnowledgeEntry, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
 
 function useWorkspaceIdentity() {
   const { user } = useOpenAgentsAuth();
@@ -119,6 +119,11 @@ interface WorkspaceContextValue {
     interval_minutes?: number;
     conversation_history?: string;
   }) => Promise<void>;
+  knowledge: KnowledgeEntry[];
+  refreshKnowledge: () => Promise<void>;
+  createKnowledge: (params: { title: string; content: string; description?: string }) => Promise<KnowledgeEntry>;
+  updateKnowledge: (entryId: string, params: { title?: string; content?: string; description?: string }) => Promise<KnowledgeEntry>;
+  deleteKnowledge: (entryId: string) => Promise<void>;
   notifications: NotificationItem[];
   unreadNotificationCount: number;
   refreshNotifications: () => Promise<void>;
@@ -195,6 +200,7 @@ export function WorkspaceProvider({
   const [dmConversations, setDMConversations] = useState<DMConversation[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [routines, setRoutines] = useState<RoutineItem[]>([]);
+  const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
@@ -591,6 +597,7 @@ export function WorkspaceProvider({
       workspaceApi.listConversations().then((c) => setDMConversations(c)).catch(() => {});
       workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {});
       workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {});
+      workspaceApi.listKnowledge().then((r) => setKnowledge(r.entries)).catch(() => {});
       workspaceApi.listNotifications().then((r) => {
         setNotifications(r.notifications);
         setUnreadNotificationCount(r.unreadCount);
@@ -684,6 +691,32 @@ export function WorkspaceProvider({
       await refreshNotifications();
     }
   }, [notifications, refreshNotifications]);
+
+  const refreshKnowledge = useCallback(async () => {
+    try {
+      const result = await workspaceApi.listKnowledge();
+      setKnowledge(result.entries);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const createKnowledge = useCallback(async (params: { title: string; content: string; description?: string }) => {
+    const entry = await workspaceApi.createKnowledge(params);
+    await refreshKnowledge();
+    return entry;
+  }, [refreshKnowledge]);
+
+  const updateKnowledge = useCallback(async (entryId: string, params: { title?: string; content?: string; description?: string }) => {
+    const entry = await workspaceApi.updateKnowledge(entryId, params);
+    await refreshKnowledge();
+    return entry;
+  }, [refreshKnowledge]);
+
+  const deleteKnowledge = useCallback(async (entryId: string) => {
+    await workspaceApi.deleteKnowledge(entryId);
+    setKnowledge((prev) => prev.filter((k) => k.id !== entryId));
+  }, []);
 
   const uploadFile = useCallback(async (file: File) => {
     const result = await workspaceApi.uploadFile(file);
@@ -792,6 +825,7 @@ export function WorkspaceProvider({
           workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {}),
           workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {}),
           workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {}),
+          workspaceApi.listKnowledge().then((r) => setKnowledge(r.entries)).catch(() => {}),
           workspaceApi.listNotifications().then((r) => {
             setNotifications(r.notifications);
             setUnreadNotificationCount(r.unreadCount);
@@ -1104,6 +1138,11 @@ export function WorkspaceProvider({
         routines,
         refreshRoutines,
         createRoutine,
+        knowledge,
+        refreshKnowledge,
+        createKnowledge,
+        updateKnowledge,
+        deleteKnowledge,
         notifications,
         unreadNotificationCount,
         refreshNotifications,

@@ -12,10 +12,8 @@ import { CalendarClock, Wrench, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
-import { timeAgo } from '@/lib/helpers';
+import { timeAgo, isRoutineChannel, routineAgentName } from '@/lib/helpers';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
-
-const ROUTINE_PREFIX = 'routines:';
 
 function readMap(workspaceId: string): Record<string, number> {
   if (typeof window === 'undefined') return {};
@@ -72,7 +70,7 @@ export function InboxList() {
   // (keyboard, mobile, sidebar), mark it read.
   useEffect(() => {
     if (!currentSessionId) return;
-    if (!currentSessionId.startsWith(ROUTINE_PREFIX)) return;
+    if (!isRoutineChannel(currentSessionId)) return;
     const session = sessions.find((s) => s.sessionId === currentSessionId);
     if (!session) return;
     markRead(currentSessionId, session.lastEventAt);
@@ -81,7 +79,7 @@ export function InboxList() {
   const routineSessions = useMemo(
     () =>
       sessions
-        .filter((s) => s.sessionId.startsWith(ROUTINE_PREFIX) && s.status !== 'deleted')
+        .filter((s) => isRoutineChannel(s.sessionId) && s.status !== 'deleted')
         .sort((a, b) => (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0)),
     [sessions],
   );
@@ -100,8 +98,7 @@ export function InboxList() {
     <div className="flex-1 overflow-y-auto px-3 py-1">
       <div className="space-y-1">
         {routineSessions.map((session) => {
-          const agentName =
-            session.sessionId.slice(ROUTINE_PREFIX.length) || session.title;
+          const agentName = routineAgentName(session.sessionId) ?? session.title;
           const lastMsg = lastMessageBySession[session.sessionId];
           const isSelected = session.sessionId === currentSessionId;
           const isActive = activeSessionIds.has(session.sessionId);
@@ -240,7 +237,7 @@ export function useInboxUnreadCount(): number {
     () =>
       sessions.filter(
         (s) =>
-          s.sessionId.startsWith(ROUTINE_PREFIX) &&
+          isRoutineChannel(s.sessionId) &&
           s.status !== 'deleted' &&
           !!s.lastEventAt &&
           s.lastEventAt > (readMapState[s.sessionId] ?? 0),

@@ -123,7 +123,13 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
 
   const agentNames = agents.map((a) => a.agentName);
   const agent = agents.find((a) => a.agentName === message.senderName);
-  const attachments = (message.metadata?.attachments as Attachment[]) || [];
+  const rawAttachments = (message.metadata?.attachments as Record<string, unknown>[]) || [];
+  const attachments: Attachment[] = rawAttachments.map((a) => ({
+    fileId: (a.fileId || a.file_id || '') as string,
+    filename: (a.filename || '') as string,
+    contentType: (a.contentType || a.content_type || '') as string,
+    url: '',
+  }));
 
   const timestamp = message.createdAt
     ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })

@@ -6,17 +6,20 @@ POST /v1/events    Send any event into the mod pipeline
 GET  /v1/events    Poll events (filter by after, target, channel, type)
 """
 
+import asyncio
 import hashlib
+import json as _json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, case, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
 
 from app import cache
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import Channel, ChannelMember, EventRecord, Workspace
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
@@ -41,6 +44,79 @@ class SendEventRequest(BaseModel):
     metadata: Optional[dict] = None
     visibility: Optional[str] = "channel"
     network: Optional[str] = None   # workspace ID or slug
+
+
+# ---------------------------------------------------------------------------
+# Poll-cache invalidation
+# ---------------------------------------------------------------------------
+
+def _poll_cache_keys_for(workspace_id: str, event_type: str = ""):
+    """Return the (head_tracker_key, at_head_key) pairs that should be
+    invalidated when a new event is persisted in *workspace_id*.
+
+    Agents poll with a small set of well-known filter combinations.
+    Rather than a wildcard scan we enumerate the patterns the adapters
+    actually use:
+
+    1. ``type=workspace.message.posted, sort=asc, limit=500`` — the
+       main message poll in ``workspace-client.js:pollPending``.
+    2. ``type=workspace.agent.control, target=openagents:*, sort=asc,
+       limit=50`` — the control-event poll.
+    3. The same as (1) with ``sort=desc, limit=1`` — ``getHeadEventId``.
+
+    We also include variants with common limits (50, 100, 500) and both
+    sort orders so we don't miss any.
+    """
+    keys = []
+
+    # Build the same filter_parts the poll endpoint uses:
+    #   [workspace_id, target, channel, type, conversation, sort, limit]
+    common_filters = []
+
+    if event_type.startswith("workspace.message"):
+        for sort in ("asc",):
+            for limit in (500,):
+                common_filters.append(
+                    (workspace_id, "", "", "workspace.message.posted", "", sort, str(limit))
+                )
+        # getHeadEventId uses sort=desc, limit=1
+        common_filters.append(
+            (workspace_id, "", "", "workspace.message.posted", "", "desc", "1")
+        )
+
+    elif event_type.startswith("workspace.agent.control"):
+        for limit in (50, 500):
+            common_filters.append(
+                (workspace_id, "", "", "workspace.agent.control", "", "asc", str(limit))
+            )
+
+    # Always invalidate the untyped "all events" poll pattern too
+    for sort in ("asc", "desc"):
+        for limit in (50, 500):
+            common_filters.append(
+                (workspace_id, "", "", "", "", sort, str(limit))
+            )
+
+    for parts in common_filters:
+        fh = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
+        keys.append(("v1events:head:" + fh, "v1events:athead:" + fh))
+
+    return keys
+
+
+def _invalidate_poll_cache(workspace_id: str, event_type: str = ""):
+    """Delete head-tracker and at-head cache entries so polling agents
+    see newly posted events immediately instead of receiving a stale
+    cached-empty response."""
+    for head_key, athead_key in _poll_cache_keys_for(workspace_id, event_type):
+        try:
+            cache.delete_key(head_key)
+        except Exception:
+            pass
+        try:
+            cache.delete_key(athead_key)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +216,28 @@ async def send_event(
     }
     background_tasks.add_task(fanout_for_event, str(workspace.id), event_snapshot)
 
+    # Invalidate poll cache head-trackers for this workspace so that
+    # agents polling with `after=<head>` don't keep getting a stale
+    # cached-empty response.  We delete every `v1events:head:*` and
+    # `v1events:athead:*` key that could match ANY filter combination
+    # for this workspace.  Because the filter hash includes
+    # workspace.id as the first component, a wildcard scan would be
+    # expensive — instead we invalidate the two most common poll
+    # patterns that agents use (workspace-wide message poll and
+    # per-agent control poll).
+    try:
+        _invalidate_poll_cache(str(workspace.id), result.type)
+    except Exception:
+        pass
+
+    try:
+        cache.publish_event(
+            f"ws:{workspace.id}:events",
+            _json.dumps(event_snapshot, default=str, separators=(",", ":")).encode(),
+        )
+    except Exception:
+        pass
+
     # Invoke cloud agents if any are targeted by this message.
     if result.type == "workspace.message.posted":
         from app.services.cloud_agent import invoke_cloud_agents
@@ -161,7 +259,7 @@ async def send_event(
 # ---------------------------------------------------------------------------
 
 @router.get("/events")
-async def poll_events(
+def poll_events(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     after: Optional[str] = Query(None, description="Return events after this event ID"),
     before: Optional[str] = Query(None, description="Return events before this event ID"),
@@ -426,7 +524,7 @@ async def poll_events(
 # ---------------------------------------------------------------------------
 
 @router.get("/events/conversations")
-async def list_conversations(
+def list_conversations(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     agent: Optional[str] = Query(None, description="Filter to conversations involving this agent"),
     limit: int = Query(20, ge=1, le=100),
@@ -522,7 +620,7 @@ async def list_conversations(
 # ---------------------------------------------------------------------------
 
 @router.get("/events/latest-per-channel")
-async def latest_per_channel(
+def latest_per_channel(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     type: Optional[str] = Query("workspace.message", description="Event type prefix to filter"),
     db: Session = Depends(get_db),
@@ -583,3 +681,76 @@ async def latest_per_channel(
         }
 
     return success_response({"channels": channels})
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/events/stream — Server-Sent Events
+# ---------------------------------------------------------------------------
+
+@router.get("/events/stream")
+async def stream_events(
+    request: Request,
+    network: str = Query(...),
+    channel: Optional[str] = Query(None),
+    token: Optional[str] = Query(None),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Stream new events via Server-Sent Events (SSE).
+
+    Uses Redis pub/sub under the hood. Falls back gracefully — if Redis
+    is unavailable the connection closes and the client should fall back
+    to polling.
+    """
+    effective_token = x_workspace_token or token
+
+    # Verify access with a SHORT-LIVED session that is closed BEFORE we start
+    # streaming. SSE streams live for minutes/hours; a Depends(get_db) session
+    # would stay checked out — and idle-in-transaction, from the verify query
+    # below — for the whole stream, pinning a pooled connection per client and
+    # exhausting the pool. The generator below reads only from Redis, so no DB
+    # session is needed once access is verified.
+    db = SessionLocal()
+    try:
+        workspace = db.execute(
+            select(Workspace).where(_workspace_filter(network))
+        ).scalar_one_or_none()
+        if not workspace:
+            return json_response(ResponseCode.NOT_FOUND, "Network not found")
+        if not _verify_workspace_access(workspace, effective_token, authorization):
+            return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+        workspace_id = str(workspace.id)
+    finally:
+        db.close()
+    target_prefix = f"channel/{channel}" if channel else None
+
+    async def event_generator():
+        keepalive_interval = 30
+        last_keepalive = asyncio.get_event_loop().time()
+
+        async for data in cache.subscribe_events(f"ws:{workspace_id}:events"):
+            if await request.is_disconnected():
+                break
+            try:
+                event = _json.loads(data)
+                if target_prefix and event.get("target", "") != target_prefix:
+                    continue
+                event_id = event.get("id", "")
+                yield f"id: {event_id}\ndata: {data.decode()}\n\n"
+            except Exception:
+                continue
+
+            now = asyncio.get_event_loop().time()
+            if now - last_keepalive >= keepalive_interval:
+                yield ": keepalive\n\n"
+                last_keepalive = now
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

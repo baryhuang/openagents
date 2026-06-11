@@ -279,7 +279,7 @@ async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
 
 async def _handle_channel_create(event: Event, ctx: PipelineContext) -> Optional[Event]:
     """network.channel.create → create Channel + initial ChannelMember rows."""
-    from app.models import Channel, ChannelMember
+    from app.models import Channel, ChannelMember, ChannelHumanMember, WorkspaceCollaborator
 
     db = ctx.extra["db"]
     workspace = ctx.extra["workspace"]
@@ -297,10 +297,45 @@ async def _handle_channel_create(event: Event, ctx: PipelineContext) -> Optional
     db.add(channel)
     db.flush()  # get channel.id
 
-    # Add initial participants
+    # Add initial agent participants (filter out routing sentinels)
     participants = payload.get("participants", [])
     for agent_name in participants:
+        if agent_name == "__no_response__":
+            continue
         db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
+
+    # Add initial human participants. Each email gets both a workspace
+    # collaborator row (so the mention picker shows them everywhere) and
+    # a channel_human_members row (so push fan-out for any message in
+    # this channel reaches their devices, not just @-mentions).
+    human_participants = payload.get("human_participants", []) or []
+    for email_raw in human_participants:
+        email = (email_raw or "").strip().lower()
+        if not email or "@" not in email:
+            continue
+        # Upsert collaborator — same trust model as _upsert_human_collaborator
+        existing_collab = db.execute(
+            select(WorkspaceCollaborator).where(
+                WorkspaceCollaborator.workspace_id == str(workspace.id),
+                WorkspaceCollaborator.email == email,
+            )
+        ).scalar_one_or_none()
+        if not existing_collab:
+            db.add(WorkspaceCollaborator(
+                workspace_id=str(workspace.id),
+                email=email,
+                role="editor",
+                added_by=event.source or email,
+            ))
+        # Upsert channel membership so chat-path pushes go to them.
+        existing_member = db.execute(
+            select(ChannelHumanMember).where(
+                ChannelHumanMember.channel_id == channel.id,
+                ChannelHumanMember.user_email == email,
+            )
+        ).scalar_one_or_none()
+        if not existing_member:
+            db.add(ChannelHumanMember(channel_id=channel.id, user_email=email))
 
     db.flush()
 
@@ -351,10 +386,10 @@ async def _handle_channel_join(event: Event, ctx: PipelineContext) -> Optional[E
     if not channel_name or not agent_name:
         return None
 
-    if channel_name.startswith("routines:") or channel_name.startswith("routine:"):
+    if channel_name.startswith("routines:"):
         raise EventRejected(
             "workspace_mod",
-            "routine_channel_locked: membership of routine channels is managed by the system",
+            "routine_channel_locked: membership of routines:* is managed by the system",
         )
 
     channel = db.execute(
@@ -408,10 +443,10 @@ async def _handle_channel_leave(event: Event, ctx: PipelineContext) -> Optional[
     if not channel_name or not agent_name:
         return None
 
-    if channel_name.startswith("routines:") or channel_name.startswith("routine:"):
+    if channel_name.startswith("routines:"):
         raise EventRejected(
             "workspace_mod",
-            "routine_channel_locked: membership of routine channels is managed by the system",
+            "routine_channel_locked: membership of routines:* is managed by the system",
         )
 
     channel = db.execute(
@@ -764,6 +799,65 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
 _DEFAULT_TITLES = {"New Thread", "Session 1", None, ""}
 
 
+def _upsert_human_collaborator(workspace, payload: dict, db) -> None:
+    """First-write registration of a signed-in human into the workspace
+    roster, used downstream by the push fan-out to resolve `@bary` →
+    bary's device tokens. Reads `sender_email` and `sender_display_name`
+    from the event payload (web/Swift clients pass them on every human
+    chat post); does nothing if the email is missing — older clients
+    that don't yet identify themselves can't be mention-pushed.
+    """
+    email = (payload.get("sender_email") or "").strip().lower()
+    if not email:
+        return
+    display_name = (payload.get("sender_display_name") or "").strip() or None
+    from app.models import WorkspaceCollaborator
+    existing = db.execute(
+        select(WorkspaceCollaborator).where(
+            WorkspaceCollaborator.workspace_id == str(workspace.id),
+            WorkspaceCollaborator.email == email,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        # Keep display_name fresh in case the user renamed their Google
+        # profile since last post.
+        if display_name and existing.display_name != display_name:
+            existing.display_name = display_name
+        return
+    db.add(WorkspaceCollaborator(
+        workspace_id=str(workspace.id),
+        email=email,
+        display_name=display_name,
+        role="editor",
+        added_by=email,
+    ))
+    db.flush()
+
+
+def _join_channel_as_human(channel, payload: dict, db) -> None:
+    """Slack-style implicit join: the first time a human posts in a
+    channel, add them to `channel_human_members` so future chat in this
+    channel pushes to their devices. Idempotent — no-op when the row
+    already exists. Needs `sender_email` on the payload; anonymous
+    token-only visitors leave no membership trail and so don't get
+    pushed for non-mention chat.
+    """
+    email = (payload.get("sender_email") or "").strip().lower()
+    if not email or channel is None:
+        return
+    from app.models import ChannelHumanMember
+    existing = db.execute(
+        select(ChannelHumanMember).where(
+            ChannelHumanMember.channel_id == channel.id,
+            ChannelHumanMember.user_email == email,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return
+    db.add(ChannelHumanMember(channel_id=channel.id, user_email=email))
+    db.flush()
+
+
 def _auto_title_channel(channel, content: str, db) -> None:
     """Set channel title from message content if still using a default title."""
     if channel.title not in _DEFAULT_TITLES:
@@ -848,6 +942,12 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     # Auto-name channel from first human message if title is default/empty
     if event.source.startswith("human:") and channel:
         _auto_title_channel(channel, content, db)
+        # First post from a human → make sure they're in the workspace
+        # roster so @-mention pushes can find their device tokens later.
+        _upsert_human_collaborator(workspace, event.payload or {}, db)
+        # First post in *this* channel → auto-join so future non-mention
+        # chat in the channel pushes to this human's devices.
+        _join_channel_as_human(channel, event.payload or {}, db)
 
     # Skip non-human, non-agent sources
     if not event.source.startswith("human:") and not event.source.startswith("openagents:"):
@@ -857,7 +957,11 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
         return event
 
     # ── Multi-agent channel: always use LLM router ──────────────────
-    if len(channel.participants or []) >= 2:
+    real_participants = [
+        p for p in (channel.participants or [])
+        if p.agent_name != "__no_response__"
+    ]
+    if len(real_participants) >= 2:
         from app.config import config
         if config.ROUTER_LLM_ENABLED and _get_router_api_key():
             targets = await _route_with_llm(channel, event, db, workspace)
@@ -886,13 +990,23 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     #   2. Only auto-add when the sender is a human. Agent→agent routing
     #      decisions (from the LLM router or master-fallback) used to
     #      drag bystander agents into channels they didn't belong in.
-    #   3. Routine channels are locked single-agent job queues — never
-    #      add anyone but the owner.
+    #   3. Routine channels (`routines:<agent>`) are locked single-agent
+    #      job queues — never add anyone but the owner.
     if event.source and event.source.startswith("human:") and \
-            not channel.name.startswith("routines:") and \
-            not channel.name.startswith("routine:"):
+            not channel.name.startswith("routines:"):
         from app.models import ChannelMember
         existing = {p.agent_name for p in (channel.participants or [])}
+        # Clean up any __no_response__ sentinels that leaked into participants
+        if "__no_response__" in existing:
+            bogus = db.execute(
+                select(ChannelMember).where(
+                    ChannelMember.channel_id == channel.id,
+                    ChannelMember.agent_name == "__no_response__",
+                )
+            ).scalar_one_or_none()
+            if bogus:
+                db.delete(bogus)
+            existing.discard("__no_response__")
         for agent_name in event.metadata.get("target_agents", []):
             if agent_name == "__no_response__":
                 continue

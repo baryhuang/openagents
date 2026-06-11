@@ -29,6 +29,12 @@ final class WorkspaceStore {
 
     var workspace: Workspace?
     var agents: [Agent] = []
+    /// Human collaborators in the workspace. Populated by the backend's
+    /// auto-upsert on every human chat post, refreshed alongside agents
+    /// on poll. Drives the @-mention picker (`bary` matches when a
+    /// human with displayName "Bary Huang" — or email "bary@…" — is in
+    /// the workspace).
+    var humans: [WorkspaceAPI.Collaborator] = []
     var sessions: [Session] = []
     var currentSessionId: String?
     /// Per-session message page state with cursor info.
@@ -83,6 +89,31 @@ final class WorkspaceStore {
         }
         isLoading = false
         startPolling()
+
+        // Reinstall flow: APNs delivered the device token before any
+        // workspace was in history, so `PushSink.handleAPNsToken` early-
+        // returned without calling /v1/devices/register. Now that we're
+        // bootstrapped against a real workspace, re-register with the
+        // cached token so push delivery starts working without forcing
+        // the user to restart the app. `lastUserEmail` is written by
+        // AuthStore on sign-in so mention pushes can scope to this user.
+        #if os(iOS)
+        if let token = UserDefaults.standard.string(forKey: "pushSink.lastAPNsToken"),
+           !token.isEmpty {
+            let bundleId = Bundle.main.bundleIdentifier ?? "org.openagents.workspace"
+            let userEmail = UserDefaults.standard.string(forKey: "pushSink.lastUserEmail")
+            do {
+                try await api.registerDeviceToken(
+                    fcmToken: token,
+                    bundleId: bundleId,
+                    userEmail: userEmail,
+                )
+                logInfo("push", "re-registered cached APNs token after bootstrap (\(token.prefix(12))…)")
+            } catch {
+                logInfo("push", "post-bootstrap APNs re-register failed: \(error.localizedDescription)")
+            }
+        }
+        #endif
     }
 
     /// Stop background tasks. Called when the user switches workspaces or signs out.
@@ -231,6 +262,25 @@ final class WorkspaceStore {
             let discovery = try await api.discover()
             self.agents = discovery.agents.map { $0.toAgent() }
             self.sessions = discovery.channels.map { $0.toSession(workspaceId: workspaceId) }
+            // Refresh the human roster in parallel — the @-mention picker
+            // merges these with `agents`. Older backends without the
+            // collaborators endpoint will 404; swallow so the chat list
+            // doesn't fail.
+            //
+            // Self-register the signed-in user as a collaborator first so
+            // the GET that follows includes them — otherwise a freshly-
+            // logged-in human wouldn't appear in their own picker on the
+            // first refresh after sign-in.
+            Task {
+                let email = UserDefaults.standard.string(forKey: "pushSink.lastUserEmail")
+                let displayName = UserDefaults.standard.string(forKey: "pushSink.lastUserDisplayName")
+                if let email, !email.isEmpty {
+                    try? await api.recordPresence(senderEmail: email, senderDisplayName: displayName)
+                }
+                if let collabs = try? await api.listCollaborators() {
+                    self.humans = collabs
+                }
+            }
             // Drop stale current selection if the session no longer exists
             if let id = currentSessionId, !sessions.contains(where: { $0.sessionId == id }) {
                 currentSessionId = activeSessions.first?.sessionId
@@ -463,6 +513,22 @@ final class WorkspaceStore {
                 page.messages.append(contentsOf: newOnes)
                 if let last = newOnes.last { page.newestId = last.messageId }
                 if let last = newOnes.last { lastMessageBySession[channel] = last }
+
+                // macOS local notification banner — mirrors the iOS push
+                // filter for agent chat. MacNotifier suppresses banners
+                // for the channel the user is already viewing.
+                #if os(macOS)
+                for msg in newOnes where !msg.isFromUser && msg.messageType == "chat" {
+                    let preview = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if preview.isEmpty { continue }
+                    MacNotifier.shared.present(
+                        channel: channel,
+                        title: msg.senderName,
+                        body: preview,
+                        eventId: msg.messageId,
+                    )
+                }
+                #endif
                 // Clear the stopping flag if the latest agent status is terminal.
                 if let last = newOnes.last, last.isStatus, !last.isFromUser,
                    Self.isTerminalStatus(last.content) {
@@ -520,7 +586,13 @@ final class WorkspaceStore {
         }
     }
 
-    func sendMessage(_ content: String, attachments: [PendingAttachment] = []) async {
+    func sendMessage(
+        _ content: String,
+        senderName: String = "user",
+        senderEmail: String? = nil,
+        senderDisplayName: String? = nil,
+        attachments: [PendingAttachment] = [],
+    ) async {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             logWarn("send", "ignored — empty content and no attachments")
@@ -532,7 +604,7 @@ final class WorkspaceStore {
         }
 
         let preview = trimmed.count > 60 ? String(trimmed.prefix(60)) + "…" : trimmed
-        logInfo("send", "→ channel=\(channel) chars=\(trimmed.count) attachments=\(attachments.count) text=\"\(preview)\"")
+        logInfo("send", "→ channel=\(channel) chars=\(trimmed.count) attachments=\(attachments.count) sender=\"\(senderName)\" text=\"\(preview)\"")
 
         // Optimistic insert *before* the network request so the bubble appears instantly.
         // Pending attachments are shown as 📎 lines so the user sees them immediately.
@@ -547,7 +619,7 @@ final class WorkspaceStore {
             messageId: optimisticId,
             sessionId: channel,
             senderType: "human",
-            senderName: "You",
+            senderName: senderName,
             content: optimisticContent,
             mentions: [],
             messageType: "chat",
@@ -582,7 +654,13 @@ final class WorkspaceStore {
                 return parts.joined(separator: "\n\n")
             }()
 
-            let event = try await api.sendMessage(channel: channel, content: finalContent)
+            let event = try await api.sendMessage(
+                channel: channel,
+                content: finalContent,
+                senderName: senderName,
+                senderEmail: senderEmail,
+                senderDisplayName: senderDisplayName,
+            )
             logInfo("send", "✓ backend ack id=\(event.id) ts=\(event.timestamp)")
 
             // Replace the optimistic placeholder's content in-place with the
@@ -903,12 +981,11 @@ final class WorkspaceStore {
             logWarn("routines", "no session for id=\(sessionId)")
             return
         }
-        let routinePrefix = "routines:"
         let sessionAgents: [Agent]
         if let owner = session.routineAgentName,
            let ownerAgent = agents.first(where: { $0.agentName == owner }) {
             sessionAgents = [ownerAgent]
-        } else if session.sessionId.hasPrefix(routinePrefix) {
+        } else if session.isRoutineChannel {
             logWarn("routines", "owner agent not online for \(sessionId)")
             return
         } else {
@@ -974,9 +1051,13 @@ final class WorkspaceStore {
         }
     }
 
-    func createThread(master: String, participants: [String]) async {
+    func createThread(master: String, participants: [String], humanParticipants: [String] = []) async {
         do {
-            let session = try await api.createChannel(master: master, participants: participants)
+            let session = try await api.createChannel(
+                master: master,
+                participants: participants,
+                humanParticipants: humanParticipants,
+            )
             sessions.insert(session, at: 0)
             currentSessionId = session.sessionId
             await loadHistory(channel: session.sessionId)

@@ -4,7 +4,7 @@ import { useUiStore } from "../../store/ui"
 import { useShallow } from "zustand/react/shallow"
 import AgentIcon from "../../components/AgentIcon"
 import StatusDot, { displayState } from "../../components/ui/StatusDot"
-import { Plus } from "lucide-react"
+import { Plus, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react"
 import { Button } from "../../components/ui/Button"
 import { Modal, ModalTitle } from "../../components/ui/Modal"
 import { PasswordInput } from "../../components/ui/PasswordInput"
@@ -61,6 +61,10 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
   } | null>(null)
   const [connectWsOpen, setConnectWsOpen] = useState(false)
   const [connectWsAgent, setConnectWsAgent] = useState<string>("")
+  // When a brand-new agent is created we walk the user from Configure straight
+  // into Connect Workspace. This flag distinguishes that flow from configuring
+  // an existing agent (where closing Configure should not prompt to connect).
+  const [connectAfterConfigure, setConnectAfterConfigure] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
 
   useEffect(() => {
@@ -169,7 +173,41 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
   }
 
   const openWorkspace = async (agent: Agent): Promise<void> => {
+    // An agent that isn't bound to a workspace runs "local only" in the daemon
+    // and never joins the workspace channel — so it can't ever answer messages
+    // sent from the web chat. Catch that here instead of opening a chat that
+    // silently goes nowhere.
+    if (!agent.network) {
+      showToast(
+        `${agent.name} isn't connected to a workspace yet — click Connect first.`,
+        "warning",
+      )
+      return
+    }
     try {
+      // The agent must be running to reply in the workspace. Opening the web
+      // chat against a stopped agent is the #1 "agent never responds" trap —
+      // start it first and wait briefly for it to come online so the chat the
+      // user lands on is actually live.
+      const isRunning = ["online", "running", "idle"].includes(agent.state)
+      if (!isRunning) {
+        showToast(`Starting ${agent.name}…`, "info")
+        try {
+          await window.api.startAgent(agent.name)
+          for (let i = 0; i < 5; i++) {
+            await new Promise((r) => setTimeout(r, 1200))
+            const status = await window.api.agentStatus()
+            const st = status[agent.name]?.state
+            if (st && ["online", "running", "idle"].includes(st)) break
+          }
+        } catch (e: unknown) {
+          showToast(
+            `Couldn't start ${agent.name}: ${(e as Error).message}`,
+            "error",
+          )
+          return
+        }
+      }
       const workspaces = await window.api.listWorkspaces()
       const ws = workspaces.find(
         (w) => w.slug === agent.network || w.id === agent.network,
@@ -352,6 +390,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           refresh()
           setConfigureAgent({ name, type })
           setConfigureOpen(true)
+          setConnectAfterConfigure(true)
         }}
       />
 
@@ -360,7 +399,17 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           open={configureOpen}
           agentName={configureAgent.name}
           agentType={configureAgent.type}
-          onClose={() => setConfigureOpen(false)}
+          onClose={() => {
+            setConfigureOpen(false)
+            // For a freshly created agent, guide the user to connect it to a
+            // workspace. This step is skippable (Cancel) so local-only usage
+            // still works.
+            if (connectAfterConfigure) {
+              setConnectAfterConfigure(false)
+              setConnectWsAgent(configureAgent.name)
+              setConnectWsOpen(true)
+            }
+          }}
           showToast={showToast}
           onSaved={refresh}
         />
@@ -556,7 +605,14 @@ function ConfigureDialog({
   const [fields, setFields] = useState<EnvField[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
   const [loginCmd, setLoginCmd] = useState<string | null>(null)
-  const [loggedIn, setLoggedIn] = useState(false)
+  // Real sign-in state from an actual status probe: true / false / null (not yet
+  // checked). Never an optimistic guess — the badge only shows what we verified.
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
+  // Drives the manual login flow: idle (show status + Login) → awaiting (terminal
+  // opened, ask the user to confirm) → checking (re-reading status after confirm).
+  const [loginPhase, setLoginPhase] = useState<"idle" | "awaiting" | "checking">(
+    "idle",
+  )
   const [noConfig, setNoConfig] = useState(false)
   const [loading, setLoading] = useState(true)
   const [testResult, setTestResult] = useState<string | null>(null)
@@ -571,6 +627,8 @@ function ConfigureDialog({
     setTestStatus("idle")
     setNoConfig(false)
     setLoginCmd(null)
+    setLoggedIn(null)
+    setLoginPhase("idle")
     Promise.all([
       window.api.getEnvFields(agentType),
       window.api.getAgentEnv(agentType),
@@ -593,10 +651,20 @@ function ConfigureDialog({
             const cmd = entry?.check_ready?.login_command || null
             if (cmd) {
               setLoginCmd(cmd)
+              // Read the REAL sign-in state once on open (a fresh probe), so the
+              // badge reflects reality instead of an optimistic guess.
               window.api
-                .healthCheck(agentType)
-                .then((h) => setLoggedIn(h?.ready || false))
-                .catch(() => {})
+                .refreshLogin(agentType)
+                .then((h) => {
+                  const ok = h?.ready ?? false
+                  setLoggedIn(ok)
+                  // Already signed in via the browser session? Then any saved
+                  // CURSOR_API_KEY/MODEL is stale leftover that conflicts with
+                  // the login (and was breaking the workspace chat). Drop it
+                  // once — clearLoginKey is a no-op when nothing's set.
+                  if (ok) window.api.clearLoginKey(agentType, agentName || undefined)
+                })
+                .catch(() => setLoggedIn(false))
             } else {
               setNoConfig(true)
             }
@@ -607,7 +675,44 @@ function ConfigureDialog({
       .catch(() => setLoading(false))
   }, [open, agentName, agentType])
 
+  // User-confirmed login check. The browser/terminal login has no completion
+  // callback, so rather than guess, we ask the user to confirm they finished —
+  // THEN read the real status. For Cursor we also clear any stale API key first,
+  // because the CLI prefers an explicit (here: invalid) key over its login
+  // session, which is what made the workspace chat fail with "API key invalid".
+  const confirmLogin = async (): Promise<void> => {
+    setLoginPhase("checking")
+    try {
+      await window.api.clearLoginKey(agentType, agentName || undefined)
+      const h = await window.api.refreshLogin(agentType)
+      const ok = !!h?.ready
+      setLoggedIn(ok)
+      onSaved()
+      showToast(
+        ok
+          ? "Signed in — agent is ready"
+          : "Couldn't confirm sign-in. If you finished login, try again.",
+        ok ? "success" : "warning",
+      )
+    } catch {
+      setLoggedIn(false)
+      showToast("Couldn't read sign-in status. Try again.", "error")
+    } finally {
+      setLoginPhase("idle")
+    }
+  }
+
   const save = async (): Promise<void> => {
+    const missing = fields.find(
+      (f) => f.required && !(values[f.name] || "").trim(),
+    )
+    if (missing) {
+      showToast(
+        `${missing.description || missing.name} is required`,
+        "warning",
+      )
+      return
+    }
     try {
       if (agentName) {
         await window.api.saveAgentInstanceEnv(agentName, values)
@@ -655,36 +760,72 @@ function ConfigureDialog({
           </>
         ) : loginCmd ? (
           <>
-            <p className="hint">This agent uses login-based authentication.</p>
+            <p className="hint">
+              This agent signs in through its own service — no API key needed.
+              Login opens a terminal running <code>{loginCmd}</code>; complete the
+              sign-in there.
+            </p>
+
+            {/* Real, verified status — only shown once we've actually probed. */}
             <div className="flex items-center gap-2 mb-4 p-3 rounded-(--radius) bg-(--bg-input)">
-              <span className="text-lg">{loggedIn ? "✅" : "⚠️"}</span>
-              <strong className="text-[13px]">
-                {loggedIn ? "Logged in" : "Not logged in"}
-              </strong>
+              {loginPhase === "checking" || loggedIn === null ? (
+                <>
+                  <Loader2 className="w-5 h-5 shrink-0 text-(--text-tertiary) animate-spin" strokeWidth={2} />
+                  <strong className="text-[13px]">Checking sign-in…</strong>
+                </>
+              ) : loggedIn ? (
+                <>
+                  <CheckCircle2 className="w-5 h-5 shrink-0 text-(--success-text)" strokeWidth={2} />
+                  <strong className="text-[13px]">Signed in</strong>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-5 h-5 shrink-0 text-(--warning-text)" strokeWidth={2} />
+                  <strong className="text-[13px]">Not signed in</strong>
+                </>
+              )}
             </div>
-            <div className="form-actions">
-              <Button
-                variant="primary"
-                onClick={async () => {
-                  showToast(`Opening terminal for ${loginCmd}...`, "info")
-                  try {
-                    await window.api.openTerminal(loginCmd)
-                    showToast(
-                      "Login terminal opened. Complete login there.",
-                      "success",
-                    )
-                  } catch (err: unknown) {
-                    showToast(
-                      `Failed to open terminal: ${(err as Error).message}`,
-                      "error",
-                    )
-                  }
-                }}
-              >
-                {loggedIn ? "Re-login" : "Login"}
-              </Button>
-              <Button onClick={onClose}>Close</Button>
-            </div>
+
+            {loginPhase === "awaiting" ? (
+              <>
+                <p className="hint mb-3">
+                  A terminal opened running <code>{loginCmd}</code>. Once you've
+                  finished signing in there, let us know and we'll verify it.
+                </p>
+                <div className="form-actions">
+                  <Button
+                    variant="primary"
+                    onClick={confirmLogin}
+                  >
+                    I&apos;ve finished signing in
+                  </Button>
+                  <Button onClick={() => setLoginPhase("idle")}>
+                    Not yet
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="form-actions">
+                <Button
+                  variant="primary"
+                  disabled={loginPhase === "checking"}
+                  onClick={async () => {
+                    try {
+                      await window.api.openTerminal(loginCmd)
+                      setLoginPhase("awaiting")
+                    } catch (err: unknown) {
+                      showToast(
+                        `Failed to open terminal: ${(err as Error).message}`,
+                        "error",
+                      )
+                    }
+                  }}
+                >
+                  {loggedIn ? "Re-login" : "Login"}
+                </Button>
+                <Button onClick={onClose}>Close</Button>
+              </div>
+            )}
           </>
         ) : (
           <>

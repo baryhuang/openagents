@@ -166,6 +166,41 @@ describe('Daemon', () => {
     assert.equal(restarted, 'r-agent');
   });
 
+  it('start command is idempotent — skips restart when already running', () => {
+    const config = new Config(tmpDir);
+    config.addAgent({ name: 's-agent', type: 'openclaw', role: 'worker' });
+    const daemon = new Daemon(config, new EnvManager(tmpDir), new Registry(tmpDir));
+
+    // Already running with a live adapter — a blind restart here would tear
+    // down the joined workspace session and re-join, getting the first session
+    // revoked (agent stops after "thinking..."). `start:` must NOT restart it.
+    daemon._adapters['s-agent'] = { stop() {} };
+    daemon._processes['s-agent'] = { state: 'running', proc: null, restarts: 0 };
+
+    let restarted = null;
+    daemon.restartAgent = async (name) => { restarted = name; };
+
+    fs.writeFileSync(config.cmdFile, 'start:s-agent\n', 'utf-8');
+    daemon._processCommands();
+
+    assert.equal(restarted, null, 'start: must not restart an already-running agent');
+  });
+
+  it('start command launches the agent when it is not running', () => {
+    const config = new Config(tmpDir);
+    config.addAgent({ name: 's-agent', type: 'openclaw', role: 'worker' });
+    const daemon = new Daemon(config, new EnvManager(tmpDir), new Registry(tmpDir));
+
+    // No adapter and no live process → start: must (re)launch it.
+    let restarted = null;
+    daemon.restartAgent = async (name) => { restarted = name; };
+
+    fs.writeFileSync(config.cmdFile, 'start:s-agent\n', 'utf-8');
+    daemon._processCommands();
+
+    assert.equal(restarted, 's-agent', 'start: must launch an agent that is not running');
+  });
+
   it('readDaemonPid returns null when no pid file', () => {
     assert.equal(Daemon.readDaemonPid(tmpDir), null);
   });
@@ -175,10 +210,16 @@ describe('Daemon', () => {
     assert.equal(Daemon.readDaemonPid(tmpDir), process.pid);
   });
 
-  it('readDaemonPid returns pid without validating liveness', () => {
-    fs.writeFileSync(path.join(tmpDir, 'daemon.pid'), '99999999', 'utf-8');
-    // PID validation removed — returns raw value (liveness checked elsewhere)
-    assert.equal(Daemon.readDaemonPid(tmpDir), 99999999);
+  it('readDaemonPid removes stale pid and status files', () => {
+    const pidFile = path.join(tmpDir, 'daemon.pid');
+    const statusFile = path.join(tmpDir, 'daemon.status.json');
+
+    fs.writeFileSync(pidFile, '99999999', 'utf-8');
+    fs.writeFileSync(statusFile, '{"agents":{}}', 'utf-8');
+
+    assert.equal(Daemon.readDaemonPid(tmpDir), null);
+    assert.equal(fs.existsSync(pidFile), false);
+    assert.equal(fs.existsSync(statusFile), false);
   });
 
   it('_reload is serialized (concurrent calls queue)', async () => {

@@ -8,6 +8,7 @@ as push.py.
 """
 
 import asyncio
+import json as _json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ from sqlalchemy import select
 from app.config import config
 from app.database import SessionLocal
 from app.models import CloudAgentConfig, EventRecord, FileRecord, Workspace
-from app.services.cloud_providers import chat_completion, image_generation
+from app.services.cloud_providers import audio_generation, chat_completion, image_generation
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +62,18 @@ async def invoke_cloud_agents(workspace_id: str, event_data: dict) -> None:
 
             try:
                 await _invoke_single(db, workspace_id, event_data, cloud_config, depth)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "cloud_agent: failed to invoke %s (%s/%s)",
                     agent_name, cloud_config.provider, cloud_config.model,
                 )
+                error_detail = str(exc)[:200] if str(exc) else "Unknown error"
+                # Use a fresh DB session for error posting — the original
+                # session may be stale after a long async API call.
                 await _post_error_message(
-                    db, workspace_id, event_data, agent_name,
-                    f"Failed to get a response from {cloud_config.provider}/{cloud_config.model}. "
-                    f"Please check that the API key is valid.",
+                    workspace_id, event_data, agent_name,
+                    f"Failed to get a response from {cloud_config.provider}/{cloud_config.model}: "
+                    f"{error_detail}",
                 )
     finally:
         db.close()
@@ -85,6 +89,8 @@ async def _invoke_single(
 
     if cloud_config.category == "image":
         await _invoke_image_agent(db, workspace_id, event_data, cloud_config)
+    elif cloud_config.category == "audio":
+        await _invoke_audio_agent(db, workspace_id, event_data, cloud_config)
     else:
         await _invoke_chat_agent(db, workspace_id, event_data, cloud_config, depth)
 
@@ -132,9 +138,11 @@ async def _invoke_image_agent(
     cloud_config: CloudAgentConfig,
 ) -> None:
     """Invoke an image generation cloud agent."""
+    import re
     channel_target = event_data.get("target", "")
     agent_name = cloud_config.agent_name
     prompt = event_data.get("payload", {}).get("content", "")
+    prompt = re.sub(r"@\S+\s*", "", prompt).strip()
 
     if not prompt:
         return
@@ -170,6 +178,50 @@ async def _invoke_image_agent(
             "filename": filename,
             "content_type": content_type,
             "size": len(image_bytes),
+        }],
+    )
+
+
+async def _invoke_audio_agent(
+    db, workspace_id: str, event_data: dict,
+    cloud_config: CloudAgentConfig,
+) -> None:
+    """Invoke a text-to-speech cloud agent."""
+    channel_target = event_data.get("target", "")
+    agent_name = cloud_config.agent_name
+    text = event_data.get("payload", {}).get("content", "")
+
+    if not text:
+        return
+
+    logger.info(
+        "cloud_agent: generating audio with %s (%s/%s)",
+        agent_name, cloud_config.provider, cloud_config.model,
+    )
+
+    audio_bytes, audio_format = await audio_generation(
+        api_key=cloud_config.api_key,
+        provider=cloud_config.provider,
+        model=cloud_config.model,
+        text=text,
+    )
+
+    file_id = await _upload_image(
+        db, workspace_id, channel_target, agent_name,
+        audio_bytes, audio_format, text,
+    )
+
+    filename = f"speech_{file_id[:8]}.{audio_format}"
+
+    await _post_response(
+        db, workspace_id, channel_target, agent_name,
+        f"Generated speech for: *{text[:100]}*",
+        depth=0,
+        attachments=[{
+            "file_id": file_id,
+            "filename": filename,
+            "content_type": f"audio/{audio_format}",
+            "size": len(audio_bytes),
         }],
     )
 
@@ -303,14 +355,38 @@ async def _post_response(
 
     db.commit()
 
+    # Publish to Redis so SSE clients receive the event in real-time
+    try:
+        from app import cache
+        snapshot = {
+            "id": event.id,
+            "type": event.type,
+            "source": event.source,
+            "target": event.target,
+            "payload": event.payload,
+            "metadata": event.metadata,
+            "timestamp": event.timestamp,
+        }
+        cache.publish_event(
+            f"ws:{workspace_id}:events",
+            _json.dumps(snapshot, default=str, separators=(",", ":")).encode(),
+        )
+    except Exception:
+        pass
+
 
 async def _post_error_message(
-    db, workspace_id: str, event_data: dict, agent_name: str, error_text: str,
+    workspace_id: str, event_data: dict, agent_name: str, error_text: str,
 ) -> None:
-    """Post an error message to the channel on behalf of the cloud agent."""
+    """Post an error message to the channel on behalf of the cloud agent.
+
+    Opens its own short-lived DB session so a stale connection from a
+    long-running API call cannot prevent the error from reaching the user.
+    """
+    err_db = SessionLocal()
     try:
         await _post_response(
-            db, workspace_id,
+            err_db, workspace_id,
             event_data.get("target", ""),
             agent_name,
             f"[Error] {error_text}",
@@ -318,3 +394,5 @@ async def _post_error_message(
         )
     except Exception:
         logger.exception("cloud_agent: failed to post error message for %s", agent_name)
+    finally:
+        err_db.close()

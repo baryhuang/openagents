@@ -18,7 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ListTree, UserPlus, MessageSquare, Zap, Eye, Square, ChevronLeft, X, Plus, Globe, Share2 } from 'lucide-react';
+import { ListTree, UserPlus, MessageSquare, CalendarClock, Zap, Eye, Square, ChevronLeft, X, Plus, Globe, Share2 } from 'lucide-react';
 import { ShareDialog } from './share-dialog';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
@@ -87,11 +87,12 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 }
 
 export function ChatView() {
-  const { agents, currentUser, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus, createRoutine } = useWorkspace();
+  const { agents, currentUser, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus, createRoutine, knowledge } = useWorkspace();
   const [showCreateRoutine, setShowCreateRoutine] = useState(false);
   const {
     isMobile,
     openMobileList,
+    viewMode,
     splitBrowser,
     setSplitBrowser,
     showBrowserPreview,
@@ -396,13 +397,14 @@ export function ChatView() {
   const hasStatusMessages = displayMessages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
 
   if (!currentSessionId) {
+    const isRoutinesView = viewMode === 'routines';
     return (
       <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
         <div className="opacity-20 mb-3">
-          <MessageSquare className="size-10" />
+          {isRoutinesView ? <CalendarClock className="size-10" /> : <MessageSquare className="size-10" />}
         </div>
-        <p className="text-sm font-medium">Select a thread</p>
-        <p className="text-xs mt-1">Choose a thread from the list or create a new one.</p>
+        <p className="text-sm font-medium">{isRoutinesView ? 'No routines yet' : 'Select a thread'}</p>
+        <p className="text-xs mt-1">{isRoutinesView ? 'Create a routine to get started.' : 'Choose a thread from the list or create a new one.'}</p>
       </div>
     );
   }
@@ -703,6 +705,7 @@ export function ChatView() {
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
+                knowledge={knowledge}
                 draft={currentDraft}
                 onDraftChange={handleDraftChange}
                 onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}

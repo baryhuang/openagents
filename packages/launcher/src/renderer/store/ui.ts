@@ -28,6 +28,11 @@ interface UiState {
   // Cached icons directory path — replaces legacy _coreIconsDir
   coreIconsDir: string | null
   setCoreIconsDir: (dir: string | null) => void
+
+  // Guided spotlight tour (new-user orientation over the real UI).
+  tourOpen: boolean
+  startTour: () => void
+  endTour: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -52,4 +57,8 @@ export const useUiStore = create<UiState>((set) => ({
 
   coreIconsDir: null,
   setCoreIconsDir: (dir) => set({ coreIconsDir: dir }),
+
+  tourOpen: false,
+  startTour: () => set({ tourOpen: true }),
+  endTour: () => set({ tourOpen: false }),
 }))

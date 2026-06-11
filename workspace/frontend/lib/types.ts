@@ -18,10 +18,21 @@ export interface WorkspaceAgent {
   serverHost: string | null;
   workingDir: string | null;
   description: string | null;
-  enabledSkills: Record<string, boolean> | null;
+  // Workspace modules map to booleans; `installed` is a string[] of skill ids;
+  // `skill_status` maps skill id → install status. Hence the union value type.
+  enabledSkills: Record<string, unknown> | null;
   status: string;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
+}
+
+/** Per-skill install status stored under enabledSkills.skill_status[skillId]. */
+export type SkillState = 'installing' | 'installed' | 'failed' | 'uninstalled';
+export interface SkillStatusEntry {
+  state: SkillState;
+  updated_at?: number;
+  path?: string;
+  error?: string;
 }
 
 export interface SkillCatalogEntry {
@@ -30,9 +41,9 @@ export interface SkillCatalogEntry {
   description: string;
   category: string;
   icon: string;
-  module_key: string | null;
-  default_enabled: boolean;
-  toggleable: boolean;
+  source_repo: string;
+  source_path: string;
+  author: string;
 }
 
 export interface WorkspaceSession {
@@ -102,6 +113,19 @@ export interface WorkspaceFile {
   channelName: string | null;
   status: string;
   createdAt: string | null;
+}
+
+export interface KnowledgeEntry {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  contentSize: number | null;
+  createdBy: string;
+  updatedBy: string | null;
+  status: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface BrowserTab {
@@ -250,7 +274,7 @@ export interface CloudAgentProvider {
 
 export interface CloudAgentModel {
   id: string;
-  category: 'chat' | 'image';
+  category: 'chat' | 'image' | 'audio';
   label: string;
 }
 
@@ -258,7 +282,7 @@ export interface CloudAgentConfig {
   agentName: string;
   provider: string;
   model: string;
-  category: 'chat' | 'image';
+  category: 'chat' | 'image' | 'audio';
   apiKeyMasked: string;
   baseUrl: string | null;
   systemPrompt: string | null;
@@ -297,7 +321,7 @@ export interface NetworkAgent {
   server_host: string | null;
   working_dir: string | null;
   description: string | null;
-  enabled_skills: Record<string, boolean> | null;
+  enabled_skills: Record<string, unknown> | null;
   last_heartbeat_at: string | null;
   joined_at: string | null;
 }
