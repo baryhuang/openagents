@@ -45,6 +45,10 @@ class OpenCodeAdapter extends BaseAdapter {
     this._migrateSessionsFile();
     this._loadSessions();
 
+    // Process tracking for stop control
+    this._channelProcesses = {}; // channel → child process
+    this._stoppingChannels = new Set();
+
     this._opencodeBinary = this._findOpencodeBinary();
     if (this._opencodeBinary) {
       this._log(`Using OpenCode subprocess mode: ${this._opencodeBinary}`);
@@ -89,6 +93,32 @@ class OpenCodeAdapter extends BaseAdapter {
       fs.mkdirSync(path.dirname(this._sessionsFile), { recursive: true });
       fs.writeFileSync(this._sessionsFile, JSON.stringify(this._channelSessions));
     } catch {}
+  }
+
+  async _onControlAction(action, payload) {
+    if (action === 'stop') {
+      const channel = (payload && typeof payload === 'object') ? payload.channel : null;
+      if (channel) {
+        const proc = this._channelProcesses[channel];
+        const hadQueuedWork = !!this._channelQueues[channel]?.length;
+        if (proc) {
+          this._log(`Stopping process for channel=${channel}`);
+          this._stoppingChannels.add(channel);
+          await this._stopProcess(proc);
+          delete this._channelProcesses[channel];
+        }
+        delete this._channelQueues[channel];
+        if (proc || hadQueuedWork) {
+          try {
+            await this.sendResponse(channel, 'Execution stopped by user.');
+          } catch {}
+        }
+      } else {
+        await this._stopAllProcesses('Execution stopped by user.');
+      }
+      return;
+    }
+    await super._onControlAction(action, payload);
   }
 
   /**
@@ -223,6 +253,11 @@ class OpenCodeAdapter extends BaseAdapter {
     try {
       const responseText = await this._runOpencode(content, msgChannel);
 
+      if (this._stoppingChannels.has(msgChannel)) {
+        this._stoppingChannels.delete(msgChannel);
+        return;
+      }
+
       if (responseText) {
         await this.sendResponse(msgChannel, responseText);
       } else {
@@ -234,6 +269,10 @@ class OpenCodeAdapter extends BaseAdapter {
         );
       }
     } catch (e) {
+      if (this._stoppingChannels.has(msgChannel)) {
+        this._stoppingChannels.delete(msgChannel);
+        return;
+      }
       this._log(`Error handling message: ${e.message}`);
       await this.sendError(msgChannel, `Error processing message: ${e.message}`);
     }
@@ -256,12 +295,12 @@ class OpenCodeAdapter extends BaseAdapter {
       // Find matching brace
       let depth = 0;
       let inStr = false;
-      let escape = false;
+      let escaped = false;
       let start = pos;
       for (let i = pos; i < raw.length; i++) {
         const ch = raw[i];
-        if (escape) { escape = false; continue; }
-        if (ch === '\\' && inStr) { escape = true; continue; }
+        if (escaped) { escaped = false; continue; }
+        if (ch === '\\' && inStr) { escaped = true; continue; }
         if (ch === '"') { inStr = !inStr; continue; }
         if (inStr) continue;
         if (ch === '{') depth++;
@@ -360,6 +399,72 @@ class OpenCodeAdapter extends BaseAdapter {
     }
   }
 
+  /**
+   * Override BaseAdapter.stop so daemon shutdown also tears down in-flight
+   * opencode subprocesses cleanly.
+   */
+  stop() {
+    this._stopAllProcesses(
+      'Task interrupted — daemon restarting. Send another message to continue.'
+    ).catch(() => {});
+    super.stop();
+  }
+
+  async _stopProcess(proc) {
+    if (!proc || proc.exitCode !== null) return;
+    try {
+      if (IS_WINDOWS) {
+        try { proc.kill('SIGINT'); } catch {}
+        const exited = await new Promise((resolve) => {
+          if (proc.exitCode !== null) {
+            resolve(true);
+            return;
+          }
+          const timeout = setTimeout(() => resolve(false), 1500);
+          proc.once('exit', () => { clearTimeout(timeout); resolve(true); });
+        });
+        if (!exited) {
+          try { execSync(`taskkill /F /T /PID ${proc.pid}`, { timeout: 5000 }); } catch {}
+        }
+      } else {
+        try { process.kill(-proc.pid, 'SIGTERM'); } catch {
+          proc.kill('SIGTERM');
+        }
+        await new Promise((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            resolve();
+          };
+          const timeout = setTimeout(() => {
+            try { process.kill(-proc.pid, 'SIGKILL'); } catch {
+              proc.kill('SIGKILL');
+            }
+            const reapTimeout = setTimeout(finish, 1000);
+            proc.once('exit', () => { clearTimeout(reapTimeout); finish(); });
+          }, 1500);
+          proc.once('exit', () => { clearTimeout(timeout); finish(); });
+        });
+      }
+    } catch {}
+  }
+
+  async _stopAllProcesses(completionMessage = 'Execution stopped.') {
+    const entries = Object.entries(this._channelProcesses);
+    if (!entries.length) return;
+    this._log(`Stopping ${entries.length} running process(es)...`);
+    for (const [channel, proc] of entries) {
+      this._stoppingChannels.add(channel);
+      await this._stopProcess(proc);
+      delete this._channelProcesses[channel];
+      delete this._channelQueues[channel];
+      try {
+        await this.sendResponse(channel, completionMessage);
+      } catch {}
+    }
+  }
+
   // ------------------------------------------------------------------
   // Subprocess execution
   // ------------------------------------------------------------------
@@ -444,16 +549,26 @@ class OpenCodeAdapter extends BaseAdapter {
         env: spawnEnv,
         cwd: this.agentHome,
         timeout: TIMEOUT_MS,
+        detached: !IS_WINDOWS,
         // Never let a console window appear. Besides being ugly, an attached
         // console makes opencode start its interactive TUI and hang instead of
         // running headless — the root cause of "stuck on thinking…" on Windows.
         windowsHide: true,
       });
 
+      this._channelProcesses[msgChannel] = proc;
+
       let stdout = '';
       let stderr = '';
       let settled = false;
-      const finish = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        if (this._channelProcesses[msgChannel] === proc) {
+          delete this._channelProcesses[msgChannel];
+        }
+        fn(arg);
+      };
 
       if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
       if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; });
@@ -475,6 +590,11 @@ class OpenCodeAdapter extends BaseAdapter {
       // when the spawn timeout kills the child, code is null and signal is the
       // signal name — report that as a timeout rather than "exited with code null".
       proc.on('close', (code, signal) => {
+        if (this._stoppingChannels.has(msgChannel)) {
+          this._stoppingChannels.delete(msgChannel);
+          return finish(resolve, '');
+        }
+
         stdout = stdout.trim();
         stderr = stderr.trim();
 
