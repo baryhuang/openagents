@@ -39,6 +39,16 @@ jobs:
         with:
           node-version: 22
 
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('packages/launcher/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-
+
       - name: Install dependencies
         run: |
           npm cache clean --force
@@ -69,13 +79,25 @@ jobs:
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          # Pull electron-builder helper binaries (winCodeSign, etc.) and the
+          # electron dist + its SHASUMS checksum from a mirror instead of the
+          # GitHub Release CDN, which intermittently 504s.
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
         run: |
           # Write API key to file for electron-builder notarization
           API_KEY_PATH=$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8
           echo "${{ secrets.APPLE_API_KEY }}" | base64 --decode > "$API_KEY_PATH"
           export APPLE_API_KEY="$API_KEY_PATH"
 
-          npm run ${{ matrix.build_script }}
+          # Retry to ride out transient electron-builder binary-download 504s.
+          for i in 1 2 3; do
+            npm run ${{ matrix.build_script }} && exit 0
+            echo "::warning::macOS build attempt $i failed (likely a transient electron-builder binary download); retrying in 25s…"
+            sleep 25
+          done
+          echo "macOS build failed after 3 attempts." >&2
+          exit 1
 
       - name: Verify macOS artifacts
         run: |
@@ -112,13 +134,37 @@ jobs:
         with:
           node-version: 22
 
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('packages/launcher/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-
+
       - name: Install dependencies
         run: |
           npm cache clean --force
           npm install
 
       - name: Build Windows app
-        run: npm run build:win
+        shell: bash
+        env:
+          # Avoid the GitHub Release CDN (intermittent 504) for builder binaries
+          # and the electron dist + checksum.
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
+        run: |
+          # Retry to ride out transient electron-builder binary-download 504s.
+          for i in 1 2 3; do
+            npm run build:win && exit 0
+            echo "::warning::Windows build attempt $i failed (likely a transient electron-builder binary download); retrying in 25s…"
+            sleep 25
+          done
+          echo "Windows build failed after 3 attempts." >&2
+          exit 1
 
       - name: Upload unsigned artifacts
         uses: actions/upload-artifact@v4
@@ -245,13 +291,38 @@ jobs:
         with:
           node-version: 22
 
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('packages/launcher/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-
+
       - name: Install dependencies
         run: |
           npm cache clean --force
           npm install
 
       - name: Build Linux app
-        run: npm run build:linux
+        shell: bash
+        env:
+          # The .deb target downloads fpm and AppImage its runtime from the
+          # GitHub Release CDN, which intermittently 504s — use a mirror instead
+          # (also mirror the electron dist + its checksum).
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
+        run: |
+          # Retry to ride out transient electron-builder binary-download 504s.
+          for i in 1 2 3; do
+            npm run build:linux && exit 0
+            echo "::warning::Linux build attempt $i failed (likely a transient electron-builder binary download); retrying in 25s…"
+            sleep 25
+          done
+          echo "Linux build failed after 3 attempts." >&2
+          exit 1
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4

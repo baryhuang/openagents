@@ -13,7 +13,7 @@ const ICON_BASE = '/icons/agents';
 
 const NEEDS_BG = new Set([
   'claude', 'codex', 'cline', 'amp', 'goose', 'openclaw', 'copilot',
-  'nanoclaw', 'opencode', 'cursor', 'default',
+  'nanoclaw', 'opencode', 'cursor', 'hermes', 'kimi', 'default',
   'xai', 'replicate', 'elevenlabs', 'manus',
 ]);
 

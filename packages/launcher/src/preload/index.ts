@@ -52,6 +52,10 @@ contextBridge.exposeInMainWorld('api', {
   removeWorkspace: (slug: string) => ipcRenderer.invoke('workspace:remove', slug),
   listWorkspaces: () => ipcRenderer.invoke('workspace:list'),
   createWorkspace: (name: string) => ipcRenderer.invoke('workspace:create', name),
+  getOnboardingAgents: () => ipcRenderer.invoke('onboarding:agents'),
+  consumeOnboardingReset: () => ipcRenderer.invoke('onboarding:consume-reset'),
+  provisionFirstAgent: (opts: { agentType: string; agentName: string; workspaceName?: string | null }) =>
+    ipcRenderer.invoke('onboarding:provision', opts),
   registerWorkspaceFromToken: (input: { url?: string; token?: string; slug?: string }) =>
     ipcRenderer.invoke('workspace:register-from-token', input),
 
@@ -65,6 +69,9 @@ contextBridge.exposeInMainWorld('api', {
   showPath: (p: string) => ipcRenderer.invoke('paths:show', p),
 
   healthCheck: (type: string) => ipcRenderer.invoke('agents:health-check', type),
+  refreshLogin: (type: string) => ipcRenderer.invoke('agents:login-refresh', type),
+  clearLoginKey: (type: string, agentName?: string) =>
+    ipcRenderer.invoke('agents:login-clear-key', type, agentName),
 
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   shellExec: (cmd: string) => ipcRenderer.invoke('shell:exec', cmd),
