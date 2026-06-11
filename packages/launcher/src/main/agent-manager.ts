@@ -1461,6 +1461,63 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
+   * Resolve an agent type's CLI to an ABSOLUTE binary path (via the core's
+   * `installer.which`, which searches the enhanced PATH incl. the Cursor/Hermes
+   * native install dirs). Returns null when the binary can't be located.
+   */
+  resolveBinary(type: string): string | null {
+    try {
+      const installer = this._connector?.installer as
+        | Record<string, unknown>
+        | undefined
+      const which = installer?.which as
+        | ((t: string) => string | null)
+        | undefined
+      return which?.call(installer, type) || null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Rewrite a hosted-login command (e.g. "cursor-agent login", "hermes setup")
+   * so its leading binary token becomes the resolved ABSOLUTE path. This is the
+   * fix for the Windows "'cursor-agent' is not recognized as an internal or
+   * external command" failure: the native installer drops the CLI under
+   * %LOCALAPPDATA%\cursor-agent and only edits the *registry* PATH, which a
+   * freshly-spawned login terminal inherits stale — so a bare `cursor-agent
+   * login` dies. Resolving to an absolute path makes the login PATH-independent.
+   * Returns the original command unchanged when it isn't a known hosted-login
+   * binary or the binary can't be resolved (callers still inject PATH as a
+   * fallback). The returned binary path is quoted so spaces in the home dir
+   * (e.g. C:\Users\First Last\...) survive.
+   */
+  resolveLoginCommand(cmd: string): string {
+    if (!cmd || !cmd.trim()) return cmd
+    const trimmed = cmd.trim()
+    // First whitespace-delimited token, with any surrounding quotes stripped.
+    const m = trimmed.match(/^("[^"]*"|'[^']*'|\S+)(\s+[\s\S]*)?$/)
+    if (!m) return cmd
+    const rawFirst = m[1].replace(/^["']|["']$/g, "")
+    const rest = m[2] || ""
+    // Map the CLI binary name to its agent type so we can resolve via the core.
+    const base = rawFirst
+      .replace(/\.(exe|cmd|ps1|bat)$/i, "")
+      .split(/[\\/]/)
+      .pop()
+    const BINARY_TO_TYPE: Record<string, string> = {
+      "cursor-agent": "cursor",
+      agent: "cursor",
+      hermes: "hermes",
+    }
+    const type = base ? BINARY_TO_TYPE[base] : undefined
+    if (!type) return cmd
+    const abs = this.resolveBinary(type)
+    if (!abs) return cmd
+    return `"${abs}"${rest}`
+  }
+
+  /**
    * Run a FRESH sign-in probe for a hosted-login agent and resolve its health.
    * Awaitable — the Configure dialog calls this after the user confirms they
    * completed the terminal login, so the result reflects reality rather than an

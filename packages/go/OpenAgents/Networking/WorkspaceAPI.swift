@@ -616,11 +616,13 @@ actor WorkspaceAPI {
         title: String? = nil,
         master: String? = nil,
         participants: [String] = [],
+        humanParticipants: [String] = [],
     ) async throws -> Session {
         var payload: [String: any Encodable & Sendable] = [:]
         if let title { payload["title"] = title }
         if let master { payload["master"] = master }
         if !participants.isEmpty { payload["participants"] = participants }
+        if !humanParticipants.isEmpty { payload["human_participants"] = humanParticipants }
 
         let event = try await sendEvent(
             type: "network.channel.create",

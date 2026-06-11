@@ -151,6 +151,14 @@ class Daemon {
       if (!this._adapters || !this._adapters[agentName]) break;
       await new Promise(r => setTimeout(r, 500));
     }
+    // Force-clear the adapter slot if it's still hanging. Without this,
+    // a hung adapter.run() promise prevents the slot from ever being
+    // released, and subsequent start/restart commands see "already running".
+    if (this._adapters && this._adapters[agentName]) {
+      this._log(`WARNING: ${agentName} adapter did not exit after stop — force-releasing slot`);
+      try { this._adapters[agentName].stop(); } catch {}
+      delete this._adapters[agentName];
+    }
     this._writeStatus();
   }
 
@@ -319,7 +327,17 @@ class Daemon {
    * Read daemon PID, returning null if not running.
    */
   static readDaemonPid(configDir) {
-    return Daemon._readPid(path.join(configDir, 'daemon.pid'));
+    const pidFile = path.join(configDir, 'daemon.pid');
+    const statusFile = path.join(configDir, 'daemon.status.json');
+    const pid = Daemon._readPid(pidFile);
+    if (!pid) return null;
+
+    if (!Daemon._isAlive(pid)) {
+      Daemon._cleanupStaleDaemonFiles(pidFile, statusFile);
+      return null;
+    }
+
+    return pid;
   }
 
   // ---------------------------------------------------------------------------
@@ -862,6 +880,17 @@ class Daemon {
       return isNaN(pid) ? null : pid;
     } catch {
       return null;
+    }
+  }
+
+  static _cleanupStaleDaemonFiles(pidFile, statusFile) {
+    Daemon._unlinkIfExists(pidFile);
+    Daemon._unlinkIfExists(statusFile);
+  }
+
+  static _unlinkIfExists(filePath) {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
     }
   }
 

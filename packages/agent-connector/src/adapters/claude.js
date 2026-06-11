@@ -73,6 +73,10 @@ class ClaudeAdapter extends BaseAdapter {
   async _onControlAction(action, payload) {
     if (action === 'stop') {
       const channel = (payload && typeof payload === 'object') ? payload.channel : null;
+      if (channel) {
+        const pp = this._persistentProcs[channel];
+        if (pp) pp.userStopped = true;
+      }
       if (channel && this._channelProcesses[channel]) {
         this._log(`Stopping process for channel=${channel}`);
         this._stoppingChannels.add(channel);
@@ -84,6 +88,7 @@ class ClaudeAdapter extends BaseAdapter {
           await this.sendResponse(channel, 'Execution stopped by user.');
         } catch {}
       } else {
+        for (const pp of Object.values(this._persistentProcs)) pp.userStopped = true;
         await this._stopAllProcesses('Execution stopped by user.');
       }
       return;
@@ -226,7 +231,7 @@ class ClaudeAdapter extends BaseAdapter {
    */
   async _buildChannelRecap(channelName, currentMessage) {
     const messages = await this.client.getRecentMessages(
-      this.workspaceId, channelName, this.token, 30
+      this.workspaceId, channelName, this.token, 60
     );
     if (!messages || messages.length === 0) return null;
 
@@ -236,20 +241,16 @@ class ClaudeAdapter extends BaseAdapter {
       if (mt === 'status' || mt === 'thinking' || mt === 'loading') continue;
       const text = (m.content || '').trim();
       if (!text) continue;
-      // Don't echo the user's current message back at them.
       if (text === currentMessage) continue;
       const who = m.senderType === 'human'
         ? (m.senderName || 'user')
         : (m.senderName || 'agent');
-      // Cap each line so a single huge paste doesn't blow up the prompt.
-      const truncated = text.length > 800 ? text.slice(0, 800) + '…' : text;
+      const truncated = text.length > 2000 ? text.slice(0, 2000) + '…' : text;
       lines.push(`[${who}] ${truncated}`);
     }
     if (lines.length === 0) return null;
 
-    // Keep only the tail; older context has diminishing value and we
-    // don't want to balloon the system prompt.
-    const tail = lines.slice(-15).join('\n');
+    const tail = lines.slice(-20).join('\n');
     return (
       'You previously worked in this channel but your prior session is no ' +
       'longer available, so here is the recent conversation for context:\n\n' +
@@ -728,6 +729,7 @@ class ClaudeAdapter extends BaseAdapter {
       lastStdoutTime: Date.now(),
       watchdogTimer: null,
       awaitingToolResult: false,
+      userStopped: false,
     };
 
     if (proc.stderr) {
@@ -983,6 +985,12 @@ class ClaudeAdapter extends BaseAdapter {
         }
         return;
       }
+      if (existingPP.userStopped) {
+        if (!existingPP.everPostedAnything) {
+          try { await this.sendResponse(msgChannel, 'Execution stopped by user.'); } catch {}
+        }
+        return;
+      }
       // Process died mid-message — fall through to spawn a fresh one
       this._log(`Persistent process died, falling back to fresh spawn for ${msgChannel}`);
     }
@@ -1034,11 +1042,22 @@ class ClaudeAdapter extends BaseAdapter {
 
     // Spawn a persistent process and send the first message via stdin
     let effectiveContent = content;
+
+    // When starting without a session (no --resume), prepend channel
+    // history so the fresh CLI has conversation context.
+    if (!this._channelSessions[msgChannel]) {
+      try {
+        const recap = await this._buildChannelRecap(msgChannel, content);
+        if (recap) effectiveContent = `${recap}\n\n---\n\n${content}`;
+      } catch {}
+    }
+
     for (let attempt = 0; attempt < 2; attempt++) {
       if (mcpConfigFile) { try { fs.unlinkSync(mcpConfigFile); } catch {} mcpConfigFile = null; }
 
       if (attempt > 0) {
         this._killPersistentProc(msgChannel);
+        // Rebuild recap for retry without resume
         try {
           const recap = await this._buildChannelRecap(msgChannel, content);
           if (recap) effectiveContent = `${recap}\n\n---\n\n${content}`;
@@ -1065,7 +1084,13 @@ class ClaudeAdapter extends BaseAdapter {
         const result = await this._sendToPersistentProc(pp, effectiveContent);
 
         if (result.exited) {
-          this._log(`Process exited during first message (attempt ${attempt + 1})`);
+          this._log(`Process exited during first message (attempt ${attempt + 1}), userStopped=${pp.userStopped}`);
+          if (pp.userStopped) {
+            if (!pp.everPostedAnything) {
+              try { await this.sendResponse(msgChannel, 'Execution stopped by user.'); } catch {}
+            }
+            break;
+          }
           if (attempt === 0 && this._channelSessions[msgChannel]) {
             this._log(`Stale session detected, retrying without resume`);
             delete this._channelSessions[msgChannel];

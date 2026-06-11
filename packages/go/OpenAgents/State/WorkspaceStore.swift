@@ -1059,9 +1059,13 @@ final class WorkspaceStore {
         }
     }
 
-    func createThread(master: String, participants: [String]) async {
+    func createThread(master: String, participants: [String], humanParticipants: [String] = []) async {
         do {
-            let session = try await api.createChannel(master: master, participants: participants)
+            let session = try await api.createChannel(
+                master: master,
+                participants: participants,
+                humanParticipants: humanParticipants,
+            )
             sessions.insert(session, at: 0)
             currentSessionId = session.sessionId
             await loadHistory(channel: session.sessionId)
