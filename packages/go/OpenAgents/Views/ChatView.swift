@@ -206,6 +206,13 @@ struct ChatView: View {
         return store.isStopping(id)
     }
 
+    /// True between sending a message and the agent's first response frame —
+    /// drives the immediate "thinking…" indicator so there's no dead gap.
+    private var awaitingFirstResponse: Bool {
+        guard let id = store.currentSessionId else { return false }
+        return store.isAwaitingFirstResponse(id)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             chatColumn
@@ -527,6 +534,14 @@ struct ChatView: View {
                         }
                     }
 
+                    // Immediate "thinking…" indicator — bridges the gap between
+                    // sending and the agent's first status frame. Hidden once a
+                    // real status block is active (agentIsWorking) or stopping.
+                    if awaitingFirstResponse && !agentIsWorking && !isStoppingCurrentSession {
+                        thinkingIndicator
+                            .id("thinking-indicator")
+                    }
+
                     // Bottom anchor — used to scroll to the latest message
                     Color.clear
                         .frame(height: 1)
@@ -595,6 +610,23 @@ struct ChatView: View {
             try? await Task.sleep(nanoseconds: 200_000_000)
             await store.loadOlderMessages(channel: channel)
         }
+    }
+
+    /// Animated "thinking…" row shown immediately after the user sends, until
+    /// the agent's first status frame arrives. Left-aligned to read as an agent
+    /// turn-in-progress.
+    private var thinkingIndicator: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Thinking…")
+                .font(.caption)
+                .foregroundStyle(BrandColors.inkMuted)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .transition(.opacity)
     }
 
     // MARK: - Input bar
@@ -710,7 +742,7 @@ struct ChatView: View {
     /// status to come back).
     @ViewBuilder
     private var sendOrStopButton: some View {
-        if agentIsWorking || isStoppingCurrentSession {
+        if agentIsWorking || awaitingFirstResponse || isStoppingCurrentSession {
             Button(action: stopAgents) {
                 Image(systemName: "stop.circle.fill")
                     .font(.system(size: 28))
