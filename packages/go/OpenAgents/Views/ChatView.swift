@@ -157,6 +157,16 @@ struct ChatView: View {
     private static let defaultInputHeight: CGFloat = 44
     private static let minInputHeight: CGFloat = 36
 
+    /// Reading-column clamp for the chat content and input bar on wide
+    /// macOS windows. iMessage/Mail use ~720pt; for an agent chat that
+    /// regularly carries code blocks and tool-call rows we go a touch
+    /// wider so wrap-heavy content stays comfortable. The column centers
+    /// inside the (full-width) ScrollView via paired `.frame(maxWidth:)`
+    /// modifiers — the inner clamps content width, the outer expands the
+    /// wrapper to viewport width so SwiftUI's default center alignment
+    /// kicks in.
+    private static let columnMaxWidth: CGFloat = 820
+
     private var maxInputHeight: CGFloat {
         max(Self.minInputHeight + 1, chatHeight * 0.5)
     }
@@ -227,8 +237,12 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if let session = store.currentSession {
+                    // Show only the agents actually in this channel. An
+                    // empty participants list is legitimate (humans-only
+                    // chat); falling back to "all workspace agents" used
+                    // to plaster every agent into the header avatar stack.
                     let sessionAgents = store.agents.filter {
-                        session.participants.isEmpty || session.participants.contains($0.agentName)
+                        session.participants.contains($0.agentName)
                     }
                     if !sessionAgents.isEmpty {
                         Button {
@@ -327,10 +341,10 @@ struct ChatView: View {
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .strokeBorder(BrandColors.primary, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.06)),
+                            .fill(BrandColors.primary.opacity(0.06)),
                     )
                     .overlay(
                         VStack(spacing: 6) {
@@ -339,7 +353,7 @@ struct ChatView: View {
                             Text("Drop to attach")
                                 .font(.system(size: 13, weight: .semibold))
                         }
-                        .foregroundStyle(Color.accentColor),
+                        .foregroundStyle(BrandColors.primary),
                     )
                     .padding(8)
                     .allowsHitTesting(false)
@@ -354,13 +368,14 @@ struct ChatView: View {
             }
         }
         #if os(macOS)
-        .background(Color(.controlBackgroundColor))
+        .background(BrandColors.bg)
         // Window-toolbar title. NavigationSplitView routes the detail column's
         // navigationTitle to the window title bar; without this the bar falls
         // back to the app's display name ("OpenAgents Go").
         .navigationTitle(store.currentSession?.title ?? "")
         .navigationSubtitle(macSubtitle)
         #else
+        .background(BrandColors.bg)
         .navigationTitle(store.currentSession?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -430,8 +445,10 @@ struct ChatView: View {
     #if os(macOS)
     private var macSubtitle: String {
         guard let session = store.currentSession else { return "" }
+        // Only actual channel participants — see toolbar comment above
+        // for why empty.participants no longer means "all agents".
         let names = store.agents
-            .filter { session.participants.isEmpty || session.participants.contains($0.agentName) }
+            .filter { session.participants.contains($0.agentName) }
             .map(\.agentName)
         return names.joined(separator: ", ")
     }
@@ -460,7 +477,7 @@ struct ChatView: View {
                         // Subtle "you're at the start" marker
                         Text("Beginning of conversation")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(BrandColors.inkFaint)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -471,13 +488,13 @@ struct ChatView: View {
                                 .controlSize(.small)
                             Text("Loading messages…")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(BrandColors.inkMuted)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 60)
                     } else if messages.isEmpty {
                         Text("No messages yet — say hi.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(BrandColors.inkMuted)
                             .padding(.top, 60)
                     }
 
@@ -517,6 +534,8 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                .frame(maxWidth: Self.columnMaxWidth)
+                .frame(maxWidth: .infinity)
             }
             // Tells SwiftUI to treat the bottom of the content as the
             // invariant point under content-size changes. Two consequences:
@@ -566,7 +585,7 @@ struct ChatView: View {
                 .controlSize(.small)
             Text("Loading older messages…")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandColors.inkFaint)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -608,6 +627,8 @@ struct ChatView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
+        .frame(maxWidth: Self.columnMaxWidth)
+        .frame(maxWidth: .infinity)
         .overlay(alignment: .top) {
             if slashSuggestionsOpen && !filteredSlashCommands.isEmpty {
                 slashSuggestionsPopup
@@ -702,7 +723,7 @@ struct ChatView: View {
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 28))
-                    .foregroundStyle(canSend ? Color.accentColor : Color.gray.opacity(0.4))
+                    .foregroundStyle(canSend ? BrandColors.primary : Color.gray.opacity(0.4))
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
@@ -723,7 +744,7 @@ struct ChatView: View {
     private var paperclipControl: some View {
         let label = Image(systemName: "paperclip")
             .font(.system(size: 18, weight: .regular))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(BrandColors.inkMuted)
             .frame(width: 32, height: 32)
 
         #if os(macOS)
@@ -825,23 +846,23 @@ struct ChatView: View {
                 HStack(spacing: 10) {
                     Image(systemName: cand.kind == .agent ? "cpu" : "person.crop.circle")
                         .frame(width: 22)
-                        .foregroundStyle(cand.kind == .agent ? Color.accentColor : .secondary)
+                        .foregroundStyle(cand.kind == .agent ? BrandColors.primary : .secondary)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(cand.label).font(.body)
                         if let sub = cand.subtitle, !sub.isEmpty {
                             Text(sub)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(BrandColors.inkMuted)
                         }
                     }
                     Spacer(minLength: 0)
                     Text("@\(cand.token)")
                         .font(.caption.monospaced())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(BrandColors.inkFaint)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(idx == mentionSuggestionIndex ? Color.accentColor.opacity(0.15) : Color.clear)
+                .background(idx == mentionSuggestionIndex ? BrandColors.primary.opacity(0.15) : Color.clear)
                 .contentShape(Rectangle())
                 .onTapGesture { insertMention(cand.token) }
             }
@@ -861,19 +882,19 @@ struct ChatView: View {
                 HStack(spacing: 10) {
                     Image(systemName: cmd.systemImage)
                         .frame(width: 22)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                     VStack(alignment: .leading, spacing: 1) {
                         slashName(for: cmd)
                             .font(.body)
                         Text(cmd.description)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(BrandColors.inkMuted)
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(idx == slashSuggestionIndex ? Color.accentColor.opacity(0.15) : Color.clear)
+                .background(idx == slashSuggestionIndex ? BrandColors.primary.opacity(0.15) : Color.clear)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     draft.wrappedValue = "/\(cmd.name)"
@@ -920,9 +941,9 @@ struct ChatView: View {
         let matchLen = min(typed.count, cmd.name.count)
         let head = String(cmd.name.prefix(matchLen))
         let tail = String(cmd.name.dropFirst(matchLen))
-        return Text("/").foregroundStyle(.secondary)
+        return Text("/").foregroundStyle(BrandColors.inkMuted)
             + Text(head).fontWeight(.bold)
-            + Text(tail).fontWeight(.regular).foregroundStyle(.secondary)
+            + Text(tail).fontWeight(.regular).foregroundStyle(BrandColors.inkMuted)
     }
 
     private func consumeSlashKey(_ selector: Selector) -> Bool {
@@ -973,13 +994,13 @@ struct ChatView: View {
         VStack(spacing: 12) {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 48))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandColors.inkFaint)
             Text("Select a chat")
                 .font(.title3)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandColors.inkMuted)
             Text("Choose a chat from the list or create a new one.")
                 .font(.subheadline)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BrandColors.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1299,7 +1320,7 @@ private struct CodeBlockView: View {
             if let language, !language.isEmpty {
                 Text(language)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
             }
@@ -1444,7 +1465,7 @@ private struct AttachmentChip: View {
                         .fill(Color.gray.opacity(0.18))
                         .overlay {
                             Image(systemName: "photo")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(BrandColors.inkMuted)
                         }
                 }
             }
@@ -1472,18 +1493,18 @@ private struct AttachmentChip: View {
         HStack(spacing: 6) {
             Image(systemName: "doc")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandColors.inkMuted)
             Text(attachment.filename)
                 .font(.caption)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(formattedSize)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandColors.inkMuted)
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
             }
             .buttonStyle(.plain)
         }
@@ -1516,7 +1537,7 @@ private struct ErrorBanner: View {
                 .foregroundStyle(.orange)
             Text(message)
                 .font(.caption)
-                .foregroundStyle(.primary)
+                .foregroundStyle(BrandColors.inkStrong)
                 .lineLimit(2)
             Spacer()
             Button {
@@ -1524,7 +1545,7 @@ private struct ErrorBanner: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
             }
             .buttonStyle(.plain)
         }
@@ -1610,7 +1631,7 @@ private struct MessageBubble: View {
             if !message.isFromUser && showSenderLabel {
                 Text(message.senderName)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
                     .padding(.leading, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1723,7 +1744,7 @@ private struct MessageBubble: View {
                 Text(didCopy ? "Copied" : "Copy")
                     .font(.system(size: 11))
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(BrandColors.inkMuted)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .contentShape(Rectangle())
@@ -1844,7 +1865,7 @@ private struct MembersSheet: View {
             } footer: {
                 Text("This channel is a routine queue — membership is managed by the system.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColors.inkMuted)
             }
         }
     }
@@ -1854,7 +1875,7 @@ private struct MembersSheet: View {
             Section("IN THIS CHANNEL (\(members.count))") {
                 if members.isEmpty {
                     Text("No agents yet.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                 } else {
                     ForEach(members) { agent in
                         memberRow(agent, removable: true)
@@ -1872,7 +1893,7 @@ private struct MembersSheet: View {
 
                 if addableAgents.isEmpty {
                     Text(searchText.isEmpty ? "No online agents available." : "No matches.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                         .font(.subheadline)
                 } else {
                     ForEach(addableAgents) { agent in
@@ -1908,7 +1929,7 @@ private struct MembersSheet: View {
                 if session.master == agent.agentName {
                     Text("master")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BrandColors.inkMuted)
                 }
             }
             Spacer()
