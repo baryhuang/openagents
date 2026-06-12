@@ -5,9 +5,10 @@ set -e
 
 # Start the application — Railway injects $PORT
 # 2 replicas × 2 workers × (pool_size=40 + max_overflow=8) = 192 max DB
-# connections, under Railway Postgres's max_connections=200. Two workers
-# per replica keep event-loop parallelism so /health stays responsive
-# when a poll on the sibling worker is blocked on a slow query.
+# connections steady-state; a rolling deploy briefly doubles that to 384,
+# under Railway Postgres's max_connections=400 (raised via ALTER SYSTEM,
+# 2026-06-12). Two workers per replica keep event-loop parallelism so
+# /health stays responsive if the sibling worker is busy.
 #
 # We intentionally do NOT use --limit-concurrency: uvicorn's 503s for
 # that limit are sent before the Starlette CORS middleware runs, so
