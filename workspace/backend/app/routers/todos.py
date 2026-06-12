@@ -18,7 +18,7 @@ from app.database import get_db
 from app.models import TodoRecord, Workspace
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import (
-    _emit_event,
+    _emit_event_blocking,
     _resolve_workspace,
     _verify_workspace_access,
 )
@@ -77,7 +77,7 @@ def _serialize_todo(t: TodoRecord) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.put("/todos")
-async def put_todos(
+def put_todos(
     body: PutTodosRequest,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -141,7 +141,7 @@ async def put_todos(
         },
         metadata={},
     )
-    await _emit_event(event, workspace, db, token=x_workspace_token)
+    _emit_event_blocking(event, workspace, db, token=x_workspace_token)
 
     db.commit()
     return success_response({"todos": [_serialize_todo(r) for r in records]})

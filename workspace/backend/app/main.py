@@ -258,6 +258,19 @@ async def _timer_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("LIFESPAN: starting")
+
+    # Align the threadpool with the DB pool. All DB-bound handlers are `def`
+    # (run via anyio's threadpool, default 40 tokens) while the per-worker
+    # connection pool holds only pool_size+max_overflow=24. With 40 tokens a
+    # poll burst admits 40 concurrent DB requests for 24 connections — the
+    # extra 16 wait pool_timeout=2s then raise QueuePool TimeoutError (500s).
+    # Capping tokens at the pool size makes bursts queue for a THREAD (cheap,
+    # unbounded wait) instead of stampeding the pool. Env-overridable for ops.
+    import anyio.to_thread
+    tokens = int(os.environ.get("THREADPOOL_TOKENS", "24"))
+    anyio.to_thread.current_default_thread_limiter().total_tokens = tokens
+    logger.info("LIFESPAN: threadpool capped at %d tokens (= DB pool capacity)", tokens)
+
     # Auto-create tables for SQLite (dev mode) — production uses Alembic.
     try:
         from app.database import engine, Base, _is_sqlite
