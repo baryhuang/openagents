@@ -12,6 +12,7 @@ GET  /v1/discover     Discover agents, channels, resources
 GET  /v1/profile      Network profile metadata
 """
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -140,12 +141,27 @@ async def _emit_event(event: Event, workspace, db: Session, token: str = None):
     return result
 
 
+def _emit_event_blocking(event: Event, workspace, db: Session, token: str = None):
+    """Sync variant of _emit_event for `def` (threadpool) handlers.
+
+    The pipeline is async-shaped but everything inside it is synchronous
+    I/O — sync SQLAlchemy, the sync OpenAI/Anthropic router clients, sync
+    Redis publish — so when an async handler awaited it, all of that ran ON
+    the uvicorn event loop. A 2s pool-checkout wait or a multi-second LLM
+    routing call froze the whole worker (even /health and CORS preflights).
+    Running it under asyncio.run() inside a threadpool handler keeps those
+    waits in a thread. Safe because no mod touches the outer loop (no
+    create_task / get_running_loop / loop-bound clients).
+    """
+    return asyncio.run(_emit_event(event, workspace, db, token=token))
+
+
 # ---------------------------------------------------------------------------
 # POST /v1/join
 # ---------------------------------------------------------------------------
 
 @router.post("/join")
-async def join_network(
+def join_network(
     body: JoinRequest,
     db: Session = Depends(get_db),
 ):
@@ -178,7 +194,7 @@ async def join_network(
         payload=payload,
     )
 
-    result = await _emit_event(event, workspace, db, token=body.token)
+    result = _emit_event_blocking(event, workspace, db, token=body.token)
     if result is None:
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid network token")
 
@@ -196,7 +212,7 @@ async def join_network(
 # ---------------------------------------------------------------------------
 
 @router.post("/leave")
-async def leave_network(
+def leave_network(
     body: LeaveRequest,
     db: Session = Depends(get_db),
 ):
@@ -215,7 +231,7 @@ async def leave_network(
     )
 
     # Pass workspace token since leave doesn't carry one — already authenticated by knowing the network
-    result = await _emit_event(event, workspace, db, token=workspace.password_hash)
+    result = _emit_event_blocking(event, workspace, db, token=workspace.password_hash)
     if result is None:
         return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
 
@@ -227,7 +243,7 @@ async def leave_network(
 # ---------------------------------------------------------------------------
 
 @router.post("/remove")
-async def remove_agent(
+def remove_agent(
     body: RemoveRequest,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -250,7 +266,7 @@ async def remove_agent(
         },
     )
 
-    result = await _emit_event(event, workspace, db, token=workspace.password_hash)
+    result = _emit_event_blocking(event, workspace, db, token=workspace.password_hash)
     if result is None:
         return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
 
@@ -265,7 +281,7 @@ async def remove_agent(
 # ---------------------------------------------------------------------------
 
 @router.post("/heartbeat")
-async def heartbeat(
+def heartbeat(
     body: HeartbeatRequest,
     db: Session = Depends(get_db),
 ):
@@ -284,7 +300,7 @@ async def heartbeat(
         },
     )
 
-    result = await _emit_event(event, workspace, db, token=workspace.password_hash)
+    result = _emit_event_blocking(event, workspace, db, token=workspace.password_hash)
     if result is None:
         return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
 
@@ -304,7 +320,7 @@ async def heartbeat(
 # ---------------------------------------------------------------------------
 
 @router.post("/composing")
-async def composing_signal(
+def composing_signal(
     body: ComposingRequest,
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),

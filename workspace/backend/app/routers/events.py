@@ -58,7 +58,7 @@ def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
 
 
 @router.post("/events")
-async def send_event(
+def send_event(
     body: SendEventRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -70,6 +70,10 @@ async def send_event(
 
     The event flows through mod/auth → mod/workspace → mod/persistence
     before delivery to the target.
+
+    Deliberately a `def` handler (threadpool): the pipeline's DB writes,
+    pool-checkout waits, and the sync LLM routing call must never run on
+    the event loop — see _emit_event_blocking in routers/network.py.
     """
     if not body.network:
         return json_response(ResponseCode.BAD_REQUEST, "Missing required field: network")
@@ -103,9 +107,10 @@ async def send_event(
         bearer_token=_extract_bearer(authorization),
     )
 
-    # Run through pipeline
+    # Run through pipeline (fresh loop in this worker thread — pipeline is
+    # async-shaped but contains only sync I/O, nothing bound to the main loop)
     try:
-        result = await pipeline.process(event, context)
+        result = asyncio.run(pipeline.process(event, context))
     except EventRejected as exc:
         # Surface the reason so clients can roll back optimistic UI on
         # specific failures (e.g. routine_channel_locked,
