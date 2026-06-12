@@ -46,14 +46,16 @@ _pool_kwargs = (
     {"poolclass": NullPool}
     if _is_serverless or _is_sqlite or _is_pgbouncer
     # Direct-PG mode (port 5432): keep a bounded per-worker pool.
-    # Sized for Railway Postgres max_connections=200 at 2 replicas × 2
-    # workers (WEB_CONCURRENCY=2): 2 × 2 × (20 + 4) = 96 max DB conns
-    # steady-state, leaving headroom for a rolling deploy (old + new
-    # replicas briefly coexist → up to 192 conns, still under 200).
-    # pool_timeout is short (2s) because SQLAlchemy sync calls inside
-    # FastAPI async handlers block the event loop — a longer queue
-    # wait would stall every request on that worker.
-    else {"pool_pre_ping": True, "pool_size": 20, "max_overflow": 4, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
+    # Sized for Railway Postgres max_connections=400 (raised from 200 via
+    # ALTER SYSTEM on 2026-06-12) at 2 replicas × 2 workers
+    # (WEB_CONCURRENCY=2): 2 × 2 × (40 + 8) = 192 max DB conns steady-state,
+    # leaving headroom for a rolling deploy (old + new replicas briefly
+    # coexist → up to 384 conns, under 400 minus the 3 superuser-reserved).
+    # Keep THREADPOOL_TOKENS in app/main.py equal to pool_size+max_overflow
+    # so `def` handlers queue for a thread instead of stampeding the pool.
+    # pool_timeout stays short (2s): all DB-bound handlers run in the
+    # threadpool now, but a long queue wait would still tie up threads.
+    else {"pool_pre_ping": True, "pool_size": 40, "max_overflow": 8, "pool_recycle": 300, "pool_timeout": 2, "poolclass": QueuePool}
 )
 
 # Keep the TCP connection alive to survive NAT / firewall idle timeouts
