@@ -181,6 +181,7 @@ cython_debug/
 .DS_Store
 
 .cursor/
+.claude/
 
 temp
 openagents_workspace/
@@ -267,6 +268,10 @@ deploy/
 !sdk/src/**
 !sdk/studio/src/
 !sdk/studio/src/**
+
+# Re-exclude build artifacts that the src/ safety net above would pull back in
+**/src/**/__pycache__/
+**/src/**/*.pyc
 ---
 # APNs auth keys (Apple Push Notification service .p8 private keys)
 workspace/backend/secrets/
