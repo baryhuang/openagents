@@ -182,6 +182,7 @@ cython_debug/
 
 .cursor/
 .claude/
+tmp/
 
 temp
 openagents_workspace/
