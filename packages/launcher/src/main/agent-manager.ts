@@ -306,6 +306,7 @@ const CORE_AGENTS: readonly string[] = [
   "hermes",
   "kimi",
   "gemini",
+  "amp",
 ]
 const CORE_AGENT_ORDER = new Map<string, number>(
   CORE_AGENTS.map((name, i) => [name, i]),
@@ -454,6 +455,16 @@ async function testLLMConnection(
         success: false,
         error:
           "Cursor signs in through its own service — there's no key endpoint to test here. Save the key and launch the agent to verify.",
+      }
+    }
+
+    // ── Amp: authenticates against Sourcegraph's own service (AMP_API_KEY or
+    // `amp login`); there is no OpenAI-style endpoint to probe here. ──
+    if (pick("AMP_API_KEY") && !anthropicKey && !openaiKey) {
+      return {
+        success: false,
+        error:
+          "Amp signs in through Sourcegraph's own service — there's no key endpoint to test here. Save the key (or run `amp login`) and launch the agent to verify.",
       }
     }
 

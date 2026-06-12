@@ -27,11 +27,37 @@
       "cli",
       "vscode"
     ],
+    "builtin": true,
+    "support": { "install": true, "workspace": true, "collaboration": true },
     "install": {
       "binary": "amp",
       "macos": "curl -fsSL https://ampcode.com/install.sh | bash",
       "linux": "curl -fsSL https://ampcode.com/install.sh | bash",
       "windows": "powershell -c \\\"irm https://ampcode.com/install.ps1 | iex\\\""
+    },
+    "adapter": {
+      "module": "openagents.adapters.amp",
+      "class": "AmpAdapter"
+    },
+    "launch": {
+      "args": []
+    },
+    "env_config": [
+      {
+        "name": "AMP_API_KEY",
+        "description": "Amp API key (create one at https://ampcode.com/settings) — leave blank if you have run `amp login`",
+        "required": false,
+        "password": true
+      },
+      {
+        "name": "AMP_URL",
+        "description": "Amp server URL for enterprise/self-hosted deployments (leave blank for the default)",
+        "required": false
+      }
+    ],
+    "check_ready": {
+      "login_command": "amp login",
+      "not_ready_message": "Not installed — run: openagents install amp"
     }
   },
   {

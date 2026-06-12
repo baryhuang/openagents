@@ -109,7 +109,8 @@ def _find_in_known_install_dirs(binary_names: list) -> Optional[str]:
     is_windows = platform.system() == "Windows"
     extra_dirs = [
         home / ".cursor" / "bin",   # Cursor CLI native installer (curl|bash)
-        home / ".local" / "bin",    # pipx / user installs
+        home / ".amp" / "bin",      # Amp CLI native installer (curl|bash) — canonical dir
+        home / ".local" / "bin",    # pipx / user installs (also Amp's symlink target)
     ]
     if is_windows:
         # The Windows installer (irm 'https://cursor.com/install?win32=true' | iex)
