@@ -805,6 +805,20 @@ class ClaudeAdapter extends BaseAdapter {
         if (pp.messageResolve) {
           pp.messageResolve({ resultEvent: event });
           pp.messageResolve = null;
+        } else {
+          // Background-triggered turn: the CLI produced output on its own after
+          // the user-initiated turn already resolved (e.g. a run_in_background
+          // task finished and fed its result back to the model). That text was
+          // streamed as `thinking` only — with no messageResolve waiting,
+          // _handleMessage never posts it as a `chat`, so the thread visually
+          // hangs on "thinking…/Working…". Finalize the accumulated text as a
+          // real answer so the turn settles on an actual message bubble.
+          const trailing = pp.lastResponseText.join('\n').trim();
+          if (trailing && !event.is_error) {
+            this._resetIdleTimer(pp.msgChannel);
+            try { await this.sendResponse(pp.msgChannel, trailing); } catch {}
+          }
+          pp.lastResponseText.length = 0;
         }
       } else if (eventType === 'system') {
         const subtype = event.subtype || '';

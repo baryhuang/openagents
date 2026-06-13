@@ -296,9 +296,31 @@ interface IntermediateStepsProps {
   isActive?: boolean;
 }
 
+// A turn that ended on a `thinking` block (with no `chat` after it) is settled,
+// not in-progress — e.g. a background task fed a result back to the model and it
+// emitted a closing thought. Likewise, a steps group whose newest step is stale
+// (no activity for a while) is no longer working. In both cases the breathing
+// "Working…" indicator should not spin.
+const SETTLED_AFTER_MS = 45_000;
+
+function stepsAreSettled(steps: WorkspaceMessage[]): boolean {
+  if (steps.length === 0) return true;
+  const last = steps[steps.length - 1];
+  // A trailing thinking block is the end of the model's output — reasoning is
+  // complete content, not an in-flight action.
+  if (last.messageType === 'thinking') return true;
+  // Stale: nothing new for a while → the turn is effectively done.
+  if (last.createdAt) {
+    const ts = Date.parse(last.createdAt);
+    if (Number.isFinite(ts) && Date.now() - ts > SETTLED_AFTER_MS) return true;
+  }
+  return false;
+}
+
 export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents, isActive = false }: IntermediateStepsProps) {
   if (steps.length === 0) return null;
   const hasTerminalStatus = steps.some(isTerminalStatus);
+  const settled = stepsAreSettled(steps);
 
   // Group consecutive steps by sender
   const hasMultipleAgents = (agents?.length ?? 0) > 1;
@@ -332,7 +354,7 @@ export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents
             ))}
           </div>
         ))}
-        {isActive && !hasTerminalStatus && <ActivityIndicator />}
+        {isActive && !hasTerminalStatus && !settled && <ActivityIndicator />}
       </div>
     </div>
   );
