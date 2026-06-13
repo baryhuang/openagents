@@ -36,6 +36,13 @@ const IS_WINDOWS = process.platform === 'win32';
 // turn) — guards the daemon against a hung Amp process without arbitrary sleeps.
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** Platform-appropriate Amp CLI install command for "not found" messages. */
+function ampInstallHint() {
+  return IS_WINDOWS
+    ? 'powershell -NoProfile -Command "irm https://ampcode.com/install.ps1 | iex"'
+    : 'curl -fsSL https://ampcode.com/install.sh | bash';
+}
+
 class AmpAdapter extends BaseAdapter {
   constructor(opts) {
     super(opts);
@@ -58,7 +65,7 @@ class AmpAdapter extends BaseAdapter {
     if (this._ampBin) {
       this._log(`Using Amp CLI: ${this._ampBin}`);
     } else {
-      this._log('Warning: Amp CLI not found — install with: curl -fsSL https://ampcode.com/install.sh | bash');
+      this._log(`Warning: Amp CLI not found — install with: ${ampInstallHint()}`);
     }
   }
 
@@ -215,7 +222,7 @@ class AmpAdapter extends BaseAdapter {
 
     if (!this._ampBin) this._ampBin = this._findAmpBinary();
     if (!this._ampBin) {
-      await this.sendError(msgChannel, 'Amp CLI not found. Install with: curl -fsSL https://ampcode.com/install.sh | bash');
+      await this.sendError(msgChannel, `Amp CLI not found. Install with: ${ampInstallHint()}`);
       return;
     }
 

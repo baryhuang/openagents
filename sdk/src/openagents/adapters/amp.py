@@ -51,6 +51,13 @@ _READ_TIMEOUT = 15.0
 _MAX_IDLE_READS = 20
 
 
+def _amp_install_hint() -> str:
+    """Platform-appropriate Amp CLI install command for 'not found' messages."""
+    if platform.system() == "Windows":
+        return 'powershell -NoProfile -Command "irm https://ampcode.com/install.ps1 | iex"'
+    return "curl -fsSL https://ampcode.com/install.sh | bash"
+
+
 class AmpAdapter(BaseAdapter):
     """Connects the Amp CLI to an OpenAgents workspace."""
 
@@ -86,8 +93,7 @@ class AmpAdapter(BaseAdapter):
             logger.info("Using Amp CLI: %s", self._amp_binary)
         else:
             logger.warning(
-                "Amp binary not found. Install with: "
-                "curl -fsSL https://ampcode.com/install.sh | bash"
+                "Amp binary not found. Install with: %s", _amp_install_hint()
             )
 
     # ------------------------------------------------------------------
@@ -202,8 +208,7 @@ class AmpAdapter(BaseAdapter):
             self._amp_binary = amp_bin
         if not amp_bin:
             raise FileNotFoundError(
-                "amp CLI not found. Install with: "
-                "curl -fsSL https://ampcode.com/install.sh | bash"
+                f"amp CLI not found. Install with: {_amp_install_hint()}"
             )
 
         thread_id = self._channel_threads.get(channel_name) if resume else None

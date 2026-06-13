@@ -90,6 +90,20 @@ class Installer {
     // Fallback: check if binary exists on PATH (system install)
     const binaryPath = this._whichBinary(agentType);
     if (!binaryPath) {
+      // Amp-only: a marker alone is NOT sufficient evidence of an install.
+      // Amp's CLI lives outside any npm package (curl/ps1 installer → ~/.amp/bin),
+      // so a historical "installed" marker can outlive a missing/never-landed
+      // binary. Require a real resolvable binary; when only a stale marker
+      // remains, report not-installed with a 'cli-missing' diagnostic (carried
+      // by the existing `location` field — no new field/enum) instead of the
+      // generic marker fallback. The marker itself is left untouched.
+      if (agentType === 'amp') {
+        return {
+          installed: false,
+          managed: false,
+          location: this._hasMarker(agentType) ? 'cli-missing' : null,
+        };
+      }
       // If a successful install wrote a marker, surface installed=true even
       // when binary detection can't (yet) see the freshly-installed CLI —
       // e.g. PATH caches not yet picking up a brand-new ~/.cursor/bin. The
@@ -142,6 +156,82 @@ class Installer {
       } catch { return false; }
     }
     return this.isInstalled(agentType);
+  }
+
+  /**
+   * Amp-only post-install verification.
+   *
+   * Confirms a REAL amp binary exists on disk before the install is recorded.
+   * The Amp install script can exit 0 without landing a runnable binary (wrong
+   * $HOME, blocked download, custom AMP_HOME), which would otherwise leave a
+   * "marker says installed but CLI missing" state. Deliberately does NOT consult
+   * the installed marker (unlike verifyInstalled()->isInstalled()), so it can't
+   * be satisfied by its own about-to-be-written record.
+   *
+   * Hard condition for success: an absolute path resolves AND the file exists.
+   * `amp --version` is a best-effort enhancement used only for logging — a flaky
+   * or non-interactive `--version` failure does NOT fail the install.
+   *
+   * Scoped to Amp; never called for any other agent type.
+   *
+   * @returns {{ path: string, version: string|null } | null}
+   */
+  _verifyAmpBinary() {
+    // Drop the 30s PATH/whichBinary cache so we see the freshly-installed dir
+    // (e.g. ~/.amp/bin) instead of the pre-install snapshot.
+    try { clearBinaryLookupCache(); } catch {}
+
+    const isWin = process.platform === 'win32';
+    const names = isWin ? ['amp.exe', 'amp.cmd', 'amp'] : ['amp'];
+    const candidates = [];
+    // 1) Whatever the shared cross-platform resolver finds on the enhanced PATH
+    //    (already includes ~/.amp/bin).
+    const resolved = this._whichBinary('amp');
+    if (resolved) candidates.push(resolved);
+    // 2) Honor a custom AMP_HOME, then the installer's default ~/.amp/bin —
+    //    covers a binary that exists but whose dir isn't on PATH yet.
+    const binDirs = [];
+    if (process.env.AMP_HOME) binDirs.push(path.join(process.env.AMP_HOME, 'bin'));
+    binDirs.push(path.join(os.homedir(), '.amp', 'bin'));
+    for (const dir of binDirs) {
+      for (const name of names) candidates.push(path.join(dir, name));
+    }
+
+    let found = null;
+    for (const c of candidates) {
+      try { if (c && fs.existsSync(c)) { found = c; break; } } catch {}
+    }
+    if (!found) return null;
+
+    let version = null;
+    try {
+      version = require('child_process').execSync(`"${found}" --version`, {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 8000,
+        env: getEnhancedEnv(),
+        windowsHide: true,
+        encoding: 'utf-8',
+      }).trim() || null;
+    } catch {
+      // Best-effort only — file existence above is the hard condition.
+    }
+    return { path: found, version };
+  }
+
+  /**
+   * Amp-only: message shown when the install command exits 0 but no runnable
+   * amp binary can be found. Points at the canonical (or AMP_HOME) location.
+   */
+  _ampBinaryNotFoundMessage() {
+    const isWin = process.platform === 'win32';
+    const baseDir = process.env.AMP_HOME
+      ? path.join(process.env.AMP_HOME, 'bin')
+      : path.join(os.homedir(), '.amp', 'bin');
+    const expected = path.join(baseDir, isWin ? 'amp.exe' : 'amp');
+    return (
+      'Amp install command completed, but the Amp CLI binary could not be found.\n\n' +
+      `Expected path:\n${expected}`
+    );
   }
 
   /**
@@ -385,6 +475,22 @@ class Installer {
     }
 
     const output = await this._execShell(cmd);
+
+    // Amp-only: the install script can exit 0 without landing a runnable
+    // binary, so verify the real CLI exists BEFORE recording the install.
+    // Other agent types keep the original "exit 0 → mark installed" behavior.
+    if (agentType === 'amp') {
+      const amp = this._verifyAmpBinary();
+      if (!amp) {
+        throw new Error(this._ampBinaryNotFoundMessage());
+      }
+      this._markInstalled(agentType);
+      return {
+        success: true,
+        output: `${output}\nAmp CLI resolved: ${amp.path}${amp.version ? ` (${amp.version})` : ''}`,
+      };
+    }
+
     this._markInstalled(agentType);
     return { success: true, output };
   }
@@ -502,6 +608,19 @@ class Installer {
       proc.on('error', (err) => reject(err));
       proc.on('close', (code) => {
         if (code === 0) {
+          // Amp-only: confirm a real binary exists before recording the
+          // install (verify-before-mark; never writes/rolls back a marker on
+          // failure). Other agent types are unaffected.
+          if (agentType === 'amp') {
+            const amp = this._verifyAmpBinary();
+            if (!amp) {
+              const msg = this._ampBinaryNotFoundMessage();
+              if (onData) onData(`\n${msg}\n`);
+              reject(new Error(msg));
+              return;
+            }
+            if (onData) onData(`\nAmp CLI resolved: ${amp.path}${amp.version ? ` (${amp.version})` : ''}\n`);
+          }
           this._markInstalled(agentType);
           if (onData) onData(`\nDone! ${agentType} is now installed.\n`);
           resolve({ success: true, command: displayCmd });
