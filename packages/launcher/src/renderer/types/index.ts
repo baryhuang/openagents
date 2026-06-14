@@ -3,6 +3,9 @@ export type AgentState = 'online' | 'running' | 'idle' | 'starting' | 'reconnect
 export interface HealthCheck {
   ready: boolean
   installed?: boolean
+  // CLI sign-in state for dual-auth agents (e.g. Claude): true (signed in) /
+  // false (signed out) / null (unknown — never probed or undecidable).
+  logged_in?: boolean | null
   binary?: string | null
   version?: string | null
   message?: string

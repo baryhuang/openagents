@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { Modal, ModalTitle } from "../ui/Modal"
+import { Modal, ModalBody, ModalFooter, ModalHeader, ModalTitle } from "../ui/Modal"
 import AgentIcon from "../AgentIcon"
 import { cn } from "../../lib/utils"
 import { useUiStore } from "../../store/ui"
@@ -107,61 +107,99 @@ export default function SetupWizard({
     { key: "create", label: "Create agent" },
   ]
 
+  const openLoginTerminal = (): void => {
+    const cmd = entry.check_ready?.login_command
+    if (!cmd) return
+    window.api
+      .openTerminal(cmd)
+      .catch((e: Error) =>
+        showToast(`Failed to open terminal: ${e.message}`, "error"),
+      )
+  }
+
+  const configureProps = {
+    fields: envFields,
+    values: envValues,
+    onChange: setEnvValues,
+    testing,
+    errorMessage: testResult && !testResult.ok ? testResult.message : null,
+    onSubmit: envFields.length === 0 ? () => setStep("create") : saveAndTest,
+    onSkip: onClose,
+    loginCommand: entry.check_ready?.login_command || null,
+    onLogin: openLoginTerminal,
+    onContinueWithoutKey: () => setStep("create"),
+  }
+
+  const testProps = {
+    ok: !!testResult?.ok,
+    message: testResult?.message || "Connection successful.",
+    onNext: () => setStep("create"),
+    onBack: () => setStep("configure"),
+  }
+
+  const createProps = {
+    agentName,
+    setAgentName,
+    defaultName: `my-${entry.name}`,
+    submitting,
+    onSubmit: createAgent,
+    onCancel: onClose,
+  }
+
   return (
-    <Modal open={open} onClose={onClose} className="!min-w-[480px] !max-w-[560px]">
-      <div className="flex items-center gap-3 mb-3">
-        <AgentIcon type={entry.name} size={28} />
-        <ModalTitle className="m-0">
-          Set up {entry.label || entry.name}
-        </ModalTitle>
-      </div>
-      <p className="hint m-0 mb-3">
-        Quick setup — configure, verify, then create your first agent.
-      </p>
+    <Modal
+      open={open}
+      onClose={onClose}
+      layout="panel"
+      className="!min-w-[480px] !max-w-[560px]"
+    >
+      <ModalHeader>
+        <div className="flex items-center gap-3 mb-2">
+          <AgentIcon type={entry.name} size={28} />
+          <ModalTitle className="m-0">
+            Set up {entry.label || entry.name}
+          </ModalTitle>
+        </div>
+        <p className="hint m-0 mb-3">
+          Quick setup — configure, verify, then create your first agent.
+        </p>
 
-      <div className="wizard-steps">
-        {steps.map((s, i) => (
-          <React.Fragment key={s.key}>
-            {i > 0 && <div className="wizard-step-sep" />}
-            <div className={cn("wizard-step", idx === i && "active", idx > i && "done")}>
-              <span className="dot">{idx > i ? "✓" : i + 1}</span>
-              <span>{s.label}</span>
-            </div>
-          </React.Fragment>
-        ))}
-      </div>
+        <div className="wizard-steps mb-0">
+          {steps.map((s, i) => (
+            <React.Fragment key={s.key}>
+              {i > 0 && <div className="wizard-step-sep" />}
+              <div className={cn("wizard-step", idx === i && "active", idx > i && "done")}>
+                <span className="dot">{idx > i ? "✓" : i + 1}</span>
+                <span>{s.label}</span>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </ModalHeader>
 
-      {step === "configure" && (
-        <SetupApiConfig
-          fields={envFields}
-          values={envValues}
-          onChange={setEnvValues}
-          testing={testing}
-          errorMessage={testResult && !testResult.ok ? testResult.message : null}
-          onSubmit={envFields.length === 0 ? () => setStep("create") : saveAndTest}
-          onSkip={onClose}
-        />
-      )}
+      <ModalBody>
+        {step === "configure" && (
+          <SetupApiConfig {...configureProps} section="body" />
+        )}
+        {step === "test" && (
+          <SetupConnectionTest {...testProps} section="body" />
+        )}
+        {step === "create" && (
+          <SetupCreateInstance {...createProps} section="body" />
+        )}
+      </ModalBody>
 
-      {step === "test" && (
-        <SetupConnectionTest
-          ok={!!testResult?.ok}
-          message={testResult?.message || "Connection successful."}
-          onNext={() => setStep("create")}
-          onBack={() => setStep("configure")}
-        />
-      )}
-
-      {step === "create" && (
-        <SetupCreateInstance
-          agentName={agentName}
-          setAgentName={setAgentName}
-          defaultName={`my-${entry.name}`}
-          submitting={submitting}
-          onSubmit={createAgent}
-          onCancel={onClose}
-        />
-      )}
+      <ModalFooter>
+        {step === "configure" && (
+          <SetupApiConfig {...configureProps} section="footer" />
+        )}
+        {step === "test" && (
+          <SetupConnectionTest {...testProps} section="footer" />
+        )}
+        {step === "create" && (
+          <SetupCreateInstance {...createProps} section="footer" />
+        )}
+      </ModalFooter>
     </Modal>
   )
 }

@@ -27,6 +27,7 @@ import { ChannelSelector } from "./ChannelSelector"
 import { StagedProgress } from "../install-progress/StagedProgress"
 import { useAgentChannel, channelToDistTag } from "../../hooks/useAgentChannel"
 import { installErrorMessage, throwIfInstallFailed } from "../../utils/installErrors"
+import { isLoginOnlyAgent } from "../../lib/agent-auth"
 
 interface AgentDetailProps {
   entry: CatalogEntry
@@ -279,7 +280,7 @@ export default function AgentDetail({
               onUninstall={() => setConfirmingUninstall(true)}
               onRollback={startRollback}
               onOpenWizard={
-                onOpenWizard && !hasInstance
+                onOpenWizard && !hasInstance && !isLoginOnlyAgent(entry, envFields)
                   ? () => onOpenWizard(entry)
                   : undefined
               }

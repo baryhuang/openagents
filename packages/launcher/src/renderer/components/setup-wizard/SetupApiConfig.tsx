@@ -1,10 +1,17 @@
 import React, { useState } from "react"
-import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  KeyRound,
+  Terminal,
+} from "lucide-react"
 import { Input } from "../ui/Input"
 import { PasswordInput } from "../ui/PasswordInput"
 import { Button } from "../ui/Button"
 import { translateTestError } from "../../lib/test-error"
 import type { EnvField } from "../../types"
+import { WizardStepShell } from "./WizardStepShell"
 
 interface SetupApiConfigProps {
   fields: EnvField[]
@@ -14,6 +21,12 @@ interface SetupApiConfigProps {
   errorMessage?: string | null
   onSubmit: () => void
   onSkip: () => void
+  // Dual-auth agents (e.g. Claude) expose a CLI login alongside the API key.
+  // When present, offer it as an alternative to entering a key.
+  loginCommand?: string | null
+  onLogin?: () => void
+  onContinueWithoutKey?: () => void
+  section?: "all" | "body" | "footer"
 }
 
 /**
@@ -29,53 +42,114 @@ export function SetupApiConfig({
   errorMessage,
   onSubmit,
   onSkip,
+  loginCommand,
+  onLogin,
+  onContinueWithoutKey,
+  section = "all",
 }: SetupApiConfigProps): React.JSX.Element {
+  const loginBlock =
+    loginCommand && onLogin ? (
+      <div className="rounded-sm border border-(--accent)/35 bg-(--accent-bg)/60 px-3.5 py-3">
+        <div className="flex items-start gap-2.5 mb-3">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-(--accent)/15 text-(--accent)">
+            <Terminal className="h-4 w-4" strokeWidth={2} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="m-0 text-[13px] font-semibold text-(--text-primary)">
+              Sign in with CLI
+            </p>
+            <p className="hint m-0 mt-1 mb-0 leading-snug">
+              Opens a terminal running <code>{loginCommand}</code> — no API key
+              needed.
+            </p>
+          </div>
+        </div>
+        <div className="form-actions mt-0 flex-wrap">
+          <Button variant="primary" onClick={onLogin}>
+            Sign in
+          </Button>
+          {onContinueWithoutKey && (
+            <Button onClick={onContinueWithoutKey}>
+              Continue without a key
+            </Button>
+          )}
+        </div>
+      </div>
+    ) : null
+
+  const apiKeyDivider = loginBlock ? (
+    <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-(--text-tertiary)">
+      <span className="h-px flex-1 bg-(--border)" />
+      <KeyRound className="h-3 w-3" />
+      <span>Or use an API key</span>
+      <span className="h-px flex-1 bg-(--border)" />
+    </div>
+  ) : null
+
+  const actionButtons = (
+    <div className="form-actions mt-0">
+      <Button variant="primary" onClick={onSubmit} disabled={testing}>
+        {testing
+          ? "Testing…"
+          : fields.length === 0
+            ? "Continue"
+            : "Save & test connection"}
+      </Button>
+      <Button onClick={onSkip}>Skip</Button>
+    </div>
+  )
+
   if (fields.length === 0) {
-    return (
+    const body = (
       <>
-        <p className="hint mt-2 mb-4">
+        {loginBlock}
+        <p className="hint m-0">
           This agent has no API key requirements. You can continue and create
           your first instance.
         </p>
-        <div className="form-actions">
-          <Button variant="primary" onClick={onSubmit}>Continue</Button>
-          <Button onClick={onSkip}>Skip</Button>
-        </div>
       </>
     )
+    const footer = actionButtons
+    if (section === "body") return body
+    if (section === "footer") return footer
+    return <WizardStepShell body={body} footer={footer} />
   }
 
-  return (
+  const body = (
     <>
-      <p className="hint mt-1 mb-3">
+      {loginBlock}
+      {apiKeyDivider}
+      <p className="hint m-0">
         Saved locally to <code>~/.openagents/env/</code>. Secrets are never
         printed to logs.
       </p>
       {fields.map((f) => {
         const FieldInput = f.password ? PasswordInput : Input
         return (
-          <div className="form-group" key={f.name}>
+          <div className="form-group mb-0" key={f.name}>
             <label>
               {f.description || f.name}
               {f.required && <span className="required"> *</span>}
             </label>
             <FieldInput
               value={values[f.name] ?? f.default ?? ""}
-              onChange={(e) => onChange({ ...values, [f.name]: e.target.value })}
+              onChange={(e) =>
+                onChange({ ...values, [f.name]: e.target.value })
+              }
               placeholder={f.placeholder || `Enter ${f.name}…`}
             />
           </div>
         )
       })}
       {errorMessage && <TestErrorCard message={errorMessage} />}
-      <div className="form-actions">
-        <Button variant="primary" onClick={onSubmit} disabled={testing}>
-          {testing ? "Testing…" : "Save & test connection"}
-        </Button>
-        <Button onClick={onSkip}>Skip</Button>
-      </div>
     </>
   )
+
+  const footer = actionButtons
+
+  if (section === "body") return body
+  if (section === "footer") return footer
+  return <WizardStepShell body={body} footer={footer} />
 }
 
 function TestErrorCard({ message }: { message: string }): React.JSX.Element {
@@ -90,7 +164,7 @@ function TestErrorCard({ message }: { message: string }): React.JSX.Element {
   return (
     <div
       role="alert"
-      className="mt-1 mb-3 rounded-(--radius-sm) border border-(--danger)/30 bg-(--danger-bg) px-3 py-2.5"
+      className="rounded-(--radius-sm) border border-(--danger)/30 bg-(--danger-bg) px-3 py-2.5"
     >
       <div className="flex items-start gap-2">
         <AlertCircle

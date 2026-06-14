@@ -4,9 +4,9 @@ import { useUiStore } from "../../store/ui"
 import { useShallow } from "zustand/react/shallow"
 import AgentIcon from "../../components/AgentIcon"
 import StatusDot, { displayState } from "../../components/ui/StatusDot"
-import { Plus, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react"
+import { Plus, CheckCircle2, AlertTriangle, Loader2, KeyRound, Terminal } from "lucide-react"
 import { Button } from "../../components/ui/Button"
-import { Modal, ModalTitle } from "../../components/ui/Modal"
+import { Modal, ModalBody, ModalFooter, ModalHeader, ModalTitle } from "../../components/ui/Modal"
 import { PasswordInput } from "../../components/ui/PasswordInput"
 import { TopBar } from "../../components/TopBar"
 import type { Agent, CatalogEntry, EnvField, HealthCheck } from "../../types"
@@ -629,6 +629,15 @@ function ConfigureDialog({
     setLoginCmd(null)
     setLoggedIn(null)
     setLoginPhase("idle")
+    // Reset fields/values too: the dialog stays mounted across agents, and
+    // getEnvFields returns [] for login-only agents (Cursor/Hermes) so the
+    // `if (hasFields)` branch below never calls setFields for them. Without
+    // this reset they'd inherit the previously-configured agent's key fields
+    // (e.g. Claude's ANTHROPIC_API_KEY), making the render condition
+    // `loginCmd && fields.length === 0` false and wrongly showing an API-key
+    // form for an agent that only signs in via its CLI.
+    setFields([])
+    setValues({})
     Promise.all([
       window.api.getEnvFields(agentType),
       window.api.getAgentEnv(agentType),
@@ -637,7 +646,8 @@ function ConfigureDialog({
         : Promise.resolve({} as Record<string, string>),
     ])
       .then(([f, typeEnv, instanceEnv]) => {
-        if (f && f.length > 0) {
+        const hasFields = !!f && f.length > 0
+        if (hasFields) {
           setFields(f)
           const merged = { ...(typeEnv || {}), ...(instanceEnv || {}) }
           const initial: Record<string, string> = {}
@@ -645,31 +655,39 @@ function ConfigureDialog({
             initial[field.name] = merged[field.name] || field.default || ""
           })
           setValues(initial)
-        } else {
-          window.api.getCatalog().then((catalog) => {
-            const entry = catalog.find((c) => c.name === agentType)
-            const cmd = entry?.check_ready?.login_command || null
-            if (cmd) {
-              setLoginCmd(cmd)
-              // Read the REAL sign-in state once on open (a fresh probe), so the
-              // badge reflects reality instead of an optimistic guess.
-              window.api
-                .refreshLogin(agentType)
-                .then((h) => {
-                  const ok = h?.ready ?? false
-                  setLoggedIn(ok)
-                  // Already signed in via the browser session? Then any saved
-                  // CURSOR_API_KEY/MODEL is stale leftover that conflicts with
-                  // the login (and was breaking the workspace chat). Drop it
-                  // once — clearLoginKey is a no-op when nothing's set.
-                  if (ok) window.api.clearLoginKey(agentType, agentName || undefined)
-                })
-                .catch(() => setLoggedIn(false))
-            } else {
-              setNoConfig(true)
-            }
-          })
         }
+        // Always resolve a CLI login command. Hosted agents (Cursor/Hermes) have
+        // ONLY a login; dual-auth agents (Claude) have BOTH env fields AND a
+        // login — so this must run regardless of whether env fields exist, or
+        // Claude's Configure dialog would only ever show the API-key form.
+        window.api.getCatalog().then((catalog) => {
+          const entry = catalog.find((c) => c.name === agentType)
+          const cmd = entry?.check_ready?.login_command || null
+          if (cmd) {
+            setLoginCmd(cmd)
+            // Read the REAL sign-in state once on open (a fresh probe), so the
+            // badge reflects reality instead of an optimistic guess.
+            window.api
+              .refreshLogin(agentType)
+              .then((h) => {
+                // For dual-auth agents `logged_in` reflects the CLI sign-in
+                // specifically (`ready` can be true from an API key alone), so
+                // prefer it; fall back to `ready` for pure login agents.
+                const ok = h?.logged_in ?? h?.ready ?? false
+                setLoggedIn(ok)
+                // Already signed in via the browser session? Then any saved
+                // CURSOR_API_KEY/MODEL is stale leftover that conflicts with
+                // the login (and was breaking the workspace chat). Drop it
+                // once — clearLoginKey is a no-op when nothing's set, and a
+                // no-op for Claude (it declares no keys to clear, so the API
+                // key is never wiped).
+                if (ok) window.api.clearLoginKey(agentType, agentName || undefined)
+              })
+              .catch(() => setLoggedIn(false))
+          } else if (!hasFields) {
+            setNoConfig(true)
+          }
+        })
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -749,67 +767,57 @@ function ConfigureDialog({
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <ModalTitle>Configure {agentName || agentType}</ModalTitle>
+    <Modal
+      open={open}
+      onClose={onClose}
+      layout="panel"
+      className="min-w-[480px]! max-w-[560px]!"
+    >
+      <ModalHeader>
+        <ModalTitle className="mb-2">
+          Configure {agentName || agentType}
+        </ModalTitle>
+        {!loading && !noConfig && loginCmd && fields.length === 0 && (
+          <p className="hint m-0">
+            This agent signs in through its own service — no API key needed.
+            Login opens a terminal running <code>{loginCmd}</code>; complete the
+            sign-in there.
+          </p>
+        )}
+        {!loading && !noConfig && !(loginCmd && fields.length === 0) && (
+          <p className="hint m-0">
+            {agentName
+              ? "Settings saved for this agent. Type defaults remain available as fallbacks."
+              : "Settings saved to ~/.openagents/env/"}
+          </p>
+        )}
+        {!loading && noConfig && (
+          <p className="hint m-0">No configuration required for this agent type.</p>
+        )}
+      </ModalHeader>
+
+      <ModalBody>
         {loading ? (
-          <p className="loading-text">Loading configuration...</p>
-        ) : noConfig ? (
+          <p className="loading-text m-0">Loading configuration...</p>
+        ) : noConfig ? null : loginCmd && fields.length === 0 ? (
           <>
-            <p className="hint">No configuration required for this agent type.</p>
-            <Button onClick={onClose}>Close</Button>
+            <LoginStatusCard loginPhase={loginPhase} loggedIn={loggedIn} />
+            {loginPhase === "awaiting" && (
+              <p className="hint m-0">
+                A terminal opened running <code>{loginCmd}</code>. Once you&apos;ve
+                finished signing in there, let us know and we&apos;ll verify it.
+              </p>
+            )}
           </>
-        ) : loginCmd ? (
+        ) : (
           <>
-            <p className="hint">
-              This agent signs in through its own service — no API key needed.
-              Login opens a terminal running <code>{loginCmd}</code>; complete the
-              sign-in there.
-            </p>
-
-            {/* Real, verified status — only shown once we've actually probed. */}
-            <div className="flex items-center gap-2 mb-4 p-3 rounded-(--radius) bg-(--bg-input)">
-              {loginPhase === "checking" || loggedIn === null ? (
-                <>
-                  <Loader2 className="w-5 h-5 shrink-0 text-(--text-tertiary) animate-spin" strokeWidth={2} />
-                  <strong className="text-[13px]">Checking sign-in…</strong>
-                </>
-              ) : loggedIn ? (
-                <>
-                  <CheckCircle2 className="w-5 h-5 shrink-0 text-(--success-text)" strokeWidth={2} />
-                  <strong className="text-[13px]">Signed in</strong>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-5 h-5 shrink-0 text-(--warning-text)" strokeWidth={2} />
-                  <strong className="text-[13px]">Not signed in</strong>
-                </>
-              )}
-            </div>
-
-            {loginPhase === "awaiting" ? (
+            {loginCmd && (
               <>
-                <p className="hint mb-3">
-                  A terminal opened running <code>{loginCmd}</code>. Once you've
-                  finished signing in there, let us know and we'll verify it.
-                </p>
-                <div className="form-actions">
-                  <Button
-                    variant="primary"
-                    onClick={confirmLogin}
-                  >
-                    I&apos;ve finished signing in
-                  </Button>
-                  <Button onClick={() => setLoginPhase("idle")}>
-                    Not yet
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <div className="form-actions">
-                <Button
-                  variant="primary"
-                  disabled={loginPhase === "checking"}
-                  onClick={async () => {
+                <CliLoginBlock
+                  loginCmd={loginCmd}
+                  loginPhase={loginPhase}
+                  loggedIn={loggedIn}
+                  onOpenTerminal={async () => {
                     try {
                       await window.api.openTerminal(loginCmd)
                       setLoginPhase("awaiting")
@@ -820,23 +828,20 @@ function ConfigureDialog({
                       )
                     }
                   }}
-                >
-                  {loggedIn ? "Re-login" : "Login"}
-                </Button>
-                <Button onClick={onClose}>Close</Button>
-              </div>
+                  onConfirmLogin={confirmLogin}
+                  onCancelAwaiting={() => setLoginPhase("idle")}
+                />
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-(--text-tertiary)">
+                  <span className="h-px flex-1 bg-(--border)" />
+                  <KeyRound className="h-3 w-3" />
+                  <span>Or use an API key</span>
+                  <span className="h-px flex-1 bg-(--border)" />
+                </div>
+              </>
             )}
-          </>
-        ) : (
-          <>
-            <p className="hint">
-              {agentName
-                ? "Settings saved for this agent. Type defaults remain available as fallbacks."
-                : "Settings saved to ~/.openagents/env/"}
-            </p>
             <div>
               {fields.map((f) => (
-                <div key={f.name} className="form-group">
+                <div key={f.name} className="form-group mb-0">
                   <label htmlFor={`agent-config-${f.name}`}>
                     {f.description}
                     {f.required && <span className="required"> *</span>}
@@ -873,7 +878,7 @@ function ConfigureDialog({
             {testResult && (
               <div
                 className={cn(
-                  "text-xs mb-2.5",
+                  "text-xs m-0",
                   testStatus === "ok"
                     ? "test-success"
                     : testStatus === "error"
@@ -884,7 +889,48 @@ function ConfigureDialog({
                 {testResult}
               </div>
             )}
-            <div className="form-actions">
+          </>
+        )}
+      </ModalBody>
+
+      {!loading && (
+        <ModalFooter>
+          {noConfig ? (
+            <div className="form-actions mt-0">
+              <Button onClick={onClose}>Close</Button>
+            </div>
+          ) : loginCmd && fields.length === 0 ? (
+            loginPhase === "awaiting" ? (
+              <div className="form-actions mt-0">
+                <Button variant="primary" onClick={confirmLogin}>
+                  I&apos;ve finished signing in
+                </Button>
+                <Button onClick={() => setLoginPhase("idle")}>Not yet</Button>
+              </div>
+            ) : (
+              <div className="form-actions mt-0">
+                <Button
+                  variant="primary"
+                  disabled={loginPhase === "checking"}
+                  onClick={async () => {
+                    try {
+                      await window.api.openTerminal(loginCmd)
+                      setLoginPhase("awaiting")
+                    } catch (err: unknown) {
+                      showToast(
+                        `Failed to open terminal: ${(err as Error).message}`,
+                        "error",
+                      )
+                    }
+                  }}
+                >
+                  {loggedIn ? "Re-login" : "Login"}
+                </Button>
+                <Button onClick={onClose}>Close</Button>
+              </div>
+            )
+          ) : (
+            <div className="form-actions mt-0">
               <Button variant="primary" onClick={save}>
                 Save
               </Button>
@@ -896,9 +942,139 @@ function ConfigureDialog({
               </Button>
               <Button onClick={onClose}>Cancel</Button>
             </div>
-          </>
-        )}
+          )}
+        </ModalFooter>
+      )}
     </Modal>
+  )
+}
+
+function LoginStatusRow({
+  loginPhase,
+  loggedIn,
+}: {
+  loginPhase: "idle" | "awaiting" | "checking"
+  loggedIn: boolean | null
+}): React.JSX.Element {
+  if (loginPhase === "checking" || loggedIn === null) {
+    return (
+      <div className="flex items-center gap-2 text-[13px] text-(--text-secondary)">
+        <Loader2 className="w-4 h-4 shrink-0 animate-spin" strokeWidth={2} />
+        <span>Checking sign-in…</span>
+      </div>
+    )
+  }
+  if (loggedIn) {
+    return (
+      <div className="flex items-center gap-2 text-[13px] text-(--success-text)">
+        <CheckCircle2 className="w-4 h-4 shrink-0" strokeWidth={2} />
+        <span>Signed in</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2 text-[13px] text-(--warning-text)">
+      <AlertTriangle className="w-4 h-4 shrink-0" strokeWidth={2} />
+      <span>Not signed in</span>
+    </div>
+  )
+}
+
+function LoginStatusCard({
+  loginPhase,
+  loggedIn,
+}: {
+  loginPhase: "idle" | "awaiting" | "checking"
+  loggedIn: boolean | null
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-2 p-3 rounded-(--radius) bg-(--bg-input)">
+      {loginPhase === "checking" || loggedIn === null ? (
+        <>
+          <Loader2
+            className="w-5 h-5 shrink-0 text-(--text-tertiary) animate-spin"
+            strokeWidth={2}
+          />
+          <strong className="text-[13px]">Checking sign-in…</strong>
+        </>
+      ) : loggedIn ? (
+        <>
+          <CheckCircle2
+            className="w-5 h-5 shrink-0 text-(--success-text)"
+            strokeWidth={2}
+          />
+          <strong className="text-[13px]">Signed in</strong>
+        </>
+      ) : (
+        <>
+          <AlertTriangle
+            className="w-5 h-5 shrink-0 text-(--warning-text)"
+            strokeWidth={2}
+          />
+          <strong className="text-[13px]">Not signed in</strong>
+        </>
+      )}
+    </div>
+  )
+}
+
+function CliLoginBlock({
+  loginCmd,
+  loginPhase,
+  loggedIn,
+  onOpenTerminal,
+  onConfirmLogin,
+  onCancelAwaiting,
+}: {
+  loginCmd: string
+  loginPhase: "idle" | "awaiting" | "checking"
+  loggedIn: boolean | null
+  onOpenTerminal: () => void | Promise<void>
+  onConfirmLogin: () => void | Promise<void>
+  onCancelAwaiting: () => void
+}): React.JSX.Element {
+  return (
+    <div className="rounded-sm border border-(--accent)/35 bg-(--accent-bg)/60 px-3.5 py-3">
+      <div className="flex items-start gap-2.5 mb-3">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-(--accent)/15 text-(--accent)">
+          <Terminal className="h-4 w-4" strokeWidth={2} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="m-0 text-[13px] font-semibold text-(--text-primary)">
+            Sign in with CLI
+          </p>
+          <p className="hint m-0 mt-1 mb-0 leading-snug">
+            Opens a terminal running <code>{loginCmd}</code> — no API key needed.
+          </p>
+        </div>
+      </div>
+      <div className="mb-3">
+        <LoginStatusRow loginPhase={loginPhase} loggedIn={loggedIn} />
+      </div>
+      {loginPhase === "awaiting" ? (
+        <>
+          <p className="hint m-0 mb-3">
+            Finish signing in in the terminal, then confirm below.
+          </p>
+          <div className="form-actions mt-0 flex-wrap">
+            <Button variant="primary" onClick={onConfirmLogin}>
+              I&apos;ve finished signing in
+            </Button>
+            <Button onClick={onCancelAwaiting}>Not yet</Button>
+          </div>
+        </>
+      ) : (
+        <div className="form-actions mt-0">
+          <Button
+            variant="primary"
+            disabled={loginPhase === "checking"}
+            onClick={onOpenTerminal}
+          >
+            {loggedIn ? "Re-login" : "Sign in"}
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 
