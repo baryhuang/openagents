@@ -34,10 +34,38 @@ const CACHE_MAX_SESSIONS = 10;
 // Track last seen message ID per cached session for incremental refresh
 const cacheLastSeenId = new Map<string, string>();
 
+function parseDMSession(sessionId: string | null): [string, string] | null {
+  if (!sessionId?.startsWith('dm:')) return null;
+  const parts = sessionId.slice(3).split(',', 2);
+  if (parts.length === 2) return [parts[0], parts[1]];
+  return null;
+}
+
+function normalizeAgentAddress(address: string): string {
+  return address.replace(/^openagents:/, '');
+}
+
+function messagesForSession(sessionId: string, msgs: WorkspaceMessage[]): WorkspaceMessage[] {
+  const dmPair = parseDMSession(sessionId);
+  return msgs.flatMap((msg) => {
+    const belongsToSession = dmPair
+      ? msg.sessionId === sessionId ||
+        dmPair.includes(msg.sessionId) ||
+        dmPair.map(normalizeAgentAddress).includes(normalizeAgentAddress(msg.sessionId))
+      : msg.sessionId === sessionId;
+    if (!belongsToSession) return [];
+    return dmPair ? [{ ...msg, sessionId }] : [msg];
+  });
+}
+
 function cacheMessages(sessionId: string, msgs: WorkspaceMessage[]) {
-  if (msgs.length === 0) return;
-  messageCache.set(sessionId, msgs);
-  cacheLastSeenId.set(sessionId, msgs[msgs.length - 1].messageId);
+  const scopedMessages = messagesForSession(sessionId, msgs);
+  messageCache.set(sessionId, scopedMessages);
+  if (scopedMessages.length > 0) {
+    cacheLastSeenId.set(sessionId, scopedMessages[scopedMessages.length - 1].messageId);
+  } else {
+    cacheLastSeenId.delete(sessionId);
+  }
   // Evict oldest entries if cache grows too large
   if (messageCache.size > CACHE_MAX_SESSIONS) {
     const oldest = messageCache.keys().next().value;
@@ -56,7 +84,7 @@ async function fetchSessionMessages(sessionId: string): Promise<WorkspaceMessage
   try {
     const result = await workspaceApi.loadMessageHistory(sessionId, { limit: 50 });
     // Events come newest-first from sort=desc, reverse for chronological display
-    return result.events.map(eventToMessage).reverse();
+    return messagesForSession(sessionId, result.events.map(eventToMessage)).reverse();
   } catch {
     return [];
   }
@@ -68,15 +96,16 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
   if (!lastId) {
     // No cache yet — do full fetch
     const msgs = await fetchSessionMessages(sessionId);
-    if (msgs.length > 0) cacheMessages(sessionId, msgs);
+    cacheMessages(sessionId, msgs);
     return;
   }
   try {
     const result = await workspaceApi.pollMessages(sessionId, lastId);
-    if (result.messages.length > 0) {
+    const scopedMessages = messagesForSession(sessionId, result.messages);
+    if (scopedMessages.length > 0) {
       const existing = messageCache.get(sessionId) || [];
       const existingIds = new Set(existing.map((m) => m.messageId));
-      const unique = result.messages.filter((m) => !existingIds.has(m.messageId));
+      const unique = scopedMessages.filter((m) => !existingIds.has(m.messageId));
       if (unique.length > 0) {
         cacheMessages(sessionId, [...existing, ...unique]);
       }
@@ -142,8 +171,12 @@ export function ChatView() {
 
   // Look up cached messages for the current session (read once per session switch)
   const initialMessagesRef = useRef<WorkspaceMessage[] | undefined>(undefined);
-  if (currentSessionId !== initialMessagesRef.current?.[0]?.sessionId) {
-    initialMessagesRef.current = currentSessionId ? messageCache.get(currentSessionId) : undefined;
+  const initialMessagesSessionRef = useRef<string | null>(null);
+  if (currentSessionId !== initialMessagesSessionRef.current) {
+    initialMessagesRef.current = currentSessionId
+      ? messagesForSession(currentSessionId, messageCache.get(currentSessionId) || [])
+      : undefined;
+    initialMessagesSessionRef.current = currentSessionId;
   }
 
   const { messages, loading, forceRefresh, generation, loadOlder, hasOlder, loadingOlder } = useMessagePolling({
@@ -167,6 +200,11 @@ export function ChatView() {
   useEffect(() => {
     if (generation > 0) setScrollKey((k) => k + 1);
   }, [generation]);
+
+  const sessionMessages = useMemo(
+    () => currentSessionId ? messagesForSession(currentSessionId, messages) : [],
+    [currentSessionId, messages]
+  );
 
   // Per-thread message drafts
   const draftsRef = useRef<Record<string, string>>({});
@@ -196,49 +234,10 @@ export function ChatView() {
 
   // Keep cache updated with latest messages for the current session
   useEffect(() => {
-    if (currentSessionId && messages.length > 0) {
+    if (currentSessionId) {
       cacheMessages(currentSessionId, messages);
     }
   }, [currentSessionId, messages]);
-
-  // Clear optimistic messages progressively:
-  // 1. Remove optimistic user msg once the real user message arrives from the server
-  // 2. Remove optimistic loading msg once any real agent message arrives after the user msg
-  useEffect(() => {
-    if (optimisticMessages.length === 0) return;
-    let updated = [...optimisticMessages];
-
-    // Check if the real user message has arrived
-    const optimisticUser = updated.find((m) => m.messageId.startsWith('optimistic-user-'));
-    if (optimisticUser) {
-      const realUserFound = messages.some(
-        (m) => m.senderType !== 'agent' && m.content === optimisticUser.content
-      );
-      if (realUserFound) {
-        updated = updated.filter((m) => !m.messageId.startsWith('optimistic-user-'));
-      }
-    }
-
-    // Check if a real agent message has arrived AFTER the user message — clear loading indicator
-    const optimisticLoading = updated.find((m) => m.messageId.startsWith('optimistic-loading-'));
-    if (optimisticLoading) {
-      // Find the index of the real user message that replaced the optimistic one
-      const userMsgIdx = messages.findIndex(
-        (m) => m.senderType !== 'agent' && m.content === optimisticLoading.metadata?._userContent
-      );
-      // If user msg is confirmed AND there's an agent message after it, clear loading
-      const hasAgentAfterUser = userMsgIdx >= 0 && messages.slice(userMsgIdx + 1).some(
-        (m) => m.senderType === 'agent'
-      );
-      if (hasAgentAfterUser) {
-        updated = updated.filter((m) => !m.messageId.startsWith('optimistic-loading-'));
-      }
-    }
-
-    if (updated.length !== optimisticMessages.length) {
-      setOptimisticMessages(updated);
-    }
-  }, [messages, optimisticMessages]);
 
   const handleDraftChange = useCallback((draft: string) => {
     setCurrentDraft(draft);
@@ -250,8 +249,55 @@ export function ChatView() {
 
   const isDM = currentSessionId?.startsWith('dm:') ?? false;
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
+  const sessionOptimisticMessages = useMemo(
+    () => currentSessionId ? messagesForSession(currentSessionId, optimisticMessages) : [],
+    [currentSessionId, optimisticMessages]
+  );
+
+  // Clear optimistic messages progressively for the current session only:
+  // 1. Remove optimistic user msg once the real user message arrives from the server
+  // 2. Remove optimistic loading msg once any real agent message arrives after the user msg
+  useEffect(() => {
+    if (sessionOptimisticMessages.length === 0) return;
+    const removeIds = new Set<string>();
+
+    // Check if the real user message has arrived
+    const optimisticUser = sessionOptimisticMessages.find((m) => m.messageId.startsWith('optimistic-user-'));
+    if (optimisticUser) {
+      const realUserFound = sessionMessages.some(
+        (m) => m.senderType !== 'agent' && m.content === optimisticUser.content
+      );
+      if (realUserFound) {
+        removeIds.add(optimisticUser.messageId);
+      }
+    }
+
+    // Check if a real agent message has arrived AFTER the user message — clear loading indicator
+    const optimisticLoading = sessionOptimisticMessages.find((m) => m.messageId.startsWith('optimistic-loading-'));
+    if (optimisticLoading) {
+      // Find the index of the real user message that replaced the optimistic one
+      const userMsgIdx = sessionMessages.findIndex(
+        (m) => m.senderType !== 'agent' && m.content === optimisticLoading.metadata?._userContent
+      );
+      // If user msg is confirmed AND there's an agent message after it, clear loading
+      const hasAgentAfterUser = userMsgIdx >= 0 && sessionMessages.slice(userMsgIdx + 1).some(
+        (m) => m.senderType === 'agent'
+      );
+      if (hasAgentAfterUser) {
+        removeIds.add(optimisticLoading.messageId);
+      }
+    }
+
+    if (removeIds.size > 0) {
+      setOptimisticMessages((prev) => prev.filter((m) => !removeIds.has(m.messageId)));
+    }
+  }, [sessionMessages, sessionOptimisticMessages]);
+
   // Merge real messages with optimistic messages for display
-  const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
+  const displayMessages = useMemo(
+    () => [...sessionMessages, ...sessionOptimisticMessages],
+    [sessionMessages, sessionOptimisticMessages]
+  );
 
   const startEditingTitle = () => {
     setTitleDraft(currentSession?.title || '');
@@ -353,7 +399,11 @@ export function ChatView() {
       };
 
       // Add optimistic messages immediately and scroll to bottom
-      setOptimisticMessages([userOptimisticMsg, loadingOptimisticMsg]);
+      setOptimisticMessages((prev) => [
+        ...prev.filter((m) => m.sessionId !== currentSessionId),
+        userOptimisticMsg,
+        loadingOptimisticMsg,
+      ]);
       setScrollKey((k) => k + 1);
 
       try {
@@ -388,7 +438,11 @@ export function ChatView() {
       } catch {
         // Error is visible via missing message
         // Remove optimistic messages on error
-        setOptimisticMessages([]);
+        setOptimisticMessages((prev) =>
+          prev.filter(
+            (m) => m.messageId !== userOptimisticMsg.messageId && m.messageId !== loadingOptimisticMsg.messageId
+          )
+        );
       }
     },
     [currentSessionId, currentUser.id, currentUser.name, forceRefresh, agents]
@@ -722,8 +776,8 @@ export function ChatView() {
           onOpenChange={setShowCreateRoutine}
           agents={agents}
           conversationHistory={(() => {
-            if (!messages.length) return undefined;
-            const recent = messages.filter((m) => m.messageType === 'chat').slice(-20);
+            if (!sessionMessages.length) return undefined;
+            const recent = sessionMessages.filter((m) => m.messageType === 'chat').slice(-20);
             if (!recent.length) return undefined;
             return recent.map((m) => `${m.senderName}: ${m.content}`).join('\n');
           })()}

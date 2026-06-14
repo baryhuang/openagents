@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { workspaceApi } from '@/lib/api';
 import { eventToMessage } from '@/lib/types';
-import type { WorkspaceMessage } from '@/lib/types';
+import type { ONMEvent, WorkspaceMessage } from '@/lib/types';
 
 interface UsePollingOptions {
   sessionId: string | null;
@@ -18,6 +18,51 @@ function parseDMSession(sessionId: string | null): [string, string] | null {
   const parts = sessionId.slice(3).split(',', 2);
   if (parts.length === 2) return [parts[0], parts[1]];
   return null;
+}
+
+function normalizeAgentAddress(address: string): string {
+  return address.replace(/^openagents:/, '');
+}
+
+function messageBelongsToSession(
+  msg: WorkspaceMessage,
+  sessionId: string,
+  dmPair: [string, string] | null,
+): boolean {
+  if (!dmPair) return msg.sessionId === sessionId;
+  return (
+    msg.sessionId === sessionId ||
+    dmPair.includes(msg.sessionId) ||
+    dmPair.map(normalizeAgentAddress).includes(normalizeAgentAddress(msg.sessionId))
+  );
+}
+
+function scopeMessageToSession(
+  msg: WorkspaceMessage,
+  sessionId: string,
+  dmPair: [string, string] | null,
+): WorkspaceMessage | null {
+  if (!messageBelongsToSession(msg, sessionId, dmPair)) return null;
+  return dmPair ? { ...msg, sessionId } : msg;
+}
+
+function scopeMessagesToSession(
+  msgs: WorkspaceMessage[],
+  sessionId: string,
+  dmPair: [string, string] | null,
+): WorkspaceMessage[] {
+  return msgs.flatMap((msg) => {
+    const scoped = scopeMessageToSession(msg, sessionId, dmPair);
+    return scoped ? [scoped] : [];
+  });
+}
+
+function eventsToScopedMessages(
+  events: ONMEvent[],
+  sessionId: string,
+  dmPair: [string, string] | null,
+): WorkspaceMessage[] {
+  return scopeMessagesToSession(events.map(eventToMessage), sessionId, dmPair);
 }
 
 export function useMessagePolling({ sessionId, enabled = true, initialMessages }: UsePollingOptions) {
@@ -39,12 +84,16 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
   // Reset when session changes
   useEffect(() => {
     currentSessionRef.current = sessionId;
+    const nextDMPair = parseDMSession(sessionId);
+    const scopedInitialMessages = sessionId && initialMessages
+      ? scopeMessagesToSession(initialMessages, sessionId, nextDMPair)
+      : [];
 
-    if (initialMessages && initialMessages.length > 0) {
+    if (scopedInitialMessages.length > 0) {
       // Seed with cached messages for instant display
-      setMessages(initialMessages);
-      newestIdRef.current = initialMessages[initialMessages.length - 1].messageId;
-      oldestIdRef.current = initialMessages[0].messageId;
+      setMessages(scopedInitialMessages);
+      newestIdRef.current = scopedInitialMessages[scopedInitialMessages.length - 1].messageId;
+      oldestIdRef.current = scopedInitialMessages[0].messageId;
       historyLoadedRef.current = true;
       setHasOlder(true); // assume there may be older until proven otherwise
       setLoading(false);
@@ -88,21 +137,20 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
 
       if (result.events.length > 0) {
         // Events come newest-first from sort=desc, reverse for chronological display
-        const historicMessages = result.events.map((e) => {
-          const msg = eventToMessage(e);
-          // For DM sessions, override sessionId so all messages share the dm: sessionId
-          // (eventToMessage derives sessionId from event.target which differs per message)
-          if (dmPair && sessionId) msg.sessionId = sessionId;
-          return msg;
-        }).reverse();
+        const historicMessages = eventsToScopedMessages(result.events, sessionId, dmPair).reverse();
         setMessages(historicMessages);
-        // newest_id is the most recent event (first in desc order)
-        newestIdRef.current = result.newest_id || historicMessages[historicMessages.length - 1].messageId;
-        // oldest_id for loading older messages
-        oldestIdRef.current = result.oldest_id || historicMessages[0].messageId;
-        setHasOlder(result.has_more);
+        newestIdRef.current = historicMessages.length > 0
+          ? historicMessages[historicMessages.length - 1].messageId
+          : null;
+        oldestIdRef.current = historicMessages.length > 0
+          ? historicMessages[0].messageId
+          : null;
+        setHasOlder(historicMessages.length > 0 && result.has_more);
         setGeneration((g) => g + 1);
       } else {
+        setMessages([]);
+        newestIdRef.current = null;
+        oldestIdRef.current = null;
         setHasOlder(false);
       }
 
@@ -128,11 +176,7 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
                 after: newestIdRef.current ?? undefined,
               });
               return {
-                messages: r.events.map((e) => {
-                  const msg = eventToMessage(e);
-                  if (sessionId) msg.sessionId = sessionId;
-                  return msg;
-                }),
+                messages: eventsToScopedMessages(r.events, sessionId, dmPair),
                 hasMore: r.has_more,
               };
             })()
@@ -144,7 +188,7 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
         // Discard response if session changed while request was in flight
         if (sessionId !== currentSessionRef.current) return;
 
-        const newMessages = result.messages;
+        const newMessages = scopeMessagesToSession(result.messages, sessionId, dmPair);
         hasMore = result.hasMore && newMessages.length > 0;
 
         if (newMessages.length > 0) {
@@ -183,9 +227,9 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
       if (sessionId !== currentSessionRef.current) return;
 
       if (result.events.length > 0) {
-        const olderMessages = result.events.map(eventToMessage).reverse();
-        oldestIdRef.current = result.oldest_id || olderMessages[0].messageId;
-        setHasOlder(result.has_more);
+        const olderMessages = eventsToScopedMessages(result.events, sessionId, dmPair).reverse();
+        oldestIdRef.current = olderMessages.length > 0 ? olderMessages[0].messageId : oldestIdRef.current;
+        setHasOlder(olderMessages.length > 0 && result.has_more);
 
         setMessages((prev) => {
           const existingIds = new Set(prev.map((m) => m.messageId));
@@ -240,7 +284,8 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
           if (sessionId !== currentSessionRef.current) return;
           try {
             const event = JSON.parse(ev.data);
-            const msg = eventToMessage(event);
+            const msg = scopeMessageToSession(eventToMessage(event), sessionId, null);
+            if (!msg) return;
             newestIdRef.current = msg.messageId;
             setMessages((prev) => {
               if (prev.some((m) => m.messageId === msg.messageId)) return prev;
