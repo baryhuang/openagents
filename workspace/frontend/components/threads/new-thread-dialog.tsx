@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { History, Check, Star } from 'lucide-react';
+import { History, Check, Star, Minus } from 'lucide-react';
 import type { WorkspaceAgent, WorkspaceSession } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 
@@ -24,12 +24,26 @@ interface NewThreadDialogProps {
 export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreateThread }: NewThreadDialogProps) {
   // Only show online agents in the picker
   const onlineAgents = agents.filter((a) => a.status === 'online');
+  const offlineAgentCount = agents.length - onlineAgents.length;
   const agentNames = onlineAgents.map((a) => a.agentName);
   const defaultMaster = onlineAgents.find((a) => a.role === 'master')?.agentName || onlineAgents[0]?.agentName || '';
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [master, setMaster] = useState('');
   const [resumeFrom, setResumeFrom] = useState<string>('');
+
+  const isAllSelected = onlineAgents.length > 0 && selected.size === onlineAgents.length;
+  const isPartiallySelected = selected.size > 0 && selected.size < onlineAgents.length;
+
+  const toggleAll = () => {
+    if (isAllSelected) {
+      setSelected(new Set());
+      setMaster('');
+    } else {
+      setSelected(new Set(agentNames));
+      setMaster(defaultMaster);
+    }
+  };
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -76,7 +90,19 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
 
   const handleCreate = () => {
     const participants = agentNames.filter((n) => selected.has(n));
-    onCreateThread({ master, participants, resumeFrom: resumeFrom || undefined });
+
+    let finalMaster = master;
+    if (!participants.includes(finalMaster)) {
+      if (participants.includes(defaultMaster)) {
+        finalMaster = defaultMaster;
+      } else if (participants.length > 0) {
+        finalMaster = participants[0];
+      } else {
+        finalMaster = '';
+      }
+    }
+
+    onCreateThread({ master: finalMaster, participants, resumeFrom: resumeFrom || undefined });
     onOpenChange(false);
   };
 
@@ -102,8 +128,45 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
             : 'Start a new conversation with your agent.'}
         </DialogDescription>
 
+        {/* Select All Control */}
+        {onlineAgents.length > 0 && (
+          <button
+            type="button"
+            className="mt-3 flex w-full items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+            onClick={toggleAll}
+          >
+            <div className={cn(
+              'size-4 rounded shrink-0 flex items-center justify-center border transition-colors',
+              isAllSelected || isPartiallySelected
+                ? 'bg-blue-500 border-blue-500 text-white'
+                : 'border-zinc-300 dark:border-zinc-600'
+            )}>
+              {isAllSelected && <Check className="size-3" strokeWidth={3} />}
+              {isPartiallySelected && <Minus className="size-3" strokeWidth={3} />}
+            </div>
+            <span className="text-sm font-medium">
+              {isAllSelected
+                ? 'All agents selected'
+                : isPartiallySelected
+                  ? `${selected.size} of ${onlineAgents.length} agents selected`
+                  : 'Select all agents'}
+            </span>
+          </button>
+        )}
+        {offlineAgentCount > 0 && (
+          <p className={cn(
+            'px-3 text-[11px] text-muted-foreground/70',
+            onlineAgents.length > 0 ? 'mt-1' : 'mt-3'
+          )}>
+            {offlineAgentCount} offline {offlineAgentCount === 1 ? 'agent' : 'agents'} not included
+          </p>
+        )}
+
         {/* Agent list */}
-        <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
+        <div className={cn(
+          'space-y-1.5 max-h-64 overflow-y-auto',
+          onlineAgents.length === 0 ? 'mt-3' : 'mt-1.5'
+        )}>
           {onlineAgents.length === 0 && (
             <p className="text-sm text-muted-foreground py-4 text-center">No agents are currently online.</p>
           )}
