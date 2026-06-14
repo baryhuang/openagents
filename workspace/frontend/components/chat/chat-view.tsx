@@ -412,8 +412,8 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-full">
       {/* Thread header */}
-      <div className="flex items-center justify-between px-2 lg:px-4 py-2 lg:py-3 border-b shrink-0">
-        <div className="flex items-center gap-2 lg:gap-3 min-w-0">
+      <div className="flex items-center gap-2 px-2 lg:px-4 py-2 lg:py-3 border-b shrink-0">
+        <div className="flex flex-1 items-center gap-2 lg:gap-3 min-w-0">
           {/* Back button — mobile only */}
           {isMobile && (
             <button
@@ -467,46 +467,21 @@ export function ChatView() {
             );
           })()}
         </div>
-        <div className="flex items-center gap-1 lg:gap-1.5">
-          {/* Participant chips — hidden on mobile, shown on desktop, not shown for DMs */}
-          {!isDM && <div className="hidden lg:flex items-center gap-1 overflow-x-auto">
-            {(() => {
-              const participants = currentSession?.participants || [];
-              const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
-              return sessionAgents.map((agent) => {
-                const isMaster = currentSession?.master === agent.agentName || agent.role === 'master';
-                return (
-                  <div
-                    key={agent.agentName}
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted border shrink-0"
-                  >
-                    <AgentAvatar name={agent.agentName} size={16} />
-                    <span className="text-[11px] font-medium">{agent.agentName.split('-')[0]}</span>
-                    {isMaster && (
-                      <span className="text-[8px] px-1 py-0 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">
-                        M
-                      </span>
-                    )}
-                  </div>
-                );
-              });
-            })()}
-          </div>}
-
-          {/* Compact avatar stack on mobile */}
-          {isMobile && (() => {
+        <div className="flex items-center gap-1 lg:gap-1.5 shrink-0">
+          {/* Compact avatar stack — shown on both desktop and mobile, not shown for DMs */}
+          {!isDM && (() => {
             const participants = currentSession?.participants || [];
             const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
             if (sessionAgents.length === 0) return null;
             return (
-              <div className="flex -space-x-1.5">
+              <div className="flex -space-x-1.5 shrink-0 mr-1">
                 {sessionAgents.slice(0, 3).map((agent) => (
-                  <div key={agent.agentName} className="border-2 border-background rounded-full">
+                  <div key={agent.agentName} className="border-2 border-background rounded-full" title={agent.agentName}>
                     <AgentAvatar name={agent.agentName} size={18} />
                   </div>
                 ))}
                 {sessionAgents.length > 3 && (
-                  <div className="size-5 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-medium text-zinc-600 border-2 border-background">
+                  <div className="size-5 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-[7px] font-medium text-zinc-600 dark:text-zinc-400 border-2 border-background" title={sessionAgents.map((agent) => agent.agentName).join(', ')}>
                     +{sessionAgents.length - 3}
                   </div>
                 )}
