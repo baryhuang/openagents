@@ -80,6 +80,9 @@ export function OnboardingFlow({
   const [envValues, setEnvValues] = useState<Record<string, string>>({})
   const [loggedIn, setLoggedIn] = useState(false)
   const [checkingLogin, setCheckingLogin] = useState(false)
+  // CLI install state for login-mode agents (e.g. Claude): true / false /
+  // null-unknown. Drives the "is the CLI installed?" hint in the login block.
+  const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<
     null | { ok: boolean; detail?: string }
@@ -101,6 +104,20 @@ export function OnboardingFlow({
     [agents, selectedAgent],
   )
   const finishedAgentName = useMemo(() => `${selectedAgent}-1`, [selectedAgent])
+
+  // Whether the user is taking the API-key path (vs the CLI login). In "env"
+  // mode the key is the only path, so always. In "login" mode (dual-auth agents
+  // like Claude) the key is OPTIONAL — only treat it as in-use once the user
+  // types into a secret field. Non-secret fields are pre-seeded with defaults
+  // (base URL / model), so they can't be the signal. When this is false, the
+  // required-key validation must NOT gate progress — the user signs in instead.
+  const usingApiKeyPath = useMemo(() => {
+    if (!selectedEntry) return false
+    if (selectedEntry.authMode === "env") return true
+    return selectedEntry.envFields.some(
+      (f) => f.password && (envValues[f.name] || "").trim(),
+    )
+  }, [selectedEntry, envValues])
 
   useEffect(() => {
     try {
@@ -184,12 +201,22 @@ export function OnboardingFlow({
     }
     setEnvValues(seed)
     setLoggedIn(false)
+    setCliInstalled(null)
     if (selectedEntry.authMode === "login") {
       setCheckingLogin(true)
+      // refreshLogin forces a fresh CLI `status` probe so an EXISTING sign-in is
+      // detected the moment the step opens (healthCheck only reads the cache,
+      // which is empty on first entry). Falls back to healthCheck for agents
+      // without a login probe.
       window.api
-        .healthCheck(selectedEntry.name)
+        .refreshLogin(selectedEntry.name)
         .then((h) => {
-          if (!cancelled) setLoggedIn(!!h?.ready)
+          if (cancelled) return
+          // `logged_in` (dual-auth agents like Claude) distinguishes a CLI
+          // sign-in from "has an API key"; fall back to `ready` for pure
+          // login agents that don't report it.
+          setLoggedIn(h?.logged_in === true || (h?.logged_in == null && !!h?.ready))
+          if (typeof h?.installed === "boolean") setCliInstalled(h.installed)
         })
         .catch(() => {})
         .finally(() => {
@@ -302,8 +329,12 @@ export function OnboardingFlow({
       for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 2000))
         try {
-          const h = await window.api.healthCheck(selectedEntry.name)
-          if (h?.ready) {
+          // refreshLogin forces a fresh CLI `status` probe; healthCheck only
+          // reads the cached value. Use the explicit `logged_in` flag (dual-auth
+          // agents) and fall back to `ready` for pure login agents.
+          const h = await window.api.refreshLogin(selectedEntry.name)
+          if (typeof h?.installed === "boolean") setCliInstalled(h.installed)
+          if (h?.logged_in === true || (h?.logged_in == null && h?.ready)) {
             setLoggedIn(true)
             setCheckingLogin(false)
             return
@@ -319,30 +350,29 @@ export function OnboardingFlow({
 
   const saveConfigAndContinue = async (): Promise<void> => {
     if (!selectedEntry) return
-    if (selectedEntry.authMode === "env" || selectedEntry.envFields.length > 0) {
+    // Only enforce/save the API-key fields when the user is actually on the
+    // key path. In login mode (dual-auth agents like Claude) the key is
+    // optional — a user signing in via the CLI must not be blocked by the
+    // required key fields (which carry pre-seeded base-URL/model defaults).
+    if (usingApiKeyPath) {
       if (hasMissingRequired(selectedEntry.envFields, envValues)) {
         showToast("Fill in the required fields first", "warning")
         return
       }
-      // Only persist when the user actually entered something — codex et al.
-      // have optional env and may rely on CLI login instead.
-      const nonEmpty = Object.values(envValues).some((v) => (v || "").trim())
-      if (nonEmpty) {
-        setSaving(true)
-        try {
-          await window.api.saveAgentEnv(selectedEntry.name, envValues)
-        } catch (e) {
-          showToast((e as Error).message, "error")
-          setSaving(false)
-          return
-        }
+      setSaving(true)
+      try {
+        await window.api.saveAgentEnv(selectedEntry.name, envValues)
+      } catch (e) {
+        showToast((e as Error).message, "error")
         setSaving(false)
+        return
       }
+      setSaving(false)
       goNext()
       return
     }
-    // login / none modes: never block. If the agent isn't actually authed yet,
-    // the Launch step's real health check will surface it.
+    // login / none modes (no key entered): never block. If the agent isn't
+    // actually authed yet, the Launch step's real health check will surface it.
     goNext()
   }
 
@@ -452,6 +482,7 @@ export function OnboardingFlow({
             testResult={testResult}
             loggedIn={loggedIn}
             checkingLogin={checkingLogin}
+            cliInstalled={cliInstalled}
           />
         )
       case 3:
@@ -510,8 +541,8 @@ export function OnboardingFlow({
         // signal), so blocking on it would strand users who are actually logged
         // in. We show detected status, but always let them continue.
         const needsEnv =
-          !!selectedEntry &&
-          hasMissingRequired(selectedEntry.envFields, envValues)
+          usingApiKeyPath &&
+          hasMissingRequired(selectedEntry!.envFields, envValues)
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
@@ -894,6 +925,7 @@ function ApiKeyStep({
   testResult,
   loggedIn,
   checkingLogin,
+  cliInstalled,
 }: {
   entry: OnboardingAgent | null
   values: Record<string, string>
@@ -904,6 +936,7 @@ function ApiKeyStep({
   testResult: null | { ok: boolean; detail?: string }
   loggedIn: boolean
   checkingLogin: boolean
+  cliInstalled: boolean | null
 }): React.JSX.Element {
   const label = entry?.label || entry?.name || "this agent"
   const mode = entry?.authMode ?? "none"
@@ -979,12 +1012,28 @@ function ApiKeyStep({
 
   const loginBlock = entry ? (
     <div className="p-4 rounded-(--radius-sm) bg-(--bg-card) border border-(--border)">
-      {loggedIn && (
+      {loggedIn ? (
         <div className="flex items-center gap-2 text-[13px] mb-3 text-(--success-text)">
           <span>✓</span>
           <strong>Detected an active login</strong>
         </div>
-      )}
+      ) : cliInstalled === false ? (
+        // Login can't succeed until the CLI exists. Onboarding installs the
+        // agent before this step, but surface it explicitly so a missing/failed
+        // install doesn't read as a silent login failure.
+        <div className="flex items-center gap-2 text-[13px] mb-3 text-(--warning-text)">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            <strong>{label} isn't installed yet</strong> — install it first, then
+            log in.
+          </span>
+        </div>
+      ) : cliInstalled === true ? (
+        <div className="flex items-center gap-2 text-[13px] mb-3 text-(--text-secondary)">
+          <span>✓</span>
+          <span>{label} is installed — not signed in yet.</span>
+        </div>
+      ) : null}
       <p className="text-[12px] text-(--text-secondary) m-0 mb-3">
         {label} signs in through its own CLI. Open a terminal and run{" "}
         <code className="inline-code">{entry.loginCommand}</code> to authenticate.
