@@ -629,6 +629,15 @@ function ConfigureDialog({
     setLoginCmd(null)
     setLoggedIn(null)
     setLoginPhase("idle")
+    // Reset fields/values too: the dialog stays mounted across agents, and
+    // getEnvFields returns [] for login-only agents (Cursor/Hermes) so the
+    // `if (hasFields)` branch below never calls setFields for them. Without
+    // this reset they'd inherit the previously-configured agent's key fields
+    // (e.g. Claude's ANTHROPIC_API_KEY), making the render condition
+    // `loginCmd && fields.length === 0` false and wrongly showing an API-key
+    // form for an agent that only signs in via its CLI.
+    setFields([])
+    setValues({})
     Promise.all([
       window.api.getEnvFields(agentType),
       window.api.getAgentEnv(agentType),
