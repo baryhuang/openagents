@@ -90,6 +90,20 @@ class Installer {
     // Fallback: check if binary exists on PATH (system install)
     const binaryPath = this._whichBinary(agentType);
     if (!binaryPath) {
+      // Aider-only: a marker alone is NOT sufficient evidence of an install.
+      // Aider's CLI lives outside any npm package (curl/uv/pipx → ~/.local/bin),
+      // so a historical "installed" marker can outlive a missing/never-landed
+      // binary. Require a real resolvable binary; when only a stale marker
+      // remains, report not-installed with a 'cli-missing' diagnostic (carried
+      // by the existing `location` field — no new field/enum). The marker
+      // itself is left untouched.
+      if (agentType === 'aider') {
+        return {
+          installed: false,
+          managed: false,
+          location: this._hasMarker(agentType) ? 'cli-missing' : null,
+        };
+      }
       // If a successful install wrote a marker, surface installed=true even
       // when binary detection can't (yet) see the freshly-installed CLI —
       // e.g. PATH caches not yet picking up a brand-new ~/.cursor/bin. The
@@ -142,6 +156,84 @@ class Installer {
       } catch { return false; }
     }
     return this.isInstalled(agentType);
+  }
+
+  /**
+   * Aider-only post-install verification.
+   *
+   * Confirms a REAL aider binary exists on disk — AND that it is actually the
+   * Aider CLI rather than a same-named unrelated executable — before the
+   * install is recorded. The curl/uv/pipx installer can exit 0 without landing
+   * a runnable binary (blocked download, wrong $HOME, custom bin dir), which
+   * would otherwise leave a "marker says installed but CLI missing" state.
+   * Deliberately does NOT consult the install marker, so it can't be satisfied
+   * by its own about-to-be-written record.
+   *
+   * Hard condition: an absolute path resolves AND the file exists. `aider
+   * --version` is best-effort: a flaky/blocked probe does NOT fail the install,
+   * but a version string that is clearly NOT Aider (wrong same-named package)
+   * does — that is the whole point of the check.
+   *
+   * Scoped to Aider; never called for any other agent type.
+   *
+   * @returns {{ path: string, version: string|null } | null}
+   */
+  _verifyAiderBinary() {
+    try { clearBinaryLookupCache(); } catch {}
+
+    const isWin = process.platform === 'win32';
+    const names = isWin ? ['aider.exe', 'aider.cmd', 'aider'] : ['aider'];
+    const candidates = [];
+    const resolved = this._whichBinary('aider');
+    if (resolved) candidates.push(resolved);
+    const home = os.homedir();
+    const binDirs = [
+      path.join(home, '.local', 'bin'),  // uv tool / pipx / pip --user
+      path.join(home, 'bin'),
+    ];
+    if (!isWin) binDirs.push('/usr/local/bin', '/opt/homebrew/bin');
+    for (const dir of binDirs) {
+      for (const name of names) candidates.push(path.join(dir, name));
+    }
+
+    let found = null;
+    for (const c of candidates) {
+      try { if (c && fs.existsSync(c)) { found = c; break; } } catch {}
+    }
+    if (!found) return null;
+
+    let version = null;
+    try {
+      const raw = require('child_process').execSync(`"${found}" --version`, {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 8000,
+        env: getEnhancedEnv(),
+        windowsHide: true,
+        encoding: 'utf-8',
+      }).trim();
+      if (raw) {
+        // A confident mismatch means this `aider` is the wrong package.
+        if (!/aider/i.test(raw)) return null;
+        version = raw;
+      }
+    } catch {
+      // Best-effort only — file existence above is the hard condition.
+    }
+    return { path: found, version };
+  }
+
+  /**
+   * Aider-only: message shown when the install command exits 0 but no runnable
+   * (and verified) aider binary can be found.
+   */
+  _aiderBinaryNotFoundMessage() {
+    const isWin = process.platform === 'win32';
+    const expected = path.join(os.homedir(), '.local', 'bin', isWin ? 'aider.exe' : 'aider');
+    return (
+      'Aider install command completed, but the Aider CLI binary could not be ' +
+      'found (or did not identify itself as Aider).\n\n' +
+      `Expected path:\n${expected}`
+    );
   }
 
   /**
@@ -385,6 +477,23 @@ class Installer {
     }
 
     const output = await this._execShell(cmd);
+
+    // Aider-only: the curl/uv/pipx installer can exit 0 without landing a
+    // runnable (or genuine) binary, so verify the real CLI exists BEFORE
+    // recording the install. Other agent types keep the original
+    // "exit 0 → mark installed" behavior.
+    if (agentType === 'aider') {
+      const aider = this._verifyAiderBinary();
+      if (!aider) {
+        throw new Error(this._aiderBinaryNotFoundMessage());
+      }
+      this._markInstalled(agentType);
+      return {
+        success: true,
+        output: `${output}\nAider CLI resolved: ${aider.path}${aider.version ? ` (${aider.version})` : ''}`,
+      };
+    }
+
     this._markInstalled(agentType);
     return { success: true, output };
   }
@@ -502,6 +611,19 @@ class Installer {
       proc.on('error', (err) => reject(err));
       proc.on('close', (code) => {
         if (code === 0) {
+          // Aider-only: confirm a real, genuine binary exists before recording
+          // the install (verify-before-mark; never writes a marker on
+          // failure). Other agent types are unaffected.
+          if (agentType === 'aider') {
+            const aider = this._verifyAiderBinary();
+            if (!aider) {
+              const msg = this._aiderBinaryNotFoundMessage();
+              if (onData) onData(`\n${msg}\n`);
+              reject(new Error(msg));
+              return;
+            }
+            if (onData) onData(`\nAider CLI resolved: ${aider.path}${aider.version ? ` (${aider.version})` : ''}\n`);
+          }
           this._markInstalled(agentType);
           if (onData) onData(`\nDone! ${agentType} is now installed.\n`);
           resolve({ success: true, command: displayCmd });
