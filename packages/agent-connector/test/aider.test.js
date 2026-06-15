@@ -109,6 +109,35 @@ describe('Aider adapter — registration', () => {
   });
 });
 
+describe('Aider — install-dir resolution (aiderBinDirs)', () => {
+  const { aiderBinDirs } = require('../src/paths');
+  const os = require('node:os');
+  const pathMod = require('node:path');
+
+  it('includes ~/.local/bin and the uv tools venv (the install targets)', () => {
+    const dirs = aiderBinDirs().map((d) => String(d));
+    assert.ok(dirs.includes(pathMod.join(os.homedir(), '.local', 'bin')));
+    // uv tool venv — Scripts on Windows, bin on Unix.
+    const hasVenv = dirs.some((d) => d.includes(pathMod.join('uv', 'tools', 'aider-chat')));
+    assert.ok(hasVenv, `expected a uv tools/aider-chat dir in ${JSON.stringify(dirs)}`);
+  });
+
+  it('honors XDG_BIN_HOME and UV_TOOL_DIR overrides', () => {
+    const savedXdg = process.env.XDG_BIN_HOME;
+    const savedUv = process.env.UV_TOOL_DIR;
+    try {
+      process.env.XDG_BIN_HOME = pathMod.join(os.tmpdir(), 'xdgbin');
+      process.env.UV_TOOL_DIR = pathMod.join(os.tmpdir(), 'uvtools');
+      const dirs = aiderBinDirs().map((d) => String(d));
+      assert.ok(dirs.includes(process.env.XDG_BIN_HOME), 'XDG_BIN_HOME first');
+      assert.ok(dirs.some((d) => d.startsWith(process.env.UV_TOOL_DIR)), 'UV_TOOL_DIR honored');
+    } finally {
+      if (savedXdg === undefined) delete process.env.XDG_BIN_HOME; else process.env.XDG_BIN_HOME = savedXdg;
+      if (savedUv === undefined) delete process.env.UV_TOOL_DIR; else process.env.UV_TOOL_DIR = savedUv;
+    }
+  });
+});
+
 describe('Aider adapter — command construction', () => {
   it('defaults to NO auto-commit and edits-only git safety', () => {
     const a = makeAdapter();

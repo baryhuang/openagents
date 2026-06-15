@@ -358,52 +358,67 @@ class AiderAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _aider_bin_dirs() -> list[Path]:
+        """Directories where the Aider executable can land, in the SAME priority
+        the official installer (``uv tool install``) uses, so detection matches
+        reality: ``$XDG_BIN_HOME`` → ``$XDG_DATA_HOME/../bin`` → ``~/.local/bin``
+        → the uv tools venv for ``aider-chat`` (which always contains the
+        executable after a successful install, even if the bin-dir copy/PATH
+        edit didn't happen). Mirrors ``aiderBinDirs()`` in the Node paths.js."""
+        home = Path.home()
+        dirs: list[Path] = []
+        if os.environ.get("XDG_BIN_HOME"):
+            dirs.append(Path(os.environ["XDG_BIN_HOME"]))
+        if os.environ.get("XDG_DATA_HOME"):
+            dirs.append(Path(os.environ["XDG_DATA_HOME"]).parent / "bin")
+        dirs.append(home / ".local" / "bin")
+        if platform.system() == "Windows":
+            app_data = os.environ.get("APPDATA", str(home / "AppData" / "Roaming"))
+            uv_tools = os.environ.get("UV_TOOL_DIR", str(Path(app_data) / "uv" / "tools"))
+            dirs.append(Path(uv_tools) / "aider-chat" / "Scripts")
+            dirs.append(home / "bin")
+        else:
+            uv_tools = os.environ.get(
+                "UV_TOOL_DIR", str(home / ".local" / "share" / "uv" / "tools")
+            )
+            dirs.append(Path(uv_tools) / "aider-chat" / "bin")
+            dirs += [home / "bin", Path("/usr/local/bin"), Path("/opt/homebrew/bin")]
+        return dirs
+
+    @staticmethod
     def _find_aider_binary() -> Optional[str]:
         """Locate the ``aider`` executable across platforms.
 
         Detection order: PATH (preferring Windows ``.exe``/``.cmd`` shims) →
-        the user-install bin dirs that the official installer (uv tool), pipx,
-        and ``pip install --user`` all target but that a GUI/daemon process may
-        not have on PATH: ``~/.local/bin`` plus the common Homebrew/uv tool
-        locations. This is what makes detection work when the launcher didn't
-        inherit the interactive shell PATH — the "installed but not found" case.
+        every real install dir the official installer (uv tool), pipx, and ``pip
+        install --user`` can target but that a GUI/daemon process may not have on
+        PATH. This is what makes detection work when the launcher didn't inherit
+        the interactive shell PATH — the "installed but not found" case.
         """
-        home = Path.home()
-        if platform.system() == "Windows":
+        is_windows = platform.system() == "Windows"
+        if is_windows:
             found = (
                 shutil.which("aider.exe")
                 or shutil.which("aider.cmd")
                 or shutil.which("aider")
             )
-            if found:
-                return found
-            local_app_data = os.environ.get(
-                "LOCALAPPDATA", str(home / "AppData" / "Local")
-            )
-            for candidate in (
-                # uv tool / pipx / pip --user all target %USERPROFILE%\.local\bin
-                home / ".local" / "bin" / "aider.exe",
-                home / ".local" / "bin" / "aider.cmd",
-                Path(local_app_data) / "Programs" / "aider" / "aider.exe",
-            ):
-                if candidate.is_file():
-                    return str(candidate)
-            return None
-
-        found = shutil.which("aider")
+            names = ("aider.exe", "aider.cmd", "aider")
+        else:
+            found = shutil.which("aider")
+            names = ("aider",)
         if found:
             return found
-        for candidate in (
-            home / ".local" / "bin" / "aider",   # uv tool / pipx / pip --user
-            home / "bin" / "aider",
-            Path("/usr/local/bin/aider"),
-            Path("/opt/homebrew/bin/aider"),
-        ):
-            try:
-                if candidate.is_file() and os.access(candidate, os.X_OK):
-                    return str(candidate)
-            except OSError:
-                continue
+
+        for directory in AiderAdapter._aider_bin_dirs():
+            for name in names:
+                candidate = directory / name
+                try:
+                    if not candidate.is_file():
+                        continue
+                    if is_windows or os.access(candidate, os.X_OK):
+                        return str(candidate)
+                except OSError:
+                    continue
         return None
 
     @staticmethod

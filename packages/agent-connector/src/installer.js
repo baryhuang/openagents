@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execSync, exec } = require('child_process');
-const { whichBinary, getEnhancedEnv, getRuntimePrefix, clearBinaryLookupCache } = require('./paths');
+const { whichBinary, getEnhancedEnv, getRuntimePrefix, clearBinaryLookupCache, aiderBinDirs } = require('./paths');
 const { EnvManager } = require('./env');
 
 const STATUS_CACHE_TTL_MS = 10000;
@@ -184,15 +184,15 @@ class Installer {
     const isWin = process.platform === 'win32';
     const names = isWin ? ['aider.exe', 'aider.cmd', 'aider'] : ['aider'];
     const candidates = [];
+    // 1) Whatever the enhanced-PATH resolver finds (now includes the XDG and
+    //    uv-tools dirs added to paths.js).
     const resolved = this._whichBinary('aider');
     if (resolved) candidates.push(resolved);
-    const home = os.homedir();
-    const binDirs = [
-      path.join(home, '.local', 'bin'),  // uv tool / pipx / pip --user
-      path.join(home, 'bin'),
-    ];
-    if (!isWin) binDirs.push('/usr/local/bin', '/opt/homebrew/bin');
-    for (const dir of binDirs) {
+    // 2) Every real install dir the official installer can target — XDG bin,
+    //    XDG_DATA_HOME/../bin, ~/.local/bin, and the uv tools venv. This is the
+    //    fix for "install succeeded but landed outside ~/.local/bin" (e.g. the
+    //    user has XDG_* set, or only the uv-tools venv copy exists).
+    for (const dir of aiderBinDirs()) {
       for (const name of names) candidates.push(path.join(dir, name));
     }
 
@@ -223,16 +223,26 @@ class Installer {
   }
 
   /**
-   * Aider-only: message shown when the install command exits 0 but no runnable
-   * (and verified) aider binary can be found.
+   * Aider-only: actionable message when the install command exits 0 but no
+   * runnable (and verified) aider binary can be found anywhere we look. The most
+   * common real cause is the underlying `uv` step failing to download a Python
+   * runtime on a restricted network — so we point at both the PATH/new-terminal
+   * case and a pip fallback.
    */
   _aiderBinaryNotFoundMessage() {
     const isWin = process.platform === 'win32';
-    const expected = path.join(os.homedir(), '.local', 'bin', isWin ? 'aider.exe' : 'aider');
+    const name = isWin ? 'aider.exe' : 'aider';
+    const looked = aiderBinDirs().map((d) => `  ${path.join(d, name)}`).join('\n');
     return (
-      'Aider install command completed, but the Aider CLI binary could not be ' +
-      'found (or did not identify itself as Aider).\n\n' +
-      `Expected path:\n${expected}`
+      'Aider install command completed, but the Aider CLI could not be located ' +
+      'afterward. The underlying installer (uv) most likely could not finish — ' +
+      'often it cannot download a Python runtime on a restricted network/proxy.\n\n' +
+      `Looked in:\n${looked}\n\n` +
+      'Try one of:\n' +
+      '  1) Open a NEW terminal and run:  aider --version\n' +
+      '     (the install dir may simply not be on this process’s PATH yet)\n' +
+      '  2) Install with pip instead, then re-run detection:\n' +
+      '       python -m pip install --upgrade aider-chat'
     );
   }
 

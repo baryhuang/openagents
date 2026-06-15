@@ -142,6 +142,16 @@ agn up                                              # start the daemon
 agn connect my-aider <workspace-token>              # connect Aider into a workspace
 ```
 
+> **Install detection.** The official installer (`aider.chat/install.{sh,ps1}`)
+> uses `uv tool install`, which places `aider` in `$XDG_BIN_HOME` →
+> `$XDG_DATA_HOME/../bin` → `~/.local/bin` (and always in the uv tools venv).
+> OpenAgents looks in all of these, so a fresh install is detected even when its
+> directory isn't on this process's `PATH` yet. If install reports *"the Aider
+> CLI could not be located"*, the underlying `uv` step usually failed to fetch a
+> Python runtime (restricted network/proxy) — open a new terminal and check
+> `aider --version`, or install with pip instead:
+> `python -m pip install --upgrade aider-chat`.
+
 **Provider, model & key.** `AIDER_PROVIDER` decides which provider environment
 variable your `LLM_API_KEY` is injected into. It accepts `auto` (default),
 `openai`, `anthropic`, `openrouter`, `gemini`, `deepseek`, or

@@ -38,7 +38,7 @@ const path = require('path');
 const { execSync, spawn } = require('child_process');
 
 const BaseAdapter = require('./base');
-const { whichBinary, getEnhancedEnv } = require('../paths');
+const { whichBinary, getEnhancedEnv, aiderBinDirs } = require('../paths');
 
 const IS_WINDOWS = process.platform === 'win32';
 // Terminate if Aider produces no output for this long (a wedged turn). Resets
@@ -256,27 +256,21 @@ class AiderAdapter extends BaseAdapter {
   // ------------------------------------------------------------------
 
   _findAiderBinary() {
-    const home = os.homedir();
-
     // Shared cross-platform resolver runs `which`/`where` against an ENHANCED
-    // PATH (nvm/fnm/volta/homebrew, ~/.local/bin) — covers the GUI/daemon "not
-    // on PATH" case for the uv-tool / pipx / pip-user installs.
+    // PATH (nvm/fnm/volta/homebrew + the Aider install dirs added to paths.js)
+    // — covers the GUI/daemon "not on PATH" case for uv-tool / pipx / pip-user
+    // installs.
     const resolved = whichBinary('aider');
     if (resolved) return resolved;
 
-    const candidates = IS_WINDOWS ? [
-      path.join(home, '.local', 'bin', 'aider.exe'),
-      path.join(home, '.local', 'bin', 'aider.cmd'),
-      path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
-        'Programs', 'aider', 'aider.exe'),
-    ] : [
-      path.join(home, '.local', 'bin', 'aider'),
-      path.join(home, 'bin', 'aider'),
-      '/usr/local/bin/aider',
-      '/opt/homebrew/bin/aider',
-    ];
-    for (const c of candidates) {
-      if (c && fs.existsSync(c)) return c;
+    // Explicit fallback over every real install dir (XDG bin, XDG_DATA_HOME/../
+    // bin, ~/.local/bin, the uv tools venv) in the installer's own priority.
+    const names = IS_WINDOWS ? ['aider.exe', 'aider.cmd', 'aider'] : ['aider'];
+    for (const dir of aiderBinDirs()) {
+      for (const name of names) {
+        const c = path.join(dir, name);
+        if (fs.existsSync(c)) return c;
+      }
     }
     return null;
   }

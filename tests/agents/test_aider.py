@@ -130,11 +130,12 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setattr(
         loader, "_INSTALLED_MARKERS_PATH", home / ".openagents" / "installed_agents.json"
     )
-    # No provider keys / config leak in from the developer's shell.
+    # No provider keys / config / install-dir overrides leak in from the shell.
     for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY",
                 "GEMINI_API_KEY", "DEEPSEEK_API_KEY", "LLM_API_KEY",
                 "AIDER_PROVIDER", "AIDER_MODEL", "LLM_MODEL", "LLM_BASE_URL",
-                "OPENAI_API_BASE", "AIDER_AUTO_COMMITS"):
+                "OPENAI_API_BASE", "AIDER_AUTO_COMMITS",
+                "XDG_BIN_HOME", "XDG_DATA_HOME", "UV_TOOL_DIR", "APPDATA"):
         monkeypatch.delenv(var, raising=False)
     return home
 
@@ -212,6 +213,21 @@ class TestAiderDetection:
         aider_path = isolated_home / ".local" / "bin" / "aider"
         _write_executable(aider_path)
         assert AiderAdapter._find_aider_binary() == str(aider_path)
+
+    def test_adapter_find_binary_in_uv_tools_venv(self, isolated_home):
+        # The real Windows failure mode: `uv tool install` left the executable
+        # only in its tools venv. Unix layout: ~/.local/share/uv/tools/<pkg>/bin.
+        aider_path = (isolated_home / ".local" / "share" / "uv" / "tools"
+                      / "aider-chat" / "bin" / "aider")
+        _write_executable(aider_path)
+        assert AiderAdapter._find_aider_binary() == str(aider_path)
+
+    def test_adapter_find_binary_honors_xdg_bin_home(self, isolated_home, tmp_path, monkeypatch):
+        # The official installer's first-priority dir.
+        xdg = tmp_path / "xdg_bin"
+        _write_executable(xdg / "aider")
+        monkeypatch.setenv("XDG_BIN_HOME", str(xdg))
+        assert AiderAdapter._find_aider_binary() == str(xdg / "aider")
 
     def test_adapter_find_binary_missing(self, isolated_home):
         assert AiderAdapter._find_aider_binary() is None
