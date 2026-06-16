@@ -77,6 +77,17 @@ contextBridge.exposeInMainWorld('api', {
   shellExec: (cmd: string) => ipcRenderer.invoke('shell:exec', cmd),
   openTerminal: (cmd: string) => ipcRenderer.invoke('shell:open-terminal', cmd),
   updateCore: () => ipcRenderer.invoke('core:update'),
+
+  // ── Launcher self-update ──
+  getUpdaterState: () => ipcRenderer.invoke('updater:get-state'),
+  checkLauncherUpdate: () => ipcRenderer.invoke('updater:check'),
+  downloadLauncherUpdate: () => ipcRenderer.invoke('updater:download'),
+  installLauncherUpdate: () => ipcRenderer.invoke('updater:install'),
+  onUpdaterEvent: (cb: (state: unknown) => void) => {
+    const handler = (_e: unknown, state: unknown): void => cb(state)
+    ipcRenderer.on('updater:event', handler)
+    return () => ipcRenderer.removeListener('updater:event', handler)
+  },
   onCoreUpdate: (cb: (info: { current: string; latest: string }) => void) =>
     ipcRenderer.on('core-update-available', (_e, info) => cb(info)),
   onAgentUpdatesChanged: (cb: (updates: Array<{ name: string; current: string | null; latest: string | null }>) => void) =>
