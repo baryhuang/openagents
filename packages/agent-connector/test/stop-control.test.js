@@ -270,6 +270,149 @@ describe('agent stop control', () => {
     assert.equal(adapter._stoppingChannels.has('thread'), false);
   });
 
+  it('OpenCode drains complete JSON objects and keeps partial trailing data', () => {
+    const raw = '{"type":"step_start"} {"type":"text","part":{"text":"hello"}} {"type":"tool_use"';
+
+    const drained = OpenCodeAdapter._drainJsonObjects(raw);
+
+    assert.deepEqual(drained.objects, [
+      { type: 'step_start' },
+      { type: 'text', part: { text: 'hello' } },
+    ]);
+    assert.equal(drained.rest, '{"type":"tool_use"');
+  });
+
+  it('OpenCode maps stream text and tool_use events to thinking and status', async () => {
+    const adapter = new OpenCodeAdapter({
+      workspaceId: 'ws',
+      channelName: 'thread',
+      token: 'token',
+      agentName: 'opencode',
+    });
+    const thinking = [];
+    const statuses = [];
+    adapter.sendThinking = async (channel, content) => thinking.push({ channel, content });
+    adapter.sendStatus = async (channel, content) => statuses.push({ channel, content });
+
+    await adapter._handleStreamEvent({ type: 'text', part: { text: 'planning' } }, 'thread');
+    await adapter._handleStreamEvent({
+      type: 'tool_use',
+      item: { name: 'Bash', input: { command: 'npm test' } },
+    }, 'thread');
+    await adapter._handleStreamEvent({ type: 'step_finish' }, 'thread');
+
+    assert.deepEqual(thinking, [{ channel: 'thread', content: 'planning' }]);
+    assert.deepEqual(statuses, [{
+      channel: 'thread',
+      content: '**Using tool:** `Bash`\n```\n{\n  "command": "npm test"\n}\n```',
+    }]);
+  });
+
+  it('OpenCode tool status includes argument previews', async () => {
+    const adapter = new OpenCodeAdapter({
+      workspaceId: 'ws',
+      channelName: 'thread',
+      token: 'token',
+      agentName: 'opencode',
+    });
+    const statuses = [];
+    adapter.sendStatus = async (_channel, content) => statuses.push(content);
+
+    await adapter._handleStreamEvent({
+      type: 'tool_use',
+      item: {
+        name: 'Task',
+        input: {
+          description: 'medium-investigation',
+          category: 'quick',
+          prompt: 'inspect architecture details',
+        },
+      },
+    }, 'thread');
+
+    assert.equal(statuses.length, 1);
+    assert.match(statuses[0], /^\*\*Using tool:\*\* `Task`\n```/);
+    assert.equal(statuses[0].includes('medium-investigation'), true);
+    assert.equal(statuses[0].includes('category'), true);
+    assert.equal(statuses[0].includes('inspect architecture details'), true);
+  });
+
+  it('OpenCode tool status reads real state.input arguments', async () => {
+    const adapter = new OpenCodeAdapter({
+      workspaceId: 'ws',
+      channelName: 'thread',
+      token: 'token',
+      agentName: 'opencode',
+    });
+    const statuses = [];
+    adapter.sendStatus = async (_channel, content) => statuses.push(content);
+
+    await adapter._handleStreamEvent({
+      type: 'tool_use',
+      part: {
+        type: 'tool',
+        tool: 'bash',
+        state: {
+          status: 'completed',
+          input: {
+            command: 'printf opencode-shape-test',
+            description: 'Prints requested test string',
+            workdir: '/tmp/opencode/openagents-real-shape-test',
+          },
+        },
+      },
+    }, 'thread');
+
+    assert.equal(statuses.length, 1);
+    assert.match(statuses[0], /^\*\*Using tool:\*\* `bash`\n```/);
+    assert.equal(statuses[0].includes('printf opencode-shape-test'), true);
+    assert.equal(statuses[0].includes('Prints requested test string'), true);
+    assert.equal(statuses[0].includes('/tmp/opencode/openagents-real-shape-test'), true);
+  });
+
+  it('OpenCode tool status truncates long previews and uses safe fences', () => {
+    const command = `\`\`\`break ${'x'.repeat(1100)}`;
+    const preview = OpenCodeAdapter._formatToolStatus(
+      'Bash',
+      OpenCodeAdapter._toolInputPreview({ command })
+    );
+
+    assert.equal(preview.includes('x'.repeat(1001)), false);
+    assert.match(preview, /````\n/);
+  });
+
+  it('OpenCode final response keeps only post-tool streamed text', async () => {
+    const adapter = new OpenCodeAdapter({
+      workspaceId: 'ws',
+      channelName: 'thread',
+      token: 'token',
+      agentName: 'opencode',
+    });
+    adapter.sendThinking = async () => {};
+    adapter.sendStatus = async () => {};
+    const state = { finalText: '', seenText: false };
+
+    const events = [
+      { type: 'text', part: { text: 'I will inspect first. ' } },
+      { type: 'tool_use', item: { name: 'Read', input: { path: '/secret' } } },
+      { type: 'text', part: { text: 'Done after tool.' } },
+    ];
+    for (const event of events) {
+      await adapter._handleStreamEvent(event, 'thread', state);
+    }
+
+    const raw = events.map((event) => JSON.stringify(event)).join(' ');
+    assert.equal(OpenCodeAdapter._finalTextFromStdout(raw, state), 'Done after tool.');
+  });
+
+  it('OpenCode final response preserves fallback behavior for control and plain output', () => {
+    assert.equal(
+      OpenCodeAdapter._finalTextFromStdout('{"type":"step_start"} {"type":"tool_use","item":{"name":"Bash"}}'),
+      ''
+    );
+    assert.equal(OpenCodeAdapter._finalTextFromStdout('plain non-json response'), 'plain non-json response');
+  });
+
   it('OpenCode stop terminates the spawned process tree', async () => {
     const adapter = new OpenCodeAdapter({
       workspaceId: 'ws',
