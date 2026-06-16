@@ -14,6 +14,7 @@ const CursorAdapter = require('./cursor');
 const HermesAdapter = require('./hermes');
 const GeminiAdapter = require('./gemini');
 const KimiAdapter = require('./kimi');
+const GooseAdapter = require('./goose');
 
 const ADAPTER_MAP = {
   openclaw: OpenClawAdapter,
@@ -25,6 +26,7 @@ const ADAPTER_MAP = {
   hermes: HermesAdapter,
   gemini: GeminiAdapter,
   kimi: KimiAdapter,
+  goose: GooseAdapter,
 };
 
 /**
@@ -52,6 +54,7 @@ module.exports = {
   HermesAdapter,
   GeminiAdapter,
   KimiAdapter,
+  GooseAdapter,
   createAdapter,
   ADAPTER_MAP,
 };
