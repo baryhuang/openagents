@@ -105,6 +105,16 @@ jobs:
           ls dist/*-mac-${{ matrix.arch }}.dmg >/dev/null
           ls dist/*-mac-${{ matrix.arch }}.zip >/dev/null
 
+      - name: Stage macOS update metadata
+        # electron-updater consumes latest-mac.yml from the zip. The x64 and
+        # arm64 builds each emit a file with the SAME name, so rename per-arch
+        # to survive merge-multiple; the release job merges them back into a
+        # single latest-mac.yml covering both architectures.
+        run: |
+          if [ -f dist/latest-mac.yml ]; then
+            cp dist/latest-mac.yml "dist/latest-mac-${{ matrix.arch }}.yml"
+          fi
+
       - name: Clean up keychain
         if: always()
         run: |
@@ -117,6 +127,8 @@ jobs:
           path: |
             packages/launcher/dist/*-mac-${{ matrix.arch }}.dmg
             packages/launcher/dist/*-mac-${{ matrix.arch }}.zip
+            packages/launcher/dist/*-mac-${{ matrix.arch }}.zip.blockmap
+            packages/launcher/dist/latest-mac-${{ matrix.arch }}.yml
           if-no-files-found: warn
 
   build-windows:
@@ -173,6 +185,8 @@ jobs:
           path: |
             packages/launcher/dist/*.exe
             packages/launcher/dist/*.msi
+            packages/launcher/dist/*.exe.blockmap
+            packages/launcher/dist/latest.yml
           if-no-files-found: warn
 
   sign-windows:
@@ -269,6 +283,40 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}"
           echo "Downloaded signed MSI: $(ls -la signed/*.msi)"
 
+      - name: Regenerate update metadata for signed EXE
+        # SignPath re-signs the EXE *after* electron-builder hashed it, so the
+        # sha512/size recorded in the unsigned latest.yml no longer match the
+        # bytes we ship. electron-updater verifies that hash and would reject
+        # the download. Recompute sha512/size against the signed EXE and drop
+        # the now-stale blockmap so the updater falls back to a full download.
+        run: |
+          set -euo pipefail
+          if [ ! -f unsigned/latest.yml ]; then
+            echo "::warning::unsigned/latest.yml missing — skipping update metadata (in-app update will be unavailable for this build)"
+            exit 0
+          fi
+          pip install --quiet pyyaml
+          SIGNED_EXE=$(ls signed/*.exe | head -1)
+          python3 - "$SIGNED_EXE" unsigned/latest.yml signed/latest.yml <<'PY'
+          import base64, hashlib, os, sys, yaml
+          exe, src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+          data = open(exe, "rb").read()
+          sha512 = base64.b64encode(hashlib.sha512(data).digest()).decode()
+          size = len(data)
+          name = os.path.basename(exe)
+          doc = yaml.safe_load(open(src))
+          for f in doc.get("files", []):
+              if f.get("url", "").endswith(".exe"):
+                  f["sha512"] = sha512
+                  f["size"] = size
+                  f.pop("blockMapSize", None)
+          doc["sha512"] = sha512
+          doc["size"] = size
+          doc["path"] = name
+          yaml.safe_dump(doc, open(dst, "w"), default_flow_style=False, sort_keys=False)
+          print(open(dst).read())
+          PY
+
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -331,6 +379,8 @@ jobs:
           path: |
             packages/launcher/dist/*.AppImage
             packages/launcher/dist/*.deb
+            packages/launcher/dist/*.AppImage.blockmap
+            packages/launcher/dist/latest-linux.yml
           if-no-files-found: warn
 
   release:
@@ -365,6 +415,46 @@ jobs:
         with:
           name: launcher-windows-unsigned
           path: artifacts
+
+      - name: Merge macOS update metadata
+        # The x64 and arm64 builds each produced a latest-mac-<arch>.yml that
+        # only describes its own zip. electron-updater fetches a single
+        # latest-mac.yml and picks the entry matching the user's CPU, so merge
+        # both files' `files:` lists into one canonical latest-mac.yml.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          MAC_YMLS=(artifacts/latest-mac-*.yml)
+          if [ ${#MAC_YMLS[@]} -eq 0 ]; then
+            echo "No macOS update metadata to merge — skipping."
+            exit 0
+          fi
+          pip install --quiet pyyaml
+          python3 - "${MAC_YMLS[@]}" <<'PY'
+          import sys, yaml
+          docs = [yaml.safe_load(open(p)) for p in sys.argv[1:]]
+          merged = dict(docs[0])
+          files = []
+          seen = set()
+          for d in docs:
+              for f in d.get("files", []):
+                  key = f.get("url")
+                  if key and key not in seen:
+                      seen.add(key)
+                      files.append(f)
+          merged["files"] = files
+          # Top-level path/sha512/size are the legacy single-file fallback;
+          # point them at the first entry. Arch-aware clients use `files`.
+          if files:
+              merged["path"] = files[0]["url"]
+              merged["sha512"] = files[0]["sha512"]
+              if "size" in files[0]:
+                  merged["size"] = files[0]["size"]
+          yaml.safe_dump(merged, open("artifacts/latest-mac.yml", "w"),
+                         default_flow_style=False, sort_keys=False)
+          print(open("artifacts/latest-mac.yml").read())
+          PY
+          rm -f artifacts/latest-mac-*.yml
 
       - name: List release artifacts
         run: ls -la artifacts/

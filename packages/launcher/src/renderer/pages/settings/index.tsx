@@ -26,7 +26,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog"
 import { useThemeStore, type ThemeMode } from "../../store/theme"
 import { useAgentsStore } from "../../store/agents"
 import { useNotificationsStore } from "../../store/notifications"
-import type { RuntimeInfo } from "../../types"
+import type { RuntimeInfo, UpdaterState } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 import { cn } from "../../lib/utils"
 
@@ -65,7 +65,6 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
   const [startOnBoot, setStartOnBoot] = useState(false)
   const [minimizeToTray, setMinimizeToTray] = useState(false)
   const [autoUpdate, setAutoUpdate] = useState(true)
-  const [updateChannel, setUpdateChannel] = useState<"stable" | "beta">("stable")
   const [gpuAccel, setGpuAccel] = useState(true)
   const [defaultAgentType, setDefaultAgentType] = useState("")
   const [defaultModel, setDefaultModel] = useState("")
@@ -74,7 +73,6 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
   const [httpsProxy, setHttpsProxy] = useState("")
   const [noProxy, setNoProxy] = useState("")
   const [workspaceEndpoint, setWorkspaceEndpoint] = useState("")
-  const [language, setLanguage] = useState("en")
   const [paths, setPaths] = useState<{
     userData: string
     logs: string
@@ -110,7 +108,6 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
       setStartOnBoot(!!all.startOnBoot)
       setMinimizeToTray(!!all.minimizeToTray)
       setAutoUpdate(all.autoUpdate !== false)
-      setUpdateChannel((all.updateChannel as "stable" | "beta") || "stable")
       setGpuAccel(all.gpuAcceleration !== false)
       setDefaultAgentType((all.defaultAgentType as string) || "")
       setDefaultModel((all.defaultModel as string) || "")
@@ -119,7 +116,6 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
       setHttpsProxy((all.httpsProxy as string) || "")
       setNoProxy((all.noProxy as string) || "")
       setWorkspaceEndpoint((all.workspaceEndpoint as string) || "")
-      setLanguage((all.language as string) || "en")
     } catch {}
   }, [])
 
@@ -153,6 +149,49 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
     const id = setInterval(loadRuntime, 8000)
     return () => clearInterval(id)
   }, [loadSettings, loadPaths, loadRuntime, loadLauncherVersion])
+
+  // ── Launcher self-update ──
+  const [updater, setUpdater] = useState<UpdaterState | null>(null)
+
+  useEffect(() => {
+    window.api
+      .getUpdaterState()
+      .then((s) => {
+        if (mounted.current) setUpdater(s)
+      })
+      .catch(() => {})
+    const off = window.api.onUpdaterEvent((s) => {
+      if (mounted.current) setUpdater(s)
+    })
+    return off
+  }, [])
+
+  const checkUpdate = async (): Promise<void> => {
+    try {
+      const s = await window.api.checkLauncherUpdate()
+      setUpdater(s)
+      if (s.status === "not-available")
+        showToast("Already up to date", "success")
+    } catch (e) {
+      showToast(`Update check failed: ${(e as Error).message}`, "error")
+    }
+  }
+
+  const downloadUpdate = async (): Promise<void> => {
+    try {
+      await window.api.downloadLauncherUpdate()
+    } catch (e) {
+      showToast(`Download failed: ${(e as Error).message}`, "error")
+    }
+  }
+
+  const installUpdate = async (): Promise<void> => {
+    try {
+      await window.api.installLauncherUpdate()
+    } catch (e) {
+      showToast(`Install failed: ${(e as Error).message}`, "error")
+    }
+  }
 
   const set = async (key: string, value: unknown): Promise<void> => {
     await window.api.setSetting(key, value)
@@ -572,19 +611,15 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
             <SettingsCard title="Language">
               <Row
                 label="Display language"
-                desc="UI strings (some areas may not yet be translated)"
+                desc="Localization is coming soon — the UI is English only for now"
               >
                 <Select
-                  value={language}
-                  onChange={(e) => {
-                    setLanguage(e.target.value)
-                    void set("language", e.target.value)
-                  }}
+                  value="en"
+                  disabled
+                  title="More languages coming soon"
                   className="w-[200px]"
                 >
                   <option value="en">English</option>
-                  <option value="zh">中文</option>
-                  <option value="ja">日本語</option>
                 </Select>
               </Row>
             </SettingsCard>
@@ -605,20 +640,13 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                 />
               </Row>
               <Separator />
-              <Row label="Channel" desc="Stable or beta releases">
-                <Select
-                  value={updateChannel}
-                  onChange={(e) => {
-                    const v = e.target.value as "stable" | "beta"
-                    setUpdateChannel(v)
-                    void set("updateChannel", v)
-                  }}
-                  className="w-[160px]"
-                >
-                  <option value="stable">Stable</option>
-                  <option value="beta">Beta</option>
-                </Select>
-              </Row>
+              <LauncherUpdate
+                state={updater}
+                currentVersion={launcherVersion}
+                onCheck={checkUpdate}
+                onDownload={downloadUpdate}
+                onInstall={installUpdate}
+              />
             </SettingsCard>
           )}
 
@@ -673,6 +701,121 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
         onConfirm={performReset}
       />
     </section>
+  )
+}
+
+function LauncherUpdate({
+  state,
+  currentVersion,
+  onCheck,
+  onDownload,
+  onInstall,
+}: {
+  state: UpdaterState | null
+  currentVersion: string
+  onCheck: () => void | Promise<void>
+  onDownload: () => void | Promise<void>
+  onInstall: () => void | Promise<void>
+}): React.JSX.Element {
+  const status = state?.status ?? "idle"
+  const latest = state?.latestVersion ? `v${state.latestVersion}` : null
+
+  // Dev build / missing update metadata: in-app update can't run, so point the
+  // user at the download page instead of offering a dead button.
+  if (state && !state.supported) {
+    return (
+      <Row
+        label="App update"
+        desc={`Current version ${currentVersion} · this build can't update in place`}
+      >
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() =>
+            window.api.openExternal(
+              "https://github.com/openagents-org/openagents/releases",
+            )
+          }
+        >
+          Download page
+        </Button>
+      </Row>
+    )
+  }
+
+  let statusText = `Current version ${currentVersion}`
+  if (status === "checking") statusText = "Checking for updates…"
+  else if (status === "available")
+    statusText = `New version ${latest ?? ""} available`
+  else if (status === "downloading")
+    statusText = `Downloading ${latest ?? ""} · ${state?.percent ?? 0}%`
+  else if (status === "downloaded")
+    statusText = `${latest ?? "Update"} downloaded — restart to install`
+  else if (status === "not-available")
+    statusText = `Up to date (${currentVersion})`
+  else if (status === "error")
+    statusText = `Update error: ${state?.error ?? "unknown"}`
+
+  const busy = status === "checking" || status === "downloading"
+
+  let action: React.JSX.Element
+  if (status === "available") {
+    action = (
+      <Button variant="primary" size="sm" onClick={() => void onDownload()}>
+        Download
+      </Button>
+    )
+  } else if (status === "downloading") {
+    action = (
+      <Button variant="default" size="sm" disabled>
+        Downloading…
+      </Button>
+    )
+  } else if (status === "downloaded") {
+    action = (
+      <Button variant="primary" size="sm" onClick={() => void onInstall()}>
+        Restart &amp; install
+      </Button>
+    )
+  } else {
+    action = (
+      <Button
+        variant="default"
+        size="sm"
+        disabled={busy}
+        onClick={() => void onCheck()}
+      >
+        {status === "checking" ? "Checking…" : "Check for updates"}
+      </Button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2 py-2.5">
+      <div className="flex items-center justify-between gap-4">
+        <span
+          className={cn(
+            "text-[13px] font-medium min-w-0 truncate",
+            status === "error"
+              ? "text-(--danger-text)"
+              : status === "available" || status === "downloaded"
+                ? "text-(--accent)"
+                : "text-(--text-primary)",
+          )}
+        >
+          {statusText}
+        </span>
+        <div className="shrink-0">{action}</div>
+      </div>
+      {status === "downloading" && (
+        <div className="h-1.5 w-full rounded-full bg-(--bg-input) overflow-hidden">
+          <div
+            className="h-full bg-(--accent) transition-[width] duration-200"
+            style={{ width: `${state?.percent ?? 0}%` }}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 

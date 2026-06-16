@@ -210,6 +210,26 @@ export interface RuntimeInfo {
   latestVersion: string | null
 }
 
+export type UpdaterStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "not-available"
+  | "downloading"
+  | "downloaded"
+  | "error"
+
+export interface UpdaterState {
+  status: UpdaterStatus
+  currentVersion: string
+  latestVersion: string | null
+  percent: number
+  bytesPerSecond: number
+  releaseNotes: string | null
+  error: string | null
+  supported: boolean
+}
+
 // ── Chat ──
 
 export interface Attachment {
@@ -399,6 +419,13 @@ declare global {
       openTerminal(cmd: string): Promise<void>
       updateCore(): Promise<{ success: boolean; version?: string; error?: string }>
       onCoreUpdate(cb: (info: { current: string; latest: string }) => void): void
+
+      // ── Launcher self-update ──
+      getUpdaterState(): Promise<UpdaterState>
+      checkLauncherUpdate(): Promise<UpdaterState>
+      downloadLauncherUpdate(): Promise<UpdaterState>
+      installLauncherUpdate(): Promise<boolean>
+      onUpdaterEvent(cb: (state: UpdaterState) => void): () => void
       onAgentUpdatesChanged(cb: (updates: AgentUpdateInfo[]) => void): void
       onNavigateToInstall(cb: (agentName: string) => void): void
       getIconPath(name: string): Promise<string | null>
