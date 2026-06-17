@@ -670,12 +670,14 @@ class ClineAdapter extends BaseAdapter {
     return new Promise((resolve) => {
       let settled = false;
       let watchdogTimer = null;
+      let fallbackTimer = null;
       let lastDataMs = Date.now();
       let silences = 0;
       let queue = Promise.resolve();
 
       const cleanup = () => {
         if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+        if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
         if (proc.stdout) proc.stdout.removeAllListeners();
         if (proc.stderr) proc.stderr.removeAllListeners();
       };
@@ -808,14 +810,26 @@ class ClineAdapter extends BaseAdapter {
         }
       }, WATCHDOG_INTERVAL_MS);
 
-      proc.on('exit', (code, signal) => {
-        // Drain any trailing buffered lines, then settle once the queue flushes.
-        const tail = parser.flush();
-        for (const ev of tail) queue = queue.then(() => handleEvent(ev)).catch(() => {});
+      // Finalize only once BOTH the process has exited AND stdout has ended.
+      // Listening on 'exit' alone is racy: on some platforms (notably macOS) the
+      // final stdout chunk carrying `run_result` is delivered AFTER 'exit'
+      // fires, which would drop the answer. Waiting for stdout 'end' guarantees
+      // every 'data' event was emitted first. A short fallback after 'exit'
+      // covers the rare case where a lingering child keeps the pipe open so
+      // 'end' never arrives (the data is already buffered/delivered by then).
+      let exited = false;
+      let stdoutEnded = false;
+      let exitCode = null;
+      let exitSignal = null;
+
+      const finalize = () => {
+        if (settled) return;
+        if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+        for (const ev of parser.flush()) queue = queue.then(() => handleEvent(ev)).catch(() => {});
         for (const ev of stderrParser.flush()) adoptStderr(ev);
         queue = queue.then(() => {
-          if (code !== 0 && !state.ok && !state.resultError && !state.eventError && !state.stderrError) {
-            const why = signal ? `terminated by signal ${signal}` : `exited with code ${code}`;
+          if (exitCode !== 0 && !state.ok && !state.resultError && !state.eventError && !state.stderrError) {
+            const why = exitSignal ? `terminated by signal ${exitSignal}` : `exited with code ${exitCode}`;
             if (stderrText.trim()) this._log(`cline stderr: ${redactSecrets(stderrText.trim().slice(0, 500))}`);
             if (!this._stoppingChannels.has(channel)) {
               state.resultError = `Cline ${why}.`;
@@ -823,6 +837,20 @@ class ClineAdapter extends BaseAdapter {
           }
           settle();
         }).catch(() => settle());
+      };
+      const maybeFinalize = () => { if (exited && stdoutEnded) finalize(); };
+
+      if (proc.stdout) proc.stdout.on('end', () => { stdoutEnded = true; maybeFinalize(); });
+      else stdoutEnded = true;
+
+      proc.on('exit', (code, signal) => {
+        exited = true;
+        exitCode = code;
+        exitSignal = signal;
+        // If stdout 'end' hasn't fired shortly after exit (a lingering child
+        // holding the pipe), force finalization — buffered data is already in.
+        fallbackTimer = setTimeout(() => { stdoutEnded = true; finalize(); }, 1500);
+        maybeFinalize();
       });
 
       proc.on('error', (err) => {
