@@ -116,7 +116,9 @@ agn connect my-agent <workspace-token>    # connect agent into workspace
 | **Hermes Agent** | ✅ Supported | Nous Hermes CLI with tools, profiles, and memory |
 | **Cursor** | ✅ Supported | AI code editor |
 | **OpenCode** | ✅ Supported | Open-source terminal agent |
-| Aider, Goose, Gemini CLI, Copilot, Amp | 🔜 Coming soon | |
+| **Gemini CLI** | ✅ Supported | Google's open-source CLI agent |
+| **Cline** | ✅ Supported (Beta) | Autonomous coding agent CLI — see [docs/guides/cline.md](docs/guides/cline.md) |
+| Aider, Goose, Copilot, Amp | 🔜 Coming soon | |
 
 ---
 

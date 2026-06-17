@@ -615,11 +615,13 @@ _AGENT_CATALOG = [
     {
         "name": "cline",
         "label": "Cline",
-        "description": "Autonomous coding agent for VS Code",
+        "description": "Autonomous coding agent CLI by Cline Bot",
         "install_command": "npm install -g cline",
         "homepage": "https://github.com/cline/cline",
-        "tags": ["coding", "vscode", "autonomous"],
-        "builtin": False,
+        "tags": ["coding", "cli", "autonomous"],
+        "builtin": True,
+        "featured": True,
+        "order": 9,
     },
     {
         "name": "copilot",

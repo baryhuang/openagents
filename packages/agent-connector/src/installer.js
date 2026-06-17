@@ -10,6 +10,30 @@ const { EnvManager } = require('./env');
 const STATUS_CACHE_TTL_MS = 10000;
 const statusCache = new Map();
 
+// Cache `--version` output so frequent launcher status refreshes don't re-spawn
+// the CLI on every poll. Keyed by the version command; cleared on install/
+// uninstall so an upgrade is reflected promptly.
+const VERSION_CACHE_TTL_MS = 60000;
+const versionCache = new Map(); // versionCmd -> { version, ts }
+
+/** Parse a dotted version out of arbitrary text; null if none. */
+function _parseDottedVersion(s) {
+  const m = String(s || '').match(/(\d+)\.(\d+)(?:\.(\d+))?(?:[-.][0-9A-Za-z.]+)?/);
+  return m ? m[0] : null;
+}
+
+/** Compare dotted versions a vs b → -1 | 0 | 1. */
+function _cmpVersions(a, b) {
+  const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0; const y = pb[i] || 0;
+    if (x < y) return -1;
+    if (x > y) return 1;
+  }
+  return 0;
+}
+
 /**
  * Manages installation and uninstallation of agent runtimes.
  *
@@ -193,8 +217,53 @@ class Installer {
     }
 
     const checkCmd = entry && entry.install ? entry.install.check_command : null;
-    const versionCmd = checkCmd || `${entry && entry.install && entry.install.binary || agentType} --version`;
+    // Prefer the resolved absolute binary path (quoted) over the bare name:
+    // it's unambiguous and lets `--version` succeed for binaries resolved via
+    // the package-bin fallback (which are not on PATH).
+    const versionCmd = checkCmd || `"${binary}" --version`;
 
+    let version = this._readVersion(versionCmd);
+
+    const readiness = this._evaluateReadiness(agentType, entry, binary);
+
+    // Optional HARD minimum-version gate (generic; opt-in per agent via
+    // check_ready.min_version or install.min_version). A CONFIRMED-older CLI is
+    // incompatible → not ready. An undetermined version (unparseable) is left
+    // as compatible:null and does NOT block. Agents without min_version are
+    // unaffected (compatible:true).
+    const minVersion = (entry && ((entry.check_ready && entry.check_ready.min_version) || (entry.install && entry.install.min_version))) || null;
+    let compatible = true;
+    if (minVersion) {
+      const parsed = _parseDottedVersion(version);
+      if (parsed) {
+        compatible = _cmpVersions(parsed, minVersion) >= 0;
+      } else {
+        compatible = null; // version present but unparseable → undetermined
+      }
+      if (compatible === false) {
+        const label = (entry && entry.label) || agentType;
+        const upgradeCmd = entry && entry.install ? this._getInstallCommand(entry.install) : null;
+        return {
+          installed: true,
+          binary,
+          version,
+          compatible: false,
+          ready: false,
+          auth_mode: null,
+          execution_mode: 'unavailable',
+          message: `${label} ${version} is older than the supported minimum ${minVersion}.` +
+            (upgradeCmd ? ` Upgrade with: ${upgradeCmd}` : ' Please upgrade.'),
+        };
+      }
+    }
+
+    return { installed: true, binary, version, compatible, ...readiness };
+  }
+
+  /** Read (and briefly cache) a CLI's `--version` output → dotted version string. */
+  _readVersion(versionCmd) {
+    const cached = versionCache.get(versionCmd);
+    if (cached && (Date.now() - cached.ts) < VERSION_CACHE_TTL_MS) return cached.version;
     let version = null;
     try {
       const raw = execSync(versionCmd, {
@@ -203,13 +272,13 @@ class Installer {
         env: getEnhancedEnv(),
         timeout: 10000,
       }).trim();
-      // Extract version number (e.g. "openclaw 2024.1.5" → "2024.1.5")
       const match = raw.match(/(\d+[\d.]+\d+)/);
-      version = match ? match[1] : raw.split('\n')[0];
-    } catch {}
-
-    const readiness = this._evaluateReadiness(agentType, entry, binary);
-    return { installed: true, binary, version, ...readiness };
+      version = match ? match[1] : (raw.split('\n')[0] || null);
+    } catch {
+      version = null;
+    }
+    versionCache.set(versionCmd, { version, ts: Date.now() });
+    return version;
   }
 
   _evaluateReadiness(agentType, entry, binary) {
@@ -723,6 +792,51 @@ class Installer {
       const found = whichBinary(candidate);
       if (found) return found;
     }
+    // Fallback: resolve the installed package's OWN bin from its package.json
+    // when npm did not create a node_modules/.bin/<binary> shim for the
+    // top-level package. This happens for packages whose `bin` path is
+    // declared as "./bin/x" (e.g. Cline): a local `npm install --prefix DIR`
+    // links dependency bins but not the explicitly-installed root package's,
+    // so a PATH lookup finds nothing even though the CLI is present and
+    // runnable. Generic and backward-compatible — only runs after PATH misses.
+    const pkgBin = this._resolvePackageBin(agentType, entry, binary);
+    if (pkgBin) return pkgBin;
+    return null;
+  }
+
+  /**
+   * Resolve the absolute path to a package's own executable from its
+   * package.json `bin` field, searched in the runtime and legacy prefixes.
+   * Returns null when not installed there or the bin file is missing.
+   */
+  _resolvePackageBin(agentType, entry, binary) {
+    // Derive the npm package name the same way getInstallInfo does.
+    const npmPkg = entry && entry.install ? entry.install.npm_package : null;
+    const installCmd = entry && entry.install ? this._getInstallCommand(entry.install) : null;
+    let npmPkgFromCmd = null;
+    if (!npmPkg && installCmd && installCmd.includes('npm install')) {
+      const m = installCmd.match(/npm install\s+(?:-g\s+)?(@?[\w-]+(?:\/[\w-]+)?)(?:@\S*)?$/);
+      if (m) npmPkgFromCmd = m[1];
+    }
+    const pkgName = npmPkg || npmPkgFromCmd || binary;
+    const prefixes = [
+      path.join(getRuntimePrefix(agentType), 'node_modules'),
+      path.join(os.homedir(), '.openagents', 'nodejs', 'node_modules'),
+    ];
+    for (const modules of prefixes) {
+      const pkgDir = path.join(modules, pkgName);
+      const pkgJsonPath = path.join(pkgDir, 'package.json');
+      try {
+        if (!fs.existsSync(pkgJsonPath)) continue;
+        const bin = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8')).bin;
+        let rel = null;
+        if (typeof bin === 'string') rel = bin;
+        else if (bin && typeof bin === 'object') rel = bin[binary] || bin[pkgName] || Object.values(bin)[0];
+        if (!rel) continue;
+        const abs = path.join(pkgDir, rel);
+        if (fs.existsSync(abs)) return abs;
+      } catch {}
+    }
     return null;
   }
 
@@ -770,8 +884,10 @@ class Installer {
     // Drop the 30s PATH/whichBinary caches so the very next getInstallInfo
     // sees the freshly-created bin dir (e.g. ~/.cursor/bin) instead of the
     // pre-install snapshot. Without this, install completes but UI keeps
-    // showing "not installed" until the cache expires.
+    // showing "not installed" until the cache expires. Also drop the version
+    // cache so an upgrade's new version is reflected immediately.
     try { clearBinaryLookupCache(); } catch {}
+    try { versionCache.clear(); } catch {}
   }
 
   _markUninstalled(agentType) {
@@ -794,6 +910,7 @@ class Installer {
 
     // Symmetric with _markInstalled: invalidate so detection re-runs cleanly.
     try { clearBinaryLookupCache(); } catch {}
+    try { versionCache.clear(); } catch {}
   }
 
   // -- Shell env + exec --
