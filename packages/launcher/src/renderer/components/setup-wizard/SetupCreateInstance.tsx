@@ -1,6 +1,7 @@
 import React from "react"
 import { Input } from "../ui/Input"
 import { Button } from "../ui/Button"
+import { WizardStepShell } from "./WizardStepShell"
 
 interface SetupCreateInstanceProps {
   agentName: string
@@ -9,6 +10,7 @@ interface SetupCreateInstanceProps {
   submitting: boolean
   onSubmit: () => void
   onCancel: () => void
+  section?: "all" | "body" | "footer"
 }
 
 /**
@@ -23,10 +25,11 @@ export function SetupCreateInstance({
   submitting,
   onSubmit,
   onCancel,
+  section = "all",
 }: SetupCreateInstanceProps): React.JSX.Element {
-  return (
+  const body = (
     <>
-      <div className="form-group">
+      <div className="form-group mb-0">
         <label>Agent name</label>
         <Input
           value={agentName}
@@ -34,20 +37,26 @@ export function SetupCreateInstance({
           placeholder={defaultName}
         />
       </div>
-      <p className="hint -mt-1 mb-3">
+      <p className="hint m-0">
         Used as the local identifier — you can rename or remove it later from
         the Agents tab.
       </p>
-      <div className="form-actions">
-        <Button
-          variant="primary"
-          onClick={onSubmit}
-          disabled={submitting || !agentName.trim()}
-        >
-          {submitting ? "Creating…" : "Create agent"}
-        </Button>
-        <Button onClick={onCancel}>Finish later</Button>
-      </div>
     </>
   )
+  const footer = (
+    <div className="form-actions mt-0">
+      <Button
+        variant="primary"
+        onClick={onSubmit}
+        disabled={submitting || !agentName.trim()}
+      >
+        {submitting ? "Creating…" : "Create agent"}
+      </Button>
+      <Button onClick={onCancel}>Finish later</Button>
+    </div>
+  )
+
+  if (section === "body") return body
+  if (section === "footer") return footer
+  return <WizardStepShell body={body} footer={footer} />
 }

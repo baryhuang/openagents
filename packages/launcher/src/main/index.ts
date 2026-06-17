@@ -23,6 +23,10 @@ import {
   type ConnectionRecord,
 } from "./connections-store"
 import { probe as probeConnection } from "./connection-tester"
+import {
+  setupAutoUpdater,
+  checkForUpdatesOnStartup,
+} from "./updater"
 import { getGitHubClient, parseGitHubRepo } from "./github-bridge"
 import { GitHubBindingsStore } from "./github-bindings-store"
 import {
@@ -2103,6 +2107,10 @@ app.whenReady().then(async () => {
   if (process.platform !== "darwin") Menu.setApplicationMenu(null)
 
   setupIPC()
+  setupAutoUpdater({
+    getWindow: () => mainWindow,
+    log: slog,
+  })
   createTray()
 
   // ── One-time upgrade migration ──
@@ -2374,6 +2382,16 @@ app.whenReady().then(async () => {
   const ONE_HOUR = 60 * 60 * 1000
   setInterval(() => checkCoreUpdate().catch(() => {}), FOUR_HOURS)
   setTimeout(() => checkCoreUpdate().catch(() => {}), 30000)
+
+  // Launcher self-update: check shortly after launch and every few hours, but
+  // only when the user hasn't turned automatic updates off. Surfaces a banner
+  // in the renderer; the actual download/install is user-driven.
+  const launcherUpdateCheck = (): void => {
+    if (store.get("autoUpdate") === false) return
+    checkForUpdatesOnStartup().catch(() => {})
+  }
+  setTimeout(launcherUpdateCheck, 20000)
+  setInterval(launcherUpdateCheck, FOUR_HOURS)
 
   setTimeout(() => refreshAgentUpdates(), 45000)
   setInterval(() => refreshAgentUpdates(), ONE_HOUR)

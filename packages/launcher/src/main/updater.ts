@@ -1,0 +1,200 @@
+// ── Launcher self-update (electron-updater) ──
+//
+// Updates the Electron *app itself* from GitHub Releases. This is distinct from
+// the agent-launcher npm "core library" update (see ensureCoreLibrary /
+// checkCoreUpdate in index.ts) and from per-agent updates — those keep the
+// runtime fresh, but historically the app shell could only be updated by
+// uninstalling and reinstalling. This module gives the renderer a
+// check → download → restart-to-install flow.
+//
+// Update metadata (latest.yml / latest-mac.yml / latest-linux.yml + .blockmap)
+// must be present in the GitHub Release alongside the installers — see
+// .github/workflows/desktop-build.yml.
+import { app, ipcMain, type BrowserWindow } from "electron"
+import electronUpdater, {
+  type UpdateInfo,
+  type ProgressInfo,
+} from "electron-updater"
+
+// electron-updater ships CJS; grab autoUpdater off the default export so this
+// keeps working whether the bundler emits ESM-interop or a bare require().
+const { autoUpdater } = electronUpdater
+
+export type UpdaterStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "not-available"
+  | "downloading"
+  | "downloaded"
+  | "error"
+
+export interface UpdaterState {
+  status: UpdaterStatus
+  currentVersion: string
+  latestVersion: string | null
+  percent: number
+  bytesPerSecond: number
+  releaseNotes: string | null
+  error: string | null
+  // false when self-update can't run (dev build, no update metadata, etc.) —
+  // the renderer falls back to a "download from website" hint.
+  supported: boolean
+}
+
+let _state: UpdaterState = {
+  status: "idle",
+  currentVersion: "0.0.0",
+  latestVersion: null,
+  percent: 0,
+  bytesPerSecond: 0,
+  releaseNotes: null,
+  error: null,
+  supported: false,
+}
+
+let _getWindow: () => BrowserWindow | null = () => null
+let _log: (msg: string) => void = () => {}
+let _ipcRegistered = false
+
+function emit(patch: Partial<UpdaterState>): void {
+  _state = { ..._state, ...patch }
+  const win = _getWindow()
+  if (win && !win.isDestroyed()) {
+    win.webContents.send("updater:event", _state)
+  }
+}
+
+function normalizeReleaseNotes(
+  notes: UpdateInfo["releaseNotes"],
+): string | null {
+  if (!notes) return null
+  if (typeof notes === "string") return notes
+  // Array<{ version, note }> for the cumulative-notes case.
+  return notes
+    .map((n) => (n.note ? `## ${n.version}\n${n.note}` : `## ${n.version}`))
+    .join("\n\n")
+}
+
+function wireEvents(): void {
+  autoUpdater.on("checking-for-update", () => {
+    emit({ status: "checking", error: null })
+  })
+  autoUpdater.on("update-available", (info: UpdateInfo) => {
+    _log(`[updater] update available: v${info.version}`)
+    emit({
+      status: "available",
+      latestVersion: info.version,
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+      error: null,
+    })
+  })
+  autoUpdater.on("update-not-available", (info: UpdateInfo) => {
+    emit({
+      status: "not-available",
+      latestVersion: info.version,
+      error: null,
+    })
+  })
+  autoUpdater.on("download-progress", (p: ProgressInfo) => {
+    emit({
+      status: "downloading",
+      percent: Math.round(p.percent),
+      bytesPerSecond: Math.round(p.bytesPerSecond),
+    })
+  })
+  autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
+    _log(`[updater] update downloaded: v${info.version}`)
+    emit({
+      status: "downloaded",
+      percent: 100,
+      latestVersion: info.version,
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+    })
+  })
+  autoUpdater.on("error", (err: Error) => {
+    _log(`[updater] error: ${err.message}`)
+    emit({ status: "error", error: err.message })
+  })
+}
+
+function registerIpc(): void {
+  if (_ipcRegistered) return
+  _ipcRegistered = true
+
+  ipcMain.handle("updater:get-state", () => _state)
+
+  ipcMain.handle("updater:check", async () => {
+    if (!_state.supported) return _state
+    try {
+      await autoUpdater.checkForUpdates()
+    } catch (err) {
+      emit({ status: "error", error: (err as Error).message })
+    }
+    return _state
+  })
+
+  ipcMain.handle("updater:download", async () => {
+    if (!_state.supported) return _state
+    // Guard against a redundant download once we already have the package.
+    if (_state.status === "downloaded") return _state
+    try {
+      emit({ status: "downloading", percent: 0, error: null })
+      await autoUpdater.downloadUpdate()
+    } catch (err) {
+      emit({ status: "error", error: (err as Error).message })
+    }
+    return _state
+  })
+
+  ipcMain.handle("updater:install", () => {
+    if (!_state.supported || _state.status !== "downloaded") return false
+    // Mark quitting so the app's before-quit teardown (stop agents / polling)
+    // still runs before electron-updater relaunches into the installer.
+    ;(app as typeof app & { isQuitting: boolean }).isQuitting = true
+    setImmediate(() => autoUpdater.quitAndInstall(false, true))
+    return true
+  })
+}
+
+export function setupAutoUpdater(opts: {
+  getWindow: () => BrowserWindow | null
+  log: (msg: string) => void
+}): void {
+  _getWindow = opts.getWindow
+  _log = opts.log
+  _state.currentVersion = app.getVersion()
+
+  // Dev builds have no app-update.yml — calling autoUpdater would throw. Still
+  // register IPC so the renderer gets a clean "unsupported" state instead of
+  // an invoke rejection.
+  if (!app.isPackaged) {
+    emit({ supported: false, status: "idle" })
+    registerIpc()
+    return
+  }
+
+  emit({ supported: true })
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = {
+    info: (m: unknown) => _log(`[updater] ${String(m)}`),
+    warn: (m: unknown) => _log(`[updater] WARN ${String(m)}`),
+    error: (m: unknown) => _log(`[updater] ERROR ${String(m)}`),
+    debug: () => {},
+  }
+  wireEvents()
+  registerIpc()
+}
+
+// Fired on launch when the "Automatic updates" setting is on: check silently
+// and let the renderer surface a banner. We never auto-download — the user
+// drives the (potentially metered) download from the UI.
+export async function checkForUpdatesOnStartup(): Promise<void> {
+  if (!_state.supported) return
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (err) {
+    _log(`[updater] startup check failed: ${(err as Error).message}`)
+  }
+}

@@ -13,6 +13,7 @@ import { AgentRow } from "../../components/install/AgentRow"
 import AgentIcon from "../../components/AgentIcon"
 import { useMarketplacePrefs } from "../../hooks/useMarketplacePrefs"
 import { hasPendingUpdate, useInstallStore } from "../../store/install"
+import { isLoginOnlyAgent } from "../../lib/agent-auth"
 import { useAgentsStore } from "../../store/agents"
 import { useUiStore } from "../../store/ui"
 import type { CatalogEntry, InstalledAgentRecord } from "../../types"
@@ -150,6 +151,22 @@ export default function Install({
     if (finished.length > 0) loadAll()
   }, [jobs, loadAll])
 
+  // Open the post-install setup wizard, UNLESS the agent signs in only through
+  // its own CLI (Cursor, Hermes). Those have no API key to collect, so the
+  // wizard (enter key → test → create) is meaningless — their sign-in lives in
+  // the Agents-page Configure dialog. We probe getEnvFields here because a
+  // catalog entry's own env_config can't be trusted (Cursor still lists
+  // CURSOR_API_KEY there even though the launcher hides it).
+  const maybeOpenWizard = useCallback(async (entry: CatalogEntry) => {
+    try {
+      const fields = await window.api.getEnvFields(entry.name)
+      if (isLoginOnlyAgent(entry, fields)) return
+    } catch {
+      /* fall through and open the wizard if we can't determine the auth mode */
+    }
+    setWizardEntry(entry)
+  }, [])
+
   // The actual install IPC — only invoked after the confirm modal resolves.
   const runInstall = useCallback(
     async (entry: CatalogEntry, verb: "install" | "update") => {
@@ -164,12 +181,12 @@ export default function Install({
           `${entry.label || entry.name} ${verb === "update" ? "updated" : "installed"}`,
           "success",
         )
-        if (!wasInstalled && verb === "install") setWizardEntry(entry)
+        if (!wasInstalled && verb === "install") maybeOpenWizard(entry)
       } catch (e: unknown) {
         showToast(`${verb} failed: ${installErrorMessage(e)}`, "error")
       }
     },
-    [showToast, installedList],
+    [showToast, installedList, maybeOpenWizard],
   )
 
   // Entry point bound to the card / row primary action: open the confirm
@@ -299,7 +316,7 @@ export default function Install({
               }
               loadAll()
               if (!installedList.find((r) => r.name === e.name))
-                setWizardEntry(e)
+                maybeOpenWizard(e)
             }}
             onOpenWizard={(e) => setWizardEntry(e)}
             showToast={showToast}

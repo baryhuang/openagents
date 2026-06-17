@@ -279,6 +279,32 @@ const HOSTED_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
 }
 
 /**
+ * Agents that support BOTH paths: an API key the launcher collects (see
+ * LAUNCHER_AUTH_OVERRIDES) AND their CLI's own browser sign-in. Claude Code is
+ * the canonical example — `claude auth login` signs in via claude.ai (a Pro/Max
+ * subscription works without any API key), and `claude auth status` reports the
+ * result as JSON (`"loggedIn": true`). The launcher-redesign dropped this login
+ * path and left only the API-key fields; this restores the legacy "open Claude
+ * to log in" option as the PRIMARY one while keeping the key as an alternative.
+ *
+ * Unlike HOSTED_LOGIN_AGENTS these KEEP their env (API-key) fields — they reuse
+ * the same `status`-probe machinery (`_probeHostedLogin`) for sign-in detection
+ * but are NOT treated as login-only anywhere that would hide the key fields
+ * (getEnvFields, getOnboardingAgents.envFields) or force a login-only health
+ * verdict. Onboarding sets authMode "login" (key offered as a secondary path),
+ * and readiness is "installed AND (signed in OR has a key)".
+ */
+const DUAL_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
+  claude: {
+    // `claude auth login` opens the browser sign-in; `claude auth status`
+    // prints `{ "loggedIn": true, ... }` (exit 0) when authenticated.
+    loginCommand: "claude auth login",
+    statusArgs: ["auth", "status"],
+    loggedInPattern: /"loggedIn"\s*:\s*true/i,
+  },
+}
+
+/**
  * Agents hidden from the onboarding picker (Step 1). They remain fully
  * installable and configurable from the Install tab — we just don't surface
  * them to first-time users. Cursor and Hermes need an external CLI install +
@@ -1258,6 +1284,9 @@ export class AgentManager extends EventEmitter {
               ? healthCheck.call(this._connector, type)
               : null
             this._healthByType.set(type, health)
+            // Dual-auth agents (Claude): keep the CLI sign-in cache warm so the
+            // agents list reflects a subscription login without an API key.
+            if (DUAL_LOGIN_AGENTS[type]) void this._probeHostedLogin(type)
           }
         } catch {
           this._healthByType.set(type, null)
@@ -1360,8 +1389,17 @@ export class AgentManager extends EventEmitter {
           }
     }
     const health = this._reconcileHealth(type, typeHealth)
+    // Dual-auth agents (Claude) are ready with EITHER a key OR a CLI sign-in, so
+    // a subscription login with no API key isn't misreported as "Not configured".
+    // The sign-in read is the cached probe (non-blocking; kicks a refresh when
+    // stale) — same constraint as hosted agents, so getAgents never spawns here.
+    const cliLoggedIn = DUAL_LOGIN_AGENTS[type]
+      ? this._hostedLoginIsAuthed(type) === true
+      : false
     const hasCreds =
-      this._envHasApiKey(instanceEnv) || this._hasConfiguredCredentials(type)
+      cliLoggedIn ||
+      this._envHasApiKey(instanceEnv) ||
+      this._hasConfiguredCredentials(type)
     // The type-level health is populated asynchronously (see
     // _scheduleHealthRefresh), so right after onboarding it is still null. Don't
     // fall back to a misleading "Not configured" when the agent actually has a
@@ -1371,7 +1409,7 @@ export class AgentManager extends EventEmitter {
         return {
           installed: true,
           ready: true,
-          auth_mode: "api_key",
+          auth_mode: cliLoggedIn ? "cli_login" : "api_key",
           execution_mode: "direct",
           message: "Ready",
         }
@@ -1385,7 +1423,7 @@ export class AgentManager extends EventEmitter {
         ...h,
         installed: true,
         ready: true,
-        auth_mode: "api_key",
+        auth_mode: cliLoggedIn ? "cli_login" : "api_key",
         execution_mode:
           h.execution_mode && h.execution_mode !== "unavailable"
             ? h.execution_mode
@@ -1453,12 +1491,22 @@ export class AgentManager extends EventEmitter {
    * awaitable refreshHostedLogin() instead when it needs a guaranteed-fresh read.
    */
   private _hostedLoginIsAuthed(type: string): boolean | null {
-    const spec = HOSTED_LOGIN_AGENTS[type]
+    const spec = this._loginSpec(type)
     if (!spec) return null
     const cached = this._hostedLoginAuth.get(type)
     const fresh = !!cached && Date.now() - cached.at < 30_000
     if (!fresh) void this._probeHostedLogin(type)
     return cached ? cached.value : null
+  }
+
+  /**
+   * The CLI sign-in spec for an agent type, covering both pure hosted-login
+   * agents (Cursor, Hermes) and dual-auth agents (Claude — API key OR CLI
+   * login). Used by the shared `status`-probe machinery so a single code path
+   * detects sign-in for either kind.
+   */
+  private _loginSpec(type: string): HostedLoginSpec | undefined {
+    return HOSTED_LOGIN_AGENTS[type] || DUAL_LOGIN_AGENTS[type]
   }
 
   /**
@@ -1510,6 +1558,7 @@ export class AgentManager extends EventEmitter {
       "cursor-agent": "cursor",
       agent: "cursor",
       hermes: "hermes",
+      claude: "claude",
     }
     const type = base ? BINARY_TO_TYPE[base] : undefined
     if (!type) return cmd
@@ -1525,9 +1574,12 @@ export class AgentManager extends EventEmitter {
    * optimistic guess.
    */
   async refreshHostedLogin(type: string): Promise<unknown> {
-    if (!HOSTED_LOGIN_AGENTS[type]) return this.healthCheck(type)
+    if (!this._loginSpec(type)) return this.healthCheck(type)
     await this._probeHostedLogin(type, true)
-    return this._hostedLoginHealth(type)
+    // Pure hosted-login → login-only verdict. Dual-auth (Claude) → the combined
+    // health, now reflecting the just-refreshed sign-in probe.
+    if (HOSTED_LOGIN_AGENTS[type]) return this._hostedLoginHealth(type)
+    return this.healthCheck(type)
   }
 
   /**
@@ -1538,7 +1590,7 @@ export class AgentManager extends EventEmitter {
    * the agents cache so the Agents list picks up the new state.
    */
   private _probeHostedLogin(type: string, force = false): Promise<boolean | null> {
-    const spec = HOSTED_LOGIN_AGENTS[type]
+    const spec = this._loginSpec(type)
     if (!spec) return Promise.resolve(null)
     const inflight = this._hostedLoginProbe.get(type)
     if (inflight) return inflight
@@ -1572,7 +1624,12 @@ export class AgentManager extends EventEmitter {
         this._hostedLoginAuth.set(type, { value, at: Date.now() })
         // Cache is fresh now, so this re-derive won't re-probe. Refresh the type
         // health + bust the agents cache so the list reflects the new state.
-        this._healthByType.set(type, this._hostedLoginHealth(type))
+        // Only pure hosted-login agents get a login-only health verdict cached
+        // here; dual-auth agents (Claude) keep their core/API-key health and
+        // just fold the freshly-cached sign-in state in via _reconcileAgentHealth.
+        if (HOSTED_LOGIN_AGENTS[type]) {
+          this._healthByType.set(type, this._hostedLoginHealth(type))
+        }
         this._agentsCache = { value: [], at: 0 }
         resolve(value)
       }
@@ -1814,7 +1871,10 @@ export class AgentManager extends EventEmitter {
       ? (BUNDLED_REGISTRY as Array<Record<string, unknown>>)
       : []
     return entries.map((e) => {
-      const spec = HOSTED_LOGIN_AGENTS[e.name as string]
+      // Both hosted-login (Cursor/Hermes) and dual-auth (Claude) agents expose a
+      // CLI login the shared registry doesn't carry — inject it so the Configure
+      // dialog / Quick Start (which read check_ready.login_command) offer it too.
+      const spec = this._loginSpec(e.name as string)
       const check_ready = spec
         ? {
             ...((e.check_ready as Record<string, unknown>) || {}),
@@ -1890,7 +1950,9 @@ export class AgentManager extends EventEmitter {
     // stays untouched — same rationale as LAUNCHER_AUTH_OVERRIDES.
     for (const entry of catalog) {
       const e = entry as Record<string, unknown>
-      const spec = HOSTED_LOGIN_AGENTS[e.name as string]
+      // _loginSpec covers both hosted-login (Cursor/Hermes) and dual-auth
+      // (Claude) agents — both surface a CLI login the registry omits.
+      const spec = this._loginSpec(e.name as string)
       if (!spec) continue
       const checkReady = (e.check_ready as Record<string, unknown>) || {}
       e.check_ready = { ...checkReady, login_command: spec.loginCommand }
@@ -2278,18 +2340,25 @@ export class AgentManager extends EventEmitter {
       // Hosted-login agents (e.g. Cursor) sign in through their own service —
       // no key fields, drive the CLI's login instead. See HOSTED_LOGIN_AGENTS.
       const hostedLogin = HOSTED_LOGIN_AGENTS[type]
+      // Dual-auth agents (Claude) keep their API-key fields AND offer a CLI
+      // login. See DUAL_LOGIN_AGENTS.
+      const dualLogin = DUAL_LOGIN_AGENTS[type]
       const envFields = hostedLogin
         ? []
         : override || (regEnv.length > 0 ? regEnv : catEnv)
       const loginCommand = hostedLogin
         ? hostedLogin.loginCommand
-        : override
-          ? null
-          : checkReady.login_command || null
+        : dualLogin
+          ? dualLogin.loginCommand
+          : override
+            ? null
+            : checkReady.login_command || null
       // `prefer_login` keeps an agent on the CLI-login path as PRIMARY even when
       // it also exposes (optional) env fields. Without it, any env field would
-      // force "env" mode.
-      const preferLogin = !!checkReady.prefer_login && !!loginCommand
+      // force "env" mode. Dual-auth agents (Claude) always prefer login — the
+      // browser sign-in is the smoother first-run path, key offered as backup.
+      const preferLogin =
+        (!!checkReady.prefer_login || !!dualLogin) && !!loginCommand
       const authMode: OnboardingAgent["authMode"] = preferLogin
         ? "login"
         : envFields.length > 0
@@ -3029,7 +3098,46 @@ export class AgentManager extends EventEmitter {
     const healthCheck = this._connector!.healthCheck as (
       type: string,
     ) => unknown
-    return healthCheck.call(this._connector, type)
+    const core = healthCheck.call(this._connector, type)
+    // Dual-auth agents (Claude): fold the CLI sign-in state into the core
+    // (API-key) health so onboarding/Configure can show "✓ logged in" and treat
+    // a subscription login (no key) as ready. Adds an explicit `logged_in` flag
+    // the renderer reads to distinguish "signed in via CLI" from "has API key".
+    if (DUAL_LOGIN_AGENTS[type]) return this._dualLoginHealth(type, core)
+    return core
+  }
+
+  /**
+   * Combine a dual-auth agent's core (API-key) health with its CLI sign-in
+   * state. `logged_in` is the cached probe value (true / false / null-unknown);
+   * the read is non-blocking and kicks a background `status` probe when stale.
+   * Ready = installed AND (signed in OR an API key is configured).
+   */
+  private _dualLoginHealth(type: string, core: unknown): Record<string, unknown> {
+    const h = (core && typeof core === "object" ? core : {}) as Record<
+      string,
+      unknown
+    >
+    const loggedIn = this._hostedLoginIsAuthed(type)
+    const installed = this._isInstalled(type) || h.installed === true
+    const hasKey =
+      h.ready === true ||
+      h.auth_mode === "api_key" ||
+      this._hasConfiguredCredentials(type)
+    const ready = installed && (loggedIn === true || hasKey)
+    return {
+      ...h,
+      installed,
+      ready,
+      logged_in: loggedIn,
+      auth_mode:
+        loggedIn === true ? "cli_login" : hasKey ? "api_key" : h.auth_mode ?? null,
+      message: ready
+        ? "Ready"
+        : !installed
+          ? this._notReadyMessage(type)
+          : "Not signed in — log in to Claude or add an API key",
+    }
   }
 
   /**
