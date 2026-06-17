@@ -1,13 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-Firebase token verification for workspace user authentication.
+Identity token verification for workspace user authentication.
 
-Verifies Firebase ID tokens to identify logged-in users (e.g. on workspace.openagents.org).
-Used alongside workspace token auth — not a replacement.
+Verifies the ID token an end user obtained from their login provider — either
+Google (via Firebase, used on workspace.openagents.org) or Sign in with Apple
+(used by the OpenAgents Go iOS app for App Store guideline 4.8 login parity) —
+and resolves it to the user's email. Used alongside workspace-token auth, not
+as a replacement.
+
+Call `verify_identity_token()` for the provider-agnostic path; the
+`verify_firebase_token()` / `verify_apple_token()` helpers remain for callers
+that already know which provider issued the token.
 """
 
 import json
 import logging
+import threading
 from typing import Optional
 
 from app.config import config
@@ -15,6 +23,12 @@ from app.config import config
 logger = logging.getLogger(__name__)
 
 _firebase_initialized = False
+
+# Apple's JWKS endpoint + issuer for Sign in with Apple identity tokens.
+_APPLE_ISSUER = "https://appleid.apple.com"
+_APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
+_apple_jwk_client = None
+_apple_jwk_lock = threading.Lock()
 
 
 def _make_noop_credential():
@@ -95,3 +109,80 @@ def verify_firebase_token(token: str) -> Optional[str]:
     except Exception as e:
         logger.warning("firebase_auth: Token verification failed: %s", e)
         return None
+
+
+def _apple_client_ids() -> list:
+    """Allowed `aud` values for Apple identity tokens (native bundle id + any
+    Services IDs), parsed from the comma-separated APPLE_CLIENT_IDS config."""
+    return [c.strip() for c in config.APPLE_CLIENT_IDS.split(",") if c.strip()]
+
+
+def _get_apple_jwk_client():
+    """Lazily build (and cache) a PyJWKClient for Apple's signing keys.
+
+    PyJWKClient caches fetched keys in-process and re-fetches on a cache miss
+    (e.g. after Apple rotates keys), so one client instance is reused for the
+    life of the process."""
+    global _apple_jwk_client
+    if _apple_jwk_client is None:
+        with _apple_jwk_lock:
+            if _apple_jwk_client is None:
+                from jwt import PyJWKClient
+                _apple_jwk_client = PyJWKClient(_APPLE_JWKS_URL)
+    return _apple_jwk_client
+
+
+def verify_apple_token(token: str) -> Optional[str]:
+    """
+    Verify a Sign in with Apple identity token and return the user's email.
+
+    Validates the RS256 signature against Apple's published JWKS, the issuer
+    (`https://appleid.apple.com`) and the audience (the app's bundle id /
+    Services ID from APPLE_CLIENT_IDS). Returns None on any failure.
+
+    Note: Apple only includes the `email` claim when the app requested the
+    email scope at first consent; it continues to return it on later sign-ins.
+    A user who chose "Hide My Email" gets a private relay address, which is
+    still a stable per-app identifier we can key on.
+    """
+    client_ids = _apple_client_ids()
+    if not client_ids:
+        logger.warning("firebase_auth: APPLE_CLIENT_IDS not configured, cannot verify Apple token")
+        return None
+
+    try:
+        import jwt
+
+        signing_key = _get_apple_jwk_client().get_signing_key_from_jwt(token)
+        decoded = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=client_ids,
+            issuer=_APPLE_ISSUER,
+            options={"require": ["exp", "iss", "aud"]},
+        )
+        email = decoded.get("email")
+        if not email:
+            logger.warning("firebase_auth: Apple token valid but no email claim")
+            return None
+        logger.info("firebase_auth: Verified Apple token for %s", email)
+        return email
+    except Exception as e:
+        logger.warning("firebase_auth: Apple token verification failed: %s", e)
+        return None
+
+
+def verify_identity_token(token: str) -> Optional[str]:
+    """
+    Verify an end-user identity token from any supported login provider and
+    return the user's email.
+
+    Tries Firebase/Google first (the existing web + Google-Sign-In path), then
+    Sign in with Apple. Returns None if neither accepts the token. This is the
+    provider-agnostic entry point new callers should use.
+    """
+    email = verify_firebase_token(token)
+    if email:
+        return email
+    return verify_apple_token(token)

@@ -21,6 +21,12 @@ struct WorkspaceView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var destination: AppDestination = .chats
 
+    // Connect-agents page: auto-shown once per workspace when the workspace has
+    // genuinely no agents (e.g. right after creating one). Gated on the store's
+    // own load state so an in-flight bootstrap isn't mistaken for "no agents".
+    @State private var showConnectAgents = false
+    @State private var connectAgentsAutoShown = false
+
     /// Per-destination unread counts derived from `WorkspaceStore` + the
     /// shared `SessionReadStore`. Recomputed each render — cheap because
     /// session lists are O(tens), not O(thousands).
@@ -39,6 +45,34 @@ struct WorkspaceView: View {
     }
 
     var body: some View {
+        rootContent
+            .sheet(isPresented: $showConnectAgents) {
+                ConnectAgentsView(onClose: { showConnectAgents = false })
+                    .environment(store)
+            }
+            .onAppear { presentConnectAgentsIfEmpty() }
+            .onChange(of: store.isLoading) { _, _ in presentConnectAgentsIfEmpty() }
+            .onChange(of: store.agents.count) { _, _ in presentConnectAgentsIfEmpty() }
+            .onChange(of: store.workspaceId) { _, _ in
+                connectAgentsAutoShown = false
+                presentConnectAgentsIfEmpty()
+            }
+    }
+
+    /// Auto-present the connect-agents page at most once per workspace, and
+    /// ONLY after the store's initial load has completed — `bootstrap()` flips
+    /// `isLoading` to false only after discovery has populated `agents`, so
+    /// before that an agent-having workspace still reads as empty. This reads
+    /// the store's own state instead of kicking off a second (racing)
+    /// discovery, which was the false-positive bug.
+    private func presentConnectAgentsIfEmpty() {
+        guard !store.isLoading, store.agents.isEmpty, !connectAgentsAutoShown else { return }
+        connectAgentsAutoShown = true
+        showConnectAgents = true
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
         #if os(iOS)
         iPhoneTabBar
         #else

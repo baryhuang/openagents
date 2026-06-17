@@ -4,6 +4,7 @@ import SwiftUI
 /// the switch flow (with a "back to current workspace" affordance).
 struct WorkspaceSelectorView: View {
     @Environment(AppRouter.self) private var router
+    @EnvironmentObject private var auth: AuthStore
 
     @State private var urlInput: String = ""
     @State private var error: String?
@@ -11,34 +12,65 @@ struct WorkspaceSelectorView: View {
     @State private var dropdownOpen: Bool = false
     @State private var settingsOpen: Bool = false
 
+    // Account-backed workspaces (the ones this signed-in user can access on any
+    // device), fetched from GET /v1/account/workspaces.
+    @State private var accountWorkspaces: [WorkspaceAPI.AccountWorkspace] = []
+    @State private var loadingAccount = false
+
     // Advanced API URL override — empty = derived from the workspace URL above.
     @State private var advancedOpen: Bool = false
     @State private var apiURLInput: String = ""
 
-    private var topRecents: [WorkspaceHistoryEntry] { Array(history.prefix(3)) }
+    // Create-workspace sheet.
+    @State private var createOpen = false
+    @State private var newWorkspaceName = ""
+    @State private var creating = false
+    @State private var createError: String?
+
+    /// Local recents, minus any workspace already shown in the account section
+    /// (avoids listing the same workspace twice).
+    private var topRecents: [WorkspaceHistoryEntry] {
+        let accountIds = Set(accountWorkspaces.map(\.workspaceId))
+        return Array(history.filter { !accountIds.contains($0.workspaceId) }.prefix(3))
+    }
+
+    /// The API host to query for account workspaces — the workspace we can
+    /// return to when switching, otherwise the canonical default.
+    private var accountAPIBase: URL {
+        if case .selector(let returnTo) = router.route, let entry = returnTo {
+            return entry.resolvedAPIURL
+        }
+        return WorkspaceURLs.defaultAPIURL
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
             BrandColors.bg.ignoresSafeArea()
             VStack(spacing: 28) {
                 header
+                if auth.user != nil && (!accountWorkspaces.isEmpty || loadingAccount) {
+                    accountWorkspacesSection
+                }
                 if !topRecents.isEmpty {
                     recentChipsRow
                 }
                 connectForm
+                createDivider
                 if router.isSwitching {
                     Button {
                         router.returnToCurrent()
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.left")
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
                             Text("Back to current workspace")
+                                .font(BrandFonts.bodyMedium)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 10)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(BrandColors.inkMuted)
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .tint(BrandColors.inkMuted)
                 }
                 Spacer(minLength: 0)
                 hint
@@ -65,12 +97,77 @@ struct WorkspaceSelectorView: View {
         .sheet(isPresented: $settingsOpen) {
             SettingsSheet(isPresented: $settingsOpen)
         }
+        .sheet(isPresented: $createOpen) {
+            createWorkspaceSheet
+        }
         .onAppear {
             history = WorkspaceHistory.shared.entries()
+        }
+        .task(id: auth.user?.email) {
+            await loadAccountWorkspaces()
         }
     }
 
     // MARK: - Sections
+
+    private var accountWorkspacesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("YOUR WORKSPACES")
+                    .font(BrandFonts.sectionEyebrow)
+                    .tracking(0.8)
+                    .foregroundStyle(BrandColors.inkMuted)
+                if loadingAccount {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding(.leading, 4)
+
+            VStack(spacing: 0) {
+                ForEach(accountWorkspaces) { ws in
+                    Button {
+                        connectFromAccount(ws)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "square.grid.2x2")
+                                .font(.caption)
+                                .foregroundStyle(BrandColors.primary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(ws.name.isEmpty ? String(ws.workspaceId.prefix(8)) : ws.name)
+                                    .font(.callout)
+                                    .foregroundStyle(BrandColors.inkStrong)
+                                    .lineLimit(1)
+                                Text(ws.workspaceId)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(BrandColors.inkMuted)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            Spacer(minLength: 8)
+                            if let role = ws.role, role == "owner" {
+                                Text("OWNER")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(BrandColors.inkFaint)
+                            }
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                                .foregroundStyle(BrandColors.inkFaint)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if ws.id != accountWorkspaces.last?.id {
+                        Divider().padding(.leading, 36)
+                    }
+                }
+            }
+            .background(BrandColors.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrandColors.hairline, lineWidth: 0.5))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
     private var header: some View {
         VStack(spacing: 12) {
@@ -115,6 +212,39 @@ struct WorkspaceSelectorView: View {
             name: entry.name,
             appURL: entry.resolvedAppURL,
             apiURL: entry.resolvedAPIURL,
+        )
+    }
+
+    /// Fetch the signed-in user's accessible workspaces. Best-effort: failures
+    /// (offline, older backend without the endpoint) just leave the section
+    /// empty and fall back to local recents.
+    private func loadAccountWorkspaces() async {
+        guard auth.user != nil else {
+            accountWorkspaces = []
+            return
+        }
+        guard let token = await auth.readIdToken() else { return }
+        loadingAccount = true
+        defer { loadingAccount = false }
+        let api = WorkspaceAPI(baseURL: accountAPIBase)
+        if let list = try? await api.listAccountWorkspaces(idToken: token) {
+            accountWorkspaces = list
+        }
+    }
+
+    /// Connect to an account workspace. Reuses the (app URL, API URL) pair from
+    /// local history when this workspace was opened on this device before;
+    /// otherwise connects via the account API host the list came from.
+    private func connectFromAccount(_ ws: WorkspaceAPI.AccountWorkspace) {
+        let existing = history.first { $0.workspaceId == ws.workspaceId }
+        let appURL = existing?.resolvedAppURL ?? WorkspaceURLs.defaultAppURL
+        let apiURL = existing?.resolvedAPIURL ?? accountAPIBase
+        router.connect(
+            workspaceId: ws.workspaceId,
+            token: ws.token ?? "",
+            name: ws.name.isEmpty ? ws.workspaceId : ws.name,
+            appURL: appURL,
+            apiURL: apiURL,
         )
     }
 
@@ -191,6 +321,137 @@ struct WorkspaceSelectorView: View {
             .tint(BrandColors.primary)
             .controlSize(.large)
             .disabled(urlInput.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    /// "or create a new one" affordance under the connect form. Always shown so
+    /// a user can spin up a fresh workspace at any time, not just connect to an
+    /// existing URL.
+    private var createDivider: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Rectangle().fill(BrandColors.hairline).frame(height: 0.5)
+                Text("OR")
+                    .font(BrandFonts.caption)
+                    .foregroundStyle(BrandColors.inkFaint)
+                Rectangle().fill(BrandColors.hairline).frame(height: 0.5)
+            }
+            Button {
+                newWorkspaceName = ""
+                createError = nil
+                createOpen = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle")
+                    Text("Create New Workspace")
+                        .font(BrandFonts.bodyMedium)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .tint(BrandColors.primary)
+        }
+    }
+
+    private var createWorkspaceSheet: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Text("Create Workspace")
+                    .font(BrandFonts.displaySmall)
+                    .foregroundStyle(BrandColors.inkStrong)
+                Spacer()
+                Button {
+                    createOpen = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(BrandColors.inkFaint)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("A workspace is where your agents collaborate. We'll create it and connect you right away.")
+                .font(BrandFonts.callout)
+                .foregroundStyle(BrandColors.inkMuted)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WORKSPACE NAME")
+                    .font(BrandFonts.sectionEyebrow)
+                    .tracking(0.8)
+                    .foregroundStyle(BrandColors.inkFaint)
+                TextField("My Workspace", text: $newWorkspaceName)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .background(BrandColors.surface, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrandColors.hairline, lineWidth: 0.5))
+                    .onSubmit(createWorkspace)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.words)
+                    #endif
+            }
+
+            if let createError {
+                Text(createError)
+                    .font(BrandFonts.caption)
+                    .foregroundStyle(BrandColors.error)
+            }
+
+            Button(action: createWorkspace) {
+                HStack {
+                    if creating {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Text("Create & Connect").font(BrandFonts.bodyMedium)
+                        Image(systemName: "arrow.right")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BrandColors.primary)
+            .controlSize(.large)
+            .disabled(creating || newWorkspaceName.trimmingCharacters(in: .whitespaces).isEmpty)
+
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(maxWidth: 460, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(BrandColors.bg)
+        #if os(macOS)
+        .frame(minWidth: 380, minHeight: 320)
+        #endif
+    }
+
+    private func createWorkspace() {
+        let name = newWorkspaceName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, !creating else { return }
+        creating = true
+        createError = nil
+        Task {
+            let base = accountAPIBase
+            let api = WorkspaceAPI(baseURL: base)
+            do {
+                let created = try await api.createWorkspace(
+                    name: name,
+                    creatorEmail: auth.user?.email,
+                )
+                creating = false
+                createOpen = false
+                router.connect(
+                    workspaceId: created.workspaceId,
+                    token: created.token,
+                    name: created.name,
+                    appURL: WorkspaceURLs.defaultAppURL,
+                    apiURL: base,
+                )
+            } catch {
+                creating = false
+                createError = (error as NSError).localizedDescription
+            }
         }
     }
 

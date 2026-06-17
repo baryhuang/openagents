@@ -26,6 +26,15 @@ class Config:
     # Optional: Firebase service account credentials as JSON string
     FIREBASE_CREDENTIALS_JSON: str = os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
 
+    # Sign in with Apple. Native ("Sign in with Apple" on the iOS app) issues an
+    # identity token whose `aud` is the app's bundle id; web/services flows use
+    # the Services ID instead. Accept a comma-separated allowlist so both work.
+    # Defaults to the iOS bundle id so the OpenAgents Go app validates out of the
+    # box without extra env config.
+    APPLE_CLIENT_IDS: str = os.environ.get(
+        "APPLE_CLIENT_IDS", "org.openagents.workspace"
+    )
+
     # APNs (Apple Push Notification service) — direct, no FCM in between.
     # Token-based auth via a .p8 key generated at
     # developer.apple.com/account/resources/authkeys/list.

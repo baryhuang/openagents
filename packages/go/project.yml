@@ -21,7 +21,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: "0.6.0"
+    MARKETING_VERSION: "0.6.2"
     CURRENT_PROJECT_VERSION: "1"
     PRODUCT_NAME: "OpenAgents Go"
     ENABLE_HARDENED_RUNTIME: YES
@@ -132,8 +132,26 @@ targets:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         com.apple.security.files.user-selected.read-only: true
+        # Sign in with Apple — required as a login option alongside Google
+        # Sign-In for App Store guideline 4.8. Enable the matching capability
+        # on the App ID in the Apple Developer portal or signing will fail.
+        com.apple.developer.applesignin:
+          - Default
         # Production APNs — pushes hit api.push.apple.com, not the sandbox.
         # Dev builds and TestFlight both use this; the only path that needs
         # `development` would be a fresh in-Xcode debug install routing to
         # api.development.push.apple.com (rarely useful for this app).
         aps-environment: production
+schemes:
+  OpenAgentsGo (iOS):
+    build:
+      targets:
+        OpenAgentsGo_iOS: all
+    run:
+      config: Debug
+  OpenAgentsGo (macOS):
+    build:
+      targets:
+        OpenAgentsGo_macOS: all
+    run:
+      config: Debug

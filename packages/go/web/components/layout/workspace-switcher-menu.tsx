@@ -25,6 +25,8 @@ import {
   Shield,
   X,
   ChevronDown,
+  Plus,
+  Loader2,
 } from 'lucide-react';
 import {
   Dialog,
@@ -89,6 +91,7 @@ function WorkspaceSelectorDialog({
 }) {
   const router = useRouter();
   const { workspace, token } = useWorkspace();
+  const { user } = useOpenAgentsAuth();
 
   const [entries, setEntries] = useState<WorkspaceHistoryEntry[]>([]);
   const [urlInput, setUrlInput] = useState('');
@@ -100,6 +103,27 @@ function WorkspaceSelectorDialog({
   const [shareOpen, setShareOpen] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
 
+  // Create-workspace state — mirrors Swift's createWorkspaceSheet.
+  const [createName, setCreateName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    const name = createName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const created = await workspaceApi.createWorkspace(name, user?.email);
+      onOpenChange(false);
+      connectTo(created.workspaceId, created.token);
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : 'Failed to create workspace');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   // Refresh history on each open — matches Swift's `.onAppear { history
   // = WorkspaceHistory.shared.entries() }`.
   useEffect(() => {
@@ -110,6 +134,8 @@ function WorkspaceSelectorDialog({
       setAdvancedOpen(false);
       setDropdownOpen(false);
       setError(null);
+      setCreateName('');
+      setCreateError(null);
     }
   }, [open]);
 
@@ -350,6 +376,49 @@ function WorkspaceSelectorDialog({
                 Connect to Workspace
                 <ArrowRight className="size-4 ml-1" />
               </Button>
+            </div>
+
+            {/* Create a new workspace — always available, mirrors Swift's
+                "Create New Workspace" affordance under the connect form. */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-[10px] font-medium tracking-wider text-muted-foreground">
+                  OR
+                </span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={createName}
+                  onChange={(e) => {
+                    setCreateName(e.target.value);
+                    setCreateError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreate();
+                  }}
+                  placeholder="New workspace name"
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleCreate}
+                  disabled={creating || !createName.trim()}
+                >
+                  {creating ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Plus className="size-4 mr-1" />
+                      Create
+                    </>
+                  )}
+                </Button>
+              </div>
+              {createError && (
+                <p className="text-xs text-destructive px-1">{createError}</p>
+              )}
             </div>
 
             {/* Back to current workspace — only when switching from a

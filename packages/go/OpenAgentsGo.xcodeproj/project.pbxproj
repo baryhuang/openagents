@@ -12,6 +12,8 @@
 		09D41C6E862A35FF92FD186D /* DebugLogSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BFC6779CA9AEA7008F8E130 /* DebugLogSheet.swift */; };
 		0B87DB8BA07CEB69E241145C /* StepParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8BEF28DD556E8D6004C2BC2 /* StepParser.swift */; };
 		0C4791EFADF4966DAB3CA2DE /* OpenAgentsGoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B9D34096F6754E61758DDA7 /* OpenAgentsGoTheme.swift */; };
+		0F69246A31093CFB7BB4E5E3 /* ConnectAgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E87DF0AECA7313FD7759F31 /* ConnectAgentsView.swift */; };
+		11678385615DA1E53EE2B758 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 99C938AB9F33814A2A772DF8 /* PrivacyInfo.xcprivacy */; };
 		14680EB23ACF8C29D5D78444 /* BrandComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72A9E7A79EAB94EC961D9A3 /* BrandComponents.swift */; };
 		151417A50A06B919E11EAA33 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 6038CD9938CBF86839702842 /* GoogleService-Info.plist */; };
 		16385E5C4FF9D0CA3376AA32 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F9C2588A4A9C0C5E36DA1C5 /* APIError.swift */; };
@@ -39,6 +41,7 @@
 		42C1CEF4A0A76D3A9F6BE8BB /* NewThreadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48682F70E0BBB65BE50CF69 /* NewThreadSheet.swift */; };
 		43B89996E8ACA9EA853B1C2D /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77786041AC1E5D020AFE9315 /* WorkspaceView.swift */; };
 		446ACD8FC0FAF3FADBE0140A /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48522F620CC5D424ED098EBE /* RootView.swift */; };
+		44C5FC644330D9F72A21AE16 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 99C938AB9F33814A2A772DF8 /* PrivacyInfo.xcprivacy */; };
 		46794D4E02C36933DCAFDBB1 /* BrandColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8997131415C581AB01D9B615 /* BrandColors.swift */; };
 		472A18F2B5849141C9E09E99 /* Agent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA75C05C810E421587E53523 /* Agent.swift */; };
 		483C8AE5A67BFDA9558041D4 /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12A6515B7075FE8EAE5A481 /* Workspace.swift */; };
@@ -61,6 +64,7 @@
 		6D6012BDA06DF8813B4DAC06 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511AB5EFE9EDD596ADE0FF9C /* AppDelegate.swift */; };
 		6D6C0391D4973A170B08F33E /* MacNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89217CE1F2BCE2E2CD8655F2 /* MacNotifier.swift */; };
 		6EEC478AA9B833DC6D4CE1EE /* A2UISpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913BDDD175A7D65A9A6BCDC7 /* A2UISpec.swift */; };
+		70BE2A16F1F09C66448966DA /* ConnectAgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E87DF0AECA7313FD7759F31 /* ConnectAgentsView.swift */; };
 		7136C8E04D52D76F405FD8A0 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 8D60A8A976BDE02921AD5EC4 /* GoogleSignInSwift */; };
 		740AD543DDC8D97BC3B6BCD2 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48B135DC42112DC8B87C20D3 /* Commands.swift */; };
 		743FDE16AEBFD91B792445F6 /* SettingsTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BBF51F00B08B4D787D79CE1 /* SettingsTabContent.swift */; };
@@ -164,6 +168,7 @@
 		657BCC02FD23538732562FEA /* OpenAgentsGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = OpenAgentsGo.app; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BBF51F00B08B4D787D79CE1 /* SettingsTabContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabContent.swift; sourceTree = "<group>"; };
 		6BFC6779CA9AEA7008F8E130 /* DebugLogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogSheet.swift; sourceTree = "<group>"; };
+		6E87DF0AECA7313FD7759F31 /* ConnectAgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectAgentsView.swift; sourceTree = "<group>"; };
 		7095780EA6A6E59696949B9A /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
 		71C0F9FAA008A4C5DDB894DA /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		740731F27EF4E5B87EBC8214 /* OpenAgents Go.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenAgents Go.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -177,6 +182,7 @@
 		8FD5F352606D678F99957E2F /* AgentColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentColor.swift; sourceTree = "<group>"; };
 		913BDDD175A7D65A9A6BCDC7 /* A2UISpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A2UISpec.swift; sourceTree = "<group>"; };
 		91B2C08AA423DF283FD25539 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		99C938AB9F33814A2A772DF8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9A271EBE7C65A7FB702EAB8A /* FullscreenHTMLSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenHTMLSheet.swift; sourceTree = "<group>"; };
 		9C711AA33A030CA030F2B428 /* A2UIRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = A2UIRendererView.swift; sourceTree = "<group>"; };
 		B12A6515B7075FE8EAE5A481 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
@@ -274,6 +280,7 @@
 				228B021F59D764E763C848BC /* OpenAgents-macOS.entitlements */,
 				5C3BCF5736D0ECDC075EF836 /* OpenAgents.entitlements */,
 				ED3A7C86384A4BFBF462241C /* OpenAgentsApp.swift */,
+				99C938AB9F33814A2A772DF8 /* PrivacyInfo.xcprivacy */,
 				0E7AC2D23590A7EDFC5B56F3 /* Helpers */,
 				ABCCA64FB260EB86C15E4D29 /* Models */,
 				3B78FE7CF6EFC04027819B79 /* Networking */,
@@ -338,6 +345,7 @@
 				B2D1A314CF8BC692761F6F63 /* ChatView.swift */,
 				48B135DC42112DC8B87C20D3 /* Commands.swift */,
 				D7E1E2B60417F9A251427176 /* ComposerTextView.swift */,
+				6E87DF0AECA7313FD7759F31 /* ConnectAgentsView.swift */,
 				B9FA26EFFAD4DCF035A141B3 /* ContentSidebar.swift */,
 				6BFC6779CA9AEA7008F8E130 /* DebugLogSheet.swift */,
 				D1F64D81367061DABBA5EC83 /* FileChipView.swift */,
@@ -477,6 +485,7 @@
 				3A14F9265E6983682208C4C1 /* Assets.xcassets in Resources */,
 				151417A50A06B919E11EAA33 /* GoogleService-Info.plist in Resources */,
 				6D519F768E017AD523414FEA /* PUSH_NOTIFICATIONS.md in Resources */,
+				44C5FC644330D9F72A21AE16 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -487,6 +496,7 @@
 				C7EC2CAA80846A19FF42263F /* Assets.xcassets in Resources */,
 				DF78B120686B12BC605792D1 /* GoogleService-Info.plist in Resources */,
 				96DE164B19DFA5AAD4D78E0B /* PUSH_NOTIFICATIONS.md in Resources */,
+				11678385615DA1E53EE2B758 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -516,6 +526,7 @@
 				7E703418D00E5A308C587C46 /* ChatView.swift in Sources */,
 				740AD543DDC8D97BC3B6BCD2 /* Commands.swift in Sources */,
 				4AD0E8D3B5DE5C67B82B2156 /* ComposerTextView.swift in Sources */,
+				0F69246A31093CFB7BB4E5E3 /* ConnectAgentsView.swift in Sources */,
 				E1878144B53A9FA6E121E76B /* ContentSidebar.swift in Sources */,
 				523F316A244E7D2CC03FC1F1 /* ContentSidebarController.swift in Sources */,
 				80304DE01AC1C95B0BF01885 /* DataDocument.swift in Sources */,
@@ -579,6 +590,7 @@
 				A51F0D9F2D06EE9B22459C81 /* ChatView.swift in Sources */,
 				CCC29C98C7E745BED1930D50 /* Commands.swift in Sources */,
 				C0D9887C30A7EFC26834E6CB /* ComposerTextView.swift in Sources */,
+				70BE2A16F1F09C66448966DA /* ConnectAgentsView.swift in Sources */,
 				9093372B766D9F35E4552730 /* ContentSidebar.swift in Sources */,
 				97D555D7DF9512094DA6E87E /* ContentSidebarController.swift in Sources */,
 				351976AD2D70542C03AA346F /* DataDocument.swift in Sources */,
@@ -765,7 +777,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.6.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -858,7 +870,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.6.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "OpenAgents Go";
