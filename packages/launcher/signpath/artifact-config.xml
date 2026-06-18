@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for the OpenAgents Launcher (Windows).
+
+  This is the version-controlled copy of the artifact configuration that must be
+  pasted into the SignPath portal:
+    Project "openagents" → Artifact Configurations → slug "windows-installers".
+
+  The root element is <zip-file> because the GitHub Actions artifacts connector
+  always delivers the uploaded artifact as a zip. The build uploads only the
+  Windows installers (see the `launcher-windows-tosign` artifact in
+  .github/workflows/desktop-build.yml), so this one config Authenticode-signs:
+    - every *.exe  (NSIS installer + portable build)
+    - the   *.msi  (optional; min-matches=0 so the config still applies if the
+                    msi target is ever dropped)
+
+  Docs: https://docs.signpath.io/artifact-configuration/
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="*.exe" max-matches="unbounded">
+      <authenticode-sign />
+    </pe-file>
+    <msi-file path="*.msi" max-matches="unbounded" min-matches="0">
+      <authenticode-sign />
+    </msi-file>
+  </zip-file>
+</artifact-configuration>

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       sign_windows:
-        description: "Sign Windows EXE/MSI via SignPath (consumes yearly artifact quota)"
+        description: "Sign Windows EXE/MSI via SignPath (Foundation OSS test cert)"
         type: boolean
         default: false
   push:
@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: read   # lets the SignPath connector read the job and download the artifact
 
 jobs:
   build-macos:
@@ -136,6 +137,9 @@ jobs:
     defaults:
       run:
         working-directory: packages/launcher
+    outputs:
+      # Artifact id of the binaries-only upload, consumed by the SignPath action.
+      tosign-artifact-id: ${{ steps.upload-tosign.outputs.artifact-id }}
 
     steps:
       - name: Checkout
@@ -189,99 +193,50 @@ jobs:
             packages/launcher/dist/latest.yml
           if-no-files-found: warn
 
+      # Binaries-only upload that SignPath pulls and signs. Kept separate from the
+      # metadata above so the signed zip comes back containing just the installers.
+      - name: Upload Windows installers for signing
+        id: upload-tosign
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-windows-tosign
+          path: |
+            packages/launcher/dist/*.exe
+            packages/launcher/dist/*.msi
+          if-no-files-found: error
+
   sign-windows:
     needs: build-windows
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.sign_windows
-    env:
-      SIGNPATH_API: https://app.signpath.io/API/v1/298e12fc-6d10-491f-814d-3418cd924ec8
+    permissions:
+      contents: read
+      actions: read
 
     steps:
-      - name: Download unsigned artifacts
+      # SignPath's GitHub connector pulls the binaries-only artifact uploaded by
+      # build-windows, verifies it originated from this workflow (trusted build
+      # system + origin verification), signs every *.exe/*.msi per the
+      # `windows-installers` artifact configuration, then downloads + extracts the
+      # signed zip into ./signed. Switch signing-policy-slug to `release-signing`
+      # once SignPath issues the production certificate.
+      - name: Sign Windows installers via SignPath
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: 3cd61c8a-8f13-4e5c-8e40-93e0a15eef32
+          project-slug: openagents
+          signing-policy-slug: test-signing
+          artifact-configuration-slug: windows-installers
+          github-artifact-id: ${{ needs.build-windows.outputs.tosign-artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Download unsigned artifacts (for update metadata)
         uses: actions/download-artifact@v4
         with:
           name: launcher-windows-unsigned
           path: unsigned
-
-      - name: Sign EXE via SignPath REST API
-        run: |
-          EXE_FILE=$(ls unsigned/*.exe | head -1)
-          echo "Signing $EXE_FILE..."
-
-          # Submit signing request with artifact as multipart form
-          RESPONSE=$(curl -s -X POST "$SIGNPATH_API/SigningRequests" \
-            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" \
-            -F "ProjectSlug=OpenAgents_Launcher" \
-            -F "SigningPolicySlug=OpenAgents_Launcher_Policy" \
-            -F "ArtifactConfigurationSlug=OpenAgents_Launcher_EXE" \
-            -F "Artifact=@$EXE_FILE")
-          echo "Response: $RESPONSE"
-          SIGNING_REQUEST_ID=$(echo "$RESPONSE" | jq -r '.signingRequestId')
-
-          if [ -z "$SIGNING_REQUEST_ID" ] || [ "$SIGNING_REQUEST_ID" = "null" ]; then
-            echo "Failed to create signing request"
-            exit 1
-          fi
-          echo "Signing request ID: $SIGNING_REQUEST_ID"
-
-          # Poll for completion
-          for i in $(seq 1 60); do
-            sleep 10
-            STATUS=$(curl -s "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID" \
-              -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" | jq -r '.status')
-            echo "Status: $STATUS (attempt $i/60)"
-            if [ "$STATUS" = "Completed" ]; then
-              break
-            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Denied" ] || [ "$STATUS" = "Cancelled" ]; then
-              echo "Signing failed: $STATUS"
-              exit 1
-            fi
-          done
-
-          # Download signed artifact
-          mkdir -p signed
-          curl -s -L -o "signed/$(basename $EXE_FILE)" \
-            "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID/SignedArtifact" \
-            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}"
-          echo "Downloaded signed EXE: $(ls -la signed/*.exe)"
-
-      - name: Sign MSI via SignPath REST API
-        run: |
-          MSI_FILE=$(ls unsigned/*.msi | head -1)
-          echo "Signing $MSI_FILE..."
-
-          RESPONSE=$(curl -s -X POST "$SIGNPATH_API/SigningRequests" \
-            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" \
-            -F "ProjectSlug=OpenAgents_Launcher" \
-            -F "SigningPolicySlug=OpenAgents_Launcher_Policy" \
-            -F "ArtifactConfigurationSlug=OpenAgents_Launcher_MSI" \
-            -F "Artifact=@$MSI_FILE")
-          echo "Response: $RESPONSE"
-          SIGNING_REQUEST_ID=$(echo "$RESPONSE" | jq -r '.signingRequestId')
-
-          if [ -z "$SIGNING_REQUEST_ID" ] || [ "$SIGNING_REQUEST_ID" = "null" ]; then
-            echo "Failed to create signing request"
-            exit 1
-          fi
-          echo "Signing request ID: $SIGNING_REQUEST_ID"
-
-          for i in $(seq 1 60); do
-            sleep 10
-            STATUS=$(curl -s "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID" \
-              -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}" | jq -r '.status')
-            echo "Status: $STATUS (attempt $i/60)"
-            if [ "$STATUS" = "Completed" ]; then
-              break
-            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Denied" ] || [ "$STATUS" = "Cancelled" ]; then
-              echo "Signing failed: $STATUS"
-              exit 1
-            fi
-          done
-
-          curl -s -L -o "signed/$(basename $MSI_FILE)" \
-            "$SIGNPATH_API/SigningRequests/$SIGNING_REQUEST_ID/SignedArtifact" \
-            -H "Authorization: Bearer ${{ secrets.SIGNPATH_API_TOKEN }}"
-          echo "Downloaded signed MSI: $(ls -la signed/*.msi)"
 
       - name: Regenerate update metadata for signed EXE
         # SignPath re-signs the EXE *after* electron-builder hashed it, so the
