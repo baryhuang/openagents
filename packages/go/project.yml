@@ -22,7 +22,7 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     MARKETING_VERSION: "0.6.2"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     PRODUCT_NAME: "OpenAgents Go"
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Automatic
@@ -72,9 +72,17 @@ targets:
         # into iOS "Open in…" pickers / share targets and macOS "Open With"
         # menus. We're not the primary handler for any of these (LSHandlerRank:
         # Alternate); on receipt the file becomes a chat-input attachment.
-        # `LSSupportsOpeningDocumentsInPlace` is intentionally omitted: on iOS
-        # the default (no in-place edit, file copied to the Inbox) is what we
-        # want, and the key is rejected by the macOS bundle validator.
+        #
+        # Because CFBundleDocumentTypes is declared, the iOS App Store upload
+        # requires UISupportsDocumentBrowser or LSSupportsOpeningDocumentsInPlace
+        # to be set (else the "Missing Document Configuration" warning). We set
+        # the latter to NO: we don't edit in place — iOS copies the file into
+        # our Inbox, which is the behavior we already relied on as the default.
+        # This is an iOS-only key; the macOS app ships Developer ID (DMG, see
+        # scripts/build-signed-dmg.sh), where notarization ignores it (the old
+        # "rejected by the macOS bundle validator" note was about Mac App Store
+        # validation, which this app does not use).
+        LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: "Attachment"
             CFBundleTypeRole: Viewer
