@@ -678,8 +678,11 @@ class ClineAdapter extends BaseAdapter {
       const cleanup = () => {
         if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
         if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
-        if (proc.stdout) proc.stdout.removeAllListeners();
-        if (proc.stderr) proc.stderr.removeAllListeners();
+        // Drop data/end listeners but KEEP an 'error' guard: a SIGKILL'd child's
+        // pipe can still emit 'error' after we settle, and an unhandled stream
+        // 'error' would crash the process.
+        if (proc.stdout) { proc.stdout.removeAllListeners(); proc.stdout.on('error', () => {}); }
+        if (proc.stderr) { proc.stderr.removeAllListeners(); proc.stderr.on('error', () => {}); }
       };
       const settle = () => {
         if (settled) return;
@@ -769,6 +772,14 @@ class ClineAdapter extends BaseAdapter {
           }
         }
       };
+
+      // Swallow stdio stream errors. When we SIGKILL the process (stop /
+      // watchdog), the child's stdout/stderr pipe can emit an 'error'
+      // (EPIPE/EBADF/ECONNRESET) — notably on macOS — and an unhandled stream
+      // 'error' event would throw and crash the daemon/process. We finalize via
+      // exit/end anyway, so these are safe to ignore.
+      if (proc.stdout) proc.stdout.on('error', () => {});
+      if (proc.stderr) proc.stderr.on('error', () => {});
 
       // stdout: the event stream
       proc.stdout.on('data', (chunk) => {
