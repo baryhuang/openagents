@@ -21,9 +21,30 @@ struct SettingsTabContent: View {
     @State private var saveError: String?
     @State private var saved: Bool = false
 
+    @State private var showDeleteConfirm = false
+    @State private var deleting = false
+    @State private var deleteError: String?
+
     private var currentEntry: WorkspaceHistoryEntry? {
         if case .workspace(let entry) = router.route { return entry }
         return nil
+    }
+
+    /// Public-facing legal + support destinations. These MUST resolve to live
+    /// pages before App Store submission — Review checks the Privacy Policy URL
+    /// and an EULA, and rejects dead links.
+    private enum Legal {
+        static let privacyPolicy = URL(string: "https://openagents.org/privacy")!
+        static let termsOfUse = URL(string: "https://openagents.org/terms")!
+        // Reporting channel for objectionable content / abuse (guideline 1.2).
+        static let reportConcern = URL(string: "mailto:support@openagents.org?subject=Report%20a%20Concern%20(OpenAgents%20Go)")!
+    }
+
+    /// A WorkspaceAPI for identity-scoped calls (account deletion). Account
+    /// deletion isn't workspace-scoped, so this only needs the API base URL —
+    /// prefer the active workspace's, else the default.
+    private var accountAPI: WorkspaceAPI {
+        WorkspaceAPI(baseURL: currentEntry?.resolvedAPIURL ?? WorkspaceURLs.defaultAPIURL)
     }
 
     var body: some View {
@@ -39,6 +60,7 @@ struct SettingsTabContent: View {
                     currentWorkspaceURLs
                 }
                 backendSection
+                legalSection
                 aboutSection
             }
             .padding(20)
@@ -46,6 +68,16 @@ struct SettingsTabContent: View {
         .background(BrandColors.bg)
         .onAppear { seedURLDrafts() }
         .onChange(of: currentEntry?.workspaceId) { _, _ in seedURLDrafts() }
+        .confirmationDialog(
+            "Delete your account?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible,
+        ) {
+            Button("Delete Account", role: .destructive) { performDelete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your account and removes your data — workspace memberships and registered devices — across all workspaces. This can't be undone.")
+        }
     }
 
     private func seedURLDrafts() {
@@ -115,7 +147,91 @@ struct SettingsTabContent: View {
             }
             .padding(12)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+
+            // Account deletion — required by App Store guideline 5.1.1(v).
+            HStack(spacing: 8) {
+                Button(role: .destructive) {
+                    deleteError = nil
+                    showDeleteConfirm = true
+                } label: {
+                    if deleting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Delete Account", systemImage: "trash")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .tint(BrandColors.error)
+                .disabled(deleting)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
+
+            if let deleteError {
+                Text(deleteError)
+                    .font(.caption)
+                    .foregroundStyle(BrandColors.error)
+                    .padding(.horizontal, 4)
+            }
         }
+    }
+
+    private func performDelete() {
+        deleting = true
+        deleteError = nil
+        Task {
+            do {
+                try await auth.deleteAccount(api: accountAPI)
+                // signOut() inside deleteAccount flips auth.user to nil, which
+                // routes the UI back to the login screen.
+            } catch {
+                deleteError = (error as NSError).localizedDescription
+            }
+            deleting = false
+        }
+    }
+
+    // MARK: - Legal & Support
+
+    private var legalSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("LEGAL & SUPPORT")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(BrandColors.inkFaint)
+                .padding(.leading, 4)
+            VStack(alignment: .leading, spacing: 0) {
+                legalRow("Privacy Policy", systemImage: "hand.raised", url: Legal.privacyPolicy)
+                Divider().padding(.leading, 12)
+                legalRow("Terms of Use (EULA)", systemImage: "doc.text", url: Legal.termsOfUse)
+                Divider().padding(.leading, 12)
+                legalRow("Report a Concern", systemImage: "exclamationmark.bubble", url: Legal.reportConcern)
+            }
+            .padding(.vertical, 4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func legalRow(_ title: String, systemImage: String, url: URL) -> some View {
+        Link(destination: url) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .frame(width: 20)
+                    .foregroundStyle(BrandColors.primary)
+                Text(title)
+                    .font(.callout)
+                    .foregroundStyle(BrandColors.inkStrong)
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption)
+                    .foregroundStyle(BrandColors.inkFaint)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Workspace URLs (editable)

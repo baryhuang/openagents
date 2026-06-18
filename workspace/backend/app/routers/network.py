@@ -111,8 +111,8 @@ def _verify_workspace_access(workspace, token: Optional[str], authorization: Opt
         return True
     bearer = _extract_bearer(authorization)
     if bearer:
-        from app.firebase_auth import verify_firebase_token
-        email = verify_firebase_token(bearer)
+        from app.firebase_auth import verify_identity_token
+        email = verify_identity_token(bearer)
         if email:
             email_lower = email.lower()
             # Owner check

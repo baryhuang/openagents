@@ -13,10 +13,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/lib/auth-context';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
-import { listMyWorkspaces, createWorkspace, type WorkspaceSummary } from '@/lib/dashboard-api';
+import { workspaceApi } from '@/lib/api';
 import { timeAgo } from '@/lib/helpers';
+
+// Unified workspace shape for the dashboard. Sourced from the real backend —
+// /v1/account/workspaces (creator + collaborator, carries the connect token)
+// with a fallback to /v1/workspaces?creator_email=. Replaces the old
+// dashboard-api WorkspaceSummary that targeted the non-existent /v1/ws route.
+type WorkspaceSummary = {
+  workspaceId: string;
+  slug: string | null;
+  name: string;
+  status?: string;
+  token?: string | null;
+  agentCount?: number;
+  lastActivityAt?: string | null;
+  role?: string | null;
+};
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
 // ---------------------------------------------------------------------------
@@ -346,18 +360,21 @@ function CreateWorkspaceForm({
   onCancel: () => void;
 }) {
   const router = useRouter();
-  const [agentName, setAgentName] = useState('');
+  const { user } = useOpenAgentsAuth();
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!agentName.trim()) return;
+    if (!name.trim()) return;
     setError('');
     setLoading(true);
     try {
-      const ws = await createWorkspace(agentName.trim(), name.trim() || undefined);
+      // Real backend create — POST /v1/workspaces (same as the switcher + the
+      // Swift app). No agent required: agents join afterward via the connect
+      // page. Returns the access token to open the new workspace.
+      const ws = await workspaceApi.createWorkspace(name.trim(), user?.email);
       onCreated();
       router.push(`/${ws.slug}?token=${ws.token}`);
     } catch (err: unknown) {
@@ -373,16 +390,11 @@ function CreateWorkspaceForm({
           <h3 className="font-medium text-sm">New Workspace</h3>
           <div className="space-y-2">
             <Input
-              placeholder="Agent name (required)"
-              value={agentName}
-              onChange={(e) => setAgentName(e.target.value)}
-              required
-              autoFocus
-            />
-            <Input
-              placeholder="Workspace name (optional)"
+              placeholder="Workspace name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
             />
           </div>
           {error && <p className="text-xs text-destructive">{error}</p>}
@@ -408,10 +420,16 @@ function CreateWorkspaceForm({
 function WorkspaceCard({ workspace }: { workspace: WorkspaceSummary }) {
   const router = useRouter();
 
+  // Owners/collaborators can open without a ?token= (the workspace page
+  // authenticates via the Firebase bearer); include the token when we have it.
+  const href = workspace.token
+    ? `/${workspace.slug}?token=${encodeURIComponent(workspace.token)}`
+    : `/${workspace.slug}`;
+
   return (
     <Card
       className="cursor-pointer transition-colors hover:border-primary/30 hover:bg-accent/5"
-      onClick={() => router.push(`/${workspace.slug}?token=${workspace.token}`)}
+      onClick={() => router.push(href)}
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
@@ -419,16 +437,22 @@ function WorkspaceCard({ workspace }: { workspace: WorkspaceSummary }) {
             <h3 className="font-medium truncate">{workspace.name}</h3>
             <p className="text-xs text-muted-foreground font-mono">{workspace.slug}</p>
           </div>
-          <Badge variant={workspace.status === 'active' ? 'primary' : 'secondary'} className="shrink-0 text-xs">
-            {workspace.status === 'archived' && <Archive className="size-3 mr-1" />}
-            {workspace.status}
-          </Badge>
+          {workspace.role === 'owner' ? (
+            <Badge variant="secondary" className="shrink-0 text-xs">Owner</Badge>
+          ) : workspace.status ? (
+            <Badge variant={workspace.status === 'active' ? 'primary' : 'secondary'} className="shrink-0 text-xs">
+              {workspace.status === 'archived' && <Archive className="size-3 mr-1" />}
+              {workspace.status}
+            </Badge>
+          ) : null}
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Users className="size-3" />
-            {workspace.agentCount} agent{workspace.agentCount !== 1 ? 's' : ''}
-          </span>
+          {workspace.agentCount !== undefined && (
+            <span className="flex items-center gap-1">
+              <Users className="size-3" />
+              {workspace.agentCount} agent{workspace.agentCount !== 1 ? 's' : ''}
+            </span>
+          )}
           {workspace.lastActivityAt && (
             <span className="flex items-center gap-1">
               <Clock className="size-3" />
@@ -446,8 +470,7 @@ function WorkspaceCard({ workspace }: { workspace: WorkspaceSummary }) {
 // ---------------------------------------------------------------------------
 
 function Dashboard() {
-  const { user, logout } = useAuth();
-  const { user: googleUser, signOut: googleSignOut } = useOpenAgentsAuth();
+  const { user: googleUser, idToken, signOut: googleSignOut } = useOpenAgentsAuth();
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -457,14 +480,48 @@ function Dashboard() {
     setLoading(true);
     setError('');
     try {
-      const data = await listMyWorkspaces();
-      setWorkspaces(data.items);
+      // Primary: the real "my workspaces" endpoint (creator + collaborator,
+      // carries the connect token). Authenticated by the Firebase bearer.
+      if (!idToken) {
+        setWorkspaces([]);
+        return;
+      }
+      try {
+        const items = await workspaceApi.listAccountWorkspaces(idToken);
+        setWorkspaces(
+          items.map((w) => ({
+            workspaceId: w.workspaceId,
+            slug: w.slug,
+            name: w.name,
+            token: w.token,
+            role: w.role,
+            lastActivityAt: w.lastActivityAt,
+          })),
+        );
+      } catch {
+        // Fallback for backends without /v1/account/workspaces yet: list
+        // workspaces the user created. (No collaborator workspaces, no token —
+        // owners still open via the bearer.)
+        const email = googleUser?.email;
+        if (!email) throw new Error('Not signed in');
+        const items = await workspaceApi.listWorkspacesByCreator(email);
+        setWorkspaces(
+          items.map((w) => ({
+            workspaceId: w.workspaceId,
+            slug: w.slug,
+            name: w.name,
+            status: w.status,
+            agentCount: Array.isArray(w.agents) ? w.agents.length : 0,
+            lastActivityAt: w.lastActivityAt,
+          })),
+        );
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load workspaces');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [idToken, googleUser?.email]);
 
   useEffect(() => {
     load();
@@ -488,15 +545,15 @@ function Dashboard() {
                 referrerPolicy="no-referrer"
                 className="size-7 rounded-full object-cover"
               />
-            ) : (googleUser || user) ? (
+            ) : googleUser ? (
               <div className="size-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-bold">
-                {((googleUser?.email || user?.email) ?? '?')[0].toUpperCase()}
+                {(googleUser?.email ?? '?')[0].toUpperCase()}
               </div>
             ) : null}
             <span className="text-sm text-muted-foreground hidden sm:inline">
-              {googleUser?.displayName || googleUser?.email || user?.email}
+              {googleUser?.displayName || googleUser?.email}
             </span>
-            <Button variant="ghost" size="sm" onClick={googleUser ? googleSignOut : logout}>
+            <Button variant="ghost" size="sm" onClick={googleSignOut}>
               <LogOut className="size-4" />
             </Button>
           </div>
@@ -608,10 +665,9 @@ function LoginScreen() {
 // ---------------------------------------------------------------------------
 
 export default function HomePage() {
-  const { user, loading } = useAuth();
   const openAgentsAuth = useOpenAgentsAuth();
 
-  if (loading || openAgentsAuth.loading) {
+  if (openAgentsAuth.loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -619,8 +675,8 @@ export default function HomePage() {
     );
   }
 
-  // Logged in via either auth system → show dashboard
-  if (user || openAgentsAuth.user) return <Dashboard />;
+  // Single auth system — Firebase (Google/Apple). Signed in → dashboard.
+  if (openAgentsAuth.user) return <Dashboard />;
 
   // Not logged in → require sign-in
   return <LoginScreen />;

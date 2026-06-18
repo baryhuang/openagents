@@ -1,8 +1,9 @@
 import SwiftUI
+import AuthenticationServices
 
-/// Shown when no Firebase user is signed in. Mirrors the web LoginScreen:
-/// centered card with the app icon, title, subtitle, and a single
-/// "Sign in with Google" button.
+/// Shown when no user is signed in. Mirrors the web LoginScreen: centered card
+/// with the app icon, title, subtitle, and the login options — Google plus
+/// Sign in with Apple (required for App Store guideline 4.8 login parity).
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthStore
     @State private var signingIn = false
@@ -20,7 +21,7 @@ struct LoginView: View {
                     .tracking(3.2)
                     .foregroundStyle(BrandColors.primary)
                     .padding(.top, 2)
-                Text("Continue with your Google account to access your workspaces.")
+                Text("Continue with your Google or Apple account to access your workspaces.")
                     .font(BrandFonts.callout)
                     .foregroundStyle(BrandColors.inkMuted)
                     .multilineTextAlignment(.center)
@@ -28,32 +29,54 @@ struct LoginView: View {
                     .padding(.top, 8)
             }
 
-            Button {
-                Task {
-                    signingIn = true
-                    await auth.signIn()
-                    signingIn = false
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    if signingIn {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "g.circle.fill")
-                            .font(.system(size: 18))
+            // Both providers, identical footprint: full width, 52pt tall, same
+            // 12pt corner radius. Google is a custom button following Google's
+            // light-theme branding (white field, official multicolor "G",
+            // #1F1F1F text); Apple is the system SignInWithAppleButton.
+            VStack(spacing: 12) {
+                Button {
+                    Task {
+                        signingIn = true
+                        await auth.signIn()
+                        signingIn = false
                     }
-                    Text(signingIn ? "Signing in…" : "Sign in with Google")
-                        .font(BrandFonts.bodyMedium)
+                } label: {
+                    HStack(spacing: 12) {
+                        if signingIn {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image("GoogleLogo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                        }
+                        Text("Sign in with Google")
+                            .font(BrandFonts.bodyMedium)
+                            .foregroundStyle(Color(red: 0.122, green: 0.122, blue: 0.122))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color(white: 0.85), lineWidth: 1),
+                    )
                 }
-                .frame(maxWidth: 280)
-                .padding(.vertical, 12)
+                .buttonStyle(.plain)
+                .disabled(signingIn)
+
+                SignInWithAppleButton(.signIn) { request in
+                    auth.configureAppleRequest(request)
+                } onCompletion: { result in
+                    auth.handleAppleAuthorization(result)
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .disabled(signingIn)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(BrandColors.primary)
-            .controlSize(.large)
-            .disabled(signingIn)
+            .frame(maxWidth: 320)
 
             if let error = auth.lastError {
                 Text(error)

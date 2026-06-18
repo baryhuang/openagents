@@ -622,6 +622,75 @@ actor WorkspaceAPI {
         _ = try await send(request, as: Empty.self)
     }
 
+    // MARK: - Account
+
+    /// A workspace the signed-in user can access, as returned by
+    /// `GET /v1/account/workspaces`. This is the account-backed equivalent of a
+    /// local `WorkspaceHistoryEntry` — it carries the connect `token` so the
+    /// client can join directly on any device.
+    struct AccountWorkspace: Decodable, Sendable, Identifiable, Equatable {
+        let workspaceId: String
+        let name: String
+        let slug: String?
+        let token: String?
+        let role: String?
+        let lastActivityAt: String?
+
+        var id: String { workspaceId }
+    }
+
+    /// Result of creating a workspace via `POST /v1/workspaces`.
+    struct CreatedWorkspace: Decodable, Sendable {
+        let workspaceId: String
+        let slug: String?
+        let name: String
+        let token: String
+    }
+
+    /// Create a new workspace owned by the signed-in user. Doesn't require a
+    /// configured workspace token (there's no workspace yet) — the backend
+    /// stamps `creator_email` and returns the access token to connect with.
+    func createWorkspace(name: String, creatorEmail: String?) async throws -> CreatedWorkspace {
+        struct Body: Encodable {
+            let name: String
+            let creator_email: String?
+        }
+        let bodyData = try JSONEncoder().encode(Body(name: name, creator_email: creatorEmail))
+        var request = URLRequest(url: baseURL.appendingPathComponent("/v1/workspaces"))
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bodyData
+        return try await send(request, as: CreatedWorkspace.self)
+    }
+
+    /// List every workspace the signed-in user can access (creator or
+    /// collaborator). Identity-scoped: authenticated by the identity bearer, so
+    /// it doesn't require a configured workspace token.
+    func listAccountWorkspaces(idToken: String) async throws -> [AccountWorkspace] {
+        var request = URLRequest(url: baseURL.appendingPathComponent("/v1/account/workspaces"))
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        return try await send(request, as: [AccountWorkspace].self)
+    }
+
+    /// Permanently delete the signed-in user's account data via
+    /// `DELETE /v1/account`. Authenticated by the identity bearer token (Google
+    /// or Apple), NOT the workspace token — deletion spans every workspace the
+    /// user touched, so it isn't scoped to one workspace's credentials.
+    /// Implements the server side of App Store guideline 5.1.1(v).
+    func deleteAccount(idToken: String) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("/v1/account"))
+        request.httpMethod = "DELETE"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        struct Empty: Decodable, Sendable {}
+        _ = try await send(request, as: Empty.self)
+    }
+
     // MARK: - File uploads
 
     /// Backend response for `POST /v1/files`.

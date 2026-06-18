@@ -14,6 +14,7 @@ import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 import { MonitorGrid } from '@/components/monitor/monitor-grid';
 import { BrowserView } from '@/components/browser/browser-view';
 import { RightTabbedPanel } from './right-tabbed-panel';
+import { ConnectAgentsEmpty } from '@/components/agents/connect-agents-empty';
 import { useWorkspace } from '@/lib/workspace-context';
 
 export function Wrapper() {
@@ -26,7 +27,33 @@ export function Wrapper() {
     splitBrowser,
     showBrowserPreview,
   } = useLayout();
-  const { monitorMode } = useWorkspace();
+  const { monitorMode, agents, loading } = useWorkspace();
+
+  // No agents yet (e.g. just-created workspace) → show the connect-agents page
+  // in place of the chat, keeping the sidebar so the workspace switcher /
+  // create action stay reachable. Mirrors Swift's auto-presented
+  // ConnectAgentsView. Gate on !loading so it doesn't flash before discovery.
+  const noAgents = !loading && agents.length === 0;
+  if (noAgents) {
+    if (isMobile) {
+      return (
+        <div className="flex flex-col h-screen w-full [&_.container-fluid]:px-5">
+          <MobileHeader />
+          <div className="flex-1 min-h-0 pt-[var(--header-height-mobile)]">
+            <ConnectAgentsEmpty />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex h-screen w-full [&_.container-fluid]:px-5">
+        <Sidebar />
+        <div className="flex flex-col flex-1 min-w-0 w-full">
+          <ConnectAgentsEmpty />
+        </div>
+      </div>
+    );
+  }
 
   // ─── Mobile: single-pane push/pop ──────────────────────────────
   // Swift's NavigationSplitView collapses to NavigationStack on

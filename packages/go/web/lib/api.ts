@@ -93,6 +93,60 @@ class WorkspaceApi {
   // Workspace CRUD (REST endpoints — not event-based)
   // ---------------------------------------------------------------------------
 
+  /** Create a new workspace owned by the signed-in user. Mirrors Swift's
+   *  WorkspaceAPI.createWorkspace — POST /v1/workspaces with the creator's
+   *  email; the backend returns the access token to connect with. No workspace
+   *  scope needed (there's none yet). */
+  async createWorkspace(
+    name: string,
+    creatorEmail?: string,
+  ): Promise<{ workspaceId: string; slug: string; name: string; token: string }> {
+    return this.request(`/v1/workspaces`, {
+      method: 'POST',
+      body: JSON.stringify({ name, creator_email: creatorEmail }),
+    });
+  }
+
+  /** A workspace the signed-in user can access. Mirrors Swift's
+   *  WorkspaceAPI.AccountWorkspace + the backend's /v1/account/workspaces. */
+  async listAccountWorkspaces(bearerToken: string): Promise<Array<{
+    workspaceId: string;
+    name: string;
+    slug: string | null;
+    token: string | null;
+    role: string | null;
+    lastActivityAt: string | null;
+  }>> {
+    // Identity-scoped — send the Firebase/Apple bearer, NOT a workspace token.
+    const res = await fetch(`${API_URL}/v1/account/workspaces`, {
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bearerToken}` },
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    return (await res.json()).data;
+  }
+
+  /** Fallback list for backends that don't yet expose /v1/account/workspaces:
+   *  the long-standing GET /v1/workspaces?creator_email=. Returns only
+   *  workspaces the user CREATED (no collaborator ones) and no token (owners
+   *  authenticate via the bearer instead). */
+  async listWorkspacesByCreator(email: string): Promise<Array<{
+    workspaceId: string;
+    slug: string;
+    name: string;
+    status: string;
+    createdAt: string | null;
+    lastActivityAt: string | null;
+    agents: unknown[];
+  }>> {
+    const res = await fetch(
+      `${API_URL}/v1/workspaces?creator_email=${encodeURIComponent(email)}`,
+      { cache: 'no-store', headers: { 'Content-Type': 'application/json' } },
+    );
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    return (await res.json()).data;
+  }
+
   async getWorkspace(): Promise<Workspace> {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`);
   }
