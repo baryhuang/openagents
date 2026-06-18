@@ -48,7 +48,6 @@ export function MermaidBlock({
 		let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
 		async function renderDiagram() {
-			setSvg(null);
 			setError(null);
 
 			try {
