@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { BookOpen, Plus, RefreshCw, Pencil, Trash2, ArrowLeft } from 'lucide-react';
-import { useWorkspace } from '@/lib/workspace-context';
-import { workspaceApi } from '@/lib/api';
-import { KnowledgeEditor } from './knowledge-editor';
+import { ArrowLeft, BookOpen, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { MarkdownContent } from '@/components/chat/markdown-content';
-import type { KnowledgeEntry } from '@/lib/types';
 import { useLayout } from '@/components/layout/layout-context';
+import { workspaceApi } from '@/lib/api';
+import type { KnowledgeEntry } from '@/lib/types';
+import { useWorkspace } from '@/lib/workspace-context';
+import { KnowledgeEditor } from './knowledge-editor';
 
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return '';
@@ -99,6 +99,7 @@ export function KnowledgeView() {
         </div>
         <div className="flex items-center gap-1">
           <button
+            type="button"
             onClick={() => { setEditingEntry(null); setEditorOpen(true); }}
             className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
             title="New entry"
@@ -106,6 +107,7 @@ export function KnowledgeView() {
             <Plus className="size-3.5" />
           </button>
           <button
+            type="button"
             onClick={refreshKnowledge}
             className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
             title="Refresh"
@@ -122,6 +124,7 @@ export function KnowledgeView() {
             <p className="text-sm">No knowledge entries yet</p>
             <p className="text-xs opacity-60">Create shared knowledge for your agents</p>
             <button
+              type="button"
               onClick={() => { setEditingEntry(null); setEditorOpen(true); }}
               className="mt-2 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             >
@@ -131,42 +134,46 @@ export function KnowledgeView() {
         ) : (
           <div className="divide-y divide-border">
             {knowledge.map((entry) => (
-              <button
+              <div
                 key={entry.id}
-                onClick={() => handleSelect(entry)}
-                className={`w-full text-left px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group ${
+                className={`flex items-start justify-between gap-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group ${
                   selectedId === entry.id ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{entry.title}</p>
-                    {entry.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{entry.description}</p>
-                    )}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-muted-foreground/60 font-mono">@knowledge:{entry.slug}</span>
-                      <span className="text-[10px] text-muted-foreground/60">{timeAgo(entry.updatedAt || entry.createdAt)}</span>
-                    </div>
+                <button
+                  type="button"
+                  aria-current={selectedId === entry.id ? 'true' : undefined}
+                  onClick={() => handleSelect(entry)}
+                  className="min-w-0 flex-1 px-4 py-3 text-left"
+                >
+                  <p className="text-sm font-medium truncate">{entry.title}</p>
+                  {entry.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{entry.description}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-muted-foreground/60 font-mono">@knowledge:{entry.slug}</span>
+                    <span className="text-[10px] text-muted-foreground/60">{timeAgo(entry.updatedAt || entry.createdAt)}</span>
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleEdit(entry); }}
-                      className="p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-muted-foreground"
-                      title="Edit"
-                    >
-                      <Pencil className="size-3" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}
-                      className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500"
-                      title="Delete"
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
-                  </div>
+                </button>
+                <div className="flex items-center gap-1 py-3 pr-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleEdit(entry); }}
+                    className="p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-muted-foreground"
+                    title="Edit"
+                  >
+                    <Pencil className="size-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}
+                    className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500"
+                    title="Delete"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
@@ -187,7 +194,7 @@ export function KnowledgeView() {
       <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           {isMobile && (
-            <button onClick={() => setMobileDetail(false)} className="p-1 -ml-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+            <button type="button" onClick={() => setMobileDetail(false)} className="p-1 -ml-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
               <ArrowLeft className="size-4" />
             </button>
           )}
@@ -196,6 +203,7 @@ export function KnowledgeView() {
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
+            type="button"
             onClick={() => handleEdit(selectedEntry)}
             className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
             title="Edit"
