@@ -116,7 +116,8 @@ agn connect my-agent <workspace-token>    # connect agent into workspace
 | **Hermes Agent** | ✅ Supported | Nous Hermes CLI with tools, profiles, and memory |
 | **Cursor** | ✅ Supported | AI code editor |
 | **OpenCode** | ✅ Supported | Open-source terminal agent |
-| Aider, Goose, Gemini CLI, Copilot, Amp | 🔜 Coming soon | |
+| **GitHub Copilot CLI** | ✅ Supported | GitHub's official `copilot` CLI ([guide](docs/agents/github-copilot-cli.md)) |
+| Aider, Goose, Gemini CLI, Amp | 🔜 Coming soon | |
 
 ---
 

@@ -10,6 +10,39 @@ const { EnvManager } = require('./env');
 const STATUS_CACHE_TTL_MS = 10000;
 const statusCache = new Map();
 
+// Version detection is comparatively expensive (spawns `<bin> --version`), so
+// results are cached briefly and invalidated on install/uninstall.
+const VERSION_CACHE_TTL_MS = 60000;
+const versionCache = new Map();
+
+/**
+ * Compare two dotted version strings numerically, ignoring any pre-release /
+ * build suffix (e.g. "1.2.3-beta.1" → 1.2.3). Returns -1, 0, or 1.
+ * Returns null when either side has no extractable numeric version.
+ */
+function compareVersions(a, b) {
+  const norm = (v) => {
+    const m = String(v == null ? '' : v).match(/\d+(?:\.\d+)*/);
+    return m ? m[0].split('.').map((n) => parseInt(n, 10)) : null;
+  };
+  const pa = norm(a);
+  const pb = norm(b);
+  if (!pa || !pb) return null;
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+/** Drop the version cache (called on install/uninstall). */
+function clearVersionCache() {
+  versionCache.clear();
+}
+
 /**
  * Manages installation and uninstallation of agent runtimes.
  *
@@ -164,8 +197,11 @@ class Installer {
           installed: false,
           binary: null,
           version: null,
+          compatible: null,
+          min_version: null,
           ready: false,
           auth_mode: null,
+          auth_status: null,
           execution_mode: 'unavailable',
           message: 'Not installed',
         };
@@ -175,6 +211,8 @@ class Installer {
         installed: true,
         binary: null,
         version: null,
+        compatible: true,
+        min_version: null,
         ...this._evaluateReadiness(agentType, entry, null),
       };
     }
@@ -185,8 +223,11 @@ class Installer {
         installed: false,
         binary: null,
         version: null,
+        compatible: null,
+        min_version: null,
         ready: false,
         auth_mode: null,
+        auth_status: null,
         execution_mode: 'unavailable',
         message: 'Not installed',
       };
@@ -194,6 +235,39 @@ class Installer {
 
     const checkCmd = entry && entry.install ? entry.install.check_command : null;
     const versionCmd = checkCmd || `${entry && entry.install && entry.install.binary || agentType} --version`;
+
+    const version = this._detectVersion(binary, versionCmd);
+    const readiness = this._evaluateReadiness(agentType, entry, binary);
+
+    // Generic minimum-version gate (no per-agent special-casing). An entry opts
+    // in by declaring `install.min_version`. Below the floor we keep
+    // installed=true but force compatible=false + ready=false so the launcher
+    // blocks the run and prompts an upgrade (never shows "not installed"). When
+    // the version can't be parsed we report compatible=null ("unknown") rather
+    // than falsely passing the gate, and do NOT hard-block readiness.
+    const gate = this._evaluateCompatibility(entry, version);
+    if (gate.compatible === false) {
+      readiness.ready = false;
+      readiness.message = gate.message;
+    }
+
+    return {
+      installed: true,
+      binary,
+      version,
+      compatible: gate.compatible,
+      min_version: gate.minVersion,
+      ...readiness,
+    };
+  }
+
+  /**
+   * Detect a binary's version string, cached briefly. Returns null on failure.
+   */
+  _detectVersion(binary, versionCmd) {
+    const key = `${binary}\0${versionCmd}`;
+    const cached = versionCache.get(key);
+    if (cached && (Date.now() - cached.ts) < VERSION_CACHE_TTL_MS) return cached.version;
 
     let version = null;
     try {
@@ -205,11 +279,36 @@ class Installer {
       }).trim();
       // Extract version number (e.g. "openclaw 2024.1.5" → "2024.1.5")
       const match = raw.match(/(\d+[\d.]+\d+)/);
-      version = match ? match[1] : raw.split('\n')[0];
+      version = match ? match[1] : (raw.split('\n')[0] || null);
     } catch {}
 
-    const readiness = this._evaluateReadiness(agentType, entry, binary);
-    return { installed: true, binary, version, ...readiness };
+    versionCache.set(key, { version, ts: Date.now() });
+    return version;
+  }
+
+  /**
+   * Evaluate `install.min_version` against a detected version. Generic for any
+   * agent. Returns { compatible: true|false|null, minVersion, message }.
+   *   • no min_version declared → compatible:true (gate disabled)
+   *   • version unparseable      → compatible:null  ("unknown", don't false-pass)
+   *   • version < min_version    → compatible:false (block + upgrade hint)
+   *   • version >= min_version   → compatible:true
+   */
+  _evaluateCompatibility(entry, version) {
+    const minVersion = (entry && entry.install && entry.install.min_version) || null;
+    if (!minVersion) return { compatible: true, minVersion: null, message: null };
+    const cmp = compareVersions(version, minVersion);
+    if (cmp === null) {
+      return { compatible: null, minVersion, message: `Version unknown (requires >= ${minVersion})` };
+    }
+    if (cmp < 0) {
+      return {
+        compatible: false,
+        minVersion,
+        message: `${(entry.label || entry.name || 'This agent')} ${version} is too old — upgrade to ${minVersion} or newer.`,
+      };
+    }
+    return { compatible: true, minVersion, message: null };
   }
 
   _evaluateReadiness(agentType, entry, binary) {
@@ -218,6 +317,7 @@ class Installer {
       return {
         ready: true,
         auth_mode: null,
+        auth_status: 'ready',
         execution_mode: 'unavailable',
         message: 'Ready',
       };
@@ -240,6 +340,7 @@ class Installer {
       return {
         ready: true,
         auth_mode: 'api_key',
+        auth_status: 'ready',
         execution_mode: 'direct',
         message: 'Ready',
       };
@@ -249,6 +350,7 @@ class Installer {
       return {
         ready: true,
         auth_mode: 'cli_login',
+        auth_status: 'ready',
         execution_mode: 'subprocess',
         message: 'Ready',
       };
@@ -261,6 +363,7 @@ class Installer {
       return {
         ready: true,
         auth_mode: 'api_key',
+        auth_status: 'ready',
         execution_mode: 'direct',
         message: 'Ready',
       };
@@ -270,14 +373,21 @@ class Installer {
       return {
         ready: true,
         auth_mode: 'cli_login',
+        auth_status: 'ready',
         execution_mode: 'subprocess',
         message: 'Ready',
       };
     }
 
+    // No positive signal. For agents whose auth cannot be reliably probed
+    // without running them (generic `check_ready.unverifiable`), this is
+    // 'unknown' — they may already be signed in via a CLI login / keychain /
+    // gh — NOT a definitive 'no_credentials'. The launcher can show "unknown"
+    // and still allow a launch attempt; the real run is the final authority.
     return {
       ready: false,
       auth_mode: null,
+      auth_status: checkReady.unverifiable ? 'unknown' : 'no_credentials',
       execution_mode: 'unavailable',
       message: checkReady.not_ready_message || 'Not configured',
     };
@@ -772,6 +882,7 @@ class Installer {
     // pre-install snapshot. Without this, install completes but UI keeps
     // showing "not installed" until the cache expires.
     try { clearBinaryLookupCache(); } catch {}
+    try { clearVersionCache(); } catch {}
   }
 
   _markUninstalled(agentType) {
@@ -794,6 +905,7 @@ class Installer {
 
     // Symmetric with _markInstalled: invalidate so detection re-runs cleanly.
     try { clearBinaryLookupCache(); } catch {}
+    try { clearVersionCache(); } catch {}
   }
 
   // -- Shell env + exec --
@@ -1207,4 +1319,4 @@ class Installer {
   }
 }
 
-module.exports = { Installer };
+module.exports = { Installer, compareVersions, clearVersionCache };

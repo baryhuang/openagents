@@ -311,7 +311,7 @@ const DUAL_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
  * an API key, so they're a rougher first-run experience than the key-only
  * agents; keep onboarding to the smoother options.
  */
-const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes"])
+const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes", "copilot"])
 
 /**
  * The agents the launcher/workspace core officially supports today, in the
@@ -332,6 +332,7 @@ const CORE_AGENTS: readonly string[] = [
   "hermes",
   "kimi",
   "gemini",
+  "copilot",
 ]
 const CORE_AGENT_ORDER = new Map<string, number>(
   CORE_AGENTS.map((name, i) => [name, i]),

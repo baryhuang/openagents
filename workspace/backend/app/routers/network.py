@@ -624,9 +624,9 @@ _AGENT_CATALOG = [
     {
         "name": "copilot",
         "label": "GitHub Copilot CLI",
-        "description": "GitHub Copilot coding agent for the terminal",
+        "description": "GitHub's official Copilot coding agent for the terminal (the `copilot` CLI, not the retired `gh copilot` extension)",
         "install_command": "npm install -g @github/copilot",
-        "homepage": "https://github.com/features/copilot",
+        "homepage": "https://github.com/github/copilot-cli",
         "tags": ["coding", "github", "cli"],
         "builtin": False,
     },

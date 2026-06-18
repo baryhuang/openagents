@@ -5,12 +5,40 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { Installer } = require('../src/installer');
+const { Installer, compareVersions, clearVersionCache } = require('../src/installer');
 
 let tmpDir;
 
 const mockRegistry = {
   getEntry: (name) => {
+    if (name === 'gated') {
+      return {
+        name: 'gated',
+        label: 'Gated CLI',
+        install: {
+          binary: 'gated-bin',
+          min_version: '1.2.0',
+          macos: 'npm install -g gated',
+          linux: 'npm install -g gated',
+        },
+      };
+    }
+    if (name === 'unverif') {
+      // Mirrors the Copilot pattern: token env vars + login command, but auth
+      // cannot be reliably probed offline (unverifiable).
+      return {
+        name: 'unverif',
+        label: 'Unverifiable Auth CLI',
+        install: { binary: 'unverif-bin', macos: 'npm install -g unverif', linux: 'npm install -g unverif' },
+        check_ready: {
+          env_vars: ['SOME_TOKEN'],
+          saved_env_key: 'SOME_TOKEN',
+          login_command: 'unverif login',
+          unverifiable: true,
+          not_ready_message: 'Sign-in not confirmed.',
+        },
+      };
+    }
     if (name === 'testpkg') {
       return {
         name: 'testpkg',
@@ -450,5 +478,109 @@ describe('Installer', () => {
       health.message,
       'Not configured. Set OPENAI_API_KEY + OPENAI_BASE_URL, or run: codex login'
     );
+  });
+});
+
+describe('Installer auth_status (generic unverifiable flag)', () => {
+  it('reports auth_status=ready when a token env var is present', () => {
+    process.env.SOME_TOKEN = 'x';
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => 'unverif-bin';
+    inst._detectVersion = () => '1.0.0';
+    const h = inst.healthCheck('unverif');
+    assert.equal(h.ready, true);
+    assert.equal(h.auth_status, 'ready');
+    delete process.env.SOME_TOKEN;
+  });
+
+  it('reports auth_status=unknown (not no_credentials) when unverifiable and no signal', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => 'unverif-bin';
+    inst._detectVersion = () => '1.0.0';
+    const h = inst.healthCheck('unverif');
+    assert.equal(h.ready, false);
+    assert.equal(h.auth_status, 'unknown', 'absence of a token must not be claimed as no_credentials');
+  });
+
+  it('reports auth_status=no_credentials for a normal (verifiable) agent with no creds', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => 'codex';
+    inst._checkStatusCommand = () => false;
+    const h = inst.healthCheck('codex');
+    assert.equal(h.ready, false);
+    assert.equal(h.auth_status, 'no_credentials');
+  });
+});
+
+describe('compareVersions (generic helper)', () => {
+  it('orders versions numerically, not lexically', () => {
+    assert.equal(compareVersions('1.2.0', '1.10.0'), -1);
+    assert.equal(compareVersions('2.0.0', '1.9.9'), 1);
+    assert.equal(compareVersions('1.2.0', '1.2.0'), 0);
+  });
+  it('ignores pre-release / build suffixes and extra segments', () => {
+    assert.equal(compareVersions('1.2.0-beta.3', '1.2.0'), 0);
+    assert.equal(compareVersions('0.0.331', '0.0.330'), 1);
+    assert.equal(compareVersions('1.2', '1.2.0'), 0);
+  });
+  it('returns null when a version is unparseable', () => {
+    assert.equal(compareVersions('unknown', '1.0.0'), null);
+    assert.equal(compareVersions(null, '1.0.0'), null);
+    assert.equal(compareVersions('1.0.0', ''), null);
+  });
+});
+
+describe('Installer min-version gate (generic, no per-agent special-casing)', () => {
+  beforeEach(() => clearVersionCache());
+
+  it('passes the gate and stays ready when version >= min_version', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => 'gated-bin';
+    inst._detectVersion = () => '1.5.0';
+    const h = inst.healthCheck('gated');
+    assert.equal(h.installed, true);
+    assert.equal(h.compatible, true);
+    assert.equal(h.min_version, '1.2.0');
+  });
+
+  it('blocks (installed=true, compatible=false, ready=false) when below min_version', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => 'gated-bin';
+    inst._detectVersion = () => '1.0.0';
+    const h = inst.healthCheck('gated');
+    assert.equal(h.installed, true, 'must NOT report not-installed for an old version');
+    assert.equal(h.compatible, false);
+    assert.equal(h.ready, false);
+    assert.match(h.message, /too old|upgrade/i);
+  });
+
+  it('reports compatible=null (unknown) — not a false pass — when version cannot be parsed', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => 'gated-bin';
+    inst._detectVersion = () => null;
+    const h = inst.healthCheck('gated');
+    assert.equal(h.installed, true);
+    assert.equal(h.compatible, null);
+  });
+
+  it('leaves the gate open (compatible=true) for entries without min_version', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    inst._whichBinary = () => 'codex';
+    inst._checkStatusCommand = () => true;
+    const h = inst.healthCheck('codex');
+    assert.equal(h.compatible, true);
+    assert.equal(h.min_version, null);
+  });
+
+  it('caches a detected version and serves the same result within the TTL', () => {
+    const inst = new Installer(mockRegistry, tmpDir);
+    // Use a real, fast version command so the cache path is genuinely exercised.
+    const v1 = inst._detectVersion('node', `"${process.execPath}" --version`);
+    assert.match(String(v1), /\d+\.\d+/);
+    const v2 = inst._detectVersion('node', `"${process.execPath}" --version`);
+    assert.equal(v2, v1, 'cached value returned on the second call');
+    clearVersionCache();
+    const v3 = inst._detectVersion('node', `"${process.execPath}" --version`);
+    assert.equal(v3, v1, 're-detection after cache clear yields the same version');
   });
 });
