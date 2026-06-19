@@ -443,6 +443,14 @@ def _make_plugin_from_yaml(data: dict):
             return env
 
         def check_ready(self) -> tuple[bool, str]:
+            # Opt-in: agents whose readiness must reflect the actual binary (not
+            # just an install marker) set ``require_binary: true``. This reconciles
+            # a stale marker when the CLI was uninstalled/moved (cli-missing).
+            if check_cfg.get("require_binary") and self._which_binary() is None:
+                return False, check_cfg.get(
+                    "not_ready_message",
+                    f"{data['name']} CLI not found on PATH. Reinstall: openagents install {data['name']}",
+                )
             if not self.is_installed():
                 return False, f"Not installed. Run: openagents install {data['name']}"
             # If no readiness checks are configured, being installed is enough
