@@ -203,6 +203,12 @@ function _addWindowsPaths(dirs) {
   if (localAppData) _push(dirs, path.join(localAppData, 'cursor-agent'));
   _push(dirs, path.join(HOME, '.local', 'bin'));
 
+  // Amp CLI (irm https://ampcode.com/install.ps1 | iex) — same registry-PATH
+  // staleness as Cursor; add the canonical install dir(s) so an already-running
+  // daemon resolves amp without a reboot.
+  _push(dirs, path.join(HOME, '.amp', 'bin'));
+  if (localAppData) _push(dirs, path.join(localAppData, 'amp'));
+
   // Hermes CLI native (no-WSL) installer drops hermes.exe in the portable
   // venv's Scripts dir and the uv shim in %LOCALAPPDATA%\hermes\bin. Same
   // registry-PATH staleness as Cursor — add explicitly so an already-running
@@ -297,6 +303,12 @@ function _addUnixPaths(dirs) {
 
   // Cursor CLI native installer (curl https://cursor.com/install | bash)
   _push(dirs, path.join(HOME, '.cursor', 'bin'));
+
+  // Amp CLI native installer (curl https://ampcode.com/install.sh | bash)
+  // drops the binary in ~/.amp/bin and only symlinks into ~/.local/bin when
+  // that dir is already on PATH — so a GUI- or daemon-spawned process never
+  // sees it unless the canonical dir is listed here explicitly.
+  _push(dirs, path.join(HOME, '.amp', 'bin'));
 }
 
 // ---- macOS-specific ----

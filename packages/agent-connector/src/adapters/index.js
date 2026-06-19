@@ -18,6 +18,7 @@ const AiderAdapter = require('./aider');
 const GooseAdapter = require('./goose');
 const CopilotAdapter = require('./copilot');
 const ClineAdapter = require('./cline');
+const AmpAdapter = require('./amp');
 
 const ADAPTER_MAP = {
   openclaw: OpenClawAdapter,
@@ -33,11 +34,12 @@ const ADAPTER_MAP = {
   goose: GooseAdapter,
   copilot: CopilotAdapter,
   cline: ClineAdapter,
+  amp: AmpAdapter,
 };
 
 /**
  * Create an adapter instance for the given agent type.
- * @param {string} type - Agent type (openclaw, claude, codex, opencode, nanoclaw, cursor, hermes, gemini, kimi, aider, goose, copilot, cline)
+ * @param {string} type - Agent type (openclaw, claude, codex, opencode, nanoclaw, cursor, hermes, gemini, kimi, aider, goose, copilot, cline, amp)
  * @param {object} opts - Adapter constructor options
  * @returns {BaseAdapter}
  */
@@ -64,6 +66,7 @@ module.exports = {
   GooseAdapter,
   CopilotAdapter,
   ClineAdapter,
+  AmpAdapter,
   createAdapter,
   ADAPTER_MAP,
 };

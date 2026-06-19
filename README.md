@@ -119,9 +119,9 @@ agn connect my-agent <workspace-token>    # connect agent into workspace
 | **GitHub Copilot CLI** | ✅ Supported | GitHub's official `copilot` CLI ([guide](docs/agents/github-copilot-cli.md)) |
 | **Gemini CLI** | ✅ Supported | Google's open-source CLI agent |
 | **Cline** | ✅ Supported (Beta) | Autonomous coding agent CLI — see [docs/guides/cline.md](docs/guides/cline.md) |
+| **Amp** | ✅ Supported | Sourcegraph's coding agent (CLI execute mode) |
 | **Aider** | 🧪 Beta | AI pair programming in your terminal (multi-provider). Offline tests passed; real provider E2E pending |
 | **Goose** | 🧪 Beta | Block's open-source agent (CLI, headless) — see [Goose (Beta)](#goose-beta) |
-| Amp | 🔜 Coming soon | |
 
 > **Aider is Beta.** The full offline test suite (provider resolution, sessions,
 > Git safety, install detection) passes, but a real end-to-end run against a live
@@ -325,6 +325,26 @@ provider key. To verify manually: `goose --version`; create a Goose agent with a
 status, and that file edits land in the project directory; send a second message in the
 same channel and confirm context is retained; open a new channel and confirm it does not
 inherit context; press Stop mid-task and confirm no leftover processes.
+
+#### Connecting Amp
+
+Amp runs in its non-interactive execute mode (`amp -x --stream-json`); the
+adapter keeps a separate Amp thread per workspace channel for follow-up context
+and writes any file changes into the agent's configured working directory.
+
+```bash
+agn install amp                              # install the Amp CLI (ampcode.com)
+amp login                                    # authenticate (browser) ...
+agn env amp --set AMP_API_KEY=<your-key>     # ... or set a key for headless use
+agn create my-amp --type amp --path ~/code   # create an instance + working dir
+agn up                                        # start the daemon
+agn connect my-amp <workspace-token>         # connect Amp into a workspace
+```
+
+Authenticate with **either** `amp login` (stores credentials locally) **or**
+`AMP_API_KEY` (required for fully headless/CI runs). Set `AMP_URL` only for
+enterprise/self-hosted Amp deployments. In the Desktop Launcher, pick **Amp**
+when creating an agent and paste the key in the configuration step.
 
 ---
 

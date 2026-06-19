@@ -368,6 +368,7 @@ const CORE_AGENTS: readonly string[] = [
   "goose",
   "copilot",
   "cline",
+  "amp",
 ]
 const CORE_AGENT_ORDER = new Map<string, number>(
   CORE_AGENTS.map((name, i) => [name, i]),
@@ -617,6 +618,16 @@ async function testLLMConnection(
         success: false,
         error:
           "Cline targets your selected provider — this provider can't be tested directly here. Save the settings and launch the agent to verify (or run `cline auth`).",
+      }
+    }
+
+    // ── Amp: authenticates against Sourcegraph's own service (AMP_API_KEY or
+    // `amp login`); there is no OpenAI-style endpoint to probe here. ──
+    if (pick("AMP_API_KEY") && !anthropicKey && !openaiKey) {
+      return {
+        success: false,
+        error:
+          "Amp signs in through Sourcegraph's own service — there's no key endpoint to test here. Save the key (or run `amp login`) and launch the agent to verify.",
       }
     }
 
