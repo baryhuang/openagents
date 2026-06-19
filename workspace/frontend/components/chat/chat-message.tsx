@@ -121,7 +121,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
   const isSystem = message.messageType === 'status';
   const [copied, setCopied] = useState(false);
 
-  const agentNames = agents.map((a) => a.agentName);
+  const agentNames = useMemo(() => agents.map((a) => a.agentName), [agents]);
   const agent = agents.find((a) => a.agentName === message.senderName);
   const rawAttachments = (message.metadata?.attachments as Record<string, unknown>[]) || [];
   const attachments: Attachment[] = rawAttachments.map((a) => ({

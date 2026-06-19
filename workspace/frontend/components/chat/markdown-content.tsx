@@ -1,11 +1,13 @@
 'use client';
 
+import { memo, type ReactNode, useMemo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import { cn } from '@/lib/utils';
+import remarkGfm from 'remark-gfm';
 import { getAgentColor } from '@/lib/helpers';
-import { memo, useMemo, type ReactNode } from 'react';
+import { cn } from '@/lib/utils';
+import { MermaidBlock } from './mermaid-block';
+import { getMermaidSource, hasOpenMermaidFence } from './mermaid-utils';
 
 // Stable plugin arrays — avoids re-creating on every render
 const remarkPlugins = [remarkGfm];
@@ -23,15 +25,18 @@ function renderMentions(children: ReactNode, agentNames: string[]): ReactNode {
   const escaped = agentNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const mentionRegex = new RegExp(`(@(?:${escaped.join('|')}))(?![\\w-])`, 'g');
 
+  let keyCounter = 0;
+
   const processNode = (node: ReactNode): ReactNode => {
     if (typeof node === 'string') {
       const parts = node.split(mentionRegex);
       if (parts.length === 1) return node;
-      return parts.map((part, i) => {
+      return parts.map((part) => {
+        keyCounter++;
         if (part.startsWith('@') && agentNames.includes(part.slice(1))) {
           const color = getAgentColor(part.slice(1), agentNames);
           return (
-            <span key={i} className={cn('font-medium rounded px-0.5', color.text)}>
+            <span key={`mention-${keyCounter}`} className={cn('font-medium rounded px-0.5', color.text)}>
               {part}
             </span>
           );
@@ -40,18 +45,26 @@ function renderMentions(children: ReactNode, agentNames: string[]): ReactNode {
       });
     }
     if (Array.isArray(node)) {
-      return node.map((child, i) => <span key={i}>{processNode(child)}</span>);
+      return node.map((child) => {
+        keyCounter++;
+        return <span key={`node-${keyCounter}`}>{processNode(child)}</span>;
+      });
     }
     return node;
   };
 
   if (Array.isArray(children)) {
-    return children.map((child, i) => <span key={i}>{processNode(child)}</span>);
+    return children.map((child) => {
+      keyCounter++;
+      return <span key={`child-${keyCounter}`}>{processNode(child)}</span>;
+    });
   }
   return processNode(children);
 }
 
 export const MarkdownContent = memo(function MarkdownContent({ content, agentNames }: MarkdownContentProps) {
+  const hasStreamingMermaidFence = hasOpenMermaidFence(content);
+
   const components: Components = useMemo(() => ({
     // Block elements
     h1: ({ children }) => (
@@ -124,11 +137,22 @@ export const MarkdownContent = memo(function MarkdownContent({ content, agentNam
         </code>
       );
     },
-    pre: ({ children }) => (
-      <pre className="my-2 rounded-md bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 overflow-x-auto text-[13px] leading-relaxed font-mono">
-        {children}
-      </pre>
-    ),
+    pre: ({ children }) => {
+      const mermaidSource = getMermaidSource(children);
+      if (mermaidSource !== null) {
+        return (
+          <MermaidBlock
+            chart={mermaidSource}
+            deferErrors={hasStreamingMermaidFence}
+          />
+        );
+      }
+      return (
+        <pre className="my-2 rounded-md bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 overflow-x-auto text-[13px] leading-relaxed font-mono">
+          {children}
+        </pre>
+      );
+    },
 
     // Links
     a: ({ href, children }) => (
@@ -146,7 +170,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, agentNam
     strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
     del: ({ children }) => <del className="text-muted-foreground">{children}</del>,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [agentNames.join(',')]);
+  }), [agentNames, hasStreamingMermaidFence]);
 
   return (
     <div className="markdown-content">
