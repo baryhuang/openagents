@@ -286,8 +286,17 @@ class OpenCodeAdapter extends BaseAdapter {
    * Split a string containing concatenated JSON objects.
    */
   static _splitJsonObjects(raw) {
+    return OpenCodeAdapter._drainJsonObjects(raw).objects;
+  }
+
+  /**
+   * Extract complete JSON objects from a possibly partial stream buffer.
+   * Returns unparsed trailing text as `rest` so callers can prepend it to the
+   * next stdout chunk. OpenCode may concatenate JSON objects without newlines.
+   */
+  static _drainJsonObjects(raw) {
     const objects = [];
-    raw = raw.trim();
+    raw = String(raw || '');
     let pos = 0;
     while (pos < raw.length) {
       if (' \t\r\n'.includes(raw[pos])) { pos++; continue; }
@@ -296,7 +305,7 @@ class OpenCodeAdapter extends BaseAdapter {
       let depth = 0;
       let inStr = false;
       let escaped = false;
-      let start = pos;
+      const start = pos;
       for (let i = pos; i < raw.length; i++) {
         const ch = raw[i];
         if (escaped) { escaped = false; continue; }
@@ -317,9 +326,9 @@ class OpenCodeAdapter extends BaseAdapter {
         }
         if (i === raw.length - 1) pos = raw.length; // no match, skip
       }
-      if (depth !== 0) break; // unbalanced, stop
+      if (depth !== 0) return { objects, rest: raw.slice(start) };
     }
-    return objects;
+    return { objects, rest: '' };
   }
 
   /**
@@ -340,6 +349,73 @@ class OpenCodeAdapter extends BaseAdapter {
     return text || null;
   }
 
+  static _toolStatusFromEvent(event) {
+    if ((event.type || '') !== 'tool_use') return null;
+
+    const item = event.item || event.part || event.tool || event;
+    const toolName = OpenCodeAdapter._safeToolName(
+      item.name || item.tool || item.toolName || item.id || 'tool'
+    );
+    const input = OpenCodeAdapter._toolInputFromItem(item);
+    const preview = OpenCodeAdapter._toolInputPreview(input);
+
+    return OpenCodeAdapter._formatToolStatus(toolName, preview);
+  }
+
+  static _safeToolName(name) {
+    return String(name || 'tool').replace(/[`\\]/g, '').slice(0, 80) || 'tool';
+  }
+
+  static _toolInputFromItem(item) {
+    if (!item || typeof item !== 'object') return {};
+    if (item.state && typeof item.state === 'object' && item.state.input) {
+      return item.state.input;
+    }
+    return item.input || item.args || item.arguments || item.parameters || item.params || {};
+  }
+
+  static _toolInputPreview(input) {
+    if (input == null) return '';
+    if (typeof input === 'string') return input.slice(0, 1000);
+    try {
+      return JSON.stringify(input, null, 2).slice(0, 1000);
+    } catch {
+      return String(input).slice(0, 1000);
+    }
+  }
+
+  static _markdownFence(body) {
+    const runs = String(body || '').match(/`+/g) || [];
+    const maxRun = runs.reduce((max, run) => Math.max(max, run.length), 2);
+    return '`'.repeat(Math.max(3, maxRun + 1));
+  }
+
+  static _formatToolStatus(toolName, preview) {
+    const header = `**Using tool:** \`${toolName}\``;
+    const body = String(preview || '').trim();
+    if (!body) return header;
+    const fence = OpenCodeAdapter._markdownFence(body);
+    return `${header}\n${fence}\n${body}\n${fence}`;
+  }
+
+  async _handleStreamEvent(event, msgChannel, responseState = null) {
+    const status = OpenCodeAdapter._toolStatusFromEvent(event);
+    if (status) {
+      if (responseState) responseState.finalText = '';
+      await this.sendStatus(msgChannel, status);
+      return;
+    }
+
+    const text = OpenCodeAdapter._extractTextFromEvent(event);
+    if (text) {
+      if (responseState) {
+        responseState.seenText = true;
+        responseState.finalText += text;
+      }
+      if (text.trim()) await this.sendThinking(msgChannel, text.trim());
+    }
+  }
+
   /**
    * Extract human-readable text from opencode --format json output.
    */
@@ -353,6 +429,16 @@ class OpenCodeAdapter extends BaseAdapter {
       if (text) texts.push(text);
     }
     return texts.length ? texts.join('\n').trim() : raw.trim();
+  }
+
+  static _finalTextFromStdout(raw, responseState = null) {
+    raw = String(raw || '').trim();
+    if (!raw) return '';
+    if (OpenCodeAdapter._isOnlyControlJson(raw)) return '';
+    if (responseState && responseState.seenText) {
+      return (responseState.finalText || '').trim();
+    }
+    return OpenCodeAdapter._extractTextFromJson(raw);
   }
 
   /**
@@ -560,6 +646,9 @@ class OpenCodeAdapter extends BaseAdapter {
 
       let stdout = '';
       let stderr = '';
+      let streamBuffer = '';
+      let pendingEvents = Promise.resolve();
+      const responseState = { finalText: '', seenText: false };
       let settled = false;
       const finish = (fn, arg) => {
         if (settled) return;
@@ -570,7 +659,20 @@ class OpenCodeAdapter extends BaseAdapter {
         fn(arg);
       };
 
-      if (proc.stdout) proc.stdout.on('data', (d) => { stdout += d; });
+      if (proc.stdout) {
+        proc.stdout.on('data', (d) => {
+          const chunk = d.toString('utf-8');
+          stdout += chunk;
+          streamBuffer += chunk;
+          const drained = OpenCodeAdapter._drainJsonObjects(streamBuffer);
+          streamBuffer = drained.rest;
+          for (const event of drained.objects) {
+            pendingEvents = pendingEvents
+              .then(() => this._handleStreamEvent(event, msgChannel, responseState))
+              .catch((e) => this._log(`opencode stream event handling failed: ${e.message}`));
+          }
+        });
+      }
       if (proc.stderr) proc.stderr.on('data', (d) => { stderr += d; });
 
       // Send the prompt via stdin, then close it so opencode knows the message
@@ -589,7 +691,9 @@ class OpenCodeAdapter extends BaseAdapter {
       // never parse a truncated response. The handler receives (code, signal):
       // when the spawn timeout kills the child, code is null and signal is the
       // signal name — report that as a timeout rather than "exited with code null".
-      proc.on('close', (code, signal) => {
+      proc.on('close', async (code, signal) => {
+        try { await pendingEvents; } catch {}
+
         if (this._stoppingChannels.has(msgChannel)) {
           this._stoppingChannels.delete(msgChannel);
           return finish(resolve, '');
@@ -618,11 +722,11 @@ class OpenCodeAdapter extends BaseAdapter {
 
         if (stdout) {
           this._persistSessionId(msgChannel, stdout);
-          const text = OpenCodeAdapter._extractTextFromJson(stdout);
+          const text = OpenCodeAdapter._finalTextFromStdout(stdout, responseState);
           // Exit 0 but no assistant text usually means no model/provider is
           // configured (opencode emits only step_start then stops). Tell the
           // user how to fix it rather than echoing raw event JSON.
-          if (!text || OpenCodeAdapter._isOnlyControlJson(stdout)) {
+          if (!text) {
             this._log(`opencode produced no assistant text. stdout head: ${stdout.slice(0, 300)}`);
             return finish(resolve, '');
           }
