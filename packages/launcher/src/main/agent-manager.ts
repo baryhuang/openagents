@@ -332,6 +332,7 @@ const CORE_AGENTS: readonly string[] = [
   "hermes",
   "kimi",
   "gemini",
+  "aider",
 ]
 const CORE_AGENT_ORDER = new Map<string, number>(
   CORE_AGENTS.map((name, i) => [name, i]),
@@ -426,6 +427,40 @@ async function testLLMConnection(
   const trimSlash = (u: string): string => u.replace(/\/+$/, "")
 
   try {
+    // ── Aider: routes through LiteLLM, so the provider (and therefore the
+    // endpoint to probe) is decided by AIDER_PROVIDER / the model at run time.
+    // There is no single key endpoint to test here, and we must NOT report a
+    // fake "connected". Do only STATIC validation (provider value + the
+    // openai-compatible base-URL requirement); the real auth/model check happens
+    // on the first workspace task. Keyed on AIDER_PROVIDER/AIDER_MODEL, which
+    // only Aider configs carry. ──
+    const aiderProvider = pick("AIDER_PROVIDER").toLowerCase()
+    if (aiderProvider || pick("AIDER_MODEL")) {
+      const validProviders = [
+        "auto", "openai", "anthropic", "openrouter", "gemini", "deepseek",
+        "openai-compatible",
+      ]
+      if (aiderProvider && !validProviders.includes(aiderProvider)) {
+        return {
+          success: false,
+          error:
+            `Unknown AIDER_PROVIDER '${aiderProvider}'. Valid values: ${validProviders.join(", ")}.`,
+        }
+      }
+      if (aiderProvider === "openai-compatible" && !pick("LLM_BASE_URL")) {
+        return {
+          success: false,
+          error:
+            "AIDER_PROVIDER=openai-compatible requires LLM_BASE_URL (the OpenAI-compatible endpoint URL).",
+        }
+      }
+      return {
+        success: false,
+        error:
+          "Aider injects your key into the provider chosen by AIDER_PROVIDER (or the model name) and verifies it on its first run — there's no single endpoint to test here. Save the config and send a message in the workspace to confirm.",
+      }
+    }
+
     // ── Google Gemini ──
     const geminiKey = pick("GEMINI_API_KEY", "GOOGLE_API_KEY")
     if (geminiKey) {
