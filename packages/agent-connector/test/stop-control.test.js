@@ -25,14 +25,24 @@ function isPidAlive(pid) {
 function readFirstLine(stream) {
   return new Promise((resolve, reject) => {
     let buffer = '';
-    const timeout = setTimeout(() => reject(new Error('Timed out waiting for child pid')), 3000);
+    let settled = false;
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      fn();
+    };
+    const timeout = setTimeout(() => finish(() => reject(new Error('Timed out waiting for child pid'))), 3000);
+    // Guard the stream against 'error'. When the child is later SIGKILL'd, its
+    // stdout pipe can emit EPIPE/EBADF/ECONNRESET (notably on macOS); without an
+    // 'error' listener that becomes an unhandled 'error' event that crashes the
+    // whole test worker. The listener persists for the stream's lifetime, so a
+    // post-resolve error during teardown is swallowed instead of throwing.
+    stream.on('error', () => finish(() => reject(new Error('stdout stream error'))));
     stream.on('data', (chunk) => {
       buffer += chunk.toString('utf-8');
       const idx = buffer.indexOf('\n');
-      if (idx >= 0) {
-        clearTimeout(timeout);
-        resolve(buffer.slice(0, idx).trim());
-      }
+      if (idx >= 0) finish(() => resolve(buffer.slice(0, idx).trim()));
     });
   });
 }
@@ -120,6 +130,11 @@ describe('agent stop control', () => {
       detached: process.platform !== 'win32',
       windowsHide: true,
     });
+    // Killing the child can make its stdio/process emit 'error' (EPIPE/EBADF on
+    // macOS). Swallow so it never becomes an unhandled 'error' that crashes the
+    // test worker.
+    proc.on('error', () => {});
+    if (proc.stdout) proc.stdout.on('error', () => {});
 
     try {
       const childPid = Number(await readFirstLine(proc.stdout));
@@ -288,6 +303,11 @@ describe('agent stop control', () => {
       detached: process.platform !== 'win32',
       windowsHide: true,
     });
+    // Killing the child can make its stdio/process emit 'error' (EPIPE/EBADF on
+    // macOS). Swallow so it never becomes an unhandled 'error' that crashes the
+    // test worker.
+    proc.on('error', () => {});
+    if (proc.stdout) proc.stdout.on('error', () => {});
 
     try {
       const childPid = Number(await readFirstLine(proc.stdout));

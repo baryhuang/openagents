@@ -211,6 +211,33 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
       placeholder: "gpt-4o, claude-sonnet-4-6, etc.",
     },
   ],
+  // Cline supports many providers (its own account, Anthropic, OpenAI,
+  // OpenRouter, …). The launcher collects an optional per-run API key plus the
+  // provider/model selection (mapped by the adapter to Cline's -k/-P/-m). All
+  // fields are optional: a user can instead run `cline auth` to sign in and the
+  // agent will use Cline's stored credentials.
+  cline: [
+    {
+      name: "CLINE_API_KEY",
+      description:
+        "API key for the selected provider — or leave blank and run `cline auth` to sign in.",
+      required: false,
+      password: true,
+    },
+    {
+      name: "CLINE_PROVIDER",
+      description:
+        "Provider id (cline, anthropic, openai, openrouter, …). Leave blank for Cline's configured default.",
+      required: false,
+      placeholder: "openrouter",
+    },
+    {
+      name: "CLINE_MODEL",
+      description: "Model id for the selected provider.",
+      required: false,
+      placeholder: "anthropic/claude-sonnet-4.6",
+    },
+  ],
 }
 
 /**
@@ -311,7 +338,7 @@ const DUAL_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
  * an API key, so they're a rougher first-run experience than the key-only
  * agents; keep onboarding to the smoother options.
  */
-const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes", "goose", "copilot"])
+const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes", "goose", "copilot", "cline"])
 
 /**
  * The agents the launcher/workspace core officially supports today, in the
@@ -340,6 +367,7 @@ const CORE_AGENTS: readonly string[] = [
   // Install tab so it can be exercised. Marked Beta in its registry description.
   "goose",
   "copilot",
+  "cline",
 ]
 const CORE_AGENT_ORDER = new Map<string, number>(
   CORE_AGENTS.map((name, i) => [name, i]),
@@ -522,6 +550,73 @@ async function testLLMConnection(
         success: false,
         error:
           "Cursor signs in through its own service — there's no key endpoint to test here. Save the key and launch the agent to verify.",
+      }
+    }
+
+    // ── Cline: routes by the selected provider ──
+    // Cline targets many providers; we test the API-key providers we can reach
+    // (Anthropic, OpenAI, OpenRouter) and give an honest message for the rest
+    // (e.g. Cline's own account, or a custom endpoint configured via `cline auth`).
+    const clineKey = pick("CLINE_API_KEY")
+    if (clineKey && !anthropicKey && !openaiKey && !geminiKey) {
+      const provider = pick("CLINE_PROVIDER").toLowerCase()
+      const clineModel = pick("CLINE_MODEL")
+      if (provider.includes("anthropic")) {
+        const base = "https://api.anthropic.com"
+        const model = clineModel || "claude-3-5-haiku-latest"
+        const { status, text } = await httpRequestJson(
+          `${base}/v1/messages`,
+          "POST",
+          {
+            "x-api-key": clineKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          JSON.stringify({
+            model,
+            max_tokens: 16,
+            messages: [{ role: "user", content: "Say hi in 5 words." }],
+          }),
+        )
+        if (status >= 400)
+          return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+        let reply = ""
+        try {
+          reply = JSON.parse(text)?.content?.[0]?.text || ""
+        } catch {}
+        return { success: true, model, response: reply.slice(0, 80) }
+      }
+      if (provider.includes("openai") || provider.includes("openrouter")) {
+        const base = provider.includes("openrouter")
+          ? "https://openrouter.ai/api/v1"
+          : "https://api.openai.com/v1"
+        const model =
+          clineModel || (provider.includes("openrouter") ? "openai/gpt-4o-mini" : "gpt-4o-mini")
+        const { status, text } = await httpRequestJson(
+          `${base}/chat/completions`,
+          "POST",
+          { Authorization: `Bearer ${clineKey}`, "Content-Type": "application/json" },
+          JSON.stringify({
+            model,
+            max_tokens: 16,
+            messages: [{ role: "user", content: "Say hi in 5 words." }],
+          }),
+        )
+        if (status >= 400)
+          return { success: false, error: `HTTP ${status}: ${text.slice(0, 200)}` }
+        let reply = "",
+          used = model
+        try {
+          const p = JSON.parse(text)
+          reply = p?.choices?.[0]?.message?.content || ""
+          used = p?.model || model
+        } catch {}
+        return { success: true, model: used, response: reply.slice(0, 80) }
+      }
+      return {
+        success: false,
+        error:
+          "Cline targets your selected provider — this provider can't be tested directly here. Save the settings and launch the agent to verify (or run `cline auth`).",
       }
     }
 

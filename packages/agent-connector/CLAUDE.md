@@ -31,12 +31,14 @@ src/
     gemini.js         GeminiAdapter — Google Gemini CLI bridge
     copilot.js        CopilotAdapter — official GitHub Copilot CLI (`copilot`) bridge, JSONL stream
     copilot-stream-parser.js  Pure JSONL framing + event classification for Copilot CLI
+    cline.js          ClineAdapter — Cline CLI bridge (`cline --json`, one run per message)
+    cline-stream.js   Pure helpers for ClineAdapter (NDJSON parser, event mapping, redaction, error/auth/version classify, arg builder, session correlation) — unit-tested
     llm-direct.js     LlmDirectAdapter — base for adapters that call LLM APIs directly (SSE streaming)
     index.js          Adapter registry mapping type names to classes
     utils.js          Shared adapter utilities
     workspace-prompt.js  System prompt generation for workspace-connected agents
 
-registry.json        Bundled catalog of 14 agents with metadata, install commands, env config, readiness checks
+registry.json        Bundled catalog of agents with metadata, install commands, env config, readiness checks
 ```
 
 ## How the daemon works

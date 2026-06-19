@@ -78,9 +78,9 @@ describe('Registry', () => {
 
   it('getEnvFields returns empty for agent without env_config', () => {
     const reg = new Registry(tmpDir);
-    // copilot is a catalog-only entry with no env_config (aider used to be the
-    // example here, but it now ships a multi-provider env_config).
-    const fields = reg.getEnvFields('copilot');
+    // claude is a CLI-login agent with no env_config (aider/copilot were used
+    // here before, but both now ship an env_config).
+    const fields = reg.getEnvFields('claude');
     assert.ok(Array.isArray(fields));
     assert.equal(fields.length, 0);
   });

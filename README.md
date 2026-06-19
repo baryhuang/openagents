@@ -117,9 +117,11 @@ agn connect my-agent <workspace-token>    # connect agent into workspace
 | **Cursor** | ✅ Supported | AI code editor |
 | **OpenCode** | ✅ Supported | Open-source terminal agent |
 | **GitHub Copilot CLI** | ✅ Supported | GitHub's official `copilot` CLI ([guide](docs/agents/github-copilot-cli.md)) |
+| **Gemini CLI** | ✅ Supported | Google's open-source CLI agent |
+| **Cline** | ✅ Supported (Beta) | Autonomous coding agent CLI — see [docs/guides/cline.md](docs/guides/cline.md) |
 | **Aider** | 🧪 Beta | AI pair programming in your terminal (multi-provider). Offline tests passed; real provider E2E pending |
 | **Goose** | 🧪 Beta | Block's open-source agent (CLI, headless) — see [Goose (Beta)](#goose-beta) |
-| Gemini CLI, Amp | 🔜 Coming soon | |
+| Amp | 🔜 Coming soon | |
 
 > **Aider is Beta.** The full offline test suite (provider resolution, sessions,
 > Git safety, install detection) passes, but a real end-to-end run against a live
