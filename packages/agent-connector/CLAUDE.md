@@ -29,6 +29,8 @@ src/
     cursor.js         CursorAdapter — extends LlmDirectAdapter for Cursor CLI
     hermes.js         HermesAdapter — Nous Research Hermes bridge
     gemini.js         GeminiAdapter — Google Gemini CLI bridge
+    copilot.js        CopilotAdapter — official GitHub Copilot CLI (`copilot`) bridge, JSONL stream
+    copilot-stream-parser.js  Pure JSONL framing + event classification for Copilot CLI
     llm-direct.js     LlmDirectAdapter — base for adapters that call LLM APIs directly (SSE streaming)
     index.js          Adapter registry mapping type names to classes
     utils.js          Shared adapter utilities

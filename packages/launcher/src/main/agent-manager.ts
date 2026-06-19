@@ -311,7 +311,7 @@ const DUAL_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
  * an API key, so they're a rougher first-run experience than the key-only
  * agents; keep onboarding to the smoother options.
  */
-const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes", "goose"])
+const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes", "goose", "copilot"])
 
 /**
  * The agents the launcher/workspace core officially supports today, in the
@@ -339,6 +339,7 @@ const CORE_AGENTS: readonly string[] = [
   // ONBOARDING_HIDDEN (like cursor/hermes) but is installable/creatable from the
   // Install tab so it can be exercised. Marked Beta in its registry description.
   "goose",
+  "copilot",
 ]
 const CORE_AGENT_ORDER = new Map<string, number>(
   CORE_AGENTS.map((name, i) => [name, i]),
