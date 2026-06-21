@@ -1,0 +1,119 @@
+name: Issue Triage
+
+# Auto-triages newly opened/edited issues against a maintained spam keyword
+# list plus a few narrow heuristics (link flooding, fake-star/troll disputes).
+# Triggers are deliberately specific to keep false positives near zero — a
+# genuine first-time bug report won't match. Adjust .github/spam-keywords.txt
+# to tune the spam terms without editing this workflow.
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (read spam keyword list)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/spam-keywords.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Classify and act
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const issue = context.payload.issue;
+            const { owner, repo } = context.repo;
+            const issue_number = issue.number;
+
+            // Skip if we have already classified this issue (avoids
+            // duplicate comments when the issue is edited).
+            const existing = (issue.labels || []).map(l =>
+              (typeof l === 'string' ? l : l.name).toLowerCase()
+            );
+            if (existing.includes('spam') || existing.includes('dispute')) {
+              core.info('Already triaged; skipping.');
+              return;
+            }
+
+            const text = `${issue.title || ''}\n\n${issue.body || ''}`;
+            const lower = text.toLowerCase();
+
+            // --- Load spam keywords from the maintained file ---
+            let spamTerms = [];
+            try {
+              spamTerms = fs.readFileSync('.github/spam-keywords.txt', 'utf8')
+                .split(/\r?\n/)
+                .map(s => s.trim())
+                .filter(s => s && !s.startsWith('#'))
+                .map(s => s.toLowerCase());
+            } catch (e) {
+              core.warning('spam-keywords.txt not found; skipping spam terms.');
+            }
+
+            const linkCount = (text.match(/https?:\/\/[^\s)]+/g) || []).length;
+
+            const isSpam =
+              spamTerms.some(term => lower.includes(term)) ||
+              linkCount >= 6; // link flooding
+
+            // --- Hostile / dispute signals (fake-star / brigading): label only path below ---
+            const disputePatterns = [
+              /刷星|买星|刷量|水军|造假|信誉|通报|检举|举报/,
+              /假\s*star/i,           // "假Star" / "假 Star"
+              /star\s*数/i,           // "Star数" / "Star 数"
+              /\b(fake\s*stars?|bought\s*stars?|star\s*farming|scam|fraud)\b/i,
+            ];
+            const isDispute = disputePatterns.some(re => re.test(text));
+
+            if (isSpam) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number, labels: ['spam'],
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: 'This issue was automatically flagged as spam and closed. ' +
+                      'If this is a mistake, please open a Discussion. ' +
+                      '（本 issue 被自动判定为垃圾内容并关闭，如有误判请前往 Discussions 说明。）',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number,
+                state: 'closed', state_reason: 'not_planned',
+              });
+              await github.rest.issues.lock({
+                owner, repo, issue_number, lock_reason: 'spam',
+              });
+              core.info(`Issue #${issue_number} handled as spam.`);
+              return;
+            }
+
+            if (isDispute) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number, labels: ['dispute'],
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: 'This issue was automatically closed: the star count is ' +
+                      'public and can be verified directly on the repository page. ' +
+                      'Opinions, criticism, and community concerns belong in ' +
+                      'Discussions, not the issue tracker. ' +
+                      '（本 issue 已自动关闭：star 数公开可查，请直接核对仓库页面。' +
+                      '质疑、意见与社区话题请前往 Discussions，issue 仅用于技术问题。）',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number,
+                state: 'closed', state_reason: 'not_planned',
+              });
+              await github.rest.issues.lock({
+                owner, repo, issue_number, lock_reason: 'too heated',
+              });
+              core.info(`Issue #${issue_number} handled as dispute (closed + locked).`);
+            }

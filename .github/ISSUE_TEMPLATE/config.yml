@@ -1,0 +1,14 @@
+# Blank issues stay enabled — anyone can still open a plain issue.
+# The contact links below simply offer better-routed alternatives so that
+# questions and community disputes go to Discussions instead of the tracker.
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Questions & Discussions
+    url: https://github.com/openagents-org/openagents/discussions
+    about: For usage questions, ideas, or general help, please use Discussions.
+  - name: 🗣️ Feedback, Concerns & Disputes
+    url: https://github.com/openagents-org/openagents/discussions
+    about: Opinions, criticism, or community concerns belong in Discussions, not the issue tracker.
+  - name: 🔒 Report a Security Vulnerability
+    url: https://github.com/openagents-org/openagents/security/advisories/new
+    about: Please report security issues privately, NOT in public issues.

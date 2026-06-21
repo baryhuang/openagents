@@ -1,0 +1,35 @@
+# Spam keyword list for the issue-triage workflow.
+# One keyword or phrase per line. Case-insensitive substring match.
+# Lines starting with "#" and blank lines are ignored.
+#
+# An issue whose title or body contains ANY of these is auto-labeled
+# "spam", closed (not planned), and locked. Keep entries SPECIFIC so a
+# real bug report never matches by accident — prefer multi-word phrases
+# over single common words.
+#
+# The workflow also auto-flags issues with >= 6 links (link flooding) and
+# fake-star / brigading "dispute" posts, independent of this list.
+#
+# --- add one term per line below this line ---
+
+# Crypto / airdrop / giveaway scams
+free airdrop
+claim your airdrop
+crypto giveaway
+connect your wallet
+seed phrase
+double your eth
+
+# Gambling
+online casino
+betting site
+
+# Paid boosting / contact harvesting
+buy github stars
+boost your repo
+add my whatsapp
+add my telegram
+add my wechat
+contact me on telegram
+seo backlinks
+cheap followers
