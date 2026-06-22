@@ -227,7 +227,7 @@ jobs:
           organization-id: 3cd61c8a-8f13-4e5c-8e40-93e0a15eef32
           project-slug: openagents
           signing-policy-slug: test-signing
-          artifact-configuration-slug: windows-installers
+          artifact-configuration-slug: windows-zip
           github-artifact-id: ${{ needs.build-windows.outputs.tosign-artifact-id }}
           wait-for-completion: true
           output-artifact-directory: signed

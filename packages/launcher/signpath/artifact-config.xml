@@ -4,7 +4,7 @@
 
   This is the version-controlled copy of the artifact configuration that must be
   pasted into the SignPath portal:
-    Project "openagents" → Artifact Configurations → slug "windows-installers".
+    Project "openagents" → Artifact Configurations → slug "windows-zip".
 
   IMPORTANT: the root element MUST be <zip-file>. The GitHub Actions artifacts
   connector always delivers the uploaded artifact as a zip (here
