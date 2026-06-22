@@ -1,5 +1,6 @@
 import React, { useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 
 interface Props {
@@ -20,6 +21,7 @@ export function JsonViewer({
   collapsed = true,
   depth = 0,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(!collapsed || depth === 0)
   if (value === null) {
     return <span className={tokenClass("null")}>null</span>
@@ -38,7 +40,7 @@ export function JsonViewer({
           type="button"
           onClick={() => setOpen((o) => !o)}
           className="inline-flex items-center align-middle cursor-pointer border-0 bg-transparent p-0 text-(--text-secondary)"
-          aria-label="Toggle"
+          aria-label={t("logs.json.toggle")}
         >
           {open ? (
             <ChevronDown className="w-3 h-3" />
@@ -73,7 +75,7 @@ export function JsonViewer({
           className={cn(
             "inline-flex items-center align-middle cursor-pointer border-0 bg-transparent p-0 text-(--text-secondary)",
           )}
-          aria-label="Toggle"
+          aria-label={t("logs.json.toggle")}
         >
           {open ? (
             <ChevronDown className="w-3 h-3" />

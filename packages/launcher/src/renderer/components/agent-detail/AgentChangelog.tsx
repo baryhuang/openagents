@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import { useTranslation } from "react-i18next"
 import type { CatalogEntry } from "../../types"
 
 const SECTION = "px-4.5 py-4 bg-(--bg-card) border border-(--border) rounded-(--radius) shadow-sm"
@@ -62,20 +63,21 @@ export function AgentChangelog({
   entry,
   currentVersion,
 }: AgentChangelogProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   const [expandedVersion, setExpandedVersion] = useState<string | null>(null)
 
   if (loading) {
     return (
       <div className={SECTION}>
-        <h4 className={SECTION_H4}>Versions</h4>
-        <p className="hint m-0">Loading…</p>
+        <h4 className={SECTION_H4}>{t("agents.changelog.title")}</h4>
+        <p className="hint m-0">{t("agents.changelog.loading")}</p>
       </div>
     )
   }
   if (error && versions.length === 0) {
     return (
       <div className={SECTION}>
-        <h4 className={SECTION_H4}>Versions</h4>
+        <h4 className={SECTION_H4}>{t("agents.changelog.title")}</h4>
         <p className="hint m-0">{error}</p>
       </div>
     )
@@ -85,14 +87,14 @@ export function AgentChangelog({
   return (
     <div className={SECTION}>
       <div className="flex items-center justify-between mb-2.5">
-        <h4 className={`${SECTION_H4} m-0`}>Versions</h4>
+        <h4 className={`${SECTION_H4} m-0`}>{t("agents.changelog.title")}</h4>
         {homepage && (
           <a
             href="#"
             className="text-[11px]"
             onClick={(e) => { e.preventDefault(); window.api.openExternal(homepage) }}
           >
-            View on npm ↗
+            {t("agents.changelog.viewOnNpm")}
           </a>
         )}
       </div>
@@ -119,7 +121,7 @@ export function AgentChangelog({
                   v{v.version}
                   {isCurrent && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-(--radius) bg-(--accent-bg) text-(--accent) border border-(--accent-border)">
-                      installed
+                      {t("agents.changelog.installed")}
                     </span>
                   )}
                 </span>
@@ -134,7 +136,7 @@ export function AgentChangelog({
                 <div className="pb-3 pl-4 pr-1 flex flex-col gap-2 text-[11.5px]">
                   {v.date && (
                     <div className="text-(--text-tertiary)">
-                      Released {new Date(v.date).toLocaleString()}
+                      {t("agents.changelog.released", { date: new Date(v.date).toLocaleString() })}
                     </div>
                   )}
 
@@ -143,16 +145,16 @@ export function AgentChangelog({
                      to the canonical source. The slot headings stay so
                      users know what to look for on the linked page. */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
-                    {(["Features", "Fixes", "Breaking changes"] as const).map((heading) => (
+                    {(["features", "fixes", "breakingChanges"] as const).map((heading) => (
                       <div
                         key={heading}
                         className="px-2.5 py-2 bg-(--bg-input) border border-(--border) rounded-(--radius)"
                       >
                         <div className="text-[10px] uppercase tracking-wider text-(--text-tertiary) mb-1">
-                          {heading}
+                          {t(`agents.changelog.${heading}`)}
                         </div>
                         <div className="text-(--text-secondary)">
-                          See release notes ↗
+                          {t("agents.changelog.seeReleaseNotes")}
                         </div>
                       </div>
                     ))}
@@ -164,7 +166,7 @@ export function AgentChangelog({
                         href="#"
                         onClick={(e) => { e.preventDefault(); window.api.openExternal(releaseUrl) }}
                       >
-                        Release notes on GitHub ↗
+                        {t("agents.changelog.releaseNotesGithub")}
                       </a>
                     )}
                     {entry?.name && (
@@ -175,7 +177,7 @@ export function AgentChangelog({
                           window.api.openExternal(npmVersionUrl(entry.name, v.version))
                         }}
                       >
-                        View on npm ↗
+                        {t("agents.changelog.viewOnNpm")}
                       </a>
                     )}
                     {entry?.homepage && !releaseUrl && (
@@ -183,7 +185,7 @@ export function AgentChangelog({
                         href="#"
                         onClick={(e) => { e.preventDefault(); window.api.openExternal(entry.homepage!) }}
                       >
-                        Homepage ↗
+                        {t("agents.changelog.homepage")}
                       </a>
                     )}
                   </div>

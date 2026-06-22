@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Modal, ModalActions } from "../ui/Modal"
 import { Button } from "../ui/Button"
 import { Input } from "../ui/Input"
@@ -39,6 +40,7 @@ export function PlatformConnectDialog({
   onSaved: () => Promise<void> | void
   showToast: (msg: string, type?: "info" | "success" | "error" | "warning") => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const matchingCreds = useMemo(
     () => credentials.filter((c) => c.provider === platform.id),
     [credentials, platform.id],
@@ -48,7 +50,9 @@ export function PlatformConnectDialog({
     existing?.credentialId || matchingCreds[0]?.id || "__new__",
   )
   const [newSecret, setNewSecret] = useState("")
-  const [newLabel, setNewLabel] = useState(`${platform.label} default`)
+  const [newLabel, setNewLabel] = useState(
+    t("connections.dialog.defaultLabel", { platform: platform.label }),
+  )
   const [accountHint, setAccountHint] = useState(existing?.account || "")
   const [working, setWorking] = useState(false)
   const [result, setResult] = useState<ConnectionTestResult | null>(null)
@@ -57,7 +61,7 @@ export function PlatformConnectDialog({
     if (!open) return
     setCredentialId(existing?.credentialId || matchingCreds[0]?.id || "__new__")
     setNewSecret("")
-    setNewLabel(`${platform.label} default`)
+    setNewLabel(t("connections.dialog.defaultLabel", { platform: platform.label }))
     setAccountHint(existing?.account || "")
     setResult(null)
   }, [open, existing, matchingCreds, platform.label])
@@ -70,19 +74,19 @@ export function PlatformConnectDialog({
       let credId = credentialId
       if (credId === "__new__") {
         if (!newSecret) {
-          showToast("Paste a token or API key", "warning")
+          showToast(t("connections.toast.pasteToken"), "warning")
           setWorking(false)
           return
         }
         const created = await window.api.upsertCredential({
           provider: platform.id,
           kind: platform.defaultCredentialKind,
-          label: newLabel.trim() || `${platform.label} default`,
+          label: newLabel.trim() || t("connections.dialog.defaultLabel", { platform: platform.label }),
           secret: newSecret,
           shared: true,
         })
         if (!created.ok || !created.record) {
-          showToast(created.error || "Failed to save credential", "error")
+          showToast(created.error || t("connections.toast.saveCredentialFailed"), "error")
           setWorking(false)
           return
         }
@@ -100,13 +104,16 @@ export function PlatformConnectDialog({
       const test = await window.api.testConnection(upserted.id)
       setResult(test)
       if (test.ok) {
-        showToast(`${platform.label} connected`, "success")
+        showToast(t("connections.toast.connected", { platform: platform.label }), "success")
       } else {
-        showToast(`Saved, but test failed: ${test.detail || test.status}`, "warning")
+        showToast(
+          t("connections.toast.testFailed", { detail: test.detail || test.status }),
+          "warning",
+        )
       }
       await onSaved()
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("connections.toast.error", { message: (err as Error).message }), "error")
     } finally {
       setWorking(false)
     }
@@ -118,7 +125,9 @@ export function PlatformConnectDialog({
         <PlatformLogo platform={platform} size={44} />
         <div>
           <h3 className="text-[17px] font-bold tracking-[-0.02em] m-0">
-            {existing ? "Reconnect" : "Connect"} {platform.label}
+            {existing
+              ? t("connections.dialog.reconnectTitle", { platform: platform.label })
+              : t("connections.dialog.connectTitle", { platform: platform.label })}
           </h3>
           <p className="text-[12px] text-(--text-tertiary) m-0">{platform.blurb}</p>
         </div>
@@ -126,12 +135,12 @@ export function PlatformConnectDialog({
 
       <div className="flex flex-col gap-4">
         <div>
-          <Label className="mb-1.5">Credential</Label>
+          <Label className="mb-1.5">{t("connections.dialog.credential")}</Label>
           <Select
             value={credentialId}
             onChange={(e) => setCredentialId(e.target.value)}
           >
-            <option value="__new__">+ Add new credential</option>
+            <option value="__new__">{t("connections.dialog.addNewCredential")}</option>
             {matchingCreds.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label} ({c.kind})
@@ -143,19 +152,19 @@ export function PlatformConnectDialog({
         {credentialId === "__new__" && (
           <>
             <div>
-              <Label className="mb-1.5">Credential label</Label>
+              <Label className="mb-1.5">{t("connections.dialog.credentialLabel")}</Label>
               <Input
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
-                placeholder={`${platform.label} default`}
+                placeholder={t("connections.dialog.defaultLabel", { platform: platform.label })}
               />
             </div>
             <div>
-              <Label className="mb-1.5">Token / API key</Label>
+              <Label className="mb-1.5">{t("connections.dialog.tokenOrApiKey")}</Label>
               <PasswordInput
                 value={newSecret}
                 onChange={(e) => setNewSecret(e.target.value)}
-                placeholder={`Paste your ${platform.label} secret`}
+                placeholder={t("connections.dialog.pasteSecret", { platform: platform.label })}
                 autoComplete="off"
               />
               {platform.docs && (
@@ -164,7 +173,7 @@ export function PlatformConnectDialog({
                   onClick={() => window.api.openExternal(platform.docs!)}
                   className="mt-1.5 text-[11px] text-(--accent) cursor-pointer bg-transparent border-0 p-0 hover:underline"
                 >
-                  Where do I get this?
+                  {t("connections.dialog.whereToGet")}
                 </button>
               )}
             </div>
@@ -172,17 +181,17 @@ export function PlatformConnectDialog({
         )}
 
         <div>
-          <Label className="mb-1.5">Account hint (optional)</Label>
+          <Label className="mb-1.5">{t("connections.dialog.accountHint")}</Label>
           <Input
             value={accountHint}
             onChange={(e) => setAccountHint(e.target.value)}
-            placeholder="user@example.com or org/repo"
+            placeholder={t("connections.dialog.accountHintPlaceholder")}
           />
         </div>
 
         {platform.suggestedScopes && platform.suggestedScopes.length > 0 && (
           <div className="text-[11px] text-(--text-tertiary)">
-            Suggested scopes:{" "}
+            {t("connections.dialog.suggestedScopes")}
             {platform.suggestedScopes.map((s, i) => (
               <span key={s} className="inline-code">
                 {s}{i < platform.suggestedScopes!.length - 1 ? " " : ""}
@@ -200,19 +209,27 @@ export function PlatformConnectDialog({
             }`}
           >
             {result.ok
-              ? `Connected${result.account ? ` as ${result.account}` : ""}`
-              : `${result.status}${result.detail ? ` — ${result.detail}` : ""}`}
+              ? result.account
+                ? t("connections.dialog.connectedAs", { account: result.account })
+                : t("connections.dialog.connectedOk")
+              : result.detail
+                ? t("connections.dialog.resultError", { status: result.status, detail: result.detail })
+                : t("connections.dialog.resultStatus", { status: result.status })}
           </div>
         )}
       </div>
 
       <ModalActions>
         <Button variant="ghost" onClick={onClose} disabled={working}>
-          Cancel
+          {t("connections.dialog.cancel")}
         </Button>
         <OAuthConnectButton platform={platform} />
         <Button variant="primary" onClick={handleConnect} disabled={working}>
-          {working ? "Connecting..." : existing ? "Save & Test" : "Connect"}
+          {working
+            ? t("connections.dialog.connecting")
+            : existing
+              ? t("connections.dialog.saveAndTest")
+              : t("connections.dialog.connect")}
         </Button>
       </ModalActions>
     </Modal>

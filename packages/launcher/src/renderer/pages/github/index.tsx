@@ -11,6 +11,8 @@ import {
   CircleDot,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 import { TopBar } from "../../components/TopBar"
 import { Button } from "../../components/ui/Button"
 import { Card } from "../../components/ui/Card"
@@ -41,17 +43,18 @@ interface BindingFeed {
   error?: string
 }
 
-function timeAgo(iso: string): string {
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return ""
-  const s = Math.floor((Date.now() - t) / 1000)
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
+function timeAgo(iso: string, t: TFunction): string {
+  const ms = new Date(iso).getTime()
+  if (Number.isNaN(ms)) return ""
+  const s = Math.floor((Date.now() - ms) / 1000)
+  if (s < 60) return t("github.time.secondsAgo", { count: s })
+  if (s < 3600) return t("github.time.minutesAgo", { count: Math.floor(s / 60) })
+  if (s < 86400) return t("github.time.hoursAgo", { count: Math.floor(s / 3600) })
+  return t("github.time.daysAgo", { count: Math.floor(s / 86400) })
 }
 
 export default function GitHubPage({ showToast }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const { bindings, refresh, loading } = useGitHubStore(
     useShallow((s) => ({
       bindings: s.bindings,
@@ -133,7 +136,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
     try {
       const ok = await window.api.githubUnbindRepo(unbindTarget.agentName)
       if (ok) {
-        showToast(`Unbound ${unbindTarget.agentName}`, "success")
+        showToast(t("github.toast.unbound", { name: unbindTarget.agentName }), "success")
         await refresh()
         setFeeds((prev) => {
           const next = { ...prev }
@@ -161,11 +164,11 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
         body,
       })
       if (res.ok) {
-        showToast(`Comment posted on #${issueNumber}`, "success")
+        showToast(t("github.toast.commentPosted", { number: issueNumber }), "success")
         setCommentDraft((d) => ({ ...d, [key]: "" }))
         void loadFeed(b)
       } else {
-        showToast(res.error || "Failed to post comment", "error")
+        showToast(res.error || t("github.toast.commentFailed"), "error")
       }
     } finally {
       setCommenting(null)
@@ -173,13 +176,13 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
   }
 
   const credLabel = (id: string): string =>
-    credentials.find((c) => c.id === id)?.label || "(missing credential)"
+    credentials.find((c) => c.id === id)?.label || t("github.missingCredential")
 
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="GitHub"
-        subtitle="— Bind agents to repos, surface recent issues / PRs"
+        title={t("github.title")}
+        subtitle={t("github.subtitle")}
         actions={
           <>
             <Button
@@ -191,7 +194,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
               disabled={loading}
             >
               <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
-              Refresh
+              {t("github.refresh")}
             </Button>
             <Button
               variant="primary"
@@ -201,7 +204,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
               }}
             >
               <Plus className="w-3.5 h-3.5" />
-              Bind repo
+              {t("github.bindRepo")}
             </Button>
           </>
         }
@@ -212,7 +215,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
       {bindings.length > 0 && (
         <div className="max-w-md">
           <Input
-            placeholder="Filter by agent or repo…"
+            placeholder={t("github.filterPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -224,12 +227,10 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
           <div className="flex flex-col items-center text-center py-10 gap-3">
             <Github className="w-10 h-10 text-(--text-tertiary)" />
             <div className="text-[13px] text-(--text-primary) font-medium">
-              No GitHub bindings yet
+              {t("github.empty.title")}
             </div>
             <div className="text-[12px] text-(--text-secondary) max-w-md">
-              Connect an agent to a GitHub repository to surface recent
-              issues / PRs and let the agent post comments via its bound
-              token.
+              {t("github.empty.description")}
             </div>
             <Button
               variant="primary"
@@ -239,7 +240,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
               }}
             >
               <Plus className="w-3.5 h-3.5" />
-              Bind first repo
+              {t("github.empty.bindFirst")}
             </Button>
           </div>
         </Card>
@@ -274,7 +275,10 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
                     </a>
                   </div>
                   <div className="text-[11px] text-(--text-tertiary) mt-0.5">
-                    Credential: {credLabel(b.credentialId)} · Bound {timeAgo(b.createdAt)}
+                    {t("github.credentialLine", {
+                      label: credLabel(b.credentialId),
+                      time: timeAgo(b.createdAt, t),
+                    })}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -283,7 +287,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
                     size="sm"
                     onClick={() => loadFeed(b)}
                     disabled={feed.loading}
-                    title="Refresh"
+                    title={t("github.refreshBinding")}
                   >
                     <RefreshCw
                       className={cn("w-3.5 h-3.5", feed.loading && "animate-spin")}
@@ -296,7 +300,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
                       setBindEditing(b)
                       setBindOpen(true)
                     }}
-                    title="Edit binding"
+                    title={t("github.editBinding")}
                   >
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
@@ -304,7 +308,7 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
                     variant="ghost"
                     size="sm"
                     onClick={() => setUnbindTarget(b)}
-                    title="Unbind"
+                    title={t("github.unbind")}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
@@ -312,26 +316,26 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
               </div>
 
               <div className="flex gap-1 p-1 rounded-(--radius-sm) bg-(--bg-input) mb-3 w-fit">
-                {(["issues", "pulls"] as const).map((t) => (
+                {(["issues", "pulls"] as const).map((tabId) => (
                   <button
-                    key={t}
+                    key={tabId}
                     type="button"
-                    onClick={() => setTabs((prev) => ({ ...prev, [b.agentName]: t }))}
+                    onClick={() => setTabs((prev) => ({ ...prev, [b.agentName]: tabId }))}
                     className={cn(
                       "px-3 py-1 text-[11px] font-medium rounded-sm cursor-pointer border-0 flex items-center gap-1.5",
-                      tab === t
+                      tab === tabId
                         ? "bg-(--bg-card) text-(--text-primary) shadow-sm"
                         : "bg-transparent text-(--text-secondary)",
                     )}
                   >
-                    {t === "issues" ? (
+                    {tabId === "issues" ? (
                       <CircleDot className="w-3 h-3" />
                     ) : (
                       <GitPullRequest className="w-3 h-3" />
                     )}
-                    {t === "issues"
-                      ? `Issues (${feed.issues.length})`
-                      : `Pull requests (${feed.pulls.length})`}
+                    {tabId === "issues"
+                      ? t("github.tabs.issues", { count: feed.issues.length })
+                      : t("github.tabs.pulls", { count: feed.pulls.length })}
                   </button>
                 ))}
               </div>
@@ -374,13 +378,16 @@ export default function GitHubPage({ showToast }: Props): React.JSX.Element {
 
       <ConfirmDialog
         open={!!unbindTarget}
-        title={`Unbind ${unbindTarget?.agentName}?`}
+        title={t("github.unbindConfirm.title", { name: unbindTarget?.agentName })}
         description={
           unbindTarget
-            ? `This removes the link to ${unbindTarget.owner}/${unbindTarget.repo}. The credential itself is kept.`
+            ? t("github.unbindConfirm.description", {
+                owner: unbindTarget.owner,
+                repo: unbindTarget.repo,
+              })
             : ""
         }
-        confirmLabel="Unbind"
+        confirmLabel={t("github.unbindConfirm.confirm")}
         destructive
         onCancel={() => setUnbindTarget(null)}
         onConfirm={handleUnbind}
@@ -407,13 +414,14 @@ function IssueList({
   onComment: (issueNumber: number) => void
   commentingKey: string | null
 }): React.JSX.Element {
+  const { t } = useTranslation()
   if (loading && items.length === 0) {
-    return <div className="text-[12px] text-(--text-tertiary) py-3">Loading…</div>
+    return <div className="text-[12px] text-(--text-tertiary) py-3">{t("common.loading")}</div>
   }
   if (items.length === 0) {
     return (
       <div className="text-[12px] text-(--text-tertiary) py-3">
-        No open issues.
+        {t("github.issues.empty")}
       </div>
     )
   }
@@ -441,9 +449,9 @@ function IssueList({
                   #{i.number} {i.title}
                 </a>
                 <div className="text-[11px] text-(--text-tertiary) mt-0.5 flex items-center gap-2 flex-wrap">
-                  <span>by {i.user.login}</span>
+                  <span>{t("github.issues.by", { user: i.user.login })}</span>
                   <span>·</span>
-                  <span>updated {timeAgo(i.updated_at)}</span>
+                  <span>{t("github.issues.updated", { time: timeAgo(i.updated_at, t) })}</span>
                   <span>·</span>
                   <span className="flex items-center gap-1">
                     <MessageSquare className="w-3 h-3" />
@@ -469,7 +477,7 @@ function IssueList({
                   e.preventDefault()
                   window.api.openExternal(i.html_url)
                 }}
-                title="Open on GitHub"
+                title={t("github.issues.openOnGitHub")}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
@@ -477,7 +485,7 @@ function IssueList({
 
             <div className="flex items-center gap-2 mt-2">
               <Input
-                placeholder="Reply as the bound agent…"
+                placeholder={t("github.issues.replyPlaceholder")}
                 value={draft}
                 onChange={(e) =>
                   setCommentDraft((d) => ({ ...d, [key]: e.target.value }))
@@ -497,7 +505,7 @@ function IssueList({
                 onClick={() => onComment(i.number)}
                 disabled={!draft.trim() || sending}
               >
-                {sending ? "Posting…" : "Comment"}
+                {sending ? t("github.issues.posting") : t("github.issues.comment")}
               </Button>
             </div>
           </li>
@@ -514,13 +522,14 @@ function PullList({
   items: GitHubPullRequest[]
   loading: boolean
 }): React.JSX.Element {
+  const { t } = useTranslation()
   if (loading && items.length === 0) {
-    return <div className="text-[12px] text-(--text-tertiary) py-3">Loading…</div>
+    return <div className="text-[12px] text-(--text-tertiary) py-3">{t("common.loading")}</div>
   }
   if (items.length === 0) {
     return (
       <div className="text-[12px] text-(--text-tertiary) py-3">
-        No open pull requests.
+        {t("github.pulls.empty")}
       </div>
     )
   }
@@ -544,18 +553,18 @@ function PullList({
                 #{p.number} {p.title}
                 {p.draft && (
                   <span className="ml-2 text-[10px] uppercase text-(--text-tertiary)">
-                    draft
+                    {t("github.pulls.draft")}
                   </span>
                 )}
               </a>
               <div className="text-[11px] text-(--text-tertiary) mt-0.5 flex items-center gap-2 flex-wrap">
-                <span>by {p.user.login}</span>
+                <span>{t("github.pulls.by", { user: p.user.login })}</span>
                 <span>·</span>
                 <span>
                   {p.head.ref} → {p.base.ref}
                 </span>
                 <span>·</span>
-                <span>updated {timeAgo(p.updated_at)}</span>
+                <span>{t("github.pulls.updated", { time: timeAgo(p.updated_at, t) })}</span>
               </div>
             </div>
             <a
@@ -565,7 +574,7 @@ function PullList({
                 e.preventDefault()
                 window.api.openExternal(p.html_url)
               }}
-              title="Open on GitHub"
+              title={t("github.pulls.openOnGitHub")}
             >
               <ExternalLink className="w-3.5 h-3.5" />
             </a>

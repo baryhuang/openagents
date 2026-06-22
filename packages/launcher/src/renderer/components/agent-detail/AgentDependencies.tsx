@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import type { CatalogEntry } from "../../types"
 
 const SECTION = "px-4.5 py-4 bg-(--bg-card) border border-(--border) rounded-(--radius) shadow-sm"
@@ -26,6 +27,7 @@ function detectPlatform(): "macos" | "linux" | "windows" {
 export function AgentSystemRequirements({
   entry,
 }: AgentDependenciesProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   const platforms = [
     entry.install?.macos && "macOS",
     entry.install?.linux && "Linux",
@@ -38,24 +40,24 @@ export function AgentSystemRequirements({
 
   return (
     <div className={SECTION}>
-      <h4 className={SECTION_H4}>System requirements</h4>
+      <h4 className={SECTION_H4}>{t("agents.requirements.title")}</h4>
       <dl className={DL}>
         {platforms.length > 0 && (
           <>
-            <dt>Platforms</dt>
+            <dt>{t("agents.requirements.platforms")}</dt>
             <dd>{platforms.join(" · ")}</dd>
           </>
         )}
         {reqs.length > 0 && (
           <>
-            <dt>Runtime</dt>
+            <dt>{t("agents.requirements.runtime")}</dt>
             <dd>{reqs.join(", ")}</dd>
           </>
         )}
         {apiOnly && (
           <>
-            <dt>Install mode</dt>
-            <dd>API only — no binary required</dd>
+            <dt>{t("agents.requirements.installMode")}</dt>
+            <dd>{t("agents.requirements.apiOnly")}</dd>
           </>
         )}
       </dl>
@@ -72,6 +74,7 @@ export function AgentSystemRequirements({
 export function AgentDependencies({
   entry,
 }: AgentDependenciesProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   const platformKey = detectPlatform()
   const installCmd = entry.install?.[platformKey]
   const binary = entry.install?.binary
@@ -80,11 +83,11 @@ export function AgentDependencies({
 
   return (
     <div className={SECTION}>
-      <h4 className={SECTION_H4}>Dependencies</h4>
+      <h4 className={SECTION_H4}>{t("agents.dependencies.title")}</h4>
       <dl className={DL}>
         {binary && (
           <>
-            <dt>Binary</dt>
+            <dt>{t("agents.dependencies.binary")}</dt>
             <dd>
               <code className="text-[11.5px]">{binary}</code>
             </dd>
@@ -92,7 +95,7 @@ export function AgentDependencies({
         )}
         {installCmd && (
           <>
-            <dt>Install ({platformKey})</dt>
+            <dt>{t("agents.dependencies.install", { platform: platformKey })}</dt>
             <dd>
               <code className="text-[11.5px] whitespace-pre-wrap break-all">
                 {installCmd}

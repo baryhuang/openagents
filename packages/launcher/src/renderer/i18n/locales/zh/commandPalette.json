@@ -1,0 +1,45 @@
+{
+  "placeholder": "输入命令、智能体或页面…",
+  "empty": "没有匹配的命令。",
+  "groups": {
+    "navigation": "导航",
+    "agents": "智能体",
+    "actions": "操作",
+    "appearance": "外观",
+    "recent": "最近使用"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "chat": "聊天",
+    "agents": "智能体",
+    "workspaces": "工作区",
+    "connections": "连接",
+    "credentials": "凭据",
+    "github": "GitHub",
+    "install": "安装",
+    "logs": "日志",
+    "settings": "设置"
+  },
+  "commands": {
+    "goTo": "前往{{label}}",
+    "openAgent": "打开智能体：{{name}}",
+    "stopAgent": "停止智能体：{{name}}",
+    "startAgent": "启动智能体：{{name}}",
+    "startAll": "启动所有智能体",
+    "stopAll": "停止所有智能体",
+    "installAgent": "安装新智能体",
+    "newWorkspace": "新建工作区",
+    "theme": "主题：{{mode}}"
+  },
+  "themes": {
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统"
+  },
+  "current": "当前",
+  "footer": {
+    "navigate": "导航",
+    "run": "执行",
+    "toggle": "切换"
+  }
+}

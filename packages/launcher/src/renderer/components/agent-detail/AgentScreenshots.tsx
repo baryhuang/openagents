@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 
 interface AgentScreenshotsProps {
   screenshots: string[]
@@ -15,6 +16,7 @@ export function AgentScreenshots({
   demoUrl,
   altPrefix,
 }: AgentScreenshotsProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   if (screenshots.length === 0 && !demoUrl) return null
   return (
     <div className="flex flex-col gap-2.5">
@@ -26,11 +28,11 @@ export function AgentScreenshots({
               href="#"
               onClick={(e) => { e.preventDefault(); window.api.openExternal(src) }}
               className="flex-none block border border-(--border) rounded-lg overflow-hidden bg-(--bg-input) transition-all duration-150 hover:border-(--accent) hover:-translate-y-px"
-              title="Open full size"
+              title={t("agents.screenshots.openFullSize")}
             >
               <img
                 src={src}
-                alt={`${altPrefix} screenshot ${i + 1}`}
+                alt={t("agents.screenshots.altScreenshot", { prefix: altPrefix, index: i + 1 })}
                 loading="lazy"
                 className="block h-35 w-auto max-w-65 object-cover"
               />
@@ -44,7 +46,7 @@ export function AgentScreenshots({
           className="text-[12px]"
           onClick={(e) => { e.preventDefault(); window.api.openExternal(demoUrl) }}
         >
-          ▶ Watch demo video ↗
+          {t("agents.screenshots.watchDemo")}
         </a>
       )}
     </div>

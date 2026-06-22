@@ -11,6 +11,7 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { useNotificationsStore } from "../../store/notifications"
 import { useUiStore } from "../../store/ui"
 import { Button } from "../ui/Button"
@@ -18,18 +19,20 @@ import { Switch } from "../ui/Switch"
 import type { NotifKind, NotifRecord } from "../../types"
 import { cn } from "../../lib/utils"
 
-const KIND_LABEL: Record<NotifKind, string> = {
-  agent_error: "Agent error",
-  agent_finished: "Agent finished",
-  agent_mention: "Agent mention",
-  agent_waiting_input: "Agent waiting for input",
-  workspace_mention: "Workspace @mention",
-  workspace_message: "Workspace message",
-  workspace_error: "Workspace error",
-  platform_error: "Platform error",
-  github: "GitHub",
-  system: "System",
-}
+// Order/keys for the per-kind mute list; labels are translated at render time
+// via `t("notificationsPanel.kinds.<kind>")`.
+const NOTIF_KINDS: NotifKind[] = [
+  "agent_error",
+  "agent_finished",
+  "agent_mention",
+  "agent_waiting_input",
+  "workspace_mention",
+  "workspace_message",
+  "workspace_error",
+  "platform_error",
+  "github",
+  "system",
+]
 
 function kindIcon(kind: NotifKind): React.JSX.Element {
   switch (kind) {
@@ -62,6 +65,7 @@ function timeAgo(iso: string): string {
 }
 
 export function NotificationCenterButton(): React.JSX.Element {
+  const { t } = useTranslation()
   const { items, unread, markRead, markAllRead, clear, prefs, setPrefs } =
     useNotificationsStore(
       useShallow((s) => ({
@@ -113,8 +117,8 @@ export function NotificationCenterButton(): React.JSX.Element {
         variant="ghost"
         size="icon"
         onClick={() => setOpen((o) => !o)}
-        title="Notifications"
-        aria-label={`Notifications (${unread} unread)`}
+        title={t("notificationsPanel.tooltip")}
+        aria-label={t("notificationsPanel.ariaLabel", { count: unread })}
         className="relative h-8 w-8 text-(--text-secondary) hover:enabled:text-(--text-primary)"
       >
         <Bell className="w-4 h-4" />
@@ -136,10 +140,10 @@ export function NotificationCenterButton(): React.JSX.Element {
         >
           <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-(--border)">
             <div className="text-[13px] font-semibold text-(--text-primary)">
-              Notifications
+              {t("notificationsPanel.title")}
               {unread > 0 && (
                 <span className="ml-1.5 text-[11px] text-(--text-tertiary) font-normal">
-                  {unread} unread
+                  {t("notificationsPanel.unread", { count: unread })}
                 </span>
               )}
             </div>
@@ -148,14 +152,14 @@ export function NotificationCenterButton(): React.JSX.Element {
                 variant="ghost"
                 size="icon"
                 onClick={() => setShowPrefs((s) => !s)}
-                title="Notification settings"
+                title={t("notificationsPanel.settingsTooltip")}
                 className="h-6 w-6 text-(--text-secondary) hover:enabled:text-(--text-primary)"
               >
                 <SettingsIcon className="w-3.5 h-3.5" />
               </Button>
               {!showPrefs && items.length > 0 && (
                 <Button variant="link" size="sm" onClick={() => clear()}>
-                  Clear
+                  {t("notificationsPanel.clear")}
                 </Button>
               )}
             </div>
@@ -166,10 +170,10 @@ export function NotificationCenterButton(): React.JSX.Element {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <div className="text-[12px] font-medium text-(--text-primary)">
-                    Enable notifications
+                    {t("notificationsPanel.prefs.enable")}
                   </div>
                   <div className="text-[11px] text-(--text-tertiary)">
-                    Show OS-level toasts for events.
+                    {t("notificationsPanel.prefs.enableDesc")}
                   </div>
                 </div>
                 <Switch
@@ -180,7 +184,7 @@ export function NotificationCenterButton(): React.JSX.Element {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <div className="text-[12px] font-medium text-(--text-primary)">
-                    Play sound
+                    {t("notificationsPanel.prefs.playSound")}
                   </div>
                 </div>
                 <Switch
@@ -190,17 +194,17 @@ export function NotificationCenterButton(): React.JSX.Element {
               </div>
               <div className="mt-4">
                 <div className="text-[11px] uppercase tracking-wide text-(--text-tertiary) mb-2">
-                  Mute by kind
+                  {t("notificationsPanel.prefs.muteByKind")}
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  {(Object.keys(KIND_LABEL) as NotifKind[]).map((k) => {
+                  {NOTIF_KINDS.map((k) => {
                     const muted = prefs.mutedKinds.includes(k)
                     return (
                       <label
                         key={k}
                         className="flex items-center justify-between text-[12px] py-1 cursor-pointer"
                       >
-                        <span>{KIND_LABEL[k]}</span>
+                        <span>{t(`notificationsPanel.kinds.${k}`)}</span>
                         <Switch
                           checked={!muted}
                           onCheckedChange={(v) => {
@@ -217,7 +221,7 @@ export function NotificationCenterButton(): React.JSX.Element {
               </div>
               <div className="mt-4">
                 <div className="text-[11px] uppercase tracking-wide text-(--text-tertiary) mb-2">
-                  Quiet hours
+                  {t("notificationsPanel.prefs.quietHours")}
                 </div>
                 <QuietHoursControl
                   value={prefs.quietHours}
@@ -229,7 +233,7 @@ export function NotificationCenterButton(): React.JSX.Element {
                 className="mt-4 w-full"
                 onClick={() => setShowPrefs(false)}
               >
-                Done
+                {t("notificationsPanel.prefs.done")}
               </Button>
             </div>
           ) : (
@@ -248,13 +252,13 @@ export function NotificationCenterButton(): React.JSX.Element {
                           : "bg-transparent text-(--text-secondary)",
                       )}
                     >
-                      {f === "all" ? "All" : "Unread"}
+                      {f === "all" ? t("notificationsPanel.filters.all") : t("notificationsPanel.filters.unread")}
                     </button>
                   ))}
                 </div>
                 {unread > 0 && (
                   <Button variant="link" size="sm" onClick={() => markAllRead()}>
-                    Mark all read
+                    {t("notificationsPanel.markAllRead")}
                   </Button>
                 )}
               </div>
@@ -263,8 +267,8 @@ export function NotificationCenterButton(): React.JSX.Element {
                 {visible.length === 0 ? (
                   <div className="px-4 py-8 text-center text-[12px] text-(--text-tertiary)">
                     {filter === "unread"
-                      ? "No unread notifications."
-                      : "No notifications yet."}
+                      ? t("notificationsPanel.empty.unread")
+                      : t("notificationsPanel.empty.all")}
                   </div>
                 ) : (
                   <ul className="m-0 p-0 list-none">
@@ -308,7 +312,7 @@ export function NotificationCenterButton(): React.JSX.Element {
                             e.stopPropagation()
                             void clear(r.id)
                           }}
-                          title="Dismiss"
+                          title={t("notificationsPanel.dismiss")}
                           className="h-5 w-5 shrink-0 opacity-50 hover:opacity-100 text-(--text-secondary)"
                         >
                           <X className="w-3 h-3" />
@@ -333,12 +337,13 @@ function QuietHoursControl({
   value: [number, number] | null
   onChange: (v: [number, number] | null) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const enabled = !!value
   const [start, end] = value || [22, 7]
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[12px]">Suppress non-critical toasts</span>
+        <span className="text-[12px]">{t("notificationsPanel.prefs.quietHoursLabel")}</span>
         <Switch
           checked={enabled}
           onCheckedChange={(v) => onChange(v ? [22, 7] : null)}

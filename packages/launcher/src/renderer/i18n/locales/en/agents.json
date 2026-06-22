@@ -1,0 +1,260 @@
+{
+  "list": {
+    "title": "My Agents",
+    "subtitle": "— Manage installed agent instances",
+    "newAgent": "New Agent",
+    "empty": "No agents configured. Click \"+ New Agent\" to get started.",
+    "coreUpdateRequired": "Launcher core update required",
+    "apiPrefix": "API: {{value}}",
+    "modelPrefix": "Model: {{value}}",
+    "notConnected": "Not connected",
+    "stopping": "Stopping...",
+    "starting": "Starting...",
+    "stop": "Stop",
+    "start": "Start",
+    "configure": "Configure",
+    "disconnect": "Disconnect",
+    "openWorkspace": "Open Workspace",
+    "connect": "Connect",
+    "remove": "Remove",
+    "cancel": "Cancel",
+    "removeTitle": "Remove {{name}}?",
+    "removeBody": "This will stop and remove <1>{{name}}</1>.",
+    "health": {
+      "notConfigured": "Not configured",
+      "ready": "Ready",
+      "apiKey": "API key",
+      "cliLogin": "CLI login"
+    },
+    "toast": {
+      "stoppingAgent": "Stopping {{name}}...",
+      "stoppedAgent": "{{name}} stopped",
+      "startingAgent": "Starting {{name}}...",
+      "nowRunning": "{{name}} is now running",
+      "removed": "Agent '{{name}}' removed",
+      "disconnected": "Disconnected {{name}} from workspace",
+      "notConnectedYet": "{{name}} isn't connected to a workspace yet — click Connect first.",
+      "startingEllipsis": "Starting {{name}}…",
+      "couldntStart": "Couldn't start {{name}}: {{message}}",
+      "error": "Error: {{message}}"
+    }
+  },
+  "newDialog": {
+    "title": "New Agent",
+    "loadingTypes": "Loading installed types...",
+    "noRuntimes": "No Launcher-supported agent runtimes installed. Install one first.",
+    "goToInstall": "Go to Install",
+    "cancel": "Cancel",
+    "agentType": "Agent type",
+    "agentName": "Agent name",
+    "workingDirectory": "Working directory (optional)",
+    "workingDirectoryPlaceholder": "/path/to/project",
+    "create": "Create",
+    "toast": {
+      "invalidName": "Agent name can only contain letters, numbers, hyphens, and underscores",
+      "created": "Agent '{{name}}' created",
+      "error": "Error: {{message}}"
+    }
+  },
+  "configureDialog": {
+    "title": "Configure {{name}}",
+    "hintLoginOnly": "This agent signs in through its own service — no API key needed. Login opens a terminal running",
+    "hintLoginOnlySuffix": "; complete the sign-in there.",
+    "hintInstance": "Settings saved for this agent. Type defaults remain available as fallbacks.",
+    "hintType": "Settings saved to ~/.openagents/env/",
+    "hintNoConfig": "No configuration required for this agent type.",
+    "loadingConfig": "Loading configuration...",
+    "awaitingTerminalPrefix": "A terminal opened running",
+    "awaitingTerminalSuffix": ". Once you've finished signing in there, let us know and we'll verify it.",
+    "orUseApiKey": "Or use an API key",
+    "enterField": "Enter {{name}}...",
+    "close": "Close",
+    "finishedSigningIn": "I've finished signing in",
+    "notYet": "Not yet",
+    "reLogin": "Re-login",
+    "login": "Login",
+    "save": "Save",
+    "testing": "Testing...",
+    "testConnection": "Test Connection",
+    "cancel": "Cancel",
+    "fieldRequired": "{{field}} is required",
+    "toast": {
+      "signedInReady": "Signed in — agent is ready",
+      "couldntConfirm": "Couldn't confirm sign-in. If you finished login, try again.",
+      "couldntReadStatus": "Couldn't read sign-in status. Try again.",
+      "configurationSaved": "Configuration saved",
+      "errorSaving": "Error saving: {{message}}",
+      "failedOpenTerminal": "Failed to open terminal: {{message}}"
+    },
+    "test": {
+      "okResult": "OK — model: {{model}}, response: \"{{response}}\"",
+      "unknownError": "Unknown error"
+    }
+  },
+  "loginStatus": {
+    "checking": "Checking sign-in…",
+    "signedIn": "Signed in",
+    "notSignedIn": "Not signed in",
+    "signInWithCli": "Sign in with CLI",
+    "opensTerminalPrefix": "Opens a terminal running",
+    "opensTerminalSuffix": "— no API key needed.",
+    "finishThenConfirm": "Finish signing in in the terminal, then confirm below.",
+    "finishedSigningIn": "I've finished signing in",
+    "notYet": "Not yet",
+    "reLogin": "Re-login",
+    "signIn": "Sign in"
+  },
+  "connectDialog": {
+    "title": "Connect '{{name}}' to Workspace",
+    "createNew": "+ Create New Workspace",
+    "joinWithToken": "Join with URL or Token",
+    "cancel": "Cancel",
+    "workspaceName": "Workspace name",
+    "workspaceNamePlaceholder": "my-workspace",
+    "create": "Create",
+    "pasteUrlOrToken": "Paste workspace URL or token",
+    "pasteUrlPlaceholder": "https://workspace.openagents.org/team?token=… or http://localhost:8000/team?token=…",
+    "join": "Join",
+    "toast": {
+      "connecting": "Connecting {{name}} to workspace...",
+      "connectedTo": "Connected to {{slug}}",
+      "workspaceNameRequired": "Workspace name is required",
+      "creatingWorkspace": "Creating workspace '{{name}}'...",
+      "workspaceCreated": "Workspace '{{name}}' created",
+      "connectedToName": "Connected {{name}} to {{workspace}}",
+      "urlOrTokenRequired": "Workspace URL or token is required",
+      "joining": "Joining workspace...",
+      "joined": "Joined workspace",
+      "error": "Error: {{message}}"
+    }
+  },
+  "detail": {
+    "back": "← Back",
+    "uninstallTitle": "Uninstall {{name}}?",
+    "uninstallBody": "This will remove <1>{{name}}</1> from your system. Configured agents of this type may stop working.",
+    "alsoRemoveEnv": "Also remove saved environment variables",
+    "alsoRemoveEnvHint": "(API keys, model selection — kept by default and reappear in the setup wizard on reinstall)",
+    "uninstall": "Uninstall",
+    "cancel": "Cancel",
+    "toast": {
+      "installSuccess": "{{name}} {{action}}{{tag}}",
+      "installed": "installed",
+      "updated": "updated",
+      "installFailed": "{{verb}} failed: {{message}}",
+      "uninstalled": "{{name}} uninstalled",
+      "uninstallFailed": "Uninstall failed: {{message}}",
+      "noPreviousVersion": "No previous version recorded",
+      "rolledBack": "Rolled back to v{{version}}",
+      "rollbackFailed": "Rollback failed: {{message}}",
+      "rollbackFailedBare": "Rollback failed",
+      "logCopied": "Log copied to clipboard",
+      "logCopyFailed": "Failed to copy log"
+    }
+  },
+  "header": {
+    "noDescription": "No description available",
+    "featured": "Featured",
+    "installed": "Installed",
+    "global": "Global",
+    "globalTitle": "Installed outside OpenAgents (system/global)",
+    "notInstalled": "Not installed",
+    "updateAvailable": "Update v{{version}} available",
+    "installedAt": "Installed at",
+    "externalInstall": "External install",
+    "github": "GitHub",
+    "docs": "Docs"
+  },
+  "actions": {
+    "uninstalling": "Uninstalling…",
+    "rollingBack": "Rolling back…",
+    "updating": "Updating…",
+    "installing": "Installing…",
+    "install": "Install",
+    "updateToVersion": "Update to v{{version}}",
+    "reinstall": "Reinstall",
+    "setupWizard": "Setup wizard",
+    "rollBack": "Roll back",
+    "uninstall": "Uninstall"
+  },
+  "readme": {
+    "overview": "Overview",
+    "noDescription": "No description available for this agent yet."
+  },
+  "screenshots": {
+    "openFullSize": "Open full size",
+    "altScreenshot": "{{prefix}} screenshot {{index}}",
+    "watchDemo": "▶ Watch demo video ↗"
+  },
+  "requirements": {
+    "title": "System requirements",
+    "platforms": "Platforms",
+    "runtime": "Runtime",
+    "installMode": "Install mode",
+    "apiOnly": "API only — no binary required"
+  },
+  "dependencies": {
+    "title": "Dependencies",
+    "binary": "Binary",
+    "install": "Install ({{platform}})"
+  },
+  "envConfig": {
+    "title": "Configuration",
+    "enterField": "Enter {{name}}…",
+    "fieldRequired": "{{field}} is required",
+    "saving": "Saving…",
+    "save": "Save",
+    "testing": "Testing…",
+    "testConnection": "Test connection",
+    "toast": {
+      "configurationSaved": "Configuration saved",
+      "error": "Error: {{message}}",
+      "okResponded": "OK — {{model}} responded",
+      "modelFallback": "model",
+      "testFailed": "Test failed"
+    }
+  },
+  "quickStart": {
+    "title": "Quick start",
+    "launch": "Launch {{name}}",
+    "signInConfigure": "Sign in / configure",
+    "copyCommand": "Copy command",
+    "copied": "Copied",
+    "copy": "Copy",
+    "documentation": "Documentation ↗",
+    "github": "GitHub ↗",
+    "toast": {
+      "copied": "Copied to clipboard",
+      "copyFailed": "Copy failed"
+    }
+  },
+  "changelog": {
+    "title": "Versions",
+    "loading": "Loading…",
+    "viewOnNpm": "View on npm ↗",
+    "installed": "installed",
+    "released": "Released {{date}}",
+    "features": "Features",
+    "fixes": "Fixes",
+    "breakingChanges": "Breaking changes",
+    "seeReleaseNotes": "See release notes ↗",
+    "releaseNotesGithub": "Release notes on GitHub ↗",
+    "homepage": "Homepage ↗"
+  },
+  "channelSelector": {
+    "updateChannel": "Update channel",
+    "stable": "Stable",
+    "stableDescription": "Production releases (npm `@latest`)",
+    "beta": "Beta",
+    "betaDescription": "Pre-release builds (`@beta`)",
+    "nightly": "Nightly",
+    "nightlyDescription": "Cutting edge, may be unstable (`@nightly`)"
+  },
+  "installConfirm": {
+    "install": "Install",
+    "update": "Update",
+    "confirmTitle": "{{verb}} {{name}}?",
+    "willRunCommand": "This will run the following command on your system:",
+    "willInstall": "This will {{verb}} <1>{{name}}</1> on your system.",
+    "cancel": "Cancel"
+  }
+}

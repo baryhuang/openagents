@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import { useTranslation } from "react-i18next"
 import type { CatalogEntry } from "../../types"
 import type { ToastType } from "../../hooks/useToast"
 
@@ -25,6 +26,7 @@ export function AgentQuickStart({
   entry,
   showToast,
 }: AgentQuickStartProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState<string | null>(null)
 
   const quickStart = entry.quick_start?.trim() || ""
@@ -35,8 +37,8 @@ export function AgentQuickStart({
   // Derive a default first-run command list when registry doesn't supply one.
   const derived: Array<{ cmd: string; description?: string }> = []
   if (examples.length === 0) {
-    if (binary) derived.push({ cmd: binary, description: `Launch ${entry.label || entry.name}` })
-    if (loginCmd) derived.push({ cmd: loginCmd, description: "Sign in / configure" })
+    if (binary) derived.push({ cmd: binary, description: t("agents.quickStart.launch", { name: entry.label || entry.name }) })
+    if (loginCmd) derived.push({ cmd: loginCmd, description: t("agents.quickStart.signInConfigure") })
   }
   const commands = examples.length > 0 ? examples : derived
 
@@ -49,16 +51,16 @@ export function AgentQuickStart({
     try {
       await navigator.clipboard.writeText(cmd)
       setCopied(cmd)
-      showToast("Copied to clipboard", "success")
+      showToast(t("agents.quickStart.toast.copied"), "success")
       setTimeout(() => setCopied((c) => (c === cmd ? null : c)), 1500)
     } catch {
-      showToast("Copy failed", "error")
+      showToast(t("agents.quickStart.toast.copyFailed"), "error")
     }
   }
 
   return (
     <div className={SECTION}>
-      <h4 className={SECTION_H4}>Quick start</h4>
+      <h4 className={SECTION_H4}>{t("agents.quickStart.title")}</h4>
 
       {quickStart && (
         <p className="text-xs text-(--text-secondary) leading-[1.7] m-0 mb-3 whitespace-pre-wrap">
@@ -83,9 +85,9 @@ export function AgentQuickStart({
                   type="button"
                   onClick={() => copy(ex.cmd)}
                   className="px-2.5 text-[11px] text-(--text-secondary) bg-(--bg-card) border-l border-(--border) cursor-pointer hover:text-(--text-primary) hover:bg-(--bg-card-hover) transition-colors"
-                  aria-label="Copy command"
+                  aria-label={t("agents.quickStart.copyCommand")}
                 >
-                  {copied === ex.cmd ? "Copied" : "Copy"}
+                  {copied === ex.cmd ? t("agents.quickStart.copied") : t("agents.quickStart.copy")}
                 </button>
               </div>
             </li>
@@ -100,7 +102,7 @@ export function AgentQuickStart({
               href="#"
               onClick={(e) => { e.preventDefault(); window.api.openExternal(docs) }}
             >
-              Documentation ↗
+              {t("agents.quickStart.documentation")}
             </a>
           )}
           {github && (
@@ -108,7 +110,7 @@ export function AgentQuickStart({
               href="#"
               onClick={(e) => { e.preventDefault(); window.api.openExternal(github) }}
             >
-              GitHub ↗
+              {t("agents.quickStart.github")}
             </a>
           )}
         </div>

@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import AgentIcon from "../AgentIcon"
 import { Badge } from "../ui/Badge"
 import type { CatalogEntry, InstalledAgentRecord } from "../../types"
@@ -29,14 +30,15 @@ export function AgentHeader({
   docs,
   installedAtLabel,
 }: AgentHeaderProps): React.JSX.Element {
+  const { t } = useTranslation()
   const isInstalled = entry.installed
   const isManaged = entry.managed !== false
   const hasUpdate = !!(currentVersion && latestVersion && currentVersion !== latestVersion)
 
   const externals = [
     homepage && { label: homepage.replace(/^https?:\/\//, ""), url: homepage },
-    github && { label: "GitHub", url: github },
-    docs && { label: "Docs", url: docs },
+    github && { label: t("agents.header.github"), url: github },
+    docs && { label: t("agents.header.docs"), url: docs },
   ].filter(Boolean) as Array<{ label: string; url: string }>
 
   return (
@@ -46,22 +48,22 @@ export function AgentHeader({
         <h2 className="text-xl font-bold tracking-tight m-0 mb-1 flex items-center gap-2">
           <span className="truncate">{entry.label || entry.name}</span>
           {entry.featured && (
-            <span className="text-[11px] text-(--accent)" title="Featured">★</span>
+            <span className="text-[11px] text-(--accent)" title={t("agents.header.featured")}>★</span>
           )}
         </h2>
         <p className="text-[13px] text-(--text-secondary) leading-snug m-0 mb-2">
-          {entry.description || "No description available"}
+          {entry.description || t("agents.header.noDescription")}
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           {isInstalled ? (
             isManaged
-              ? <Badge variant="success">Installed</Badge>
-              : <Badge variant="info" title="Installed outside OpenAgents (system/global)">Global</Badge>
+              ? <Badge variant="success">{t("agents.header.installed")}</Badge>
+              : <Badge variant="info" title={t("agents.header.globalTitle")}>{t("agents.header.global")}</Badge>
           ) : (
-            <Badge variant="warning">Not installed</Badge>
+            <Badge variant="warning">{t("agents.header.notInstalled")}</Badge>
           )}
           {hasUpdate && (
-            <Badge variant="warning">Update v{latestVersion} available</Badge>
+            <Badge variant="warning">{t("agents.header.updateAvailable", { version: latestVersion })}</Badge>
           )}
           {currentVersion && (
             <span className="text-[11px] text-(--text-tertiary)">
@@ -71,17 +73,17 @@ export function AgentHeader({
           {installedAtLabel && (
             <span
               className="text-[11px] text-(--text-tertiary)"
-              title="Installed at"
+              title={t("agents.header.installedAt")}
             >
               {installedAtLabel}
             </span>
           )}
-          {(entry.tags || []).slice(0, 5).map((t) => (
+          {(entry.tags || []).slice(0, 5).map((tag) => (
             <span
-              key={t}
+              key={tag}
               className="text-[10.5px] px-2 py-0.5 rounded-[10px] bg-(--bg-input) text-(--text-secondary)"
             >
-              {t}
+              {tag}
             </span>
           ))}
         </div>

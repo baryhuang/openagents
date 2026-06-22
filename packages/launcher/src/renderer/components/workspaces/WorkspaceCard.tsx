@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import { Copy, ExternalLink, Trash2, Star, Pencil } from "lucide-react"
 import { Badge } from "../ui/Badge"
 import { Button } from "../ui/Button"
@@ -47,6 +48,7 @@ export function WorkspaceCard({
   onToggleAgent: (a: Agent) => void
   onOpenAgentLogs: (a: Agent) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const { ws, agents, health, lastActiveAt, lastMessageAt, lastMessagePreview, sessionCount, connectedPlatforms } = data
   const slug = ws.slug || ws.id
 
@@ -58,7 +60,7 @@ export function WorkspaceCard({
             <button
               type="button"
               onClick={onToggleFavorite}
-              title={favorite ? "Unfavorite" : "Favorite"}
+              title={favorite ? t("workspaces.card.unfavorite") : t("workspaces.card.favorite")}
               className="bg-transparent border-0 p-0 cursor-pointer leading-none"
             >
               <Star
@@ -77,16 +79,16 @@ export function WorkspaceCard({
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button size="icon" variant="ghost" onClick={onCopyUrl} title="Copy URL">
+          <Button size="icon" variant="ghost" onClick={onCopyUrl} title={t("workspaces.card.copyUrl")}>
             <Copy className="w-3.5 h-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" onClick={onOpen} title="Open in browser">
+          <Button size="icon" variant="ghost" onClick={onOpen} title={t("workspaces.card.openInBrowser")}>
             <ExternalLink className="w-3.5 h-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" onClick={onRename} title="Rename">
+          <Button size="icon" variant="ghost" onClick={onRename} title={t("workspaces.card.rename")}>
             <Pencil className="w-3.5 h-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" onClick={onRemove} title="Remove">
+          <Button size="icon" variant="ghost" onClick={onRemove} title={t("workspaces.card.remove")}>
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
         </div>
@@ -95,24 +97,24 @@ export function WorkspaceCard({
       <div className="grid grid-cols-3 gap-3 mb-3 text-[11px]">
         <div>
           <div className="text-(--text-tertiary) text-[10px] uppercase tracking-wider mb-0.5">
-            Agents
+            {t("workspaces.card.agents")}
           </div>
           <div className="text-(--text-primary) font-semibold">{agents.length}</div>
         </div>
         <div>
           <div className="text-(--text-tertiary) text-[10px] uppercase tracking-wider mb-0.5">
-            Last active
+            {t("workspaces.card.lastActive")}
           </div>
-          <div className="text-(--text-primary)">{workspaceRelativeTime(lastActiveAt)}</div>
+          <div className="text-(--text-primary)">{workspaceRelativeTime(lastActiveAt, t)}</div>
         </div>
         <div>
           <div className="text-(--text-tertiary) text-[10px] uppercase tracking-wider mb-0.5">
-            Platforms
+            {t("workspaces.card.platforms")}
           </div>
           <div className="text-(--text-primary)">
             {connectedPlatforms.length > 0
-              ? `${connectedPlatforms.length} linked`
-              : "None"}
+              ? t("workspaces.card.platformsLinked", { count: connectedPlatforms.length })
+              : t("workspaces.card.platformsNone")}
           </div>
         </div>
       </div>
@@ -158,9 +160,9 @@ export function WorkspaceCard({
                   variant="ghost"
                   className="!text-[10px] !px-2 !py-0.5"
                   onClick={() => onOpenAgentLogs(a)}
-                  title="View logs"
+                  title={t("workspaces.card.viewLogs")}
                 >
-                  Logs
+                  {t("workspaces.card.logs")}
                 </Button>
                 <Button
                   size="sm"
@@ -169,7 +171,11 @@ export function WorkspaceCard({
                   onClick={() => onToggleAgent(a)}
                   disabled={isPending}
                 >
-                  {isPending ? "..." : isRunning ? "Stop" : "Start"}
+                  {isPending
+                    ? t("workspaces.card.pending")
+                    : isRunning
+                      ? t("workspaces.card.stop")
+                      : t("workspaces.card.start")}
                 </Button>
               </div>
             )
@@ -177,7 +183,7 @@ export function WorkspaceCard({
         </div>
       ) : (
         <div className="text-[11px] text-(--text-tertiary) text-center py-3 border-t border-(--border)">
-          No agents connected. Add agents from the Agents tab.
+          {t("workspaces.card.noAgents")}
         </div>
       )}
     </div>

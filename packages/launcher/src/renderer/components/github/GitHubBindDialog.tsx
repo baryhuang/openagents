@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Modal, ModalActions } from "../ui/Modal"
 import { Button } from "../ui/Button"
 import { Input } from "../ui/Input"
@@ -27,6 +28,7 @@ export function GitHubBindDialog({
   initialAgent,
   existing,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const agents = useAgentsStore((s) => s.agents)
   const credentials = useCredentialsStore((s) => s.credentials)
   const refreshBindings = useGitHubStore((s) => s.refresh)
@@ -59,15 +61,15 @@ export function GitHubBindDialog({
   const submit = async (): Promise<void> => {
     setError(null)
     if (!agentName) {
-      setError("Choose an agent to bind")
+      setError(t("github.dialog.errorChooseAgent"))
       return
     }
     if (!repo.trim()) {
-      setError("Enter a repo (owner/name or URL)")
+      setError(t("github.dialog.errorEnterRepo"))
       return
     }
     if (!credentialId) {
-      setError("Pick a GitHub credential")
+      setError(t("github.dialog.errorPickCredential"))
       return
     }
     setBusy(true)
@@ -78,12 +80,16 @@ export function GitHubBindDialog({
         credentialId,
       })
       if (!res.ok) {
-        setError(res.error || "Failed to bind repo")
+        setError(res.error || t("github.dialog.errorBindFailed"))
         return
       }
       await refreshBindings()
       showToast(
-        `Bound ${res.binding!.owner}/${res.binding!.repo} → ${agentName}`,
+        t("github.toast.bound", {
+          owner: res.binding!.owner,
+          repo: res.binding!.repo,
+          name: agentName,
+        }),
         "success",
       )
       onClose()
@@ -98,15 +104,15 @@ export function GitHubBindDialog({
     <Modal
       open={open}
       onClose={busy ? () => {} : onClose}
-      title={existing ? "Update GitHub binding" : "Bind agent to GitHub repo"}
+      title={existing ? t("github.dialog.titleEdit") : t("github.dialog.titleCreate")}
     >
-      <FormField label="Agent" required>
+      <FormField label={t("github.dialog.agentLabel")} required>
         <Select
           value={agentName}
           onChange={(e) => setAgentName(e.target.value)}
           disabled={!!existing || busy}
         >
-          {agents.length === 0 && <option value="">(no agents)</option>}
+          {agents.length === 0 && <option value="">{t("github.dialog.noAgents")}</option>}
           {agents.map((a) => (
             <option key={a.name} value={a.name}>
               {a.name}
@@ -116,24 +122,24 @@ export function GitHubBindDialog({
       </FormField>
 
       <FormField
-        label="Repository"
+        label={t("github.dialog.repoLabel")}
         required
-        hint="Accepts owner/name, full URL, or git@github.com:owner/name.git"
+        hint={t("github.dialog.repoHint")}
       >
         <Input
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
-          placeholder="anthropics/claude-code"
+          placeholder={t("github.dialog.repoPlaceholder")}
           disabled={busy}
         />
       </FormField>
 
       <FormField
-        label="Credential"
+        label={t("github.dialog.credentialLabel")}
         required
         hint={
           githubCreds.length === 0
-            ? "Add a GitHub credential under Credentials first."
+            ? t("github.dialog.credentialHint")
             : undefined
         }
       >
@@ -143,7 +149,7 @@ export function GitHubBindDialog({
           disabled={busy || githubCreds.length === 0}
         >
           {githubCreds.length === 0 && (
-            <option value="">(no GitHub credentials)</option>
+            <option value="">{t("github.dialog.noCredentials")}</option>
           )}
           {githubCreds.map((c) => (
             <option key={c.id} value={c.id}>
@@ -161,10 +167,14 @@ export function GitHubBindDialog({
 
       <ModalActions>
         <Button variant="ghost" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button variant="primary" onClick={submit} disabled={busy}>
-          {busy ? "Binding..." : existing ? "Update" : "Bind"}
+          {busy
+            ? t("github.dialog.binding")
+            : existing
+              ? t("github.dialog.update")
+              : t("github.dialog.bind")}
         </Button>
       </ModalActions>
     </Modal>

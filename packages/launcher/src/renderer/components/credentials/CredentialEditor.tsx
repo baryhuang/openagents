@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { capture } from "../../lib/analytics"
 import { Modal, ModalActions } from "../ui/Modal"
 import { Button } from "../ui/Button"
@@ -22,6 +23,7 @@ function ScopeEditor({
   value: string[]
   onChange: (next: string[]) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [draft, setDraft] = useState("")
 
   const add = (raw: string): void => {
@@ -38,7 +40,7 @@ function ScopeEditor({
 
   return (
     <div>
-      <Label className="mb-1.5">Scopes (optional)</Label>
+      <Label className="mb-1.5">{t("credentials.editor.scopesLabel")}</Label>
       <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-(--bg-input) rounded-sm min-h-[34px]">
         {value.map((s) => (
           <span
@@ -50,7 +52,7 @@ function ScopeEditor({
               type="button"
               onClick={() => remove(s)}
               className="bg-transparent border-0 p-0 cursor-pointer text-(--text-link) hover:text-(--danger-text)"
-              aria-label={`Remove scope ${s}`}
+              aria-label={t("credentials.editor.removeScope", { scope: s })}
             >
               ×
             </button>
@@ -59,7 +61,11 @@ function ScopeEditor({
         <input
           type="text"
           value={draft}
-          placeholder={value.length === 0 ? "e.g. read, write, repo, chat:write" : "Add scope..."}
+          placeholder={
+            value.length === 0
+              ? t("credentials.editor.scopesPlaceholderEmpty")
+              : t("credentials.editor.scopesPlaceholderAdd")
+          }
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === ",") {
@@ -74,18 +80,18 @@ function ScopeEditor({
         />
       </div>
       <div className="text-[11px] text-(--text-tertiary) mt-1.5">
-        Used for documentation only — actual platform permissions are set when you generate the token.
+        {t("credentials.editor.scopesHint")}
       </div>
     </div>
   )
 }
 
-const KIND_OPTIONS: Array<{ value: CredentialKind; label: string }> = [
-  { value: "api_key", label: "API Key" },
-  { value: "token", label: "Token" },
-  { value: "oauth", label: "OAuth" },
-  { value: "webhook_secret", label: "Webhook Secret" },
-  { value: "password", label: "Password" },
+const KIND_OPTIONS: Array<{ value: CredentialKind; labelKey: string }> = [
+  { value: "api_key", labelKey: "credentials.editor.kinds.apiKey" },
+  { value: "token", labelKey: "credentials.editor.kinds.token" },
+  { value: "oauth", labelKey: "credentials.editor.kinds.oauth" },
+  { value: "webhook_secret", labelKey: "credentials.editor.kinds.webhookSecret" },
+  { value: "password", labelKey: "credentials.editor.kinds.password" },
 ]
 
 export interface CredentialDraft {
@@ -114,6 +120,7 @@ export function CredentialEditor({
   showToast: (msg: string, type?: "info" | "success" | "error" | "warning") => void
   lockedProvider?: string
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const defaults = useMemo<CredentialDraft>(() => {
     if (initial) {
       return {
@@ -163,7 +170,7 @@ export function CredentialEditor({
 
   const handleTest = async (): Promise<void> => {
     if (!draft.secret && !draft.id) {
-      showToast("Enter a secret to test", "warning")
+      showToast(t("credentials.editor.toasts.enterSecretToTest"), "warning")
       return
     }
     setTesting(true)
@@ -177,14 +184,16 @@ export function CredentialEditor({
       setTestResult(res)
       showToast(
         res.ok
-          ? `Connected${res.account ? ` as ${res.account}` : ""}`
-          : `Test failed: ${res.detail || res.status}`,
+          ? res.account
+            ? t("credentials.editor.toasts.connectedAccount", { account: res.account })
+            : t("credentials.editor.toasts.connected")
+          : t("credentials.editor.toasts.testFailed", { detail: res.detail || res.status }),
         res.ok ? "success" : "error",
       )
     } catch (err) {
       const msg = (err as Error).message
       setTestResult({ ok: false, status: "error", detail: msg })
-      showToast(`Test failed: ${msg}`, "error")
+      showToast(t("credentials.editor.toasts.testFailedError", { message: msg }), "error")
     } finally {
       setTesting(false)
     }
@@ -192,11 +201,11 @@ export function CredentialEditor({
 
   const handleSave = async (): Promise<void> => {
     if (!draft.label.trim()) {
-      showToast("Label is required", "warning")
+      showToast(t("credentials.editor.toasts.labelRequired"), "warning")
       return
     }
     if (!draft.id && !draft.secret) {
-      showToast("Secret is required when creating a credential", "warning")
+      showToast(t("credentials.editor.toasts.secretRequired"), "warning")
       return
     }
     setSaving(true)
@@ -213,13 +222,16 @@ export function CredentialEditor({
       if (res.ok && res.record) {
         capture("credential_saved", { provider: draft.provider, kind: draft.kind, is_update: !!draft.id })
         onSaved(res.record)
-        showToast(draft.id ? "Credential updated" : "Credential added", "success")
+        showToast(
+          draft.id ? t("credentials.editor.toasts.updated") : t("credentials.editor.toasts.added"),
+          "success",
+        )
         onClose()
       } else {
-        showToast(res.error || "Failed to save credential", "error")
+        showToast(res.error || t("credentials.editor.toasts.saveFailed"), "error")
       }
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("credentials.editor.toasts.error", { message: (err as Error).message }), "error")
     } finally {
       setSaving(false)
     }
@@ -229,12 +241,12 @@ export function CredentialEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title={draft.id ? "Edit credential" : "Add credential"}
+      title={draft.id ? t("credentials.editor.editTitle") : t("credentials.editor.addTitle")}
     >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label className="mb-1.5">Provider</Label>
+            <Label className="mb-1.5">{t("credentials.editor.providerLabel")}</Label>
             <Select
               value={draft.provider}
               onChange={(e) => updateProvider(e.target.value)}
@@ -248,7 +260,7 @@ export function CredentialEditor({
             </Select>
           </div>
           <div>
-            <Label className="mb-1.5">Kind</Label>
+            <Label className="mb-1.5">{t("credentials.editor.kindLabel")}</Label>
             <Select
               value={draft.kind}
               onChange={(e) =>
@@ -257,7 +269,7 @@ export function CredentialEditor({
             >
               {KIND_OPTIONS.map((k) => (
                 <option key={k.value} value={k.value}>
-                  {k.label}
+                  {t(k.labelKey)}
                 </option>
               ))}
             </Select>
@@ -265,21 +277,21 @@ export function CredentialEditor({
         </div>
 
         <div>
-          <Label className="mb-1.5">Label</Label>
+          <Label className="mb-1.5">{t("credentials.editor.labelLabel")}</Label>
           <Input
             value={draft.label}
-            placeholder="e.g. OpenAI production"
+            placeholder={t("credentials.editor.labelPlaceholder")}
             onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
           />
         </div>
 
         <div>
           <Label className="mb-1.5">
-            Secret {draft.id && <span className="text-(--text-tertiary) normal-case tracking-normal font-normal">(leave blank to keep existing)</span>}
+            {t("credentials.editor.secretLabel")} {draft.id && <span className="text-(--text-tertiary) normal-case tracking-normal font-normal">{t("credentials.editor.secretKeepHint")}</span>}
           </Label>
           <PasswordInput
             value={draft.secret || ""}
-            placeholder={draft.id ? "•••••••• (hidden)" : "Paste API key or token"}
+            placeholder={draft.id ? t("credentials.editor.secretPlaceholderExisting") : t("credentials.editor.secretPlaceholderNew")}
             onChange={(e) => setDraft((d) => ({ ...d, secret: e.target.value }))}
             autoComplete="off"
           />
@@ -288,10 +300,10 @@ export function CredentialEditor({
         <div className="flex items-center justify-between">
           <div>
             <span className="text-[13px] font-medium text-(--text-primary)">
-              Share with multiple agents
+              {t("credentials.editor.shareTitle")}
             </span>
             <span className="block text-[11px] text-(--text-tertiary)">
-              Allow any agent to reference this credential
+              {t("credentials.editor.shareDescription")}
             </span>
           </div>
           <Switch
@@ -314,9 +326,13 @@ export function CredentialEditor({
             }`}
           >
             {testResult.ok ? (
-              <>Test ok{testResult.account ? ` — ${testResult.account}` : ""}</>
+              <>
+                {testResult.account
+                  ? t("credentials.editor.testOkAccount", { account: testResult.account })
+                  : t("credentials.editor.testOk")}
+              </>
             ) : (
-              <>Failed: {testResult.detail || testResult.status}</>
+              <>{t("credentials.editor.testFailedResult", { detail: testResult.detail || testResult.status })}</>
             )}
           </div>
         )}
@@ -324,13 +340,13 @@ export function CredentialEditor({
 
       <ModalActions>
         <Button variant="ghost" onClick={onClose} disabled={saving}>
-          Cancel
+          {t("credentials.editor.cancel")}
         </Button>
         <Button onClick={handleTest} disabled={testing || saving}>
-          {testing ? "Testing..." : "Test connection"}
+          {testing ? t("credentials.editor.testing") : t("credentials.editor.testConnection")}
         </Button>
         <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save"}
+          {saving ? t("credentials.editor.saving") : t("credentials.editor.save")}
         </Button>
       </ModalActions>
     </Modal>

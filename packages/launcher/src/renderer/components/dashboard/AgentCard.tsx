@@ -1,16 +1,17 @@
 import React from "react"
 import { MessageSquare } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
 import AgentIcon from "../AgentIcon"
 import { cn } from "../../lib/utils"
 import type { Agent } from "../../types"
 
-type StateLabel = "Running" | "Idle" | "Starting" | "Error" | "Offline"
+type StateKey = "running" | "idle" | "starting" | "error" | "offline"
 
-function stateMeta(state: string): { label: StateLabel; bg: string; fg: string; dot: string } {
+function stateMeta(state: string): { labelKey: StateKey; bg: string; fg: string; dot: string } {
   if (["online", "running"].includes(state)) {
     return {
-      label: "Running",
+      labelKey: "running",
       bg: "rgba(34,197,94,0.10)",
       fg: "var(--success-text)",
       dot: "var(--success)",
@@ -18,7 +19,7 @@ function stateMeta(state: string): { label: StateLabel; bg: string; fg: string; 
   }
   if (state === "idle") {
     return {
-      label: "Idle",
+      labelKey: "idle",
       bg: "rgba(245,158,11,0.10)",
       fg: "var(--warning-text)",
       dot: "var(--warning)",
@@ -26,7 +27,7 @@ function stateMeta(state: string): { label: StateLabel; bg: string; fg: string; 
   }
   if (state === "starting" || state === "reconnecting") {
     return {
-      label: "Starting",
+      labelKey: "starting",
       bg: "rgba(245,158,11,0.10)",
       fg: "var(--warning-text)",
       dot: "var(--warning)",
@@ -34,35 +35,37 @@ function stateMeta(state: string): { label: StateLabel; bg: string; fg: string; 
   }
   if (state === "error") {
     return {
-      label: "Error",
+      labelKey: "error",
       bg: "rgba(239,68,68,0.10)",
       fg: "var(--danger-text)",
       dot: "var(--danger)",
     }
   }
   return {
-    label: "Offline",
+    labelKey: "offline",
     bg: "var(--bg-input)",
     fg: "var(--text-tertiary)",
     dot: "var(--text-tertiary)",
   }
 }
 
-function lastActiveLabel(agent: Agent): string {
+type TFn = (key: string, opts?: Record<string, unknown>) => string
+
+function lastActiveLabel(agent: Agent, t: TFn): string {
   const candidates = [
     (agent as unknown as { lastActiveAt?: string }).lastActiveAt,
     (agent as unknown as { last_active?: string }).last_active,
     (agent as unknown as { startedAt?: string }).startedAt,
   ].filter((v): v is string => typeof v === "string")
   if (candidates.length === 0) return ""
-  const t = new Date(candidates[0]).getTime()
-  if (Number.isNaN(t)) return ""
-  const s = Math.floor((Date.now() - t) / 1000)
-  if (s < 5) return "just now"
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
+  const ts = new Date(candidates[0]).getTime()
+  if (Number.isNaN(ts)) return ""
+  const s = Math.floor((Date.now() - ts) / 1000)
+  if (s < 5) return t("dashboard.agentCard.justNow")
+  if (s < 60) return t("dashboard.agentCard.secondsAgo", { count: s })
+  if (s < 3600) return t("dashboard.agentCard.minutesAgo", { count: Math.floor(s / 60) })
+  if (s < 86400) return t("dashboard.agentCard.hoursAgo", { count: Math.floor(s / 3600) })
+  return t("dashboard.agentCard.daysAgo", { count: Math.floor(s / 86400) })
 }
 
 interface Props {
@@ -80,6 +83,7 @@ export function AgentCard({
   onToggle,
   onOpenChat,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const isRunning = ["online", "running", "idle"].includes(agent.state)
   const meta = stateMeta(agent.state)
   const isConnected = !!agent.network
@@ -87,7 +91,7 @@ export function AgentCard({
     (agent.networkName && agent.networkName !== agent.network
       ? agent.networkName
       : agent.network) || ""
-  const lastActive = lastActiveLabel(agent)
+  const lastActive = lastActiveLabel(agent, t)
 
   return (
     <div
@@ -111,7 +115,7 @@ export function AgentCard({
               className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full"
               style={{ background: meta.bg, color: meta.fg }}
             >
-              {meta.label}
+              {t(`dashboard.agentCard.state.${meta.labelKey}`)}
             </span>
           </div>
           <div className="text-[11px] text-(--text-tertiary) mt-0.5 truncate">
@@ -127,11 +131,11 @@ export function AgentCard({
         />
         {isConnected ? (
           <span className="text-(--text-secondary) truncate">
-            Connected to{" "}
+            {t("dashboard.agentCard.connectedTo")}{" "}
             <span className="font-medium text-(--text-primary)">{wsName}</span>
           </span>
         ) : (
-          <span className="text-(--text-tertiary)">No workspace connected</span>
+          <span className="text-(--text-tertiary)">{t("dashboard.agentCard.noWorkspace")}</span>
         )}
       </div>
 
@@ -142,12 +146,12 @@ export function AgentCard({
       )}
 
       <div className="mt-2 flex items-center gap-3 text-[11px] text-(--text-tertiary)">
-        {lastActive && <span>Last active {lastActive}</span>}
+        {lastActive && <span>{t("dashboard.agentCard.lastActive", { time: lastActive })}</span>}
         {lastActive && todayMessages !== undefined && <span>·</span>}
         {todayMessages !== undefined && (
           <span className="flex items-center gap-1">
             <MessageSquare className="w-3 h-3" />
-            {todayMessages} messages today
+            {t("dashboard.agentCard.messagesToday", { count: todayMessages })}
           </span>
         )}
       </div>
@@ -155,15 +159,15 @@ export function AgentCard({
       <div className="flex items-center gap-2 mt-3 pt-3 border-t border-(--border)">
         {isRunning ? (
           <Button size="sm" onClick={onToggle} disabled={isPending}>
-            {isPending ? "Stopping…" : "Stop"}
+            {isPending ? t("dashboard.agentCard.stopping") : t("dashboard.agentCard.stop")}
           </Button>
         ) : (
           <Button size="sm" variant="primary" onClick={onToggle} disabled={isPending}>
-            {isPending ? "Starting…" : "Start"}
+            {isPending ? t("dashboard.agentCard.starting") : t("dashboard.agentCard.start")}
           </Button>
         )}
         <Button size="sm" variant="primary" onClick={onOpenChat}>
-          Open Chat
+          {t("dashboard.agentCard.openChat")}
         </Button>
       </div>
     </div>

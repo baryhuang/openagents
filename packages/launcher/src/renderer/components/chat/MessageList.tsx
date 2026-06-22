@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/utils'
 import type { ChatMessage } from '../../types'
 import MessageBubble from './MessageBubble'
@@ -16,6 +17,7 @@ export default function MessageList({
   thinkingAgents,
   onDownloadAttachment,
 }: MessageListProps): React.JSX.Element {
+  const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
   const [showNewBadge, setShowNewBadge] = useState(false)
@@ -68,8 +70,8 @@ export default function MessageList({
         {messages.length === 0 && pending.length === 0 && thinkingAgents.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-(--text-tertiary) gap-2">
             <div className="text-3xl">💬</div>
-            <div className="text-[13px]">No messages yet. Send something to start the conversation.</div>
-            <div className="text-[11px]">Tip: use <code className="font-mono">@agent-name</code> to direct messages at a specific agent.</div>
+            <div className="text-[13px]">{t('chat.list.emptyTitle')}</div>
+            <div className="text-[11px]">{t('chat.list.tipPrefix')} <code className="font-mono">@agent-name</code> {t('chat.list.tipSuffix')}</div>
           </div>
         ) : (
           <>
@@ -86,7 +88,9 @@ export default function MessageList({
             {thinkingAgents.length > 0 && (
               <div className="flex items-center gap-2 mt-2 text-[11px] text-(--text-tertiary)">
                 <span className="inline-block w-2 h-2 rounded-full bg-(--accent) animate-pulse" />
-                <span>{thinkingAgents.join(', ')} {thinkingAgents.length === 1 ? 'is' : 'are'} thinking…</span>
+                <span>{thinkingAgents.length === 1
+                  ? t('chat.list.thinkingOne', { names: thinkingAgents.join(', ') })
+                  : t('chat.list.thinkingMany', { names: thinkingAgents.join(', ') })}</span>
               </div>
             )}
           </>
@@ -103,7 +107,7 @@ export default function MessageList({
             'hover:bg-(--accent-hover)',
           )}
         >
-          ↓ New messages
+          {t('chat.list.newMessages')}
         </button>
       )}
     </div>

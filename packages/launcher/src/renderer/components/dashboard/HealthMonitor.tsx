@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import type { Agent } from "../../types"
 import StatusDot, { displayState } from "../ui/StatusDot"
 import { cn } from "../../lib/utils"
@@ -13,28 +14,21 @@ function bucket(a: Agent): Bucket {
   return "offline"
 }
 
-const BUCKET_META: Record<
-  Bucket,
-  { label: string; color: string; bg: string }
-> = {
+const BUCKET_META: Record<Bucket, { color: string; bg: string }> = {
   healthy: {
-    label: "Healthy",
     color: "var(--success-text)",
     bg: "var(--success-bg)",
   },
-  busy: { label: "Busy", color: "var(--accent)", bg: "var(--accent-bg)" },
+  busy: { color: "var(--accent)", bg: "var(--accent-bg)" },
   warning: {
-    label: "Warning",
     color: "var(--warning-text)",
     bg: "var(--warning-bg)",
   },
   offline: {
-    label: "Offline",
     color: "var(--text-tertiary)",
     bg: "var(--bg-input)",
   },
   error: {
-    label: "Error",
     color: "var(--danger-text)",
     bg: "var(--danger-bg)",
   },
@@ -47,6 +41,7 @@ export function HealthMonitor({
   agents: Agent[]
   onSelect?: (name: string) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const buckets: Record<Bucket, Agent[]> = {
     healthy: [],
     busy: [],
@@ -60,10 +55,10 @@ export function HealthMonitor({
     <div className="flex flex-col h-full bg-(--bg-card) border border-(--border) rounded-(--radius) px-4 py-3.5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-[13px] font-semibold text-(--text-primary) m-0">
-          Agent health
+          {t("dashboard.health.title")}
         </h3>
         <span className="text-[10px] text-(--text-tertiary)">
-          {agents.length} agents
+          {t("dashboard.health.agentCount", { count: agents.length })}
         </span>
       </div>
       <div className="grid grid-cols-5 gap-2 mb-3 shrink-0">
@@ -86,7 +81,7 @@ export function HealthMonitor({
                 className="text-[10px] mt-0.5"
                 style={{ color: meta.color }}
               >
-                {meta.label}
+                {t(`dashboard.health.buckets.${b}`)}
               </div>
             </div>
           )
@@ -94,7 +89,7 @@ export function HealthMonitor({
       </div>
       {agents.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-[11px] text-(--text-tertiary) text-center py-3">
-          No agents configured.
+          {t("dashboard.health.empty")}
         </div>
       ) : (
         <ul className="m-0 p-0 list-none flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto">

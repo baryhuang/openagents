@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Modal, ModalBody, ModalFooter, ModalHeader, ModalTitle } from "../ui/Modal"
 import AgentIcon from "../AgentIcon"
 import { cn } from "../../lib/utils"
@@ -30,6 +31,7 @@ export default function SetupWizard({
   onClose,
   showToast,
 }: SetupWizardProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   const [step, setStep] = useState<Step>("configure")
   const [envFields, setEnvFields] = useState<EnvField[]>([])
   const [envValues, setEnvValues] = useState<Record<string, string>>({})
@@ -70,10 +72,18 @@ export default function SetupWizard({
       try {
         const r = await window.api.testLLM(envValues)
         if (r.success) {
-          setTestResult({ ok: true, message: `OK — ${r.model || "model"} responded` })
+          setTestResult({
+            ok: true,
+            message: t("onboarding.wizard.test.okResponded", {
+              model: r.model || t("onboarding.wizard.test.model"),
+            }),
+          })
           setStep("test")
         } else {
-          setTestResult({ ok: false, message: r.error || "Test failed" })
+          setTestResult({
+            ok: false,
+            message: r.error || t("onboarding.wizard.test.testFailed"),
+          })
         }
       } catch (e: unknown) {
         setTestResult({ ok: false, message: (e as Error).message })
@@ -89,11 +99,16 @@ export default function SetupWizard({
     setSubmitting(true)
     try {
       await window.api.addAgent({ name, type: entry.name })
-      showToast(`Created agent "${name}"`, "success")
+      showToast(t("onboarding.wizard.toast.agentCreated", { name }), "success")
       onClose()
       setCurrentTab("agents")
     } catch (e: unknown) {
-      showToast(`Failed to create agent: ${(e as Error).message}`, "error")
+      showToast(
+        t("onboarding.wizard.toast.createFailed", {
+          message: (e as Error).message,
+        }),
+        "error",
+      )
     } finally {
       setSubmitting(false)
     }
@@ -102,9 +117,9 @@ export default function SetupWizard({
   const stepIndex: Record<Step, number> = { configure: 0, test: 1, create: 2 }
   const idx = stepIndex[step]
   const steps: Array<{ key: Step; label: string }> = [
-    { key: "configure", label: "API config" },
-    { key: "test", label: "Test connection" },
-    { key: "create", label: "Create agent" },
+    { key: "configure", label: t("onboarding.wizard.steps.configure") },
+    { key: "test", label: t("onboarding.wizard.steps.test") },
+    { key: "create", label: t("onboarding.wizard.steps.create") },
   ]
 
   const openLoginTerminal = (): void => {
@@ -113,7 +128,12 @@ export default function SetupWizard({
     window.api
       .openTerminal(cmd)
       .catch((e: Error) =>
-        showToast(`Failed to open terminal: ${e.message}`, "error"),
+        showToast(
+          t("onboarding.wizard.toast.openTerminalFailed", {
+            message: e.message,
+          }),
+          "error",
+        ),
       )
   }
 
@@ -132,7 +152,8 @@ export default function SetupWizard({
 
   const testProps = {
     ok: !!testResult?.ok,
-    message: testResult?.message || "Connection successful.",
+    message:
+      testResult?.message || t("onboarding.wizard.test.connectionSuccessful"),
     onNext: () => setStep("create"),
     onBack: () => setStep("configure"),
   }
@@ -157,12 +178,10 @@ export default function SetupWizard({
         <div className="flex items-center gap-3 mb-2">
           <AgentIcon type={entry.name} size={28} />
           <ModalTitle className="m-0">
-            Set up {entry.label || entry.name}
+            {t("onboarding.wizard.title", { label: entry.label || entry.name })}
           </ModalTitle>
         </div>
-        <p className="hint m-0 mb-3">
-          Quick setup — configure, verify, then create your first agent.
-        </p>
+        <p className="hint m-0 mb-3">{t("onboarding.wizard.subtitle")}</p>
 
         <div className="wizard-steps mb-0">
           {steps.map((s, i) => (

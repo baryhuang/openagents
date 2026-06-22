@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { Plus } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { Button } from "../../components/ui/Button"
 import { SearchInput } from "../../components/ui/SearchInput"
 import { TopBar } from "../../components/TopBar"
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export default function Credentials({ showToast }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const { credentials, refresh } = useCredentialsStore(
     useShallow((s) => ({ credentials: s.credentials, refresh: s.refresh })),
   )
@@ -90,10 +92,10 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
       if (r.ok && r.secret) {
         setRevealed((prev) => ({ ...prev, [id]: r.secret! }))
       } else {
-        showToast(r.error || "Failed to reveal", "error")
+        showToast(r.error || t("credentials.toasts.revealFailed"), "error")
       }
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("credentials.toasts.error", { message: (err as Error).message }), "error")
     }
   }
 
@@ -105,10 +107,10 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
       await window.api.removeCredential(cred.id)
       await refresh()
       await refreshConnections()
-      showToast("Credential removed", "success")
+      showToast(t("credentials.toasts.removed"), "success")
       setRemoveTarget(null)
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("credentials.toasts.error", { message: (err as Error).message }), "error")
     } finally {
       setRemoving(false)
     }
@@ -124,12 +126,14 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
       await refresh()
       showToast(
         r.ok
-          ? `Test passed${r.account ? ` — ${r.account}` : ""}`
-          : `Test failed: ${r.detail || r.status}`,
+          ? r.account
+            ? t("credentials.toasts.testPassedAccount", { account: r.account })
+            : t("credentials.toasts.testPassed")
+          : t("credentials.toasts.testFailed", { detail: r.detail || r.status }),
         r.ok ? "success" : "error",
       )
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("credentials.toasts.error", { message: (err as Error).message }), "error")
     } finally {
       setTesting(null)
     }
@@ -143,12 +147,12 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="Credentials"
-        subtitle="— Encrypted at rest. Reusable across multiple agents"
+        title={t("credentials.title")}
+        subtitle={t("credentials.subtitle")}
         actions={
           <Button variant="primary" onClick={openAdd}>
             <Plus className="w-3.5 h-3.5" />
-            Add credential
+            {t("credentials.addCredential")}
           </Button>
         }
       />
@@ -160,7 +164,7 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onClear={() => setSearch("")}
-          placeholder="Search credentials..."
+          placeholder={t("credentials.searchPlaceholder")}
           className="flex-1 min-w-[200px] max-w-[300px]"
         />
         <div className="inline-flex items-center gap-1 rounded-(--radius-sm) bg-(--bg-input) p-1 flex-wrap">
@@ -173,7 +177,7 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
                 : "bg-transparent text-(--text-secondary)"
             }`}
           >
-            All
+            {t("credentials.filterAll")}
           </button>
           {providers.map((p) => (
             <button
@@ -196,12 +200,12 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
         <div className="card-legacy empty-state">
           <p>
             {credentials.length === 0
-              ? "No credentials yet. Add one to share keys across agents."
-              : `No credentials match "${search}".`}
+              ? t("credentials.empty.none")
+              : t("credentials.empty.noMatch", { query: search })}
           </p>
           {credentials.length === 0 && (
             <Button variant="primary" onClick={openAdd}>
-              Add your first credential
+              {t("credentials.empty.addFirst")}
             </Button>
           )}
         </div>
@@ -227,19 +231,18 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
       )}
 
       <div className="card-legacy mt-5">
-        <h3>Storage</h3>
+        <h3>{t("credentials.storage.title")}</h3>
         <p className="text-[12px] text-(--text-secondary) mb-2 leading-relaxed">
-          Secrets are encrypted with AES-256-GCM using a key wrapped by your OS
-          keychain ({navigator.platform.includes("Mac")
-            ? "macOS Keychain"
-            : navigator.platform.includes("Win")
-              ? "Windows Credential Manager"
-              : "Linux Secret Service"}).
-          The encrypted file lives under your Launcher userData directory and is
-          chmod 600 on Unix.
+          {t("credentials.storage.description", {
+            keychain: navigator.platform.includes("Mac")
+              ? t("credentials.storage.keychain.mac")
+              : navigator.platform.includes("Win")
+                ? t("credentials.storage.keychain.windows")
+                : t("credentials.storage.keychain.linux"),
+          })}
         </p>
         <p className="text-[11px] text-(--text-tertiary) m-0">
-          {PLATFORMS.length} platforms supported.
+          {t("credentials.storage.platformsSupported", { count: PLATFORMS.length })}
         </p>
       </div>
       </div>
@@ -272,14 +275,15 @@ export default function Credentials({ showToast }: Props): React.JSX.Element {
             <PlatformLogo platform={getPlatform(removeTarget.provider)!} size={40} />
           ) : undefined
         }
-        title={removeTarget ? `Delete "${removeTarget.label}"?` : ""}
+        title={removeTarget ? t("credentials.remove.title", { label: removeTarget.label }) : ""}
         description={
           <>
-            Any connection using this credential will be marked{" "}
-            <strong>Unauthorized</strong>. This cannot be undone.
+            {t("credentials.remove.descriptionPrefix")}{" "}
+            <strong>{t("credentials.remove.unauthorized")}</strong>
+            {t("credentials.remove.descriptionSuffix")}
           </>
         }
-        confirmLabel="Delete"
+        confirmLabel={t("credentials.remove.confirm")}
         busy={removing}
         onConfirm={performRemove}
         onCancel={() => !removing && setRemoveTarget(null)}

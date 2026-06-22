@@ -1,19 +1,23 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 import { Button } from "../ui/Button"
 import { PlatformLogo } from "./PlatformLogo"
 import { ConnectionStatusBadge } from "./ConnectionStatusBadge"
 import type { PlatformDef } from "./platforms"
 import type { ConnectionRecord } from "../../types"
 
-function relativeTime(iso?: string): string {
-  if (!iso) return "never"
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return "never"
-  const diff = Date.now() - t
-  if (diff < 60_000) return "just now"
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  return `${Math.floor(diff / 86_400_000)}d ago`
+function relativeTime(t: TFunction, iso?: string): string {
+  if (!iso) return t("connections.relativeTime.never")
+  const ts = new Date(iso).getTime()
+  if (Number.isNaN(ts)) return t("connections.relativeTime.never")
+  const diff = Date.now() - ts
+  if (diff < 60_000) return t("connections.relativeTime.justNow")
+  if (diff < 3_600_000)
+    return t("connections.relativeTime.minutesAgo", { count: Math.floor(diff / 60_000) })
+  if (diff < 86_400_000)
+    return t("connections.relativeTime.hoursAgo", { count: Math.floor(diff / 3_600_000) })
+  return t("connections.relativeTime.daysAgo", { count: Math.floor(diff / 86_400_000) })
 }
 
 export function PlatformCard({
@@ -33,6 +37,7 @@ export function PlatformCard({
   onDisconnect: () => void
   busy: boolean
 }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col h-full bg-(--bg-card) border border-(--border) rounded-(--radius) px-[18px] py-4 shadow-sm transition-all duration-200 hover:shadow-md hover:border-(--border-hover)">
       <div className="flex items-start gap-3 mb-3">
@@ -53,12 +58,12 @@ export function PlatformCard({
         <div className="flex items-center justify-between gap-2">
           <ConnectionStatusBadge status={connection?.status || "disconnected"} />
           <span className="text-[10px] text-(--text-tertiary)">
-            Synced {relativeTime(connection?.lastSyncAt)}
+            {t("connections.card.synced", { time: relativeTime(t, connection?.lastSyncAt) })}
           </span>
         </div>
         {connection?.account && (
           <div className="text-(--text-secondary) truncate">
-            <span className="text-(--text-tertiary)">Account: </span>
+            <span className="text-(--text-tertiary)">{t("connections.card.account")}</span>
             {connection.account}
           </div>
         )}
@@ -72,18 +77,18 @@ export function PlatformCard({
       <div className="flex flex-wrap gap-2 mt-auto pt-2">
         {!connection ? (
           <Button size="sm" variant="primary" onClick={onConnect} disabled={busy}>
-            Connect
+            {t("connections.card.connect")}
           </Button>
         ) : (
           <>
             <Button size="sm" onClick={onTest} disabled={busy}>
-              Test
+              {t("connections.card.test")}
             </Button>
             <Button size="sm" onClick={onReconnect} disabled={busy}>
-              Reconfigure
+              {t("connections.card.reconfigure")}
             </Button>
             <Button size="sm" variant="destructive" onClick={onDisconnect} disabled={busy}>
-              Disconnect
+              {t("connections.card.disconnect")}
             </Button>
           </>
         )}

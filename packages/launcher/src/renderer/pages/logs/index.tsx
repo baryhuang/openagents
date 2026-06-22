@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Search, Download, Trash2, RefreshCw, Copy, ChevronDown, ChevronRight } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "../../components/ui/Button"
 import { TopBar } from "../../components/TopBar"
 import { Modal, ModalTitle } from "../../components/ui/Modal"
@@ -39,6 +40,7 @@ function toDateTimeLocalValue(date: Date): string {
 const LEVEL_ORDER: LogLevel[] = ["error", "warn", "info", "debug", "trace", "unknown"]
 
 export default function Logs({ showToast }: LogsProps): React.JSX.Element {
+  const { t } = useTranslation()
   const agents = useAgentsStore((s) => s.agents)
   const [logLines, setLogLines] = useState<string[]>([])
   const [agentFilter, setAgentFilter] = useState("")
@@ -162,8 +164,8 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
   const copyLogs = (): void => {
     navigator.clipboard
       .writeText(logLines.join("\n"))
-      .then(() => showToast("Logs copied to clipboard", "success"))
-      .catch(() => showToast("Failed to copy logs", "error"))
+      .then(() => showToast(t("logs.toast.copied"), "success"))
+      .catch(() => showToast(t("logs.toast.copyFailed"), "error"))
   }
 
   const exportLogs = (): void => {
@@ -178,9 +180,9 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      showToast("Exported logs", "success")
+      showToast(t("logs.toast.exported"), "success")
     } catch (e) {
-      showToast(`Export failed: ${(e as Error).message}`, "error")
+      showToast(t("logs.toast.exportFailed", { message: (e as Error).message }), "error")
     }
   }
 
@@ -198,11 +200,11 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
     const start = clearStart ? new Date(clearStart) : null
     const end = clearEnd ? new Date(clearEnd) : null
     if (!start || isNaN(start.getTime()) || !end || isNaN(end.getTime())) {
-      setClearError("Please select a valid start and end time.")
+      setClearError(t("logs.clearModal.errors.invalidRange"))
       return
     }
     if (start.getTime() > end.getTime()) {
-      setClearError("Start time must be before end time.")
+      setClearError(t("logs.clearModal.errors.startAfterEnd"))
       return
     }
     setClearInFlight(true)
@@ -216,11 +218,11 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
       logsOffset.current = 0
       await refreshLogs(true)
       showToast(
-        `Deleted ${result.removed || 0} log lines from the selected range`,
+        t("logs.toast.deleted", { count: result.removed || 0 }),
         "success",
       )
     } catch (err: unknown) {
-      setClearError((err as Error).message || "Failed to clear logs.")
+      setClearError((err as Error).message || t("logs.clearModal.errors.generic"))
     } finally {
       setClearInFlight(false)
     }
@@ -229,8 +231,8 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="Logs"
-        subtitle="— Daemon and agent output, with level and timeline views"
+        title={t("logs.title")}
+        subtitle={t("logs.subtitle")}
         actions={
           <div className="flex gap-1 p-1 rounded-(--radius-sm) bg-(--bg-input)">
             {(["list", "timeline"] as const).map((v) => (
@@ -245,7 +247,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
                     : "bg-transparent text-(--text-secondary)",
                 )}
               >
-                {v === "list" ? "List" : "Timeline"}
+                {v === "list" ? t("logs.view.list") : t("logs.view.timeline")}
               </button>
             ))}
           </div>
@@ -260,7 +262,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
           onChange={(e) => handleFilterChange(e.target.value)}
           className="px-3 py-1.5 text-xs bg-(--bg-input) text-(--text-primary) rounded-sm border border-transparent outline-none"
         >
-          <option value="">All agents</option>
+          <option value="">{t("logs.allAgents")}</option>
           {agents.map((a) => (
             <option key={a.name} value={a.name}>
               {a.name}
@@ -270,7 +272,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
         <div className="flex items-center gap-1 px-2.5 py-1 rounded-sm bg-(--bg-input) text-[11px]">
           <Search className="w-3 h-3 text-(--text-tertiary)" />
           <input
-            placeholder="Search…"
+            placeholder={t("logs.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-transparent border-0 outline-none w-[180px] text-[12px] py-0.5"
@@ -295,7 +297,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
                   "border-0 cursor-pointer rounded-sm transition-opacity",
                   on ? "opacity-100" : "opacity-35",
                 )}
-                title={`Toggle ${lvl}`}
+                title={t("logs.toggleLevel", { level: lvl })}
               >
                 <LogLevelBadge level={lvl} />
                 <span className="ml-1 text-[10px] text-(--text-tertiary)">
@@ -314,19 +316,19 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
           }}
         >
           <RefreshCw className="w-3 h-3" />
-          Refresh
+          {t("logs.actions.refresh")}
         </Button>
-        <Button size="sm" onClick={copyLogs} title="Copy">
+        <Button size="sm" onClick={copyLogs} title={t("logs.actions.copy")}>
           <Copy className="w-3 h-3" />
-          Copy
+          {t("logs.actions.copy")}
         </Button>
         <Button size="sm" onClick={exportLogs}>
           <Download className="w-3 h-3" />
-          Export
+          {t("logs.actions.export")}
         </Button>
         <Button size="sm" variant="destructive" onClick={openClearModal}>
           <Trash2 className="w-3 h-3" />
-          Clear
+          {t("logs.actions.clear")}
         </Button>
         <label className="flex items-center gap-1 ml-1 text-xs text-(--text-secondary) cursor-pointer">
           <input
@@ -335,7 +337,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
             onChange={(e) => setAutoRefresh(e.target.checked)}
             className="accent-(--accent)"
           />
-          Auto
+          {t("logs.actions.auto")}
         </label>
       </div>
 
@@ -347,8 +349,8 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
         {filtered.length === 0 ? (
           <div className="px-4 py-6 text-center text-[12px] text-(--text-tertiary)">
             {logLines.length === 0
-              ? "No logs yet. Start an agent to see output here."
-              : "No log lines match the current filters."}
+              ? t("logs.empty.noLogs")
+              : t("logs.empty.noMatch")}
           </div>
         ) : view === "timeline" ? (
           <TimelineView entries={filtered} />
@@ -389,7 +391,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
                           ) : (
                             <ChevronRight className="w-3 h-3" />
                           )}
-                          {isExpanded ? "Hide JSON" : "Show JSON"}
+                          {isExpanded ? t("logs.json.hide") : t("logs.json.show")}
                         </button>
                         {isExpanded && (
                           <pre className="bg-(--bg-input) rounded-sm px-3 py-2 mt-1 overflow-x-auto text-[11px]">
@@ -408,13 +410,10 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
       </div>
 
       <Modal open={clearOpen} onClose={() => setClearOpen(false)}>
-        <ModalTitle>Clear Logs</ModalTitle>
-        <p className="hint">
-          Delete log entries from <code className="inline-code">daemon.log</code>{" "}
-          whose timestamps fall inside the selected time range.
-        </p>
+        <ModalTitle>{t("logs.clearModal.title")}</ModalTitle>
+        <p className="hint">{t("logs.clearModal.description")}</p>
         <div className="form-group">
-          <label htmlFor="clear-start">Start Time</label>
+          <label htmlFor="clear-start">{t("logs.clearModal.startTime")}</label>
           <input
             id="clear-start"
             type="datetime-local"
@@ -423,7 +422,7 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
           />
         </div>
         <div className="form-group">
-          <label htmlFor="clear-end">End Time</label>
+          <label htmlFor="clear-end">{t("logs.clearModal.endTime")}</label>
           <input
             id="clear-end"
             type="datetime-local"
@@ -437,13 +436,13 @@ export default function Logs({ showToast }: LogsProps): React.JSX.Element {
           </p>
         )}
         <div className="form-actions">
-          <Button onClick={() => setClearOpen(false)}>Cancel</Button>
+          <Button onClick={() => setClearOpen(false)}>{t("logs.clearModal.cancel")}</Button>
           <Button
             variant="destructive"
             onClick={doClearLogs}
             disabled={clearInFlight}
           >
-            {clearInFlight ? "Deleting..." : "Delete"}
+            {clearInFlight ? t("logs.clearModal.deleting") : t("logs.clearModal.delete")}
           </Button>
         </div>
       </Modal>
@@ -472,18 +471,19 @@ function TimelineView({
 }: {
   entries: Array<{ p: ParsedLog; i: number }>
 }): React.JSX.Element {
+  const { t } = useTranslation()
   // Group by date / hour bucket
   const groups = useMemo(() => {
     const map = new Map<string, Array<{ p: ParsedLog; i: number }>>()
     for (const e of entries) {
       const stamp = e.p.iso || e.p.timestamp || ""
-      const key = stamp ? stamp.slice(0, 16) : "(no timestamp)"
+      const key = stamp ? stamp.slice(0, 16) : t("logs.timeline.noTimestamp")
       const arr = map.get(key) || []
       arr.push(e)
       map.set(key, arr)
     }
     return Array.from(map.entries())
-  }, [entries])
+  }, [entries, t])
 
   return (
     <ol className="m-0 p-0 list-none">

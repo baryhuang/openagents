@@ -1,13 +1,14 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 
 export type WorkspaceHealthState = "healthy" | "warning" | "disconnected" | "error"
 
-const META: Record<WorkspaceHealthState, { label: string; className: string }> = {
-  healthy: { label: "Healthy", className: "badge-success-sm" },
-  warning: { label: "Warning", className: "badge-warning-sm" },
-  disconnected: { label: "Disconnected", className: "badge-muted-sm" },
-  error: { label: "Error", className: "badge-danger-sm" },
+const META: Record<WorkspaceHealthState, { className: string }> = {
+  healthy: { className: "badge-success-sm" },
+  warning: { className: "badge-warning-sm" },
+  disconnected: { className: "badge-muted-sm" },
+  error: { className: "badge-danger-sm" },
 }
 
 export function WorkspaceHealth({
@@ -17,6 +18,11 @@ export function WorkspaceHealth({
   state: WorkspaceHealthState
   className?: string
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const meta = META[state]
-  return <span className={cn(meta.className, className)}>{meta.label}</span>
+  return (
+    <span className={cn(meta.className, className)}>
+      {t(`workspaces.health.${state}`)}
+    </span>
+  )
 }

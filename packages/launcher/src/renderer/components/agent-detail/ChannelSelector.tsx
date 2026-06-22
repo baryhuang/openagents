@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 import type { UpdateChannel } from "../../hooks/useAgentChannel"
 
@@ -8,14 +9,10 @@ interface ChannelSelectorProps {
   className?: string
 }
 
-const OPTIONS: Array<{
-  value: UpdateChannel
-  label: string
-  description: string
-}> = [
-  { value: "stable", label: "Stable", description: "Production releases (npm `@latest`)" },
-  { value: "beta", label: "Beta", description: "Pre-release builds (`@beta`)" },
-  { value: "nightly", label: "Nightly", description: "Cutting edge, may be unstable (`@nightly`)" },
+const OPTIONS: Array<{ value: UpdateChannel }> = [
+  { value: "stable" },
+  { value: "beta" },
+  { value: "nightly" },
 ]
 
 /**
@@ -31,14 +28,15 @@ export function ChannelSelector({
   onChange,
   className,
 }: ChannelSelectorProps): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <span className="text-[10px] uppercase tracking-wider text-(--text-tertiary)">
-        Update channel
+        {t("agents.channelSelector.updateChannel")}
       </span>
       <div
         role="radiogroup"
-        aria-label="Update channel"
+        aria-label={t("agents.channelSelector.updateChannel")}
         className="inline-flex p-0.5 bg-(--bg-input) border border-(--border) rounded-(--radius) gap-0.5 self-start"
       >
         {OPTIONS.map((opt) => {
@@ -49,7 +47,7 @@ export function ChannelSelector({
               type="button"
               role="radio"
               aria-checked={active}
-              title={opt.description}
+              title={t(`agents.channelSelector.${opt.value}Description`)}
               onClick={() => onChange(opt.value)}
               className={cn(
                 "text-[11px] px-2.5 py-1 rounded-sm cursor-pointer transition-colors duration-150",
@@ -58,7 +56,7 @@ export function ChannelSelector({
                   : "text-(--text-secondary) hover:text-(--text-primary)",
               )}
             >
-              {opt.label}
+              {t(`agents.channelSelector.${opt.value}`)}
             </button>
           )
         })}

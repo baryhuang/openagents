@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 import type { CatalogEntry } from "../../types"
 
@@ -42,6 +43,7 @@ export function MarketplaceFilter({
   category,
   onCategoryChange,
 }: MarketplaceFilterProps): React.JSX.Element {
+  const { t } = useTranslation()
   const visibleCategories = CATEGORIES.filter((c) => {
     if (c.key === "all") return true
     if (c.key === category) return true
@@ -63,7 +65,7 @@ export function MarketplaceFilter({
           )}
           aria-pressed={category === c.key}
         >
-          {c.label}
+          {t(`install.categories.${c.key}`)}
         </button>
       ))}
     </div>

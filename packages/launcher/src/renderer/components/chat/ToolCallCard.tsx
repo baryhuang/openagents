@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/utils'
 import type { ToolCall } from '../../types'
 
@@ -19,10 +20,10 @@ const STATUS_STYLE: Record<ToolCall['status'], string> = {
   error:   'border-(--danger-text) bg-[rgba(255,59,48,0.06)]',
 }
 
-const STATUS_LABEL: Record<ToolCall['status'], string> = {
-  pending: 'Running…',
-  success: 'Success',
-  error:   'Error',
+const STATUS_LABEL_KEY: Record<ToolCall['status'], string> = {
+  pending: 'chat.toolCall.running',
+  success: 'chat.toolCall.success',
+  error:   'chat.toolCall.error',
 }
 
 function formatJson(value: unknown): string {
@@ -32,6 +33,7 @@ function formatJson(value: unknown): string {
 }
 
 export default function ToolCallCard({ call }: { call: ToolCall }): React.JSX.Element {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const icon = CATEGORY_ICONS[call.category || 'other']
   const argsStr = formatJson(call.args)
@@ -47,7 +49,7 @@ export default function ToolCallCard({ call }: { call: ToolCall }): React.JSX.El
         <span className="flex items-center gap-2 min-w-0">
           <span className="text-[14px] shrink-0">{icon}</span>
           <span className="font-mono font-medium truncate">{call.name}</span>
-          <span className="text-[10px] text-(--text-tertiary) shrink-0">[{call.category || 'tool'}]</span>
+          <span className="text-[10px] text-(--text-tertiary) shrink-0">[{call.category || t('chat.toolCall.tool')}]</span>
         </span>
         <span className="flex items-center gap-2 shrink-0">
           {typeof call.durationMs === 'number' && (
@@ -61,7 +63,7 @@ export default function ToolCallCard({ call }: { call: ToolCall }): React.JSX.El
               'bg-(--warning) text-white animate-pulse',
             )}
           >
-            {STATUS_LABEL[call.status]}
+            {t(STATUS_LABEL_KEY[call.status])}
           </span>
           <span className="text-[10px] text-(--text-tertiary)">{open ? '▾' : '▸'}</span>
         </span>
@@ -70,13 +72,13 @@ export default function ToolCallCard({ call }: { call: ToolCall }): React.JSX.El
         <div className="px-3 pb-2 space-y-2 text-[11px]">
           {argsStr && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-(--text-tertiary) mb-1">Args</div>
+              <div className="text-[10px] uppercase tracking-wider text-(--text-tertiary) mb-1">{t('chat.toolCall.args')}</div>
               <pre className="font-mono whitespace-pre-wrap break-words bg-(--bg-input) rounded px-2 py-1.5 max-h-[200px] overflow-y-auto">{argsStr}</pre>
             </div>
           )}
           {resultStr && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-(--text-tertiary) mb-1">Result</div>
+              <div className="text-[10px] uppercase tracking-wider text-(--text-tertiary) mb-1">{t('chat.toolCall.result')}</div>
               <pre className="font-mono whitespace-pre-wrap break-words bg-(--bg-input) rounded px-2 py-1.5 max-h-[300px] overflow-y-auto">{resultStr}</pre>
             </div>
           )}

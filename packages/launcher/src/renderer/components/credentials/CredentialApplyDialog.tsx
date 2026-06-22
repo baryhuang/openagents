@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Modal, ModalActions } from "../ui/Modal"
 import { Button } from "../ui/Button"
 import { Input } from "../ui/Input"
@@ -28,6 +29,7 @@ export function CredentialApplyDialog({
   onApplied: () => void
   showToast: (msg: string, type?: ToastType) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const agents = useAgentsStore((s) => s.agents)
   const platform = credential ? getPlatform(credential.provider) : undefined
   const [envKey, setEnvKey] = useState<string>(platform?.defaultEnvKey || "")
@@ -58,11 +60,11 @@ export function CredentialApplyDialog({
   const handleApply = async (): Promise<void> => {
     if (!credential) return
     if (!envKey.trim()) {
-      showToast("Env variable name is required", "warning")
+      showToast(t("credentials.apply.toasts.envKeyRequired"), "warning")
       return
     }
     if (selected.size === 0) {
-      showToast("Pick at least one agent type", "warning")
+      showToast(t("credentials.apply.toasts.pickType"), "warning")
       return
     }
     setBusy(true)
@@ -74,16 +76,19 @@ export function CredentialApplyDialog({
       })
       if (res.ok) {
         showToast(
-          `Applied to ${res.written?.length || 0} agent type${res.written?.length === 1 ? "" : "s"}`,
+          t("credentials.apply.toasts.applied", { count: res.written?.length || 0 }),
           "success",
         )
         onApplied()
         onClose()
       } else {
-        showToast(res.error || (res.errors || []).join("; ") || "Apply failed", "error")
+        showToast(
+          res.error || (res.errors || []).join("; ") || t("credentials.apply.toasts.applyFailed"),
+          "error",
+        )
       }
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("credentials.apply.toasts.error", { message: (err as Error).message }), "error")
     } finally {
       setBusy(false)
     }
@@ -93,28 +98,33 @@ export function CredentialApplyDialog({
     <Modal
       open={open}
       onClose={onClose}
-      title={credential ? `Apply "${credential.label}" to agents` : "Apply credential"}
+      title={
+        credential
+          ? t("credentials.apply.title", { label: credential.label })
+          : t("credentials.apply.titleFallback")
+      }
     >
       <div className="flex flex-col gap-4">
         <div>
-          <Label className="mb-1.5">Env variable name</Label>
+          <Label className="mb-1.5">{t("credentials.apply.envKeyLabel")}</Label>
           <Input
             value={envKey}
             onChange={(e) => setEnvKey(e.target.value.toUpperCase())}
-            placeholder="OPENAI_API_KEY"
+            placeholder={t("credentials.apply.envKeyPlaceholder")}
             autoFocus
           />
           <div className="text-[11px] text-(--text-tertiary) mt-1.5">
-            Written to <code className="inline-code">~/.openagents/env/&lt;type&gt;.env</code>.
-            resolve_env rules in each agent map this to provider-specific vars.
+            {t("credentials.apply.envKeyHintPrefix")}{" "}
+            <code className="inline-code">~/.openagents/env/&lt;type&gt;.env</code>
+            {t("credentials.apply.envKeyHintSuffix")}
           </div>
         </div>
 
         <div>
-          <Label className="mb-1.5">Target agent types</Label>
+          <Label className="mb-1.5">{t("credentials.apply.targetTypesLabel")}</Label>
           {types.length === 0 ? (
             <div className="text-[12px] text-(--text-tertiary) px-3 py-2 bg-(--bg-input) rounded-sm">
-              No agents configured yet. Add an agent in the Agents tab first.
+              {t("credentials.apply.noAgents")}
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5 max-h-[180px] overflow-y-auto">
@@ -140,19 +150,20 @@ export function CredentialApplyDialog({
         </div>
 
         <div className="text-[11px] text-(--text-tertiary) leading-relaxed bg-(--bg-input) px-3 py-2 rounded-sm">
-          Existing keys in each <code className="inline-code">.env</code> file
-          are preserved. Only <strong>{envKey || "<env key>"}</strong> will be
-          overwritten with this credential's secret. The agent will be signaled
-          to reload its env after the write.
+          {t("credentials.apply.previewPrefix")}{" "}
+          <code className="inline-code">.env</code>{" "}
+          {t("credentials.apply.previewMiddle")}{" "}
+          <strong>{envKey || t("credentials.apply.envKeyPlaceholderShort")}</strong>{" "}
+          {t("credentials.apply.previewSuffix")}
         </div>
       </div>
 
       <ModalActions>
         <Button variant="ghost" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("credentials.apply.cancel")}
         </Button>
         <Button variant="primary" onClick={handleApply} disabled={busy || types.length === 0}>
-          {busy ? "Applying..." : "Apply"}
+          {busy ? t("credentials.apply.applying") : t("credentials.apply.apply")}
         </Button>
       </ModalActions>
     </Modal>

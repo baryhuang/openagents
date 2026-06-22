@@ -6,6 +6,7 @@ import {
   KeyRound,
   Terminal,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Input } from "../ui/Input"
 import { PasswordInput } from "../ui/PasswordInput"
 import { Button } from "../ui/Button"
@@ -47,6 +48,7 @@ export function SetupApiConfig({
   onContinueWithoutKey,
   section = "all",
 }: SetupApiConfigProps): React.JSX.Element {
+  const { t } = useTranslation()
   const loginBlock =
     loginCommand && onLogin ? (
       <div className="rounded-sm border border-(--accent)/35 bg-(--accent-bg)/60 px-3.5 py-3">
@@ -56,21 +58,22 @@ export function SetupApiConfig({
           </div>
           <div className="min-w-0 flex-1">
             <p className="m-0 text-[13px] font-semibold text-(--text-primary)">
-              Sign in with CLI
+              {t("onboarding.wizard.apiConfig.signInWithCli")}
             </p>
             <p className="hint m-0 mt-1 mb-0 leading-snug">
-              Opens a terminal running <code>{loginCommand}</code> — no API key
-              needed.
+              {t("onboarding.wizard.apiConfig.opensTerminalPrefix")}
+              <code>{loginCommand}</code>
+              {t("onboarding.wizard.apiConfig.opensTerminalSuffix")}
             </p>
           </div>
         </div>
         <div className="form-actions mt-0 flex-wrap">
           <Button variant="primary" onClick={onLogin}>
-            Sign in
+            {t("onboarding.wizard.apiConfig.signIn")}
           </Button>
           {onContinueWithoutKey && (
             <Button onClick={onContinueWithoutKey}>
-              Continue without a key
+              {t("onboarding.wizard.apiConfig.continueWithoutKey")}
             </Button>
           )}
         </div>
@@ -81,7 +84,7 @@ export function SetupApiConfig({
     <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-(--text-tertiary)">
       <span className="h-px flex-1 bg-(--border)" />
       <KeyRound className="h-3 w-3" />
-      <span>Or use an API key</span>
+      <span>{t("onboarding.wizard.apiConfig.orUseApiKey")}</span>
       <span className="h-px flex-1 bg-(--border)" />
     </div>
   ) : null
@@ -90,12 +93,12 @@ export function SetupApiConfig({
     <div className="form-actions mt-0">
       <Button variant="primary" onClick={onSubmit} disabled={testing}>
         {testing
-          ? "Testing…"
+          ? t("onboarding.wizard.apiConfig.testing")
           : fields.length === 0
-            ? "Continue"
-            : "Save & test connection"}
+            ? t("onboarding.wizard.apiConfig.continue")
+            : t("onboarding.wizard.apiConfig.saveAndTest")}
       </Button>
-      <Button onClick={onSkip}>Skip</Button>
+      <Button onClick={onSkip}>{t("onboarding.wizard.apiConfig.skip")}</Button>
     </div>
   )
 
@@ -104,8 +107,7 @@ export function SetupApiConfig({
       <>
         {loginBlock}
         <p className="hint m-0">
-          This agent has no API key requirements. You can continue and create
-          your first instance.
+          {t("onboarding.wizard.apiConfig.noKeyRequired")}
         </p>
       </>
     )
@@ -120,8 +122,9 @@ export function SetupApiConfig({
       {loginBlock}
       {apiKeyDivider}
       <p className="hint m-0">
-        Saved locally to <code>~/.openagents/env/</code>. Secrets are never
-        printed to logs.
+        {t("onboarding.wizard.apiConfig.savedLocallyPrefix")}
+        <code>~/.openagents/env/</code>
+        {t("onboarding.wizard.apiConfig.savedLocallySuffix")}
       </p>
       {fields.map((f) => {
         const FieldInput = f.password ? PasswordInput : Input
@@ -136,7 +139,12 @@ export function SetupApiConfig({
               onChange={(e) =>
                 onChange({ ...values, [f.name]: e.target.value })
               }
-              placeholder={f.placeholder || `Enter ${f.name}…`}
+              placeholder={
+                f.placeholder ||
+                t("onboarding.wizard.apiConfig.fieldPlaceholder", {
+                  name: f.name,
+                })
+              }
             />
           </div>
         )
@@ -153,6 +161,7 @@ export function SetupApiConfig({
 }
 
 function TestErrorCard({ message }: { message: string }): React.JSX.Element {
+  const { t } = useTranslation()
   const { title, hint, raw } = translateTestError(message)
   const [showDetails, setShowDetails] = useState(false)
   // Only offer the "Show details" toggle when the raw error contains
@@ -192,7 +201,9 @@ function TestErrorCard({ message }: { message: string }): React.JSX.Element {
                 ) : (
                   <ChevronRight className="w-3 h-3" />
                 )}
-                {showDetails ? "Hide details" : "Show details"}
+                {showDetails
+                  ? t("onboarding.wizard.apiConfig.hideDetails")
+                  : t("onboarding.wizard.apiConfig.showDetails")}
               </button>
               {showDetails && (
                 <pre className="mt-1.5 text-[11px] font-mono text-(--text-tertiary) whitespace-pre-wrap break-all max-h-32 overflow-auto bg-(--bg-input)/50 rounded-[4px] px-2 py-1.5 m-0">

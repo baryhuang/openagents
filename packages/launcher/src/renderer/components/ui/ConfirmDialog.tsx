@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { Modal, ModalTitle } from "./Modal"
 import { Button } from "./Button"
 
@@ -12,8 +13,8 @@ export function ConfirmDialog({
   icon,
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   destructive = true,
   busy = false,
   onConfirm,
@@ -30,6 +31,7 @@ export function ConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <Modal open={open} onClose={onCancel}>
       <div className="flex flex-col items-center py-2">
@@ -46,10 +48,12 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? "Working..." : confirmLabel}
+            {busy
+              ? t("ui.confirmDialog.working")
+              : (confirmLabel ?? t("ui.confirmDialog.confirm"))}
           </Button>
           <Button onClick={onCancel} disabled={busy}>
-            {cancelLabel}
+            {cancelLabel ?? t("ui.confirmDialog.cancel")}
           </Button>
         </div>
       </div>

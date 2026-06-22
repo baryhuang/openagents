@@ -1,0 +1,134 @@
+{
+  "title": "设置",
+  "subtitle": "— 偏好、网络、数据、更新",
+  "searchPlaceholder": "搜索设置",
+  "sections": {
+    "general": "通用",
+    "appearance": "外观",
+    "agents": "智能体",
+    "notifications": "通知",
+    "network": "网络",
+    "data": "数据",
+    "language": "语言",
+    "updates": "更新",
+    "runtime": "运行时",
+    "about": "关于"
+  },
+  "toasts": {
+    "exported": "已导出设置",
+    "exportFailed": "导出失败：{{error}}",
+    "imported": "已导入设置",
+    "importFailed": "导入失败：{{error}}",
+    "reset": "设置已重置",
+    "alreadyUpToDate": "已是最新版本",
+    "updateCheckFailed": "检查更新失败：{{error}}",
+    "downloadFailed": "下载失败：{{error}}",
+    "installFailed": "安装失败：{{error}}",
+    "unknown": "未知错误"
+  },
+  "resetDialog": {
+    "title": "重置所有设置？",
+    "description": "将所有设置恢复为默认值，此操作无法撤销。",
+    "confirm": "重置"
+  },
+  "general": {
+    "title": "通用",
+    "startOnBoot": "开机自启动",
+    "startOnBootDesc": "登录时自动启动",
+    "minimizeToTray": "最小化到托盘",
+    "minimizeToTrayDesc": "关闭窗口后保留在系统托盘中运行",
+    "gpuAcceleration": "GPU 加速",
+    "gpuAccelerationDesc": "如出现渲染异常请关闭（需要重启）"
+  },
+  "appearance": {
+    "title": "外观",
+    "theme": "主题",
+    "themeDesc": "选择 OpenAgents 的显示外观",
+    "modes": {
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统"
+    }
+  },
+  "agents": {
+    "title": "智能体默认设置",
+    "defaultType": "默认智能体类型",
+    "defaultTypeDesc": "创建新智能体时预先选中",
+    "defaultModel": "默认模型",
+    "defaultModelDesc": "配置新智能体时建议使用的模型",
+    "defaultModelPlaceholder": "例如 claude-sonnet-4-5",
+    "autoStart": "启动时自动运行",
+    "autoStartDesc": "启动器打开时启动所有已配置的智能体"
+  },
+  "notifications": {
+    "title": "通知",
+    "enable": "启用通知",
+    "enableDesc": "为重要事件显示系统级提醒",
+    "sound": "播放提示音",
+    "soundDesc": "通知触发时播放提示音",
+    "note": "更精细的分类静音与免打扰时段可在右上角的铃铛图标中设置。"
+  },
+  "network": {
+    "title": "网络",
+    "workspaceUrl": "工作区后端地址",
+    "workspaceUrlDesc": "可选的自托管工作区服务器。留空则使用 OpenAgents 托管工作区。",
+    "workspaceUrlPlaceholder": "https://workspace-endpoint.openagents.org 或 http://localhost:8000",
+    "httpProxy": "HTTP 代理",
+    "httpProxyDesc": "智能体与启动器进行出站 HTTP 时使用",
+    "httpsProxy": "HTTPS 代理",
+    "httpsProxyDesc": "出站 HTTPS 代理",
+    "proxyPlaceholder": "http://user:pass@host:port",
+    "noProxy": "不使用代理",
+    "noProxyDesc": "绕过代理的主机，以逗号分隔",
+    "noProxyPlaceholder": "localhost,127.0.0.1,*.internal",
+    "note": "代理设置会保存到启动器配置中。重启启动器后生效。"
+  },
+  "data": {
+    "title": "数据目录",
+    "userData": "用户数据",
+    "openagentsHome": "OpenAgents 主目录",
+    "logs": "日志",
+    "downloads": "下载",
+    "cache": "缓存",
+    "portableNode": "便携版 Node.js"
+  },
+  "language": {
+    "title": "语言",
+    "displayLanguage": "显示语言",
+    "displayLanguageDesc": "选择 OpenAgents 界面所使用的语言"
+  },
+  "updates": {
+    "title": "更新",
+    "autoUpdate": "自动更新",
+    "autoUpdateDesc": "启动时检查启动器与智能体的新版本",
+    "updateFallback": "更新",
+    "appUpdate": "应用更新",
+    "cannotUpdate": "当前版本 {{version}} · 此构建无法原地更新",
+    "downloadPage": "下载页面",
+    "currentVersion": "当前版本 {{version}}",
+    "checking": "正在检查更新…",
+    "available": "发现新版本 {{version}}",
+    "downloading": "正在下载 {{version}} · {{percent}}%",
+    "downloaded": "{{version}} 已下载 — 重启以安装",
+    "upToDate": "已是最新（{{version}}）",
+    "error": "更新出错：{{error}}",
+    "actionDownloading": "下载中…",
+    "actionRestartInstall": "重启并安装",
+    "actionChecking": "检查中…",
+    "actionCheck": "检查更新"
+  },
+  "runtime": {
+    "title": "运行时",
+    "nodejs": "Node.js",
+    "npm": "npm",
+    "coreLibrary": "核心库",
+    "latestAvailable": "最新可用版本",
+    "unableToCheck": "无法检查",
+    "upToDateSuffix": "（已是最新）",
+    "updateAvailableSuffix": "（有可用更新）"
+  },
+  "about": {
+    "title": "关于",
+    "appLine": "OpenAgents 启动器 {{version}}"
+  }
+}

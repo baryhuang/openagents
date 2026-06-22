@@ -15,6 +15,8 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
+import { SUPPORTED_LANGUAGES, changeLanguage, type LanguageCode } from "../../i18n"
 import { TopBar } from "../../components/TopBar"
 import { Switch } from "../../components/ui/Switch"
 import { Label } from "../../components/ui/Label"
@@ -46,20 +48,21 @@ type SectionId =
   | "runtime"
   | "about"
 
-const SECTIONS: Array<{ id: SectionId; label: string; icon: React.JSX.Element }> = [
-  { id: "general", label: "General", icon: <Cog className="w-4 h-4" /> },
-  { id: "appearance", label: "Appearance", icon: <Palette className="w-4 h-4" /> },
-  { id: "agents", label: "Agents", icon: <Cpu className="w-4 h-4" /> },
-  { id: "notifications", label: "Notifications", icon: <Bell className="w-4 h-4" /> },
-  { id: "network", label: "Network", icon: <Globe className="w-4 h-4" /> },
-  { id: "data", label: "Data", icon: <HardDrive className="w-4 h-4" /> },
-  { id: "language", label: "Language", icon: <Languages className="w-4 h-4" /> },
-  { id: "updates", label: "Updates", icon: <Download className="w-4 h-4" /> },
-  { id: "runtime", label: "Runtime", icon: <Cpu className="w-4 h-4" /> },
-  { id: "about", label: "About", icon: <ExternalLink className="w-4 h-4" /> },
+const SECTIONS: Array<{ id: SectionId; icon: React.JSX.Element }> = [
+  { id: "general", icon: <Cog className="w-4 h-4" /> },
+  { id: "appearance", icon: <Palette className="w-4 h-4" /> },
+  { id: "agents", icon: <Cpu className="w-4 h-4" /> },
+  { id: "notifications", icon: <Bell className="w-4 h-4" /> },
+  { id: "network", icon: <Globe className="w-4 h-4" /> },
+  { id: "data", icon: <HardDrive className="w-4 h-4" /> },
+  { id: "language", icon: <Languages className="w-4 h-4" /> },
+  { id: "updates", icon: <Download className="w-4 h-4" /> },
+  { id: "runtime", icon: <Cpu className="w-4 h-4" /> },
+  { id: "about", icon: <ExternalLink className="w-4 h-4" /> },
 ]
 
 export default function Settings({ showToast }: SettingsProps): React.JSX.Element {
+  const { t, i18n } = useTranslation()
   const [section, setSection] = useState<SectionId>("general")
   const [search, setSearch] = useState("")
   const [startOnBoot, setStartOnBoot] = useState(false)
@@ -171,9 +174,9 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
       const s = await window.api.checkLauncherUpdate()
       setUpdater(s)
       if (s.status === "not-available")
-        showToast("Already up to date", "success")
+        showToast(t("settings.toasts.alreadyUpToDate"), "success")
     } catch (e) {
-      showToast(`Update check failed: ${(e as Error).message}`, "error")
+      showToast(t("settings.toasts.updateCheckFailed", { error: (e as Error).message }), "error")
     }
   }
 
@@ -181,7 +184,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
     try {
       await window.api.downloadLauncherUpdate()
     } catch (e) {
-      showToast(`Download failed: ${(e as Error).message}`, "error")
+      showToast(t("settings.toasts.downloadFailed", { error: (e as Error).message }), "error")
     }
   }
 
@@ -189,7 +192,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
     try {
       await window.api.installLauncherUpdate()
     } catch (e) {
-      showToast(`Install failed: ${(e as Error).message}`, "error")
+      showToast(t("settings.toasts.installFailed", { error: (e as Error).message }), "error")
     }
   }
 
@@ -209,9 +212,9 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      showToast("Exported settings", "success")
+      showToast(t("settings.toasts.exported"), "success")
     } catch (e) {
-      showToast(`Export failed: ${(e as Error).message}`, "error")
+      showToast(t("settings.toasts.exportFailed", { error: (e as Error).message }), "error")
     }
   }
 
@@ -226,9 +229,9 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
       const res = await window.api.importSettings(text)
       if (res.ok) {
         await loadSettings()
-        showToast("Imported settings", "success")
+        showToast(t("settings.toasts.imported"), "success")
       } else {
-        showToast(`Import failed: ${res.error || "unknown"}`, "error")
+        showToast(t("settings.toasts.importFailed", { error: res.error || t("settings.toasts.unknown") }), "error")
       }
     }
     input.click()
@@ -246,7 +249,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
     try {
       await window.api.resetSettings()
       await loadSettings()
-      showToast("Settings reset", "success")
+      showToast(t("settings.toasts.reset"), "success")
     } finally {
       setResetting(false)
       setResetOpen(false)
@@ -256,16 +259,16 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
   const visibleSections = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return SECTIONS
-    return SECTIONS.filter((s) => s.label.toLowerCase().includes(q))
-  }, [search])
+    return SECTIONS.filter((s) => t(`settings.sections.${s.id}`).toLowerCase().includes(q))
+  }, [search, t])
 
   const runtimeRows = useMemo<Array<{ label: string; value: string; color?: string }>>(() => {
     if (!runtimeInfo) {
       return [
-        { label: "Node.js", value: "Checking..." },
-        { label: "npm", value: "Checking..." },
-        { label: "Core Library", value: "Checking..." },
-        { label: "Latest Available", value: "Checking..." },
+        { label: t("settings.runtime.nodejs"), value: t("common.checking") },
+        { label: t("settings.runtime.npm"), value: t("common.checking") },
+        { label: t("settings.runtime.coreLibrary"), value: t("common.checking") },
+        { label: t("settings.runtime.latestAvailable"), value: t("common.checking") },
       ]
     }
     const upToDate =
@@ -273,25 +276,25 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
       runtimeInfo.coreVersion === runtimeInfo.latestVersion
     return [
       {
-        label: "Node.js",
-        value: runtimeInfo.nodeVersion || "Not installed",
+        label: t("settings.runtime.nodejs"),
+        value: runtimeInfo.nodeVersion || t("common.notInstalled"),
         color: runtimeInfo.nodeVersion ? "var(--success-text)" : "var(--danger-text)",
       },
       {
-        label: "npm",
-        value: runtimeInfo.npmVersion ? `v${runtimeInfo.npmVersion}` : "Not installed",
+        label: t("settings.runtime.npm"),
+        value: runtimeInfo.npmVersion ? `v${runtimeInfo.npmVersion}` : t("common.notInstalled"),
         color: runtimeInfo.npmVersion ? "var(--success-text)" : "var(--danger-text)",
       },
       {
-        label: "Core Library",
-        value: runtimeInfo.coreVersion ? `v${runtimeInfo.coreVersion}` : "Not installed",
+        label: t("settings.runtime.coreLibrary"),
+        value: runtimeInfo.coreVersion ? `v${runtimeInfo.coreVersion}` : t("common.notInstalled"),
         color: runtimeInfo.coreVersion ? "var(--success-text)" : "var(--danger-text)",
       },
       {
-        label: "Latest Available",
+        label: t("settings.runtime.latestAvailable"),
         value: runtimeInfo.latestVersion
-          ? `v${runtimeInfo.latestVersion}${upToDate ? " (up to date)" : " (update available)"}`
-          : "Unable to check",
+          ? `v${runtimeInfo.latestVersion}${upToDate ? t("settings.runtime.upToDateSuffix") : t("settings.runtime.updateAvailableSuffix")}`
+          : t("settings.runtime.unableToCheck"),
         color: runtimeInfo.latestVersion
           ? upToDate
             ? "var(--success-text)"
@@ -299,7 +302,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           : undefined,
       },
     ]
-  }, [runtimeInfo])
+  }, [runtimeInfo, t])
 
   const agentTypes = useMemo(() => {
     const set = new Set<string>()
@@ -310,21 +313,21 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="Settings"
-        subtitle="— Preferences, network, data, updates"
+        title={t("settings.title")}
+        subtitle={t("settings.subtitle")}
         actions={
           <>
-            <Button size="sm" onClick={importSettings} title="Import">
+            <Button size="sm" onClick={importSettings} title={t("common.import")}>
               <ArrowUpFromLine className="w-3 h-3" />
-              Import
+              {t("common.import")}
             </Button>
-            <Button size="sm" onClick={exportSettings} title="Export">
+            <Button size="sm" onClick={exportSettings} title={t("common.export")}>
               <ArrowDownToLine className="w-3 h-3" />
-              Export
+              {t("common.export")}
             </Button>
             <Button size="sm" variant="destructive" onClick={resetSettings}>
               <RotateCcw className="w-3 h-3" />
-              Reset
+              {t("common.reset")}
             </Button>
           </>
         }
@@ -335,7 +338,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           <div className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-sm bg-(--bg-input) text-[11px]">
             <Search className="w-3 h-3 text-(--text-tertiary)" />
             <input
-              placeholder="Search settings"
+              placeholder={t("settings.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="bg-transparent border-0 outline-none flex-1 text-[12px]"
@@ -355,7 +358,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                   )}
                 >
                   <span className={section === s.id ? "" : "opacity-70"}>{s.icon}</span>
-                  {s.label}
+                  {t(`settings.sections.${s.id}`)}
                 </button>
               </li>
             ))}
@@ -364,10 +367,10 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
 
         <div className="flex-1 min-w-0 overflow-y-auto pr-2">
           {section === "general" && (
-            <SettingsCard title="General">
+            <SettingsCard title={t("settings.general.title")}>
               <Row
-                label="Start on boot"
-                desc="Launch automatically when you log in"
+                label={t("settings.general.startOnBoot")}
+                desc={t("settings.general.startOnBootDesc")}
               >
                 <Switch
                   checked={startOnBoot}
@@ -379,8 +382,8 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
               </Row>
               <Separator />
               <Row
-                label="Minimize to tray"
-                desc="Keep running in system tray when window is closed"
+                label={t("settings.general.minimizeToTray")}
+                desc={t("settings.general.minimizeToTrayDesc")}
               >
                 <Switch
                   checked={minimizeToTray}
@@ -392,8 +395,8 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
               </Row>
               <Separator />
               <Row
-                label="GPU acceleration"
-                desc="Disable if you see rendering glitches (requires restart)"
+                label={t("settings.general.gpuAcceleration")}
+                desc={t("settings.general.gpuAccelerationDesc")}
               >
                 <Switch
                   checked={gpuAccel}
@@ -407,8 +410,8 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           )}
 
           {section === "appearance" && (
-            <SettingsCard title="Appearance">
-              <Row label="Theme" desc="Choose how OpenAgents looks">
+            <SettingsCard title={t("settings.appearance.title")}>
+              <Row label={t("settings.appearance.theme")} desc={t("settings.appearance.themeDesc")}>
                 <div className="flex gap-1.5">
                   {(["light", "dark", "system"] as ThemeMode[]).map((m) => (
                     <button
@@ -422,7 +425,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                           : "border-(--border) bg-(--bg-card) text-(--text-secondary) hover:border-(--border-hover)",
                       )}
                     >
-                      {m[0].toUpperCase()}{m.slice(1)}
+                      {t(`settings.appearance.modes.${m}`)}
                     </button>
                   ))}
                 </div>
@@ -431,10 +434,10 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           )}
 
           {section === "agents" && (
-            <SettingsCard title="Agent defaults">
+            <SettingsCard title={t("settings.agents.title")}>
               <Row
-                label="Default agent type"
-                desc="Pre-selected when creating a new agent"
+                label={t("settings.agents.defaultType")}
+                desc={t("settings.agents.defaultTypeDesc")}
               >
                 <Select
                   value={defaultAgentType}
@@ -444,7 +447,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                   }}
                   className="w-[200px]"
                 >
-                  <option value="">(none)</option>
+                  <option value="">{t("common.none")}</option>
                   {agentTypes.map((t) => (
                     <option key={t} value={t}>
                       {t}
@@ -455,21 +458,21 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
               <Separator />
               <Row
                 stacked
-                label="Default model"
-                desc="Suggested model when configuring a new agent"
+                label={t("settings.agents.defaultModel")}
+                desc={t("settings.agents.defaultModelDesc")}
               >
                 <Input
                   value={defaultModel}
                   onChange={(e) => setDefaultModel(e.target.value)}
                   onBlur={() => void set("defaultModel", defaultModel)}
-                  placeholder="e.g. claude-sonnet-4-5"
+                  placeholder={t("settings.agents.defaultModelPlaceholder")}
                   className="w-full"
                 />
               </Row>
               <Separator />
               <Row
-                label="Auto-start on launch"
-                desc="Start all configured agents when the launcher opens"
+                label={t("settings.agents.autoStart")}
+                desc={t("settings.agents.autoStartDesc")}
               >
                 <Switch
                   checked={autoStart}
@@ -483,10 +486,10 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           )}
 
           {section === "notifications" && (
-            <SettingsCard title="Notifications">
+            <SettingsCard title={t("settings.notifications.title")}>
               <Row
-                label="Enable notifications"
-                desc="Show OS-level toasts for important events"
+                label={t("settings.notifications.enable")}
+                desc={t("settings.notifications.enableDesc")}
               >
                 <Switch
                   checked={!!notifPrefs?.enabled}
@@ -495,8 +498,8 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
               </Row>
               <Separator />
               <Row
-                label="Play sound"
-                desc="Audible cue when notifications fire"
+                label={t("settings.notifications.sound")}
+                desc={t("settings.notifications.soundDesc")}
               >
                 <Switch
                   checked={!!notifPrefs?.soundEnabled}
@@ -505,83 +508,81 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
               </Row>
               <Separator />
               <p className="text-[11px] text-(--text-tertiary) m-0 mt-2">
-                Fine-grained per-kind muting and quiet hours are available from
-                the bell icon at the top right.
+                {t("settings.notifications.note")}
               </p>
             </SettingsCard>
           )}
 
           {section === "network" && (
-            <SettingsCard title="Network">
+            <SettingsCard title={t("settings.network.title")}>
               <Row
                 stacked
-                label="Workspace backend URL"
-                desc="Optional self-hosted Workspace server. Leave blank to use OpenAgents hosted Workspace."
+                label={t("settings.network.workspaceUrl")}
+                desc={t("settings.network.workspaceUrlDesc")}
               >
                 <Input
                   value={workspaceEndpoint}
                   onChange={(e) => setWorkspaceEndpoint(e.target.value)}
                   onBlur={() => void set("workspaceEndpoint", workspaceEndpoint)}
-                  placeholder="https://workspace-endpoint.openagents.org or http://localhost:8000"
+                  placeholder={t("settings.network.workspaceUrlPlaceholder")}
                   className="w-full"
                 />
               </Row>
               <Separator />
               <Row
                 stacked
-                label="HTTP proxy"
-                desc="Used by agents and the launcher for outbound HTTP"
+                label={t("settings.network.httpProxy")}
+                desc={t("settings.network.httpProxyDesc")}
               >
                 <Input
                   value={httpProxy}
                   onChange={(e) => setHttpProxy(e.target.value)}
                   onBlur={() => void set("httpProxy", httpProxy)}
-                  placeholder="http://user:pass@host:port"
+                  placeholder={t("settings.network.proxyPlaceholder")}
                   className="w-full"
                 />
               </Row>
               <Separator />
-              <Row stacked label="HTTPS proxy" desc="Outbound HTTPS proxy">
+              <Row stacked label={t("settings.network.httpsProxy")} desc={t("settings.network.httpsProxyDesc")}>
                 <Input
                   value={httpsProxy}
                   onChange={(e) => setHttpsProxy(e.target.value)}
                   onBlur={() => void set("httpsProxy", httpsProxy)}
-                  placeholder="http://user:pass@host:port"
+                  placeholder={t("settings.network.proxyPlaceholder")}
                   className="w-full"
                 />
               </Row>
               <Separator />
               <Row
                 stacked
-                label="No proxy"
-                desc="Comma-separated hosts that bypass the proxy"
+                label={t("settings.network.noProxy")}
+                desc={t("settings.network.noProxyDesc")}
               >
                 <Input
                   value={noProxy}
                   onChange={(e) => setNoProxy(e.target.value)}
                   onBlur={() => void set("noProxy", noProxy)}
-                  placeholder="localhost,127.0.0.1,*.internal"
+                  placeholder={t("settings.network.noProxyPlaceholder")}
                   className="w-full"
                 />
               </Row>
               <p className="text-[11px] text-(--text-tertiary) m-0 mt-3">
-                Proxy values are persisted to launcher settings. Restart the
-                launcher to apply.
+                {t("settings.network.note")}
               </p>
             </SettingsCard>
           )}
 
           {section === "data" && (
-            <SettingsCard title="Data directories">
+            <SettingsCard title={t("settings.data.title")}>
               {paths ? (
                 <ul className="m-0 p-0 list-none">
                   {[
-                    ["User data", paths.userData],
-                    ["OpenAgents home", paths.openagentsHome],
-                    ["Logs", paths.logs],
-                    ["Downloads", paths.downloads],
-                    ["Cache", paths.cache],
-                    ["Portable Node.js", paths.portableNode],
+                    [t("settings.data.userData"), paths.userData],
+                    [t("settings.data.openagentsHome"), paths.openagentsHome],
+                    [t("settings.data.logs"), paths.logs],
+                    [t("settings.data.downloads"), paths.downloads],
+                    [t("settings.data.cache"), paths.cache],
+                    [t("settings.data.portableNode"), paths.portableNode],
                   ].map(([label, p]) => (
                     <li
                       key={label}
@@ -596,40 +597,43 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                         </div>
                       </div>
                       <Button size="sm" onClick={() => void window.api.showPath(p)}>
-                        Reveal
+                        {t("common.reveal")}
                       </Button>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-[12px] text-(--text-tertiary)">Loading…</p>
+                <p className="text-[12px] text-(--text-tertiary)">{t("common.loading")}</p>
               )}
             </SettingsCard>
           )}
 
           {section === "language" && (
-            <SettingsCard title="Language">
+            <SettingsCard title={t("settings.language.title")}>
               <Row
-                label="Display language"
-                desc="Localization is coming soon — the UI is English only for now"
+                label={t("settings.language.displayLanguage")}
+                desc={t("settings.language.displayLanguageDesc")}
               >
                 <Select
-                  value="en"
-                  disabled
-                  title="More languages coming soon"
+                  value={(i18n.resolvedLanguage ?? i18n.language) as LanguageCode}
+                  onChange={(e) => void changeLanguage(e.target.value as LanguageCode)}
                   className="w-[200px]"
                 >
-                  <option value="en">English</option>
+                  {SUPPORTED_LANGUAGES.map((l) => (
+                    <option key={l.value} value={l.value}>
+                      {l.label}
+                    </option>
+                  ))}
                 </Select>
               </Row>
             </SettingsCard>
           )}
 
           {section === "updates" && (
-            <SettingsCard title="Updates">
+            <SettingsCard title={t("settings.updates.title")}>
               <Row
-                label="Automatic updates"
-                desc="Check for new launcher and agent versions on launch"
+                label={t("settings.updates.autoUpdate")}
+                desc={t("settings.updates.autoUpdateDesc")}
               >
                 <Switch
                   checked={autoUpdate}
@@ -651,7 +655,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           )}
 
           {section === "runtime" && (
-            <SettingsCard title="Runtime">
+            <SettingsCard title={t("settings.runtime.title")}>
               {runtimeRows.map((row, idx) => (
                 <div
                   key={row.label}
@@ -668,9 +672,9 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
           )}
 
           {section === "about" && (
-            <SettingsCard title="About">
+            <SettingsCard title={t("settings.about.title")}>
               <p className="text-[13px] m-0 mb-2 flex items-center gap-1.5">
-                OpenAgents Launcher {launcherVersion}
+                {t("settings.about.appLine", { version: launcherVersion })}
               </p>
               <p className="text-[13px] m-0">
                 <button
@@ -680,7 +684,7 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
                     window.api.openExternal("https://openagents.org/docs")
                   }}
                 >
-                  Documentation
+                  {t("common.documentation")}
                 </button>
               </p>
             </SettingsCard>
@@ -690,9 +694,9 @@ export default function Settings({ showToast }: SettingsProps): React.JSX.Elemen
 
       <ConfirmDialog
         open={resetOpen}
-        title="Reset all settings?"
-        description="Restores every setting to its default. This cannot be undone."
-        confirmLabel="Reset"
+        title={t("settings.resetDialog.title")}
+        description={t("settings.resetDialog.description")}
+        confirmLabel={t("settings.resetDialog.confirm")}
         destructive
         busy={resetting}
         onCancel={() => {
@@ -717,6 +721,7 @@ function LauncherUpdate({
   onDownload: () => void | Promise<void>
   onInstall: () => void | Promise<void>
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const status = state?.status ?? "idle"
   const latest = state?.latestVersion ? `v${state.latestVersion}` : null
 
@@ -725,8 +730,8 @@ function LauncherUpdate({
   if (state && !state.supported) {
     return (
       <Row
-        label="App update"
-        desc={`Current version ${currentVersion} · this build can't update in place`}
+        label={t("settings.updates.appUpdate")}
+        desc={t("settings.updates.cannotUpdate", { version: currentVersion })}
       >
         <Button
           variant="default"
@@ -737,24 +742,24 @@ function LauncherUpdate({
             )
           }
         >
-          Download page
+          {t("settings.updates.downloadPage")}
         </Button>
       </Row>
     )
   }
 
-  let statusText = `Current version ${currentVersion}`
-  if (status === "checking") statusText = "Checking for updates…"
+  let statusText = t("settings.updates.currentVersion", { version: currentVersion })
+  if (status === "checking") statusText = t("settings.updates.checking")
   else if (status === "available")
-    statusText = `New version ${latest ?? ""} available`
+    statusText = t("settings.updates.available", { version: latest ?? "" })
   else if (status === "downloading")
-    statusText = `Downloading ${latest ?? ""} · ${state?.percent ?? 0}%`
+    statusText = t("settings.updates.downloading", { version: latest ?? "", percent: state?.percent ?? 0 })
   else if (status === "downloaded")
-    statusText = `${latest ?? "Update"} downloaded — restart to install`
+    statusText = t("settings.updates.downloaded", { version: latest ?? t("settings.updates.updateFallback") })
   else if (status === "not-available")
-    statusText = `Up to date (${currentVersion})`
+    statusText = t("settings.updates.upToDate", { version: currentVersion })
   else if (status === "error")
-    statusText = `Update error: ${state?.error ?? "unknown"}`
+    statusText = t("settings.updates.error", { error: state?.error ?? t("settings.toasts.unknown") })
 
   const busy = status === "checking" || status === "downloading"
 
@@ -762,19 +767,19 @@ function LauncherUpdate({
   if (status === "available") {
     action = (
       <Button variant="primary" size="sm" onClick={() => void onDownload()}>
-        Download
+        {t("common.download")}
       </Button>
     )
   } else if (status === "downloading") {
     action = (
       <Button variant="default" size="sm" disabled>
-        Downloading…
+        {t("settings.updates.actionDownloading")}
       </Button>
     )
   } else if (status === "downloaded") {
     action = (
       <Button variant="primary" size="sm" onClick={() => void onInstall()}>
-        Restart &amp; install
+        {t("settings.updates.actionRestartInstall")}
       </Button>
     )
   } else {
@@ -785,7 +790,7 @@ function LauncherUpdate({
         disabled={busy}
         onClick={() => void onCheck()}
       >
-        {status === "checking" ? "Checking…" : "Check for updates"}
+        {status === "checking" ? t("settings.updates.actionChecking") : t("settings.updates.actionCheck")}
       </Button>
     )
   }

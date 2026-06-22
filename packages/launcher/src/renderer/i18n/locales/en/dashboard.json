@@ -1,0 +1,83 @@
+{
+  "title": "Dashboard",
+  "updates": {
+    "oneAvailable": "Update available for {{name}}",
+    "manyAvailable": "{{count}} agent updates available",
+    "ignore": "Ignore",
+    "later": "Later",
+    "updateNow": "Update now",
+    "view": "View"
+  },
+  "activeAgents": {
+    "title": "Active Agents",
+    "viewAll": "View all",
+    "empty": "No agents configured yet.",
+    "installFirst": "Install your first agent"
+  },
+  "agentToggle": {
+    "stopping": "Stopping {{name}}...",
+    "stopped": "{{name}} stopped",
+    "starting": "Starting {{name}}...",
+    "running": "{{name}} is now running",
+    "stoppingAll": "Stopping all agents…",
+    "startingAll": "Starting all agents…",
+    "error": "Error: {{message}}"
+  },
+  "stats": {
+    "runningAgents": "Running Agents",
+    "messagesToday": "Messages Today",
+    "activeWorkspaces": "Active Workspaces",
+    "installedAgents": "Installed Agents",
+    "trendVsAvg": "{{symbol}} {{pct}}% vs avg",
+    "updatesAvailable": "{{count}} update available",
+    "updatesAvailable_other": "{{count}} updates available"
+  },
+  "quickActions": {
+    "startAll": "Start all",
+    "stopAll": "Stop all",
+    "openChat": "Open chat",
+    "newWorkspace": "New workspace",
+    "addConnection": "Add connection",
+    "newAgent": "New agent"
+  },
+  "agentCard": {
+    "state": {
+      "running": "Running",
+      "idle": "Idle",
+      "starting": "Starting",
+      "error": "Error",
+      "offline": "Offline"
+    },
+    "connectedTo": "Connected to",
+    "noWorkspace": "No workspace connected",
+    "lastActive": "Last active {{time}}",
+    "messagesToday": "{{count}} messages today",
+    "justNow": "just now",
+    "secondsAgo": "{{count}}s ago",
+    "minutesAgo": "{{count}} min ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago",
+    "stopping": "Stopping…",
+    "stop": "Stop",
+    "starting": "Starting…",
+    "start": "Start",
+    "openChat": "Open Chat"
+  },
+  "health": {
+    "title": "Agent health",
+    "agentCount": "{{count}} agents",
+    "buckets": {
+      "healthy": "Healthy",
+      "busy": "Busy",
+      "warning": "Warning",
+      "offline": "Offline",
+      "error": "Error"
+    },
+    "empty": "No agents configured."
+  },
+  "activity": {
+    "title": "Activity",
+    "entryCount": "{{count}} entries",
+    "empty": "No activity yet. Start an agent to see events."
+  }
+}

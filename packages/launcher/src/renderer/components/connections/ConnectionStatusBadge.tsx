@@ -1,16 +1,7 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 import type { ConnectionStatus } from "../../types"
-
-const LABELS: Record<ConnectionStatus, string> = {
-  connected: "Connected",
-  disconnected: "Disconnected",
-  expired: "Expired",
-  unauthorized: "Unauthorized",
-  rate_limited: "Rate limited",
-  offline: "Offline",
-  error: "Error",
-}
 
 const CLASSES: Record<ConnectionStatus, string> = {
   connected: "bg-(--success-bg) text-(--success-text)",
@@ -39,6 +30,7 @@ export function ConnectionStatusBadge({
   status: ConnectionStatus
   className?: string
 }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <span
       className={cn(
@@ -48,7 +40,7 @@ export function ConnectionStatusBadge({
       )}
     >
       <span className={cn("inline-block w-[6px] h-[6px] rounded-full", DOT[status])} />
-      {LABELS[status]}
+      {t(`connections.status.${status}`)}
     </span>
   )
 }

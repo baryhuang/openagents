@@ -1,0 +1,21 @@
+{
+  "confirmDialog": {
+    "confirm": "确认",
+    "cancel": "取消",
+    "working": "处理中…"
+  },
+  "passwordInput": {
+    "hideValue": "隐藏内容",
+    "showValue": "显示内容",
+    "hide": "隐藏",
+    "show": "显示"
+  },
+  "topBar": {
+    "openCommandPalette": "打开命令面板",
+    "searchPlaceholder": "搜索智能体、工作区…"
+  },
+  "errorBoundary": {
+    "title": "启动器遇到渲染错误",
+    "tryAgain": "重试"
+  }
+}

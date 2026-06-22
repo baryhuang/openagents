@@ -1,0 +1,51 @@
+{
+  "title": "Logs",
+  "subtitle": "— Daemon and agent output, with level and timeline views",
+  "view": {
+    "list": "List",
+    "timeline": "Timeline"
+  },
+  "allAgents": "All agents",
+  "searchPlaceholder": "Search…",
+  "toggleLevel": "Toggle {{level}}",
+  "actions": {
+    "refresh": "Refresh",
+    "copy": "Copy",
+    "export": "Export",
+    "clear": "Clear",
+    "auto": "Auto"
+  },
+  "json": {
+    "show": "Show JSON",
+    "hide": "Hide JSON",
+    "toggle": "Toggle"
+  },
+  "empty": {
+    "noLogs": "No logs yet. Start an agent to see output here.",
+    "noMatch": "No log lines match the current filters."
+  },
+  "timeline": {
+    "noTimestamp": "(no timestamp)"
+  },
+  "toast": {
+    "copied": "Logs copied to clipboard",
+    "copyFailed": "Failed to copy logs",
+    "exported": "Exported logs",
+    "exportFailed": "Export failed: {{message}}",
+    "deleted": "Deleted {{count}} log lines from the selected range"
+  },
+  "clearModal": {
+    "title": "Clear Logs",
+    "description": "Delete log entries from daemon.log whose timestamps fall inside the selected time range.",
+    "startTime": "Start Time",
+    "endTime": "End Time",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleting": "Deleting...",
+    "errors": {
+      "invalidRange": "Please select a valid start and end time.",
+      "startAfterEnd": "Start time must be before end time.",
+      "generic": "Failed to clear logs."
+    }
+  }
+}

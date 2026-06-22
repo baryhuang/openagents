@@ -1,0 +1,14 @@
+{
+  "appName": "OpenAgents",
+  "loading": "加载中…",
+  "import": "导入",
+  "export": "导出",
+  "reset": "重置",
+  "reveal": "在文件夹中显示",
+  "cancel": "取消",
+  "download": "下载",
+  "documentation": "文档",
+  "none": "（无）",
+  "notInstalled": "未安装",
+  "checking": "检查中…"
+}

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react"
+import { useTranslation, Trans } from "react-i18next"
+import type { TFunction } from "i18next"
 import { ExternalLink, Globe } from "lucide-react"
 import { Modal, ModalActions } from "../ui/Modal"
 import { Button } from "../ui/Button"
@@ -7,16 +9,16 @@ import { Label } from "../ui/Label"
 import type { ToastType } from "../../hooks/useToast"
 import { capture } from "../../lib/analytics"
 
-function humanizeError(err: unknown): string {
+function humanizeError(err: unknown, t: TFunction): string {
   const raw = (err as Error)?.message ?? String(err)
   if (/ERR_TLS_CERT_ALTNAME_INVALID|altnames/i.test(raw)) {
-    return "Workspace service is temporarily unreachable (TLS certificate mismatch). Please try again later or contact support."
+    return t("workspaces.quickConnect.error.tls")
   }
   if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(raw)) {
-    return "Cannot reach the workspace service. Check your internet connection and try again."
+    return t("workspaces.quickConnect.error.dns")
   }
   if (/ECONNREFUSED|ECONNRESET|ETIMEDOUT|timed out/i.test(raw)) {
-    return "Workspace service didn't respond in time. Please try again in a moment."
+    return t("workspaces.quickConnect.error.timeout")
   }
   const cleaned = raw.replace(/^Error invoking remote method '[^']+':\s*/i, "")
   return cleaned.length > 220 ? `${cleaned.slice(0, 220)}…` : cleaned
@@ -43,6 +45,7 @@ export function WorkspaceQuickConnect({
   onCreated: () => void
   showToast: (msg: string, type?: ToastType) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [mode, setMode] = useState<"paste" | "create" | "browser">("paste")
   const [pasted, setPasted] = useState("")
   const [name, setName] = useState("")
@@ -81,7 +84,7 @@ export function WorkspaceQuickConnect({
     const parsed = parseInput(pasted)
     const { slug, token } = parsed
     if (!parsed.url && !slug && !token) {
-      showToast("Paste a workspace URL or token", "warning")
+      showToast(t("workspaces.quickConnect.toast.pasteFirst"), "warning")
       return
     }
     setBusy(true)
@@ -91,15 +94,16 @@ export function WorkspaceQuickConnect({
           ? { url: parsed.url }
           : { url: parsed.url, token, slug },
       )
-      const label = ws.name || ws.slug || slug || "workspace"
+      const label =
+        ws.name || ws.slug || slug || t("workspaces.quickConnect.fallbackLabel")
       showToast(
-        `Registered ${label}. Open Agents tab to connect an agent.`,
+        t("workspaces.quickConnect.toast.registered", { label }),
         "success",
       )
       onCreated()
       onClose()
     } catch (err) {
-      showToast(humanizeError(err), "error")
+      showToast(humanizeError(err, t), "error")
     } finally {
       setBusy(false)
     }
@@ -108,7 +112,7 @@ export function WorkspaceQuickConnect({
   const handleCreate = async (): Promise<void> => {
     const n = name.trim()
     if (!n) {
-      showToast("Enter a workspace name", "warning")
+      showToast(t("workspaces.quickConnect.toast.enterName"), "warning")
       return
     }
     setBusy(true)
@@ -120,9 +124,9 @@ export function WorkspaceQuickConnect({
       setResult(r)
       capture("workspace_created", { source: "quick_connect" })
       onCreated()
-      showToast("Workspace created", "success")
+      showToast(t("workspaces.quickConnect.toast.created"), "success")
     } catch (err) {
-      showToast(humanizeError(err), "error")
+      showToast(humanizeError(err, t), "error")
     } finally {
       setBusy(false)
     }
@@ -130,15 +134,12 @@ export function WorkspaceQuickConnect({
 
   const handleBrowser = (): void => {
     window.api.openExternal("https://workspace.openagents.org/")
-    showToast(
-      "Opened workspace site in your browser. Paste the URL back here when done.",
-      "info",
-    )
+    showToast(t("workspaces.quickConnect.toast.browserOpened"), "info")
     setMode("paste")
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Quick connect">
+    <Modal open={open} onClose={onClose} title={t("workspaces.quickConnect.title")}>
       <div className="flex gap-1 p-1 rounded-(--radius-sm) bg-(--bg-input) mb-4 w-fit">
         {(["paste", "create", "browser"] as const).map((m) => (
           <button
@@ -152,10 +153,10 @@ export function WorkspaceQuickConnect({
             }`}
           >
             {m === "paste"
-              ? "Paste URL / token"
+              ? t("workspaces.quickConnect.tabPaste")
               : m === "create"
-                ? "Create new"
-                : "Browser auth"}
+                ? t("workspaces.quickConnect.tabCreate")
+                : t("workspaces.quickConnect.tabBrowser")}
           </button>
         ))}
       </div>
@@ -163,15 +164,15 @@ export function WorkspaceQuickConnect({
       {mode === "paste" && (
         <div className="flex flex-col gap-3">
           <div>
-            <Label className="mb-1.5">Workspace URL or invitation token</Label>
+            <Label className="mb-1.5">{t("workspaces.quickConnect.pasteLabel")}</Label>
             <Input
               value={pasted}
               onChange={(e) => setPasted(e.target.value)}
-              placeholder="https://workspace.openagents.org/my-team?token=… or http://localhost:8000/my-team?token=…"
+              placeholder={t("workspaces.quickConnect.pastePlaceholder")}
               autoFocus
             />
             <div className="text-[11px] text-(--text-tertiary) mt-1.5">
-              Hosted URLs use remote token resolution. Custom URLs use the URL origin, first path segment, and token query parameter.
+              {t("workspaces.quickConnect.pasteHint")}
             </div>
           </div>
         </div>
@@ -180,19 +181,19 @@ export function WorkspaceQuickConnect({
       {mode === "create" && (
         <div className="flex flex-col gap-3">
           <div>
-            <Label className="mb-1.5">Workspace name</Label>
+            <Label className="mb-1.5">{t("workspaces.quickConnect.createLabel")}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Team"
+              placeholder={t("workspaces.quickConnect.createPlaceholder")}
               autoFocus
             />
           </div>
           {result?.token && (
             <div className="px-3 py-2 bg-(--success-bg) text-(--success-text) rounded-sm text-[12px] break-all">
-              <div className="font-semibold mb-1">Workspace ready</div>
-              <div className="text-[11px]">slug: {result.slug}</div>
-              <div className="text-[11px]">token: {result.token}</div>
+              <div className="font-semibold mb-1">{t("workspaces.quickConnect.ready")}</div>
+              <div className="text-[11px]">{t("workspaces.quickConnect.readySlug", { slug: result.slug })}</div>
+              <div className="text-[11px]">{t("workspaces.quickConnect.readyToken", { token: result.token })}</div>
             </div>
           )}
         </div>
@@ -206,19 +207,22 @@ export function WorkspaceQuickConnect({
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[12px] font-semibold text-(--text-primary) mb-0.5">
-                Sign in via your browser
+                {t("workspaces.quickConnect.browserHeading")}
               </div>
               <div className="text-[11px] text-(--text-secondary) leading-relaxed break-all">
-                Opens <code className="inline-code">workspace.openagents.org</code> so you can sign in or accept an invite.
+                <Trans
+                  i18nKey="workspaces.quickConnect.browserBody"
+                  components={[<code className="inline-code" />]}
+                />
               </div>
             </div>
           </div>
 
           <ol className="m-0 p-0 list-none flex flex-col gap-2">
             {[
-              "Open the workspace site in your browser.",
-              "Sign in or accept the invite.",
-              "Copy the workspace URL and paste it in the “Paste URL / token” tab.",
+              t("workspaces.quickConnect.step1"),
+              t("workspaces.quickConnect.step2"),
+              t("workspaces.quickConnect.step3"),
             ].map((step, i) => (
               <li
                 key={step}
@@ -234,23 +238,23 @@ export function WorkspaceQuickConnect({
 
           <Button variant="primary" onClick={handleBrowser} className="self-start">
             <ExternalLink className="w-3.5 h-3.5" />
-            Open workspace site
+            {t("workspaces.quickConnect.openSite")}
           </Button>
         </div>
       )}
 
       <ModalActions>
         <Button variant="ghost" onClick={onClose} disabled={busy}>
-          Close
+          {t("workspaces.quickConnect.close")}
         </Button>
         {mode === "paste" && (
           <Button variant="primary" onClick={handlePasteConnect} disabled={busy}>
-            {busy ? "Connecting..." : "Connect"}
+            {busy ? t("workspaces.quickConnect.connecting") : t("workspaces.quickConnect.connect")}
           </Button>
         )}
         {mode === "create" && (
           <Button variant="primary" onClick={handleCreate} disabled={busy}>
-            {busy ? "Creating..." : "Create"}
+            {busy ? t("workspaces.quickConnect.creating") : t("workspaces.quickConnect.createBtn")}
           </Button>
         )}
       </ModalActions>

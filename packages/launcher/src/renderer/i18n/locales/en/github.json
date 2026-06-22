@@ -1,0 +1,75 @@
+{
+  "title": "GitHub",
+  "subtitle": "— Bind agents to repos, surface recent issues / PRs",
+  "refresh": "Refresh",
+  "bindRepo": "Bind repo",
+  "filterPlaceholder": "Filter by agent or repo…",
+  "empty": {
+    "title": "No GitHub bindings yet",
+    "description": "Connect an agent to a GitHub repository to surface recent issues / PRs and let the agent post comments via its bound token.",
+    "bindFirst": "Bind first repo"
+  },
+  "credentialLine": "Credential: {{label}} · Bound {{time}}",
+  "missingCredential": "(missing credential)",
+  "refreshBinding": "Refresh",
+  "editBinding": "Edit binding",
+  "unbind": "Unbind",
+  "tabs": {
+    "issues": "Issues ({{count}})",
+    "pulls": "Pull requests ({{count}})"
+  },
+  "issues": {
+    "loading": "Loading…",
+    "empty": "No open issues.",
+    "by": "by {{user}}",
+    "updated": "updated {{time}}",
+    "replyPlaceholder": "Reply as the bound agent…",
+    "posting": "Posting…",
+    "comment": "Comment",
+    "openOnGitHub": "Open on GitHub"
+  },
+  "pulls": {
+    "loading": "Loading…",
+    "empty": "No open pull requests.",
+    "draft": "draft",
+    "by": "by {{user}}",
+    "updated": "updated {{time}}",
+    "openOnGitHub": "Open on GitHub"
+  },
+  "time": {
+    "secondsAgo": "{{count}}s ago",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+  "toast": {
+    "unbound": "Unbound {{name}}",
+    "commentPosted": "Comment posted on #{{number}}",
+    "commentFailed": "Failed to post comment",
+    "bound": "Bound {{owner}}/{{repo}} → {{name}}"
+  },
+  "unbindConfirm": {
+    "title": "Unbind {{name}}?",
+    "description": "This removes the link to {{owner}}/{{repo}}. The credential itself is kept.",
+    "confirm": "Unbind"
+  },
+  "dialog": {
+    "titleEdit": "Update GitHub binding",
+    "titleCreate": "Bind agent to GitHub repo",
+    "agentLabel": "Agent",
+    "noAgents": "(no agents)",
+    "repoLabel": "Repository",
+    "repoHint": "Accepts owner/name, full URL, or git@github.com:owner/name.git",
+    "repoPlaceholder": "anthropics/claude-code",
+    "credentialLabel": "Credential",
+    "credentialHint": "Add a GitHub credential under Credentials first.",
+    "noCredentials": "(no GitHub credentials)",
+    "errorChooseAgent": "Choose an agent to bind",
+    "errorEnterRepo": "Enter a repo (owner/name or URL)",
+    "errorPickCredential": "Pick a GitHub credential",
+    "errorBindFailed": "Failed to bind repo",
+    "binding": "Binding...",
+    "update": "Update",
+    "bind": "Bind"
+  }
+}

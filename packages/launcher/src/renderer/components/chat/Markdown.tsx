@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/utils'
 
 // Lightweight Markdown renderer — supports the subset called out in stage3.md:
@@ -156,6 +157,7 @@ function renderInline(text: string): React.ReactNode[] {
 }
 
 function CodeBlock({ code, lang }: { code: string; lang?: string }): React.JSX.Element {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const copy = async (): Promise<void> => {
     try {
@@ -167,13 +169,13 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }): React.JSX.E
   return (
     <div className="relative my-2 rounded-(--radius) overflow-hidden border border-(--border) bg-[#1e1e2a]">
       <div className="flex items-center justify-between px-3 py-1 bg-[#26263a] text-[10px] text-[#aaa] font-mono">
-        <span>{lang || 'text'}</span>
+        <span>{lang || t('chat.markdown.text')}</span>
         <button
           type="button"
           onClick={copy}
           className="px-2 py-0.5 rounded text-[10px] bg-[#3a3a55] text-white hover:bg-[#4a4a6a] transition-colors"
         >
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? t('chat.markdown.copied') : t('chat.markdown.copy')}
         </button>
       </div>
       <pre className="overflow-x-auto px-3 py-2 text-[12px] leading-[1.55] text-[#e6e6ea]">

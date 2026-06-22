@@ -1,0 +1,66 @@
+{
+  "sections": {
+    "overview": "Overview",
+    "manage": "Manage",
+    "system": "System"
+  },
+  "items": {
+    "dashboard": {
+      "label": "Dashboard",
+      "description": "Overview: agent status, workspaces, and recent activity"
+    },
+    "install": {
+      "label": "Marketplace",
+      "description": "Step 1 · Browse and install agents"
+    },
+    "agents": {
+      "label": "Agents",
+      "description": "Step 2 · Create agents, set API keys, test and connect"
+    },
+    "workspaces": {
+      "label": "Workspaces",
+      "description": "Step 3 · Open and manage workspaces"
+    },
+    "chat": {
+      "label": "Chat",
+      "description": "Chat with your connected workspaces"
+    },
+    "connections": {
+      "label": "Connections",
+      "description": "Connect external platforms like GitHub and Slack"
+    },
+    "credentials": {
+      "label": "Credentials",
+      "description": "Manage API keys and secrets in one place"
+    },
+    "github": {
+      "label": "GitHub",
+      "description": "Bind repos and view issues / PRs"
+    },
+    "logs": {
+      "label": "Logs",
+      "description": "View runtime logs and troubleshoot"
+    },
+    "settings": {
+      "label": "Settings",
+      "description": "App settings and preferences"
+    }
+  },
+  "daemon": {
+    "running": "Daemon running",
+    "starting": "Daemon starting",
+    "stopped": "Daemon stopped",
+    "offline": "Daemon offline"
+  },
+  "notifications": {
+    "tooltip": "Notifications",
+    "title": "Notifications",
+    "unread": "{{count}} unread",
+    "markAllRead": "Mark all read",
+    "clear": "Clear",
+    "empty": "No notifications yet."
+  },
+  "guide": "Quick start guide",
+  "themeToggle": "Toggle theme",
+  "themeTooltip": "Theme: {{mode}} — click for {{next}}"
+}

@@ -1,0 +1,90 @@
+{
+  "title": "连接",
+  "subtitle": "— 对外部平台的授权（在磁盘上加密存储）",
+  "stats": {
+    "connected": "已连接",
+    "platforms": "{{count}} 个平台"
+  },
+  "search": {
+    "placeholder": "搜索平台……",
+    "noResults": "没有匹配“{{query}}”的平台。"
+  },
+  "filters": {
+    "all": "全部",
+    "connected": "已连接",
+    "disconnected": "未连接"
+  },
+  "toast": {
+    "disconnected": "已断开连接",
+    "error": "错误：{{message}}",
+    "pasteToken": "请粘贴令牌或 API 密钥",
+    "saveCredentialFailed": "保存凭据失败",
+    "connected": "已连接 {{platform}}",
+    "testFailed": "已保存，但测试失败：{{detail}}"
+  },
+  "disconnect": {
+    "title": "断开 {{platform}} 的连接？",
+    "descriptionBefore": "已关联的智能体将失去对 ",
+    "descriptionAfter": " 的访问权限。已保存的凭据会被保留，可重复使用。",
+    "confirm": "断开连接"
+  },
+  "status": {
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "expired": "已过期",
+    "unauthorized": "未授权",
+    "rate_limited": "已限流",
+    "offline": "离线",
+    "error": "错误"
+  },
+  "card": {
+    "synced": "同步于 {{time}}",
+    "account": "账户：",
+    "connect": "连接",
+    "test": "测试",
+    "reconfigure": "重新配置",
+    "disconnect": "断开连接"
+  },
+  "relativeTime": {
+    "never": "从未",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  },
+  "test": {
+    "title": "测试 {{platform}}",
+    "subtitle": "使用已保存的凭据调用该平台的 API 进行探测。",
+    "running": "正在探测……",
+    "account": "账户：",
+    "testing": "测试中……",
+    "runAgain": "重新运行",
+    "done": "完成"
+  },
+  "oauth": {
+    "openTitle": "在浏览器中打开 {{platform}} 授权页面",
+    "connectViaBrowser": "通过浏览器连接"
+  },
+  "dialog": {
+    "reconnectTitle": "重新连接 {{platform}}",
+    "connectTitle": "连接 {{platform}}",
+    "credential": "凭据",
+    "addNewCredential": "+ 添加新凭据",
+    "credentialLabel": "凭据名称",
+    "defaultLabel": "{{platform}} 默认凭据",
+    "tokenOrApiKey": "令牌 / API 密钥",
+    "pasteSecret": "粘贴你的 {{platform}} 密钥",
+    "whereToGet": "在哪里获取？",
+    "accountHint": "账户提示（可选）",
+    "accountHintPlaceholder": "user@example.com 或 org/repo",
+    "suggestedScopes": "建议的权限范围：",
+    "connectedAs": "已连接为 {{account}}",
+    "connectedOk": "已连接",
+    "resultError": "{{status}} — {{detail}}",
+    "resultStatus": "{{status}}",
+    "cancel": "取消",
+    "connecting": "连接中……",
+    "saveAndTest": "保存并测试",
+    "connect": "连接"
+  }
+}

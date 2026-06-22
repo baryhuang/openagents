@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 import type { MarketplaceView } from "../../hooks/useMarketplacePrefs"
 
@@ -12,11 +13,12 @@ export function MarketplaceViewToggle({
   value,
   onChange,
 }: MarketplaceViewToggleProps): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className="flex rounded-sm overflow-hidden border border-(--border)">
       {([
-        { key: "grid", label: "Grid", icon: "▦" },
-        { key: "list", label: "List", icon: "≡" },
+        { key: "grid", label: t("install.viewToggle.grid"), icon: "▦" },
+        { key: "list", label: t("install.viewToggle.list"), icon: "≡" },
       ] as const).map((opt) => (
         <button
           key={opt.key}
@@ -28,7 +30,7 @@ export function MarketplaceViewToggle({
               ? "bg-(--accent) text-white"
               : "bg-(--bg-card) text-(--text-secondary) hover:text-(--text-primary)",
           )}
-          title={`${opt.label} view`}
+          title={t("install.viewToggle.viewLabel", { label: opt.label })}
           aria-pressed={value === opt.key}
         >
           <span aria-hidden="true">{opt.icon}</span>

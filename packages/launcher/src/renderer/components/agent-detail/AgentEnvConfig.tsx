@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Input } from "../ui/Input"
 import { PasswordInput } from "../ui/PasswordInput"
 import { Button } from "../ui/Button"
@@ -29,6 +30,7 @@ export function AgentEnvConfig({
   onChange,
   showToast,
 }: AgentEnvConfigProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
@@ -45,15 +47,15 @@ export function AgentEnvConfig({
     }
     const missing = fields.find((f) => f.required && !payload[f.name])
     if (missing) {
-      showToast(`${missing.description || missing.name} is required`, "warning")
+      showToast(t("agents.envConfig.fieldRequired", { field: missing.description || missing.name }), "warning")
       return
     }
     setSaving(true)
     try {
       await window.api.saveAgentEnv(agentName, payload)
-      showToast("Configuration saved", "success")
+      showToast(t("agents.envConfig.toast.configurationSaved"), "success")
     } catch (e: unknown) {
-      showToast(`Error: ${(e as Error).message}`, "error")
+      showToast(t("agents.envConfig.toast.error", { message: (e as Error).message }), "error")
     } finally {
       setSaving(false)
     }
@@ -66,8 +68,8 @@ export function AgentEnvConfig({
       const r = await window.api.testLLM(values)
       setTestResult(
         r.success
-          ? { ok: true, message: `OK — ${r.model || "model"} responded` }
-          : { ok: false, message: r.error || "Test failed" },
+          ? { ok: true, message: t("agents.envConfig.toast.okResponded", { model: r.model || t("agents.envConfig.toast.modelFallback") }) }
+          : { ok: false, message: r.error || t("agents.envConfig.toast.testFailed") },
       )
     } catch (e: unknown) {
       setTestResult({ ok: false, message: (e as Error).message })
@@ -78,7 +80,7 @@ export function AgentEnvConfig({
 
   return (
     <div className={SECTION}>
-      <h4 className={SECTION_H4}>Configuration</h4>
+      <h4 className={SECTION_H4}>{t("agents.envConfig.title")}</h4>
       {fields.map((f) => {
         const FieldInput = f.password ? PasswordInput : Input
         return (
@@ -90,7 +92,7 @@ export function AgentEnvConfig({
             <FieldInput
               value={values[f.name] ?? f.default ?? ""}
               onChange={(e) => onChange({ ...values, [f.name]: e.target.value })}
-              placeholder={f.placeholder || `Enter ${f.name}…`}
+              placeholder={f.placeholder || t("agents.envConfig.enterField", { name: f.name })}
             />
           </div>
         )
@@ -104,10 +106,10 @@ export function AgentEnvConfig({
       )}
       <div className="form-actions mt-1">
         <Button size="sm" variant="primary" onClick={saveEnv} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? t("agents.envConfig.saving") : t("agents.envConfig.save")}
         </Button>
         <Button size="sm" onClick={testConnection} disabled={testing}>
-          {testing ? "Testing…" : "Test connection"}
+          {testing ? t("agents.envConfig.testing") : t("agents.envConfig.testConnection")}
         </Button>
       </div>
     </div>

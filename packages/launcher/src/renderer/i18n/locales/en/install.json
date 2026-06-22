@@ -1,0 +1,119 @@
+{
+  "topbar": {
+    "title": "Marketplace",
+    "subtitle": "— Discover and install AI agents"
+  },
+  "allAgents": "All agents",
+  "stats": "{{total}} agents · {{installed}} installed",
+  "empty": {
+    "noMatch": "No agents match the current filters.",
+    "resetFilters": "Reset filters"
+  },
+  "toast": {
+    "installed": "{{name}} installed",
+    "updated": "{{name}} updated",
+    "uninstalled": "{{name}} uninstalled",
+    "installFailed": "install failed: {{error}}",
+    "updateFailed": "update failed: {{error}}",
+    "uninstallFailed": "Uninstall failed: {{error}}"
+  },
+  "uninstallModal": {
+    "title": "Uninstall {{name}}?",
+    "description": "This will remove <1>{{name}}</1> from your system. Configured agents of this type may stop working.",
+    "wipeEnv": "Also remove saved environment variables",
+    "wipeEnvHint": "(API keys, model selection — kept by default and reappear in the setup wizard on reinstall)",
+    "confirm": "Uninstall",
+    "cancel": "Cancel"
+  },
+  "card": {
+    "featured": "★ Featured",
+    "featuredTitle": "Featured",
+    "updateBadge": "Update",
+    "updateAvailable": "An update is available",
+    "noDescription": "No description.",
+    "comingSoon": "Coming soon",
+    "installed": "Installed",
+    "global": "Global",
+    "globalTitle": "Installed outside OpenAgents (system/global)",
+    "notInstalled": "Not installed",
+    "install": "Install",
+    "update": "Update",
+    "uninstall": "Uninstall",
+    "reinstall": "Reinstall",
+    "verb": {
+      "installing": "Installing…",
+      "updating": "Updating…",
+      "uninstalling": "Uninstalling…",
+      "rollingBack": "Rolling back…"
+    }
+  },
+  "featuredBanner": {
+    "eyebrow": "FEATURED",
+    "defaultTitle": "Discover AI agents",
+    "defaultDescription": "Browse, install, and update AI coding agents from the OpenAgents catalog.",
+    "open": "Open",
+    "installNow": "Install Now",
+    "browseAll": "Browse all"
+  },
+  "categories": {
+    "all": "All",
+    "coding": "Coding",
+    "open-source": "Open source",
+    "cli": "CLI",
+    "ide-extension": "IDE extension",
+    "productivity": "Productivity",
+    "ai-tools": "AI tools",
+    "automation": "Automation",
+    "devtools": "Dev tools"
+  },
+  "search": {
+    "placeholder": "Search agents, tags, descriptions…"
+  },
+  "sort": {
+    "ariaLabel": "Sort",
+    "prefix": "Sort: {{label}}",
+    "featured": "Featured",
+    "popular": "Popular",
+    "newest": "Newest",
+    "name": "Name (A–Z)"
+  },
+  "viewToggle": {
+    "grid": "Grid",
+    "list": "List",
+    "viewLabel": "{{label}} view"
+  },
+  "progress": {
+    "stages": {
+      "downloading": "Downloading",
+      "extracting": "Extracting",
+      "installing": "Installing dependencies",
+      "validating": "Validating",
+      "completed": "Completed"
+    },
+    "verb": {
+      "install": "Install",
+      "update": "Update",
+      "uninstall": "Uninstall",
+      "rollback": "Rollback"
+    },
+    "verbProgress": "{{verb}} progress",
+    "failed": "Failed",
+    "starting": "Starting…",
+    "retry": "Retry",
+    "copyLog": "Copy log",
+    "showLog": "Show log",
+    "hideLog": "Hide log",
+    "dismiss": "Dismiss",
+    "noLog": "No log captured.",
+    "waitingForOutput": "Waiting for output…",
+    "mini": {
+      "tooltip": "Click to view full progress",
+      "installing": "Installing",
+      "updating": "Updating",
+      "uninstalling": "Uninstalling",
+      "rollingBack": "Rolling back",
+      "failedStatus": "FAILED",
+      "doneStatus": "DONE"
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react"
+import { Trans, useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
 import { Checkbox } from "../ui/Checkbox"
 import { Modal, ModalTitle } from "../ui/Modal"
@@ -58,6 +59,7 @@ export default function AgentDetail({
   onOpenWizard,
   showToast,
 }: AgentDetailProps): React.JSX.Element {
+  const { t } = useTranslation()
   const [envFields, setEnvFields] = useState<EnvField[]>([])
   const [envValues, setEnvValues] = useState<Record<string, string>>({})
   const [installed, setInstalled] = useState<InstalledAgentRecord | null>(null)
@@ -162,7 +164,7 @@ export default function AgentDetail({
   const installedAtLabel = installed?.installedAt
     ? new Date(installed.installedAt).toLocaleString()
     : entry.installed && !installed
-      ? "External install"
+      ? t("agents.header.externalInstall")
       : null
 
   const startInstall = useCallback(
@@ -180,15 +182,19 @@ export default function AgentDetail({
           await window.api.installAgentTypeStreaming(entry.name)
         }
         showToast(
-          `${entry.label || entry.name} ${verb === "update" ? "updated" : "installed"}${tag ? ` (${tag})` : ""}`,
+          t("agents.detail.toast.installSuccess", {
+            name: entry.label || entry.name,
+            action: verb === "update" ? t("agents.detail.toast.updated") : t("agents.detail.toast.installed"),
+            tag: tag ? ` (${tag})` : "",
+          }),
           "success",
         )
         onAfterInstall(entry)
       } catch (e: unknown) {
-        showToast(`${verb} failed: ${(e as Error).message}`, "error")
+        showToast(t("agents.detail.toast.installFailed", { verb, message: (e as Error).message }), "error")
       }
     },
-    [entry, channel, onAfterInstall, showToast],
+    [entry, channel, onAfterInstall, showToast, t],
   )
 
   const startUninstall = useCallback(async () => {
@@ -207,47 +213,47 @@ export default function AgentDetail({
           /* non-fatal — uninstall already succeeded */
         }
       }
-      showToast(`${entry.label || entry.name} uninstalled`, "success")
+      showToast(t("agents.detail.toast.uninstalled", { name: entry.label || entry.name }), "success")
       onAfterInstall(entry)
     } catch (e: unknown) {
-      showToast(`Uninstall failed: ${installErrorMessage(e)}`, "error")
+      showToast(t("agents.detail.toast.uninstallFailed", { message: installErrorMessage(e) }), "error")
     }
-  }, [entry, onAfterInstall, showToast, wipeEnvOnUninstall])
+  }, [entry, onAfterInstall, showToast, wipeEnvOnUninstall, t])
 
   const startRollback = useCallback(async () => {
     if (!installed?.history?.length && !installed?.previousVersion) {
-      showToast("No previous version recorded", "warning")
+      showToast(t("agents.detail.toast.noPreviousVersion"), "warning")
       return
     }
     useInstallStore.getState().startJob({ agent: entry.name, verb: "rollback" })
     try {
       const r = await window.api.rollbackAgentType(entry.name)
       if (r.success) {
-        showToast(`Rolled back to v${r.version}`, "success")
+        showToast(t("agents.detail.toast.rolledBack", { version: r.version }), "success")
         onAfterInstall(entry)
       } else {
-        showToast(r.error || "Rollback failed", "error")
+        showToast(r.error || t("agents.detail.toast.rollbackFailedBare"), "error")
       }
     } catch (e: unknown) {
-      showToast(`Rollback failed: ${installErrorMessage(e)}`, "error")
+      showToast(t("agents.detail.toast.rollbackFailed", { message: installErrorMessage(e) }), "error")
     }
-  }, [entry, installed, onAfterInstall, showToast])
+  }, [entry, installed, onAfterInstall, showToast, t])
 
   const copyLog = useCallback(async () => {
     const text = job?.log || ""
     try {
       await navigator.clipboard.writeText(text)
-      showToast("Log copied to clipboard", "success")
+      showToast(t("agents.detail.toast.logCopied"), "success")
     } catch {
-      showToast("Failed to copy log", "error")
+      showToast(t("agents.detail.toast.logCopyFailed"), "error")
     }
-  }, [job?.log, showToast])
+  }, [job?.log, showToast, t])
 
   return (
     <section className="flex flex-col gap-4">
       <div>
         <Button size="sm" variant="ghost" onClick={onBack}>
-          ← Back
+          {t("agents.detail.back")}
         </Button>
       </div>
 
@@ -363,11 +369,14 @@ export default function AgentDetail({
         <div className="flex flex-col items-center py-2">
           <AgentIcon type={entry.name} size={40} />
           <ModalTitle className="mt-3 text-center">
-            Uninstall {entry.label || entry.name}?
+            {t("agents.detail.uninstallTitle", { name: entry.label || entry.name })}
           </ModalTitle>
           <p className="hint mt-3 mb-4 text-center">
-            This will remove <strong>{entry.label || entry.name}</strong> from
-            your system. Configured agents of this type may stop working.
+            <Trans
+              i18nKey="agents.detail.uninstallBody"
+              values={{ name: entry.label || entry.name }}
+              components={{ 1: <strong /> }}
+            />
           </p>
           <button
             type="button"
@@ -380,16 +389,15 @@ export default function AgentDetail({
               className="mt-0.5"
             />
             <span className="text-[12px] leading-snug text-(--text-secondary)">
-              Also remove saved environment variables{" "}
+              {t("agents.detail.alsoRemoveEnv")}{" "}
               <span className="text-(--text-tertiary)">
-                (API keys, model selection — kept by default and reappear in
-                the setup wizard on reinstall)
+                {t("agents.detail.alsoRemoveEnvHint")}
               </span>
             </span>
           </button>
           <div className="form-actions justify-center mt-0">
             <Button variant="destructive" onClick={startUninstall}>
-              Uninstall
+              {t("agents.detail.uninstall")}
             </Button>
             <Button
               onClick={() => {
@@ -397,7 +405,7 @@ export default function AgentDetail({
                 setWipeEnvOnUninstall(false)
               }}
             >
-              Cancel
+              {t("agents.detail.cancel")}
             </Button>
           </div>
         </div>
