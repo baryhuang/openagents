@@ -64,7 +64,7 @@
   "build": {
     "appId": "com.openagents.launcher",
     "productName": "OpenAgents Launcher",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "artifactName": "OpenAgents-Launcher-${version}-${os}-${arch}.${ext}",
     "files": [
       "out/**/*",
       "package.json",
