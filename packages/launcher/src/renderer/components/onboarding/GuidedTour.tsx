@@ -1,6 +1,7 @@
 import React from "react"
 import ReactDOM from "react-dom"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { useUiStore } from "../../store/ui"
 import { capture } from "../../lib/analytics"
 
@@ -39,40 +40,23 @@ interface TourStep {
   tab: string
   /** data-tour anchor on the sidebar item to highlight. */
   anchor: string
-  title: string
-  body: string
+  /** i18n key under `onboarding.tour.steps.<key>`. */
+  key: string
 }
 
+// Labels/bodies live in the i18n catalog under `onboarding.tour.steps.<key>`;
+// here we only keep the tab/anchor wiring so the list stays language-agnostic.
 const STEPS: TourStep[] = [
-  {
-    tab: "dashboard",
-    anchor: "dashboard",
-    title: "Your dashboard",
-    body: "This is your home base — agent status, workspaces, and recent activity at a glance. Three quick steps get you running.",
-  },
-  {
-    tab: "install",
-    anchor: "install",
-    title: "Step 1 · Install an agent",
-    body: "Open the Marketplace, pick an agent, and click Install.",
-  },
-  {
-    tab: "agents",
-    anchor: "agents",
-    title: "Step 2 · Create & test",
-    body: "In Agents, create a new agent, enter its API key, click Test to verify, then Connect.",
-  },
-  {
-    tab: "workspaces",
-    anchor: "workspaces",
-    title: "Step 3 · Open a workspace",
-    body: "Once connected, open a workspace from Workspaces and you're ready to go.",
-  },
+  { tab: "dashboard", anchor: "dashboard", key: "dashboard" },
+  { tab: "install", anchor: "install", key: "install" },
+  { tab: "agents", anchor: "agents", key: "agents" },
+  { tab: "workspaces", anchor: "workspaces", key: "workspaces" },
 ]
 
 const PADDING = 6
 
 export function GuidedTour(): React.JSX.Element | null {
+  const { t } = useTranslation()
   const { tourOpen, endTour, setCurrentTab } = useUiStore(
     useShallow((s) => ({
       tourOpen: s.tourOpen,
@@ -216,13 +200,18 @@ export function GuidedTour(): React.JSX.Element | null {
             />
           ))}
           <span className="ml-auto text-[11px] text-(--text-tertiary)">
-            {step + 1} / {STEPS.length}
+            {t("onboarding.tour.progress", {
+              current: step + 1,
+              total: STEPS.length,
+            })}
           </span>
         </div>
 
-        <div className="text-[14px] font-semibold mb-1">{current.title}</div>
+        <div className="text-[14px] font-semibold mb-1">
+          {t(`onboarding.tour.steps.${current.key}.title`)}
+        </div>
         <div className="text-[12.5px] leading-relaxed text-(--text-secondary)">
-          {current.body}
+          {t(`onboarding.tour.steps.${current.key}.body`)}
         </div>
 
         <div className="flex items-center justify-between mt-4">
@@ -231,7 +220,7 @@ export function GuidedTour(): React.JSX.Element | null {
             onClick={() => finish(false)}
             className="text-[12px] text-(--text-tertiary) hover:text-(--text-secondary) bg-transparent border-0 cursor-pointer"
           >
-            Skip
+            {t("onboarding.tour.skip")}
           </button>
           <div className="flex items-center gap-2">
             {step > 0 && (
@@ -240,7 +229,7 @@ export function GuidedTour(): React.JSX.Element | null {
                 onClick={() => setStep((s) => s - 1)}
                 className="px-3 py-1.5 text-[12px] rounded-md border border-(--border) bg-transparent text-(--text-secondary) hover:text-(--text-primary) cursor-pointer"
               >
-                Back
+                {t("onboarding.tour.back")}
               </button>
             )}
             <button
@@ -248,7 +237,9 @@ export function GuidedTour(): React.JSX.Element | null {
               onClick={() => (isLast ? finish(true) : setStep((s) => s + 1))}
               className="px-3.5 py-1.5 text-[12px] font-medium rounded-md border-0 bg-[#6366f1] text-white hover:bg-[#4f46e5] cursor-pointer"
             >
-              {isLast ? "Get started" : "Next"}
+              {isLast
+                ? t("onboarding.tour.getStarted")
+                : t("onboarding.tour.next")}
             </button>
           </div>
         </div>

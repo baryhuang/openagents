@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bot } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
+import { useTranslation } from 'react-i18next'
 import { useChatStore, channelKey } from '../../store/chat'
 import { useWorkspacesStore } from '../../store/workspaces'
 import type {
@@ -48,6 +49,7 @@ function triggerDownload(filename: string, base64: string, mime = 'application/o
 }
 
 export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Element {
+  const { t } = useTranslation()
   const { workspaces, setWorkspaces } = useWorkspacesStore(
     useShallow((s) => ({ workspaces: s.workspaces, setWorkspaces: s.setWorkspaces })),
   )
@@ -145,11 +147,11 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
           }
         }
       } else if (ev.type === 'error') {
-        showToast(`Chat error: ${ev.error}`, 'error')
+        showToast(t('chat.toasts.chatError', { error: ev.error }), 'error')
       }
     })
     return () => { if (typeof unsub === 'function') unsub() }
-  }, [appendMessage, removePending, showToast])
+  }, [appendMessage, removePending, showToast, t])
 
   // Activate a channel: load history + start polling
   const activate = useCallback(async (workspaceId: string, channelName: string) => {
@@ -173,12 +175,12 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
       setMessages(channelKey(workspaceId, channelName), history)
       setParticipants(workspaceId, parts)
     } catch (e: unknown) {
-      showToast(`Failed to load chat: ${(e as Error).message}`, 'error')
+      showToast(t('chat.toasts.loadFailed', { error: (e as Error).message }), 'error')
     } finally {
       setLoadingMessages(false)
     }
     try { await window.api.chatStartPolling(workspaceId, channelName) } catch {}
-  }, [workspaces, setActive, setMessages, setParticipants, showToast])
+  }, [workspaces, setActive, setMessages, setParticipants, showToast, t])
 
   // Cleanup on unmount: stop polling
   useEffect(() => {
@@ -190,7 +192,7 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
 
   const handleSend = async (content: string, attachments: Attachment[]): Promise<void> => {
     if (!active) {
-      showToast('Select a workspace first', 'warning')
+      showToast(t('chat.toasts.selectWorkspaceFirst'), 'warning')
       return
     }
     const key = channelKey(active.workspaceId, active.channelName)
@@ -215,7 +217,7 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
       if (!result.success) {
         // Send failed — drop the optimistic copy and surface the error.
         removePending(key, tempId)
-        showToast(`Send failed: ${result.error}`, 'error')
+        showToast(t('chat.toasts.sendFailed', { error: result.error }), 'error')
         return
       }
       // Send succeeded — keep the optimistic message visible until polling
@@ -225,13 +227,13 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
       setTimeout(() => removePending(key, tempId), 15_000)
     } catch (e: unknown) {
       removePending(key, tempId)
-      showToast(`Send error: ${(e as Error).message}`, 'error')
+      showToast(t('chat.toasts.sendError', { error: (e as Error).message }), 'error')
     }
   }
 
   const handleUpload = async (file: File): Promise<Attachment | null> => {
     if (!active) {
-      showToast('Select a workspace first', 'warning')
+      showToast(t('chat.toasts.selectWorkspaceFirst'), 'warning')
       return null
     }
     try {
@@ -244,14 +246,14 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
         if (!res.fileId) {
           // Upload technically succeeded but the server didn't return a
           // file_id — agents won't be able to read the attachment.
-          showToast(`Uploaded ${file.name} but no file_id was returned; agents may not be able to access it.`, 'warning')
+          showToast(t('chat.toasts.uploadedNoFileId', { name: file.name }), 'warning')
         }
         return { fileId: res.fileId, filename: res.filename || file.name, contentType: file.type, size: file.size, url: res.url }
       }
-      showToast(`Upload failed: ${res.error}`, 'error')
+      showToast(t('chat.toasts.uploadFailed', { error: res.error }), 'error')
       return null
     } catch (e: unknown) {
-      showToast(`Upload error: ${(e as Error).message}`, 'error')
+      showToast(t('chat.toasts.uploadError', { error: (e as Error).message }), 'error')
       return null
     }
   }
@@ -263,10 +265,10 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
       if (res.success && res.contentBase64) {
         triggerDownload(filename, res.contentBase64)
       } else {
-        showToast(`Download failed: ${res.error || 'unknown error'}`, 'error')
+        showToast(t('chat.toasts.downloadFailed', { error: res.error || t('chat.toasts.downloadUnknownError') }), 'error')
       }
     } catch (e: unknown) {
-      showToast(`Download error: ${(e as Error).message}`, 'error')
+      showToast(t('chat.toasts.downloadError', { error: (e as Error).message }), 'error')
     }
   }
 
@@ -283,7 +285,7 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
       await refreshSessions()
       await activate(session.workspaceId, session.channelName)
     } catch (e: unknown) {
-      showToast(`New chat failed: ${(e as Error).message}`, 'error')
+      showToast(t('chat.toasts.newChatFailed', { error: (e as Error).message }), 'error')
     }
   }
 
@@ -308,7 +310,7 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
         }
       }
     } catch (e: unknown) {
-      showToast(`Delete failed: ${(e as Error).message}`, 'error')
+      showToast(t('chat.toasts.deleteFailed', { error: (e as Error).message }), 'error')
     } finally {
       setDeletingSession(false)
       setDeleteSessionTarget(null)
@@ -337,10 +339,10 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
         }
       }
 
-      showToast(`Cleared ${removed} session${removed === 1 ? '' : 's'}`, 'success')
+      showToast(t('chat.toasts.cleared', { count: removed }), 'success')
       void refreshSessions()
     } catch (e: unknown) {
-      showToast(`Clear failed: ${(e as Error).message}`, 'error')
+      showToast(t('chat.toasts.clearFailed', { error: (e as Error).message }), 'error')
     } finally {
       setClearingAll(false)
       setClearAllOpen(false)
@@ -374,7 +376,7 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
             <h2 className="text-[15px] font-semibold m-0 truncate text-(--text-primary)">
               {active
                 ? activeWorkspace?.name || activeWorkspace?.slug || active.workspaceId
-                : 'No chat selected'}
+                : t('chat.header.noChatSelected')}
             </h2>
             <div className="text-[11px] text-(--text-tertiary) mt-1">
               {active
@@ -383,10 +385,14 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
                       <span className="text-(--success-text) font-medium">
                         {activeParticipants.filter((p) => p.status === 'online').length}
                       </span>
-                      {` of ${activeParticipants.length} agent${activeParticipants.length === 1 ? '' : 's'} online · #${active.channelName}`}
+                      {t('chat.header.agentsOnline', {
+                        total: activeParticipants.length,
+                        channel: active.channelName,
+                        count: activeParticipants.length,
+                      })}
                     </>
-                  : <>No agents joined yet · #{active.channelName}</>
-                : 'Pick a workspace and start a new chat to talk with your agents'}
+                  : t('chat.header.noAgentsJoined', { channel: active.channelName })
+                : t('chat.header.pickWorkspaceHint')}
             </div>
           </div>
           {activeParticipants.length > 0 && (
@@ -394,7 +400,7 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
               {activeParticipants.slice(0, 4).map((p) => (
                 <span
                   key={p.agentName}
-                  title={`${p.agentName} (${p.status})`}
+                  title={t('chat.header.participantTitle', { name: p.agentName, status: p.status })}
                   className="text-[11px] px-2 py-1 rounded-full bg-(--bg-input) flex items-center gap-1.5"
                 >
                   <span
@@ -415,7 +421,7 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
         </header>
 
         {loadingMessages && active ? (
-          <div className="flex-1 flex items-center justify-center text-(--text-tertiary) text-[12px]">Loading messages…</div>
+          <div className="flex-1 flex items-center justify-center text-(--text-tertiary) text-[12px]">{t('chat.loadingMessages')}</div>
         ) : active ? (
           <MessageList
             messages={activeMessages}
@@ -428,10 +434,9 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
             <div className="w-14 h-14 rounded-full bg-(--accent-bg) text-(--accent) flex items-center justify-center">
               <Bot className="w-7 h-7" />
             </div>
-            <h3 className="text-[15px] font-semibold m-0">Chat with your agents</h3>
+            <h3 className="text-[15px] font-semibold m-0">{t('chat.empty.title')}</h3>
             <p className="text-[12px] text-(--text-secondary) max-w-[420px]">
-              Pick a workspace on the left, then click <strong>+ New chat</strong> to open the default <code>#main</code> channel,
-              or open any previous session.
+              {t('chat.empty.descriptionPrefix')} <strong>{t('chat.empty.newChat')}</strong> {t('chat.empty.descriptionSuffix')} <code>#main</code> {t('chat.empty.channelTail')}
             </p>
           </div>
         )}
@@ -446,13 +451,13 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
 
       <ConfirmDialog
         open={!!deleteSessionTarget}
-        title="Delete this chat session?"
+        title={t('chat.deleteDialog.title')}
         description={
           deleteSessionTarget
-            ? `Removes the local session for #${deleteSessionTarget.channelName}. Server-side messages are kept.`
+            ? t('chat.deleteDialog.description', { channel: deleteSessionTarget.channelName })
             : ""
         }
-        confirmLabel="Delete"
+        confirmLabel={t('chat.deleteDialog.confirmLabel')}
         destructive
         busy={deletingSession}
         onCancel={() => {
@@ -463,9 +468,9 @@ export default function ChatPage({ showToast }: ChatPageProps): React.JSX.Elemen
 
       <ConfirmDialog
         open={clearAllOpen}
-        title="Clear all chat sessions?"
-        description="Clears every local session for this workspace. Server-side messages are kept; only the local session list is cleared."
-        confirmLabel="Clear all"
+        title={t('chat.clearAllDialog.title')}
+        description={t('chat.clearAllDialog.description')}
+        confirmLabel={t('chat.clearAllDialog.confirmLabel')}
         destructive
         busy={clearingAll}
         onCancel={() => {

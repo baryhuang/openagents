@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useCallback, useState } from "react"
 import { useAgentsStore } from "../../store/agents"
 import { useUiStore } from "../../store/ui"
 import { useShallow } from "zustand/react/shallow"
+import { Trans, useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 import AgentIcon from "../../components/AgentIcon"
 import StatusDot, { displayState } from "../../components/ui/StatusDot"
 import { Plus, CheckCircle2, AlertTriangle, Loader2, KeyRound, Terminal } from "lucide-react"
@@ -15,12 +17,12 @@ import { cn } from "../../lib/utils"
 import { capture } from "../../lib/analytics"
 import { workspaceWebBaseUrl } from "../../lib/workspace-urls"
 
-function formatHealthLabel(health: HealthCheck | null): string {
-  if (!health) return "Not configured"
-  if (!health.ready) return health.message || "Not configured"
-  const parts = ["Ready"]
-  if (health.auth_mode === "api_key") parts.push("API key")
-  else if (health.auth_mode === "cli_login") parts.push("CLI login")
+function formatHealthLabel(health: HealthCheck | null, t: TFunction): string {
+  if (!health) return t("agents.list.health.notConfigured")
+  if (!health.ready) return health.message || t("agents.list.health.notConfigured")
+  const parts = [t("agents.list.health.ready")]
+  if (health.auth_mode === "api_key") parts.push(t("agents.list.health.apiKey"))
+  else if (health.auth_mode === "cli_login") parts.push(t("agents.list.health.cliLogin"))
   if (health.execution_mode && health.execution_mode !== "unavailable")
     parts.push(health.execution_mode)
   return parts.join(" · ")
@@ -42,6 +44,7 @@ function SkeletonListItem(): React.JSX.Element {
 }
 
 export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
+  const { t } = useTranslation()
   const { agents, setAgents, pendingAgentActions, addPendingAction, removePendingAction } =
     useAgentsStore(useShallow((s) => ({
       agents: s.agents, setAgents: s.setAgents,
@@ -110,7 +113,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
       if (isRunning) {
         capture("agent_stopped", { agent_name: agent.name, agent_type: agent.type })
         await window.api.stopAgent(agent.name)
-        showToast(`Stopping ${agent.name}...`, "info")
+        showToast(t("agents.list.toast.stoppingAgent", { name: agent.name }), "info")
         // Fast initial polls — the daemon now processes stop commands within
         // ~200ms, so checking quickly catches the state flip without making
         // the user stare at a "Stopping…" toast for 3+ seconds.
@@ -119,7 +122,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           await new Promise((r) => setTimeout(r, w))
           const status = await window.api.agentStatus()
           if (!status[agent.name] || status[agent.name].state === "stopped") {
-            showToast(`${agent.name} stopped`, "success")
+            showToast(t("agents.list.toast.stoppedAgent", { name: agent.name }), "success")
             break
           }
           refresh()
@@ -127,7 +130,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
       } else {
         capture("agent_started", { agent_name: agent.name, agent_type: agent.type })
         await window.api.startAgent(agent.name)
-        showToast(`Starting ${agent.name}...`, "info")
+        showToast(t("agents.list.toast.startingAgent", { name: agent.name }), "info")
         const startWaits = [
           500, 1000, 1500, 2500, 3000, 3000, 3000, 3000, 3000, 3000,
         ]
@@ -136,14 +139,14 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           const status = await window.api.agentStatus()
           const s = status[agent.name]
           if (s && ["running", "online"].includes(s.state)) {
-            showToast(`${agent.name} is now running`, "success")
+            showToast(t("agents.list.toast.nowRunning", { name: agent.name }), "success")
             break
           }
           refresh()
         }
       }
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.list.toast.error", { message: (err as Error).message }), "error")
     } finally {
       removePendingAction(agent.name)
       refresh()
@@ -154,21 +157,21 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
     setRemoveTarget(null)
     try {
       await window.api.removeAgent(name)
-      showToast(`Agent '${name}' removed`, "success")
+      showToast(t("agents.list.toast.removed", { name }), "success")
       refresh()
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.list.toast.error", { message: (err as Error).message }), "error")
     }
   }
 
   const disconnectAgent = async (name: string): Promise<void> => {
     try {
       await window.api.disconnectWorkspace(name)
-      showToast(`Disconnected ${name} from workspace`, "success")
+      showToast(t("agents.list.toast.disconnected", { name }), "success")
       window.api.signalReload()
       refresh()
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.list.toast.error", { message: (err as Error).message }), "error")
     }
   }
 
@@ -179,7 +182,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
     // silently goes nowhere.
     if (!agent.network) {
       showToast(
-        `${agent.name} isn't connected to a workspace yet — click Connect first.`,
+        t("agents.list.toast.notConnectedYet", { name: agent.name }),
         "warning",
       )
       return
@@ -191,7 +194,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
       // user lands on is actually live.
       const isRunning = ["online", "running", "idle"].includes(agent.state)
       if (!isRunning) {
-        showToast(`Starting ${agent.name}…`, "info")
+        showToast(t("agents.list.toast.startingEllipsis", { name: agent.name }), "info")
         try {
           await window.api.startAgent(agent.name)
           for (let i = 0; i < 5; i++) {
@@ -202,7 +205,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
           }
         } catch (e: unknown) {
           showToast(
-            `Couldn't start ${agent.name}: ${(e as Error).message}`,
+            t("agents.list.toast.couldntStart", { name: agent.name, message: (e as Error).message }),
             "error",
           )
           return
@@ -217,19 +220,19 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
       if (ws && ws.token) url += `?token=${encodeURIComponent(ws.token)}`
       window.api.openExternal(url)
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.list.toast.error", { message: (err as Error).message }), "error")
     }
   }
 
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="My Agents"
-        subtitle="— Manage installed agent instances"
+        title={t("agents.list.title")}
+        subtitle={t("agents.list.subtitle")}
         actions={
           <Button variant="primary" onClick={() => setNewAgentOpen(true)}>
             <Plus className="w-3.5 h-3.5" />
-            New Agent
+            {t("agents.list.newAgent")}
           </Button>
         }
       />
@@ -244,7 +247,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
         </div>
       ) : agents.length === 0 ? (
         <p className="hint py-5">
-          No agents configured. Click &quot;+ New Agent&quot; to get started.
+          {t("agents.list.empty")}
         </p>
       ) : (
         <div>
@@ -254,7 +257,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
             )
             const isPending = pendingAgentActions.has(agent.name)
             const health = agent.health || null
-            const readyLabel = formatHealthLabel(health)
+            const readyLabel = formatHealthLabel(health, t)
             const wsDisplay = agent.network
               ? agent.networkName && agent.networkName !== agent.network
                 ? `${agent.network} (${agent.networkName})`
@@ -263,11 +266,11 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
             const envDisplay: string[] = []
             if (agent.env?.LLM_BASE_URL || agent.env?.OPENAI_BASE_URL)
               envDisplay.push(
-                `API: ${agent.env.LLM_BASE_URL || agent.env.OPENAI_BASE_URL}`,
+                t("agents.list.apiPrefix", { value: agent.env.LLM_BASE_URL || agent.env.OPENAI_BASE_URL }),
               )
             if (agent.env?.LLM_MODEL || agent.env?.OPENCLAW_MODEL)
               envDisplay.push(
-                `Model: ${agent.env.LLM_MODEL || agent.env.OPENCLAW_MODEL}`,
+                t("agents.list.modelPrefix", { value: agent.env.LLM_MODEL || agent.env.OPENCLAW_MODEL }),
               )
 
             return (
@@ -282,7 +285,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                     <span className="block text-[11px] text-(--text-tertiary)">
                       {agent.runtimeMismatch ? (
                         <span className="text-(--danger-text)">
-                          Launcher core update required
+                          {t("agents.list.coreUpdateRequired")}
                         </span>
                       ) : health?.ready ? (
                         <>🔑 {readyLabel}</>
@@ -309,7 +312,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                       <span className="text-[11px] text-(--text-secondary)">{wsDisplay}</span>
                     ) : (
                       <span className="text-[11px] text-(--text-tertiary)">
-                        Not connected
+                        {t("agents.list.notConnected")}
                       </span>
                     )}
                   </div>
@@ -324,11 +327,11 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                     >
                       {isPending
                         ? isRunning
-                          ? "Stopping..."
-                          : "Starting..."
+                          ? t("agents.list.stopping")
+                          : t("agents.list.starting")
                         : isRunning
-                          ? "Stop"
-                          : "Start"}
+                          ? t("agents.list.stop")
+                          : t("agents.list.start")}
                     </Button>
                     <Button
                       size="sm"
@@ -340,7 +343,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                         setConfigureOpen(true)
                       }}
                     >
-                      Configure
+                      {t("agents.list.configure")}
                     </Button>
                     {agent.network ? (
                       <>
@@ -348,10 +351,10 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                           size="sm"
                           onClick={() => disconnectAgent(agent.name)}
                         >
-                          Disconnect
+                          {t("agents.list.disconnect")}
                         </Button>
                         <Button size="sm" onClick={() => openWorkspace(agent)}>
-                          Open Workspace
+                          {t("agents.list.openWorkspace")}
                         </Button>
                       </>
                     ) : (
@@ -362,7 +365,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                           setConnectWsOpen(true)
                         }}
                       >
-                        Connect
+                        {t("agents.list.connect")}
                       </Button>
                     )}
                   </div>
@@ -371,7 +374,7 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                     variant="destructive"
                     onClick={() => setRemoveTarget(agent.name)}
                   >
-                    Remove
+                    {t("agents.list.remove")}
                   </Button>
                 </div>
               </div>
@@ -427,16 +430,20 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
         <div className="flex flex-col items-center py-2">
           <AgentIcon type={agents.find((a) => a.name === removeTarget)?.type || ""} size={40} />
           <ModalTitle className="mt-3 text-center">
-            Remove {removeTarget}?
+            {t("agents.list.removeTitle", { name: removeTarget })}
           </ModalTitle>
           <p className="hint mt-3 mb-5 text-center">
-            This will stop and remove <strong>{removeTarget}</strong>.
+            <Trans
+              i18nKey="agents.list.removeBody"
+              values={{ name: removeTarget }}
+              components={{ 1: <strong /> }}
+            />
           </p>
           <div className="form-actions justify-center mt-0">
             <Button variant="destructive" onClick={() => { if (removeTarget) removeAgent(removeTarget) }}>
-              Remove
+              {t("agents.list.remove")}
             </Button>
-            <Button onClick={() => setRemoveTarget(null)}>Cancel</Button>
+            <Button onClick={() => setRemoveTarget(null)}>{t("agents.list.cancel")}</Button>
           </div>
         </div>
       </Modal>
@@ -455,6 +462,7 @@ function NewAgentDialog({
   showToast: (msg: string, type?: ToastType) => void
   onCreated: (name: string, type: string) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [catalog, setCatalog] = useState<CatalogEntry[]>([])
   const [supportedTypes, setSupportedTypes] = useState<string[]>([])
   const [selectedType, setSelectedType] = useState("")
@@ -498,7 +506,7 @@ function NewAgentDialog({
       `${selectedType}-${Math.random().toString(36).slice(2, 6)}`
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
       showToast(
-        "Agent name can only contain letters, numbers, hyphens, and underscores",
+        t("agents.newDialog.toast.invalidName"),
         "warning",
       )
       return
@@ -509,22 +517,22 @@ function NewAgentDialog({
         type: selectedType,
         path: agentPath.trim() || undefined,
       })
-      showToast(`Agent '${name}' created`, "success")
+      showToast(t("agents.newDialog.toast.created", { name }), "success")
       onCreated(name, selectedType)
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.newDialog.toast.error", { message: (err as Error).message }), "error")
     }
   }
 
   return (
     <Modal open={open} onClose={onClose}>
-      <ModalTitle>New Agent</ModalTitle>
+      <ModalTitle>{t("agents.newDialog.title")}</ModalTitle>
         {loading ? (
-          <p className="loading-text">Loading installed types...</p>
+          <p className="loading-text">{t("agents.newDialog.loadingTypes")}</p>
         ) : supportedInstalled.length === 0 ? (
           <>
             <p className="hint">
-              No Launcher-supported agent runtimes installed. Install one first.
+              {t("agents.newDialog.noRuntimes")}
             </p>
             <div className="form-actions">
               <Button
@@ -534,15 +542,15 @@ function NewAgentDialog({
                   setCurrentTab("install")
                 }}
               >
-                Go to Install
+                {t("agents.newDialog.goToInstall")}
               </Button>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={onClose}>{t("agents.newDialog.cancel")}</Button>
             </div>
           </>
         ) : (
           <>
             <div className="form-group">
-              <label htmlFor="agent-type">Agent type</label>
+              <label htmlFor="agent-type">{t("agents.newDialog.agentType")}</label>
               <select
                 id="agent-type"
                 value={selectedType}
@@ -556,7 +564,7 @@ function NewAgentDialog({
               </select>
             </div>
             <div className="form-group">
-              <label htmlFor="agent-name">Agent name</label>
+              <label htmlFor="agent-name">{t("agents.newDialog.agentName")}</label>
               <input
                 id="agent-name"
                 type="text"
@@ -566,20 +574,20 @@ function NewAgentDialog({
               />
             </div>
             <div className="form-group">
-              <label htmlFor="agent-working-directory">Working directory (optional)</label>
+              <label htmlFor="agent-working-directory">{t("agents.newDialog.workingDirectory")}</label>
               <input
                 id="agent-working-directory"
                 type="text"
                 value={agentPath}
                 onChange={(e) => setAgentPath(e.target.value)}
-                placeholder="/path/to/project"
+                placeholder={t("agents.newDialog.workingDirectoryPlaceholder")}
               />
             </div>
             <div className="form-actions">
               <Button variant="primary" onClick={doCreate}>
-                Create
+                {t("agents.newDialog.create")}
               </Button>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={onClose}>{t("agents.newDialog.cancel")}</Button>
             </div>
           </>
         )}
@@ -602,6 +610,7 @@ function ConfigureDialog({
   showToast: (msg: string, type?: ToastType) => void
   onSaved: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [fields, setFields] = useState<EnvField[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
   const [loginCmd, setLoginCmd] = useState<string | null>(null)
@@ -708,13 +717,13 @@ function ConfigureDialog({
       onSaved()
       showToast(
         ok
-          ? "Signed in — agent is ready"
-          : "Couldn't confirm sign-in. If you finished login, try again.",
+          ? t("agents.configureDialog.toast.signedInReady")
+          : t("agents.configureDialog.toast.couldntConfirm"),
         ok ? "success" : "warning",
       )
     } catch {
       setLoggedIn(false)
-      showToast("Couldn't read sign-in status. Try again.", "error")
+      showToast(t("agents.configureDialog.toast.couldntReadStatus"), "error")
     } finally {
       setLoginPhase("idle")
     }
@@ -726,7 +735,7 @@ function ConfigureDialog({
     )
     if (missing) {
       showToast(
-        `${missing.description || missing.name} is required`,
+        t("agents.configureDialog.fieldRequired", { field: missing.description || missing.name }),
         "warning",
       )
       return
@@ -737,11 +746,11 @@ function ConfigureDialog({
       } else {
         await window.api.saveAgentEnv(agentType, values)
       }
-      showToast("Configuration saved", "success")
+      showToast(t("agents.configureDialog.toast.configurationSaved"), "success")
       onSaved()
       onClose()
     } catch (err: unknown) {
-      showToast(`Error saving: ${(err as Error).message}`, "error")
+      showToast(t("agents.configureDialog.toast.errorSaving", { message: (err as Error).message }), "error")
     }
   }
 
@@ -754,11 +763,11 @@ function ConfigureDialog({
       if (result.success) {
         setTestStatus("ok")
         setTestResult(
-          `OK — model: ${result.model}, response: "${result.response}"`,
+          t("agents.configureDialog.test.okResult", { model: result.model, response: result.response }),
         )
       } else {
         setTestStatus("error")
-        setTestResult(result.error || "Unknown error")
+        setTestResult(result.error || t("agents.configureDialog.test.unknownError"))
       }
     } catch (err: unknown) {
       setTestStatus("error")
@@ -775,37 +784,34 @@ function ConfigureDialog({
     >
       <ModalHeader>
         <ModalTitle className="mb-2">
-          Configure {agentName || agentType}
+          {t("agents.configureDialog.title", { name: agentName || agentType })}
         </ModalTitle>
         {!loading && !noConfig && loginCmd && fields.length === 0 && (
           <p className="hint m-0">
-            This agent signs in through its own service — no API key needed.
-            Login opens a terminal running <code>{loginCmd}</code>; complete the
-            sign-in there.
+            {t("agents.configureDialog.hintLoginOnly")} <code>{loginCmd}</code>{t("agents.configureDialog.hintLoginOnlySuffix")}
           </p>
         )}
         {!loading && !noConfig && !(loginCmd && fields.length === 0) && (
           <p className="hint m-0">
             {agentName
-              ? "Settings saved for this agent. Type defaults remain available as fallbacks."
-              : "Settings saved to ~/.openagents/env/"}
+              ? t("agents.configureDialog.hintInstance")
+              : t("agents.configureDialog.hintType")}
           </p>
         )}
         {!loading && noConfig && (
-          <p className="hint m-0">No configuration required for this agent type.</p>
+          <p className="hint m-0">{t("agents.configureDialog.hintNoConfig")}</p>
         )}
       </ModalHeader>
 
       <ModalBody>
         {loading ? (
-          <p className="loading-text m-0">Loading configuration...</p>
+          <p className="loading-text m-0">{t("agents.configureDialog.loadingConfig")}</p>
         ) : noConfig ? null : loginCmd && fields.length === 0 ? (
           <>
             <LoginStatusCard loginPhase={loginPhase} loggedIn={loggedIn} />
             {loginPhase === "awaiting" && (
               <p className="hint m-0">
-                A terminal opened running <code>{loginCmd}</code>. Once you&apos;ve
-                finished signing in there, let us know and we&apos;ll verify it.
+                {t("agents.configureDialog.awaitingTerminalPrefix")} <code>{loginCmd}</code>{t("agents.configureDialog.awaitingTerminalSuffix")}
               </p>
             )}
           </>
@@ -823,7 +829,7 @@ function ConfigureDialog({
                       setLoginPhase("awaiting")
                     } catch (err: unknown) {
                       showToast(
-                        `Failed to open terminal: ${(err as Error).message}`,
+                        t("agents.configureDialog.toast.failedOpenTerminal", { message: (err as Error).message }),
                         "error",
                       )
                     }
@@ -834,7 +840,7 @@ function ConfigureDialog({
                 <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-(--text-tertiary)">
                   <span className="h-px flex-1 bg-(--border)" />
                   <KeyRound className="h-3 w-3" />
-                  <span>Or use an API key</span>
+                  <span>{t("agents.configureDialog.orUseApiKey")}</span>
                   <span className="h-px flex-1 bg-(--border)" />
                 </div>
               </>
@@ -856,7 +862,7 @@ function ConfigureDialog({
                           [f.name]: e.target.value,
                         }))
                       }
-                      placeholder={f.placeholder || `Enter ${f.name}...`}
+                      placeholder={f.placeholder || t("agents.configureDialog.enterField", { name: f.name })}
                     />
                   ) : (
                     <input
@@ -869,7 +875,7 @@ function ConfigureDialog({
                           [f.name]: e.target.value,
                         }))
                       }
-                      placeholder={f.placeholder || `Enter ${f.name}...`}
+                      placeholder={f.placeholder || t("agents.configureDialog.enterField", { name: f.name })}
                     />
                   )}
                 </div>
@@ -897,15 +903,15 @@ function ConfigureDialog({
         <ModalFooter>
           {noConfig ? (
             <div className="form-actions mt-0">
-              <Button onClick={onClose}>Close</Button>
+              <Button onClick={onClose}>{t("agents.configureDialog.close")}</Button>
             </div>
           ) : loginCmd && fields.length === 0 ? (
             loginPhase === "awaiting" ? (
               <div className="form-actions mt-0">
                 <Button variant="primary" onClick={confirmLogin}>
-                  I&apos;ve finished signing in
+                  {t("agents.configureDialog.finishedSigningIn")}
                 </Button>
-                <Button onClick={() => setLoginPhase("idle")}>Not yet</Button>
+                <Button onClick={() => setLoginPhase("idle")}>{t("agents.configureDialog.notYet")}</Button>
               </div>
             ) : (
               <div className="form-actions mt-0">
@@ -918,29 +924,29 @@ function ConfigureDialog({
                       setLoginPhase("awaiting")
                     } catch (err: unknown) {
                       showToast(
-                        `Failed to open terminal: ${(err as Error).message}`,
+                        t("agents.configureDialog.toast.failedOpenTerminal", { message: (err as Error).message }),
                         "error",
                       )
                     }
                   }}
                 >
-                  {loggedIn ? "Re-login" : "Login"}
+                  {loggedIn ? t("agents.configureDialog.reLogin") : t("agents.configureDialog.login")}
                 </Button>
-                <Button onClick={onClose}>Close</Button>
+                <Button onClick={onClose}>{t("agents.configureDialog.close")}</Button>
               </div>
             )
           ) : (
             <div className="form-actions mt-0">
               <Button variant="primary" onClick={save}>
-                Save
+                {t("agents.configureDialog.save")}
               </Button>
               <Button
                 onClick={testConnection}
                 disabled={testStatus === "loading"}
               >
-                {testStatus === "loading" ? "Testing..." : "Test Connection"}
+                {testStatus === "loading" ? t("agents.configureDialog.testing") : t("agents.configureDialog.testConnection")}
               </Button>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={onClose}>{t("agents.configureDialog.cancel")}</Button>
             </div>
           )}
         </ModalFooter>
@@ -956,11 +962,12 @@ function LoginStatusRow({
   loginPhase: "idle" | "awaiting" | "checking"
   loggedIn: boolean | null
 }): React.JSX.Element {
+  const { t } = useTranslation()
   if (loginPhase === "checking" || loggedIn === null) {
     return (
       <div className="flex items-center gap-2 text-[13px] text-(--text-secondary)">
         <Loader2 className="w-4 h-4 shrink-0 animate-spin" strokeWidth={2} />
-        <span>Checking sign-in…</span>
+        <span>{t("agents.loginStatus.checking")}</span>
       </div>
     )
   }
@@ -968,14 +975,14 @@ function LoginStatusRow({
     return (
       <div className="flex items-center gap-2 text-[13px] text-(--success-text)">
         <CheckCircle2 className="w-4 h-4 shrink-0" strokeWidth={2} />
-        <span>Signed in</span>
+        <span>{t("agents.loginStatus.signedIn")}</span>
       </div>
     )
   }
   return (
     <div className="flex items-center gap-2 text-[13px] text-(--warning-text)">
       <AlertTriangle className="w-4 h-4 shrink-0" strokeWidth={2} />
-      <span>Not signed in</span>
+      <span>{t("agents.loginStatus.notSignedIn")}</span>
     </div>
   )
 }
@@ -987,6 +994,7 @@ function LoginStatusCard({
   loginPhase: "idle" | "awaiting" | "checking"
   loggedIn: boolean | null
 }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center gap-2 p-3 rounded-(--radius) bg-(--bg-input)">
       {loginPhase === "checking" || loggedIn === null ? (
@@ -995,7 +1003,7 @@ function LoginStatusCard({
             className="w-5 h-5 shrink-0 text-(--text-tertiary) animate-spin"
             strokeWidth={2}
           />
-          <strong className="text-[13px]">Checking sign-in…</strong>
+          <strong className="text-[13px]">{t("agents.loginStatus.checking")}</strong>
         </>
       ) : loggedIn ? (
         <>
@@ -1003,7 +1011,7 @@ function LoginStatusCard({
             className="w-5 h-5 shrink-0 text-(--success-text)"
             strokeWidth={2}
           />
-          <strong className="text-[13px]">Signed in</strong>
+          <strong className="text-[13px]">{t("agents.loginStatus.signedIn")}</strong>
         </>
       ) : (
         <>
@@ -1011,7 +1019,7 @@ function LoginStatusCard({
             className="w-5 h-5 shrink-0 text-(--warning-text)"
             strokeWidth={2}
           />
-          <strong className="text-[13px]">Not signed in</strong>
+          <strong className="text-[13px]">{t("agents.loginStatus.notSignedIn")}</strong>
         </>
       )}
     </div>
@@ -1033,6 +1041,7 @@ function CliLoginBlock({
   onConfirmLogin: () => void | Promise<void>
   onCancelAwaiting: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className="rounded-sm border border-(--accent)/35 bg-(--accent-bg)/60 px-3.5 py-3">
       <div className="flex items-start gap-2.5 mb-3">
@@ -1041,10 +1050,10 @@ function CliLoginBlock({
         </div>
         <div className="min-w-0 flex-1">
           <p className="m-0 text-[13px] font-semibold text-(--text-primary)">
-            Sign in with CLI
+            {t("agents.loginStatus.signInWithCli")}
           </p>
           <p className="hint m-0 mt-1 mb-0 leading-snug">
-            Opens a terminal running <code>{loginCmd}</code> — no API key needed.
+            {t("agents.loginStatus.opensTerminalPrefix")} <code>{loginCmd}</code> {t("agents.loginStatus.opensTerminalSuffix")}
           </p>
         </div>
       </div>
@@ -1054,13 +1063,13 @@ function CliLoginBlock({
       {loginPhase === "awaiting" ? (
         <>
           <p className="hint m-0 mb-3">
-            Finish signing in in the terminal, then confirm below.
+            {t("agents.loginStatus.finishThenConfirm")}
           </p>
           <div className="form-actions mt-0 flex-wrap">
             <Button variant="primary" onClick={onConfirmLogin}>
-              I&apos;ve finished signing in
+              {t("agents.loginStatus.finishedSigningIn")}
             </Button>
-            <Button onClick={onCancelAwaiting}>Not yet</Button>
+            <Button onClick={onCancelAwaiting}>{t("agents.loginStatus.notYet")}</Button>
           </div>
         </>
       ) : (
@@ -1070,7 +1079,7 @@ function CliLoginBlock({
             disabled={loginPhase === "checking"}
             onClick={onOpenTerminal}
           >
-            {loggedIn ? "Re-login" : "Sign in"}
+            {loggedIn ? t("agents.loginStatus.reLogin") : t("agents.loginStatus.signIn")}
           </Button>
         </div>
       )}
@@ -1091,6 +1100,7 @@ function ConnectWorkspaceDialog({
   showToast: (msg: string, type?: ToastType) => void
   onConnected: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [workspaces, setWorkspaces] = useState<
     Array<{
       id: string
@@ -1125,70 +1135,70 @@ function ConnectWorkspaceDialog({
 
   const doConnect = async (slug: string): Promise<void> => {
     try {
-      showToast(`Connecting ${agentName} to workspace...`, "info")
+      showToast(t("agents.connectDialog.toast.connecting", { name: agentName }), "info")
       await window.api.connectWorkspace(agentName, slug)
       capture("workspace_connected", { agent_name: agentName })
       window.api.signalReload()
-      showToast(`Connected to ${slug}`, "success")
+      showToast(t("agents.connectDialog.toast.connectedTo", { slug }), "success")
       onConnected()
       onClose()
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.connectDialog.toast.error", { message: (err as Error).message }), "error")
     }
   }
 
   const doCreate = async (): Promise<void> => {
     const name = newWsName.trim()
     if (!name) {
-      showToast("Workspace name is required", "warning")
+      showToast(t("agents.connectDialog.toast.workspaceNameRequired"), "warning")
       return
     }
     try {
-      showToast(`Creating workspace '${name}'...`, "info")
+      showToast(t("agents.connectDialog.toast.creatingWorkspace", { name }), "info")
       const result = await window.api.createWorkspace(name)
       capture("workspace_created", { source: "agents_page" })
-      showToast(`Workspace '${name}' created`, "success")
+      showToast(t("agents.connectDialog.toast.workspaceCreated", { name }), "success")
       if (result && result.token && agentName) {
         await window.api.connectWorkspace(agentName, result.token)
         window.api.signalReload()
-        showToast(`Connected ${agentName} to ${name}`, "success")
+        showToast(t("agents.connectDialog.toast.connectedToName", { name: agentName, workspace: name }), "success")
       }
       onConnected()
       onClose()
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.connectDialog.toast.error", { message: (err as Error).message }), "error")
     }
   }
 
   const doJoinToken = async (): Promise<void> => {
-    const t = token.trim()
-    if (!t) {
-      showToast("Workspace URL or token is required", "warning")
+    const trimmedToken = token.trim()
+    if (!trimmedToken) {
+      showToast(t("agents.connectDialog.toast.urlOrTokenRequired"), "warning")
       return
     }
     try {
-      showToast("Joining workspace...", "info")
-      const parsedUrl = parseWorkspaceUrl(t)
+      showToast(t("agents.connectDialog.toast.joining"), "info")
+      const parsedUrl = parseWorkspaceUrl(trimmedToken)
       if (parsedUrl && parsedUrl.hostname !== "workspace.openagents.org") {
-        const ws = await window.api.registerWorkspaceFromToken({ url: t })
+        const ws = await window.api.registerWorkspaceFromToken({ url: trimmedToken })
         const workspaceKey = ws.slug || ws.id
         if (!workspaceKey) throw new Error("Could not register workspace URL")
         await window.api.connectWorkspace(agentName, workspaceKey)
       } else {
-        await window.api.connectWorkspace(agentName, t)
+        await window.api.connectWorkspace(agentName, trimmedToken)
       }
       window.api.signalReload()
-      showToast("Joined workspace", "success")
+      showToast(t("agents.connectDialog.toast.joined"), "success")
       onConnected()
       onClose()
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("agents.connectDialog.toast.error", { message: (err as Error).message }), "error")
     }
   }
 
   return (
     <Modal open={open} onClose={onClose}>
-      <ModalTitle>Connect &apos;{agentName}&apos; to Workspace</ModalTitle>
+      <ModalTitle>{t("agents.connectDialog.title", { name: agentName })}</ModalTitle>
         {view === "list" && (
           <>
             <div className="flex flex-col gap-1 mb-3.5">
@@ -1211,58 +1221,58 @@ function ConnectWorkspaceDialog({
                 className="text-left px-4 py-[11px] text-[13px] w-full rounded-sm bg-[var(--bg-card)] border border-[color:var(--border)] cursor-pointer transition-all duration-150 hover:bg-[var(--accent-bg)] hover:border-[color:var(--accent-border)]"
                 onClick={() => setView("create")}
               >
-                + Create New Workspace
+                {t("agents.connectDialog.createNew")}
               </button>
               <button
                 type="button"
                 className="text-left px-4 py-[11px] text-[13px] w-full rounded-sm bg-[var(--bg-card)] border border-[color:var(--border)] cursor-pointer transition-all duration-150 hover:bg-[var(--accent-bg)] hover:border-[color:var(--accent-border)]"
                 onClick={() => setView("token")}
               >
-                Join with URL or Token
+                {t("agents.connectDialog.joinWithToken")}
               </button>
             </div>
             <Button onClick={onClose} className="w-full">
-              Cancel
+              {t("agents.connectDialog.cancel")}
             </Button>
           </>
         )}
         {view === "create" && (
           <>
             <div className="form-group">
-              <label htmlFor="new-workspace-name">Workspace name</label>
+              <label htmlFor="new-workspace-name">{t("agents.connectDialog.workspaceName")}</label>
               <input
                 id="new-workspace-name"
                 type="text"
                 value={newWsName}
                 onChange={(e) => setNewWsName(e.target.value)}
-                placeholder="my-workspace"
+                placeholder={t("agents.connectDialog.workspaceNamePlaceholder")}
               />
             </div>
             <div className="form-actions">
               <Button variant="primary" onClick={doCreate}>
-                Create
+                {t("agents.connectDialog.create")}
               </Button>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={onClose}>{t("agents.connectDialog.cancel")}</Button>
             </div>
           </>
         )}
         {view === "token" && (
           <>
             <div className="form-group">
-              <label htmlFor="workspace-url-or-token">Paste workspace URL or token</label>
+              <label htmlFor="workspace-url-or-token">{t("agents.connectDialog.pasteUrlOrToken")}</label>
               <input
                 id="workspace-url-or-token"
                 type="text"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="https://workspace.openagents.org/team?token=… or http://localhost:8000/team?token=…"
+                placeholder={t("agents.connectDialog.pasteUrlPlaceholder")}
               />
             </div>
             <div className="form-actions">
               <Button variant="primary" onClick={doJoinToken}>
-                Join
+                {t("agents.connectDialog.join")}
               </Button>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={onClose}>{t("agents.connectDialog.cancel")}</Button>
             </div>
           </>
         )}

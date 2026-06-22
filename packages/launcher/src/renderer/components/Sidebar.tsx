@@ -17,6 +17,7 @@ import {
   MessageSquare,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { cn } from "../lib/utils"
 import { capture } from "../lib/analytics"
 import { useUiStore } from "../store/ui"
@@ -30,95 +31,27 @@ type SectionId = "overview" | "manage" | "system"
 
 interface NavItem {
   id: string
-  label: string
   icon: React.JSX.Element
   section: SectionId
-  // One-line "what is this for" hint, surfaced as a hover tooltip so new users
-  // can tell the tabs apart without clicking through each one.
-  description: string
 }
 
+// Labels and one-line tooltips live in the i18n catalog under `nav.items.<id>`;
+// here we only keep the icon and grouping so the list stays language-agnostic.
 const NAV_ITEMS: NavItem[] = [
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    icon: <LayoutDashboard className="w-4 h-4" />,
-    section: "overview",
-    description: "Overview: agent status, workspaces, and recent activity",
-  },
-  {
-    id: "install",
-    label: "Marketplace",
-    icon: <Download className="w-4 h-4" />,
-    section: "manage",
-    description: "Step 1 · Browse and install agents",
-  },
-  {
-    id: "agents",
-    label: "Agents",
-    icon: <Cpu className="w-4 h-4" />,
-    section: "manage",
-    description: "Step 2 · Create agents, set API keys, test and connect",
-  },
-  {
-    id: "workspaces",
-    label: "Workspaces",
-    icon: <Layers className="w-4 h-4" />,
-    section: "manage",
-    description: "Step 3 · Open and manage workspaces",
-  },
-  {
-    id: "chat",
-    label: "Chat",
-    icon: <MessageSquare className="w-4 h-4" />,
-    section: "manage",
-    description: "Chat with your connected workspaces",
-  },
-  {
-    id: "connections",
-    label: "Connections",
-    icon: <Plug className="w-4 h-4" />,
-    section: "manage",
-    description: "Connect external platforms like GitHub and Slack",
-  },
-  {
-    id: "credentials",
-    label: "Credentials",
-    icon: <KeyRound className="w-4 h-4" />,
-    section: "manage",
-    description: "Manage API keys and secrets in one place",
-  },
-  {
-    id: "github",
-    label: "GitHub",
-    icon: <Github className="w-4 h-4" />,
-    section: "manage",
-    description: "Bind repos and view issues / PRs",
-  },
-
-  {
-    id: "logs",
-    label: "Logs",
-    icon: <FileText className="w-4 h-4" />,
-    section: "system",
-    description: "View runtime logs and troubleshoot",
-  },
-  {
-    id: "settings",
-    label: "Settings",
-    icon: <SettingsIcon className="w-4 h-4" />,
-    section: "system",
-    description: "App settings and preferences",
-  },
+  { id: "dashboard", icon: <LayoutDashboard className="w-4 h-4" />, section: "overview" },
+  { id: "install", icon: <Download className="w-4 h-4" />, section: "manage" },
+  { id: "agents", icon: <Cpu className="w-4 h-4" />, section: "manage" },
+  { id: "workspaces", icon: <Layers className="w-4 h-4" />, section: "manage" },
+  { id: "chat", icon: <MessageSquare className="w-4 h-4" />, section: "manage" },
+  { id: "connections", icon: <Plug className="w-4 h-4" />, section: "manage" },
+  { id: "credentials", icon: <KeyRound className="w-4 h-4" />, section: "manage" },
+  { id: "github", icon: <Github className="w-4 h-4" />, section: "manage" },
+  { id: "logs", icon: <FileText className="w-4 h-4" />, section: "system" },
+  { id: "settings", icon: <SettingsIcon className="w-4 h-4" />, section: "system" },
 ]
 
-const SECTION_LABELS: Record<SectionId, string> = {
-  overview: "Overview",
-  manage: "Manage",
-  system: "System",
-}
-
 export default function Sidebar(): React.JSX.Element {
+  const { t } = useTranslation()
   const { currentTab, setCurrentTab, goToInstallList } = useUiStore(
     useShallow((s) => ({
       currentTab: s.currentTab,
@@ -145,12 +78,12 @@ export default function Sidebar(): React.JSX.Element {
 
   const daemonLabel =
     daemonStatus === "running"
-      ? "Daemon running"
+      ? t("nav.daemon.running")
       : daemonStatus === "starting"
-        ? "Daemon starting"
+        ? t("nav.daemon.starting")
         : daemonStatus === "stopped"
-          ? "Daemon stopped"
-          : "Daemon offline"
+          ? t("nav.daemon.stopped")
+          : t("nav.daemon.offline")
 
   const sections: SectionId[] = ["overview", "manage", "system"]
 
@@ -185,7 +118,7 @@ export default function Sidebar(): React.JSX.Element {
           return (
             <div key={section} className="mb-5 last:mb-0">
               <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5a5e6b]">
-                {SECTION_LABELS[section]}
+                {t(`nav.sections.${section}`)}
               </div>
               <ul className="m-0 p-0 list-none">
                 {items.map((item) => {
@@ -196,7 +129,7 @@ export default function Sidebar(): React.JSX.Element {
                       <button
                         type="button"
                         data-tour={item.id}
-                        title={item.description}
+                        title={t(`nav.items.${item.id}.description`)}
                         onClick={() => {
                           capture("tab_switched", { tab: item.id })
                           item.id === "install"
@@ -220,7 +153,7 @@ export default function Sidebar(): React.JSX.Element {
                         >
                           {item.icon}
                         </span>
-                        <span className="flex-1 truncate">{item.label}</span>
+                        <span className="flex-1 truncate">{t(`nav.items.${item.id}.label`)}</span>
                         {badge !== undefined && (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 text-white bg-[#6366f1]">
                             {badge}
@@ -271,6 +204,7 @@ export default function Sidebar(): React.JSX.Element {
 // ── Dark-themed bell + theme toggle for the sidebar header ──────────────────
 
 function NotificationBellDark(): React.JSX.Element {
+  const { t } = useTranslation()
   const { items, unread, markRead, markAllRead, clear } = useNotificationsStore(
     useShallow((s) => ({
       items: s.items,
@@ -305,7 +239,7 @@ function NotificationBellDark(): React.JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        title="Notifications"
+        title={t("nav.notifications.tooltip")}
         className="relative w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent text-[#a8aabb] hover:bg-[#15171f] hover:text-white transition-colors"
       >
         <Bell className="w-3.5 h-3.5" />
@@ -327,10 +261,10 @@ function NotificationBellDark(): React.JSX.Element {
         >
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-(--border)">
             <div className="text-[13px] font-semibold text-(--text-primary)">
-              Notifications
+              {t("nav.notifications.title")}
               {unread > 0 && (
                 <span className="ml-1.5 text-[11px] text-(--text-tertiary) font-normal">
-                  {unread} unread
+                  {t("nav.notifications.unread", { count: unread })}
                 </span>
               )}
             </div>
@@ -341,7 +275,7 @@ function NotificationBellDark(): React.JSX.Element {
                   onClick={() => markAllRead()}
                   className="text-[11px] text-(--text-secondary) hover:text-(--text-primary) bg-transparent border-0 cursor-pointer"
                 >
-                  Mark all read
+                  {t("nav.notifications.markAllRead")}
                 </button>
               )}
               {items.length > 0 && (
@@ -350,7 +284,7 @@ function NotificationBellDark(): React.JSX.Element {
                   onClick={() => clear()}
                   className="text-[11px] text-(--text-secondary) hover:text-(--text-primary) bg-transparent border-0 cursor-pointer"
                 >
-                  Clear
+                  {t("nav.notifications.clear")}
                 </button>
               )}
             </div>
@@ -358,7 +292,7 @@ function NotificationBellDark(): React.JSX.Element {
           <div className="flex-1 overflow-y-auto">
             {recent.length === 0 ? (
               <div className="px-4 py-8 text-center text-[12px] text-(--text-tertiary)">
-                No notifications yet.
+                {t("nav.notifications.empty")}
               </div>
             ) : (
               <ul className="m-0 p-0 list-none">
@@ -395,13 +329,14 @@ function NotificationBellDark(): React.JSX.Element {
 }
 
 function GuideButtonDark(): React.JSX.Element {
+  const { t } = useTranslation()
   const startTour = useUiStore((s) => s.startTour)
   return (
     <button
       type="button"
       onClick={() => startTour()}
-      title="Quick start guide"
-      aria-label="Quick start guide"
+      title={t("nav.guide")}
+      aria-label={t("nav.guide")}
       className="w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent text-[#a8aabb] hover:bg-[#15171f] hover:text-white transition-colors"
     >
       <HelpCircle className="w-3.5 h-3.5" />
@@ -410,6 +345,7 @@ function GuideButtonDark(): React.JSX.Element {
 }
 
 function ThemeToggleDark(): React.JSX.Element {
+  const { t } = useTranslation()
   const { mode, setMode } = useThemeStore(
     useShallow((s) => ({ mode: s.mode, setMode: s.setMode })),
   )
@@ -420,8 +356,11 @@ function ThemeToggleDark(): React.JSX.Element {
     <button
       type="button"
       onClick={() => setMode(next)}
-      title={`Theme: ${mode} — click for ${next}`}
-      aria-label="Toggle theme"
+      title={t("nav.themeTooltip", {
+        mode: t(`settings.appearance.modes.${mode}`),
+        next: t(`settings.appearance.modes.${next}`),
+      })}
+      aria-label={t("nav.themeToggle")}
       className="w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 bg-transparent text-[#a8aabb] hover:bg-[#15171f] hover:text-white transition-colors"
     >
       <Icon className="w-3.5 h-3.5" />

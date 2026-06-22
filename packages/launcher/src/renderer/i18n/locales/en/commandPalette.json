@@ -1,0 +1,45 @@
+{
+  "placeholder": "Type a command, agent, or page…",
+  "empty": "No commands match.",
+  "groups": {
+    "navigation": "Navigation",
+    "agents": "Agents",
+    "actions": "Actions",
+    "appearance": "Appearance",
+    "recent": "Recent"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "chat": "Chat",
+    "agents": "Agents",
+    "workspaces": "Workspaces",
+    "connections": "Connections",
+    "credentials": "Credentials",
+    "github": "GitHub",
+    "install": "Install",
+    "logs": "Logs",
+    "settings": "Settings"
+  },
+  "commands": {
+    "goTo": "Go to {{label}}",
+    "openAgent": "Open agent: {{name}}",
+    "stopAgent": "Stop agent: {{name}}",
+    "startAgent": "Start agent: {{name}}",
+    "startAll": "Start all agents",
+    "stopAll": "Stop all agents",
+    "installAgent": "Install new agent",
+    "newWorkspace": "New workspace",
+    "theme": "Theme: {{mode}}"
+  },
+  "themes": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "current": "Current",
+  "footer": {
+    "navigate": "Navigate",
+    "run": "Run",
+    "toggle": "Toggle"
+  }
+}

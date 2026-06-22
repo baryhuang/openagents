@@ -329,6 +329,23 @@ const DUAL_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
     statusArgs: ["auth", "status"],
     loggedInPattern: /"loggedIn"\s*:\s*true/i,
   },
+  codex: {
+    // Codex authenticates the same way: `codex login` signs in with a ChatGPT
+    // account (a Plus/Pro/Team plan works with NO OpenAI API key — the auth is
+    // stored in ~/.codex/auth.json), and `codex login status` reports it.
+    // Treating codex as key-only forced an OPENAI_API_KEY on users who actually
+    // sign in via ChatGPT, and the adapter then injected that key into the CLI
+    // env — flipping the CLI out of its working ChatGPT session into API-key
+    // mode, which fails for accounts without API/Responses access. Dual-login
+    // makes the ChatGPT sign-in the primary path with the key as a fallback.
+    //
+    // `codex login status` prints "Logged in using ChatGPT" / "Logged in using
+    // an API key" (exit 0) when authenticated and "Not logged in" otherwise;
+    // the pattern matches the positive form only (avoids "Not logged in").
+    loginCommand: "codex login",
+    statusArgs: ["login", "status"],
+    loggedInPattern: /logged in using/i,
+  },
 }
 
 /**

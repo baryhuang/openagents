@@ -1,0 +1,119 @@
+{
+  "title": "工作区",
+  "subtitle": "— 每个工作区都集成了其智能体、活动和连接",
+  "join": "加入工作区",
+  "create": "创建工作区",
+  "stats": {
+    "healthy": "正常",
+    "warning": "警告",
+    "error": "错误",
+    "total": "共 {{count}} 个",
+    "starred": "已收藏"
+  },
+  "searchPlaceholder": "搜索工作区或智能体…",
+  "refresh": "刷新",
+  "activeWorkspaces": "活跃工作区",
+  "loading": "正在加载工作区…",
+  "emptyNone": "暂无工作区。",
+  "emptyNoMatch": "没有匹配“{{query}}”的工作区。",
+  "connectFirst": "连接你的第一个工作区",
+  "copied": "已复制",
+  "toast": {
+    "urlCopied": "已复制链接",
+    "copyFailed": "复制失败",
+    "removing": "正在移除工作区…",
+    "removed": "已移除工作区",
+    "renamed": "已重命名工作区",
+    "error": "错误：{{message}}"
+  },
+  "remove": {
+    "title": "移除工作区“{{name}}”？",
+    "description": "已连接的智能体将被断开，工作区将在服务器上被软删除。此操作无法撤销。",
+    "confirm": "移除"
+  },
+  "card": {
+    "unfavorite": "取消收藏",
+    "favorite": "收藏",
+    "copyUrl": "复制链接",
+    "openInBrowser": "在浏览器中打开",
+    "rename": "重命名",
+    "remove": "移除",
+    "agents": "智能体",
+    "lastActive": "最近活跃",
+    "platforms": "平台",
+    "platformsLinked": "已关联 {{count}} 个",
+    "platformsNone": "无",
+    "viewLogs": "查看日志",
+    "logs": "日志",
+    "pending": "…",
+    "stop": "停止",
+    "start": "启动",
+    "noAgents": "尚无已连接的智能体。请从“智能体”标签页添加智能体。"
+  },
+  "health": {
+    "healthy": "正常",
+    "warning": "警告",
+    "disconnected": "已断开",
+    "error": "错误"
+  },
+  "recentActivity": {
+    "noActivity": "暂无近期活动",
+    "noActivityWithSessions": "暂无近期活动（{{count}} 个会话）",
+    "lastMessage": "最近消息 · {{time}}",
+    "noPreview": "（无预览）"
+  },
+  "relativeTime": {
+    "never": "从未",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  },
+  "quickConnect": {
+    "title": "快速连接",
+    "tabPaste": "粘贴链接 / 令牌",
+    "tabCreate": "新建",
+    "tabBrowser": "浏览器授权",
+    "pasteLabel": "工作区链接或邀请令牌",
+    "pastePlaceholder": "https://workspace.openagents.org/my-team?token=… 或 http://localhost:8000/my-team?token=…",
+    "pasteHint": "托管链接使用远程令牌解析。自定义链接会使用链接来源、首段路径和 token 查询参数。",
+    "createLabel": "工作区名称",
+    "createPlaceholder": "我的团队",
+    "ready": "工作区已就绪",
+    "readySlug": "slug：{{slug}}",
+    "readyToken": "令牌：{{token}}",
+    "browserHeading": "通过浏览器登录",
+    "browserBody": "打开 <0>workspace.openagents.org</0>，以便你登录或接受邀请。",
+    "step1": "在浏览器中打开工作区站点。",
+    "step2": "登录或接受邀请。",
+    "step3": "复制工作区链接，并粘贴到“粘贴链接 / 令牌”标签页。",
+    "openSite": "打开工作区站点",
+    "close": "关闭",
+    "connecting": "正在连接…",
+    "connect": "连接",
+    "creating": "正在创建…",
+    "createBtn": "创建",
+    "toast": {
+      "pasteFirst": "请粘贴工作区链接或令牌",
+      "registered": "已注册 {{label}}。打开“智能体”标签页以连接智能体。",
+      "enterName": "请输入工作区名称",
+      "created": "已创建工作区",
+      "browserOpened": "已在浏览器中打开工作区站点。完成后请将链接粘贴回此处。"
+    },
+    "fallbackLabel": "工作区",
+    "error": {
+      "tls": "工作区服务暂时无法访问（TLS 证书不匹配）。请稍后重试或联系支持。",
+      "dns": "无法连接到工作区服务。请检查你的网络连接后重试。",
+      "timeout": "工作区服务未能及时响应。请稍后重试。"
+    }
+  },
+  "rename": {
+    "title": "重命名工作区",
+    "label": "显示名称",
+    "placeholder": "我的团队",
+    "hint": "仅用于显示。slug（{{slug}}）和服务器端名称不会改变。",
+    "cancel": "取消",
+    "saving": "正在保存…",
+    "save": "保存"
+  }
+}

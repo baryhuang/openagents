@@ -1,0 +1,134 @@
+{
+  "title": "Settings",
+  "subtitle": "— Preferences, network, data, updates",
+  "searchPlaceholder": "Search settings",
+  "sections": {
+    "general": "General",
+    "appearance": "Appearance",
+    "agents": "Agents",
+    "notifications": "Notifications",
+    "network": "Network",
+    "data": "Data",
+    "language": "Language",
+    "updates": "Updates",
+    "runtime": "Runtime",
+    "about": "About"
+  },
+  "toasts": {
+    "exported": "Exported settings",
+    "exportFailed": "Export failed: {{error}}",
+    "imported": "Imported settings",
+    "importFailed": "Import failed: {{error}}",
+    "reset": "Settings reset",
+    "alreadyUpToDate": "Already up to date",
+    "updateCheckFailed": "Update check failed: {{error}}",
+    "downloadFailed": "Download failed: {{error}}",
+    "installFailed": "Install failed: {{error}}",
+    "unknown": "unknown"
+  },
+  "resetDialog": {
+    "title": "Reset all settings?",
+    "description": "Restores every setting to its default. This cannot be undone.",
+    "confirm": "Reset"
+  },
+  "general": {
+    "title": "General",
+    "startOnBoot": "Start on boot",
+    "startOnBootDesc": "Launch automatically when you log in",
+    "minimizeToTray": "Minimize to tray",
+    "minimizeToTrayDesc": "Keep running in system tray when window is closed",
+    "gpuAcceleration": "GPU acceleration",
+    "gpuAccelerationDesc": "Disable if you see rendering glitches (requires restart)"
+  },
+  "appearance": {
+    "title": "Appearance",
+    "theme": "Theme",
+    "themeDesc": "Choose how OpenAgents looks",
+    "modes": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    }
+  },
+  "agents": {
+    "title": "Agent defaults",
+    "defaultType": "Default agent type",
+    "defaultTypeDesc": "Pre-selected when creating a new agent",
+    "defaultModel": "Default model",
+    "defaultModelDesc": "Suggested model when configuring a new agent",
+    "defaultModelPlaceholder": "e.g. claude-sonnet-4-5",
+    "autoStart": "Auto-start on launch",
+    "autoStartDesc": "Start all configured agents when the launcher opens"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "enable": "Enable notifications",
+    "enableDesc": "Show OS-level toasts for important events",
+    "sound": "Play sound",
+    "soundDesc": "Audible cue when notifications fire",
+    "note": "Fine-grained per-kind muting and quiet hours are available from the bell icon at the top right."
+  },
+  "network": {
+    "title": "Network",
+    "workspaceUrl": "Workspace backend URL",
+    "workspaceUrlDesc": "Optional self-hosted Workspace server. Leave blank to use OpenAgents hosted Workspace.",
+    "workspaceUrlPlaceholder": "https://workspace-endpoint.openagents.org or http://localhost:8000",
+    "httpProxy": "HTTP proxy",
+    "httpProxyDesc": "Used by agents and the launcher for outbound HTTP",
+    "httpsProxy": "HTTPS proxy",
+    "httpsProxyDesc": "Outbound HTTPS proxy",
+    "proxyPlaceholder": "http://user:pass@host:port",
+    "noProxy": "No proxy",
+    "noProxyDesc": "Comma-separated hosts that bypass the proxy",
+    "noProxyPlaceholder": "localhost,127.0.0.1,*.internal",
+    "note": "Proxy values are persisted to launcher settings. Restart the launcher to apply."
+  },
+  "data": {
+    "title": "Data directories",
+    "userData": "User data",
+    "openagentsHome": "OpenAgents home",
+    "logs": "Logs",
+    "downloads": "Downloads",
+    "cache": "Cache",
+    "portableNode": "Portable Node.js"
+  },
+  "language": {
+    "title": "Language",
+    "displayLanguage": "Display language",
+    "displayLanguageDesc": "Choose the language used across the OpenAgents interface"
+  },
+  "updates": {
+    "title": "Updates",
+    "autoUpdate": "Automatic updates",
+    "autoUpdateDesc": "Check for new launcher and agent versions on launch",
+    "updateFallback": "Update",
+    "appUpdate": "App update",
+    "cannotUpdate": "Current version {{version}} · this build can't update in place",
+    "downloadPage": "Download page",
+    "currentVersion": "Current version {{version}}",
+    "checking": "Checking for updates…",
+    "available": "New version {{version}} available",
+    "downloading": "Downloading {{version}} · {{percent}}%",
+    "downloaded": "{{version}} downloaded — restart to install",
+    "upToDate": "Up to date ({{version}})",
+    "error": "Update error: {{error}}",
+    "actionDownloading": "Downloading…",
+    "actionRestartInstall": "Restart & install",
+    "actionChecking": "Checking…",
+    "actionCheck": "Check for updates"
+  },
+  "runtime": {
+    "title": "Runtime",
+    "nodejs": "Node.js",
+    "npm": "npm",
+    "coreLibrary": "Core Library",
+    "latestAvailable": "Latest Available",
+    "unableToCheck": "Unable to check",
+    "upToDateSuffix": " (up to date)",
+    "updateAvailableSuffix": " (update available)"
+  },
+  "about": {
+    "title": "About",
+    "appLine": "OpenAgents Launcher {{version}}"
+  }
+}

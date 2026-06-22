@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { SearchInput } from "../../components/ui/SearchInput"
 import { TopBar } from "../../components/TopBar"
 import { useConnectionsStore } from "../../store/connections"
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function Connections({ showToast }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const { connections, refresh: refreshConnections } = useConnectionsStore(
     useShallow((s) => ({ connections: s.connections, refresh: s.refresh })),
   )
@@ -67,9 +69,9 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
     try {
       await window.api.removeConnection(conn.id)
       await refreshConnections()
-      showToast("Disconnected", "success")
+      showToast(t("connections.toast.disconnected"), "success")
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("connections.toast.error", { message: (err as Error).message }), "error")
     } finally {
       setBusyId(null)
       setDisconnectTarget(null)
@@ -90,15 +92,15 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="Connections"
-        subtitle="— Authorizations to external platforms (encrypted on disk)"
+        title={t("connections.title")}
+        subtitle={t("connections.subtitle")}
         actions={
           <div className="flex items-center gap-2 text-[11px] text-(--text-tertiary)">
             <span>
-              <span className="text-(--success-text) font-semibold">{counts.connected}</span> connected
+              <span className="text-(--success-text) font-semibold">{counts.connected}</span> {t("connections.stats.connected")}
             </span>
             <span>·</span>
-            <span>{counts.total} platforms</span>
+            <span>{t("connections.stats.platforms", { count: counts.total })}</span>
           </div>
         }
       />
@@ -110,7 +112,7 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onClear={() => setSearch("")}
-          placeholder="Search platforms..."
+          placeholder={t("connections.search.placeholder")}
           className="flex-1 max-w-[280px]"
         />
         <div className="inline-flex items-center gap-1 rounded-(--radius-sm) bg-(--bg-input) p-1">
@@ -125,7 +127,7 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
                   : "bg-transparent text-(--text-secondary)"
               }`}
             >
-              {k.charAt(0).toUpperCase() + k.slice(1)}
+              {t(`connections.filters.${k}`)}
             </button>
           ))}
         </div>
@@ -151,7 +153,7 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
 
       {visible.length === 0 && (
         <div className="card-legacy empty-state">
-          <p>No platforms match "{search}".</p>
+          <p>{t("connections.search.noResults", { query: search })}</p>
         </div>
       )}
       </div>
@@ -192,17 +194,19 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
         }
         title={
           disconnectTarget
-            ? `Disconnect ${platformLabel(disconnectTarget.platform)}?`
+            ? t("connections.disconnect.title", {
+                platform: platformLabel(disconnectTarget.platform),
+              })
             : ""
         }
         description={
           <>
-            Linked agents will lose access to{" "}
+            {t("connections.disconnect.descriptionBefore")}
             <strong>{disconnectTarget ? platformLabel(disconnectTarget.platform) : ""}</strong>
-            . The stored credential is kept and can be reused.
+            {t("connections.disconnect.descriptionAfter")}
           </>
         }
-        confirmLabel="Disconnect"
+        confirmLabel={t("connections.disconnect.confirm")}
         busy={!!disconnectTarget && busyId === disconnectTarget.id}
         onConfirm={performDisconnect}
         onCancel={() => setDisconnectTarget(null)}

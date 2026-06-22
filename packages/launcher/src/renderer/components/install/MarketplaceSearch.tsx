@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Input } from "../ui/Input"
 
 interface MarketplaceSearchProps {
@@ -17,9 +18,10 @@ interface MarketplaceSearchProps {
 export function MarketplaceSearch({
   value,
   onChange,
-  placeholder = "Search agents, tags, descriptions…",
+  placeholder,
   debounceMs = 180,
 }: MarketplaceSearchProps): React.JSX.Element {
+  const { t } = useTranslation()
   const [local, setLocal] = useState(value)
 
   // Reset local when the parent re-syncs (e.g. clearing search externally).
@@ -35,7 +37,7 @@ export function MarketplaceSearch({
     <Input
       value={local}
       onChange={(e) => setLocal(e.target.value)}
-      placeholder={placeholder}
+      placeholder={placeholder ?? t("install.search.placeholder")}
     />
   )
 }

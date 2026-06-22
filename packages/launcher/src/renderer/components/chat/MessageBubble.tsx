@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/utils'
 import type { ChatMessage } from '../../types'
 import Markdown from './Markdown'
@@ -31,6 +32,7 @@ export default function MessageBubble({
   isPending?: boolean
   onDownloadAttachment?: (fileId: string, filename: string) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const isHuman = message.senderType === 'human'
   const isSystem = message.senderType === 'system'
   const initials = (message.senderName || '?').slice(0, 2).toUpperCase()
@@ -46,14 +48,14 @@ export default function MessageBubble({
       </div>
       <div className={cn('flex-1 min-w-0 max-w-[75%]', isHuman && 'items-end')}>
         <div className={cn('flex items-center gap-2 mb-1', isHuman && 'flex-row-reverse')}>
-          <span className="text-[11px] font-semibold text-(--text-primary)">{message.senderName || 'unknown'}</span>
+          <span className="text-[11px] font-semibold text-(--text-primary)">{message.senderName || t('chat.bubble.unknownSender')}</span>
           {message.metadata && (message.metadata as { agentType?: string }).agentType && (
             <span className="text-[10px] text-(--text-tertiary)">
               {(message.metadata as { agentType?: string }).agentType}
             </span>
           )}
           <span className="text-[10px] text-(--text-tertiary)">{formatTime(message.createdAt)}</span>
-          {isPending && <span className="text-[10px] text-(--warning-text)">sending…</span>}
+          {isPending && <span className="text-[10px] text-(--warning-text)">{t('chat.bubble.sending')}</span>}
         </div>
         <div className={cn(
           'rounded-(--radius) px-3 py-2',

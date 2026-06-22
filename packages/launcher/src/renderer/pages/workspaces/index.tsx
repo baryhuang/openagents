@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { Plus, Check, RefreshCw, Link as LinkIcon } from "lucide-react"
 import { TopBar } from "../../components/TopBar"
 import { Button } from "../../components/ui/Button"
@@ -33,6 +34,7 @@ function deriveHealth(agents: Agent[]): WorkspaceHealthState {
 }
 
 export default function Workspaces({ showToast }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const { agents, pendingAgentActions, addPendingAction, removePendingAction } =
     useAgentsStore(
       useShallow((s) => ({
@@ -225,9 +227,9 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
       await navigator.clipboard.writeText(full)
       setCopiedSlug(slug)
       setTimeout(() => setCopiedSlug(null), 1500)
-      showToast("URL copied", "success")
+      showToast(t("workspaces.toast.urlCopied"), "success")
     } catch {
-      showToast("Failed to copy", "error")
+      showToast(t("workspaces.toast.copyFailed"), "error")
     }
   }
 
@@ -246,13 +248,13 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
     const slug = ws.slug || ws.id
     setRemoving(true)
     try {
-      showToast("Removing workspace...", "info")
+      showToast(t("workspaces.toast.removing"), "info")
       await window.api.removeWorkspace(slug)
       await reload()
-      showToast("Workspace removed", "success")
+      showToast(t("workspaces.toast.removed"), "success")
       setRemoveTarget(null)
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("workspaces.toast.error", { message: (err as Error).message }), "error")
     } finally {
       setRemoving(false)
     }
@@ -267,7 +269,7 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
       else await window.api.startAgent(a.name)
       setTimeout(reload, 1500)
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("workspaces.toast.error", { message: (err as Error).message }), "error")
     } finally {
       setTimeout(() => removePendingAction(a.name), 1500)
     }
@@ -296,17 +298,17 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="Workspaces"
-        subtitle="— Each workspace bundles its agents, activity, and connections"
+        title={t("workspaces.title")}
+        subtitle={t("workspaces.subtitle")}
         actions={
           <>
             <Button onClick={() => setQuickOpen(true)}>
               <LinkIcon className="w-3.5 h-3.5" />
-              Join Workspace
+              {t("workspaces.join")}
             </Button>
             <Button variant="primary" onClick={() => setQuickOpen(true)}>
               <Plus className="w-3.5 h-3.5" />
-              Create Workspace
+              {t("workspaces.create")}
             </Button>
           </>
         }
@@ -316,23 +318,23 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
 
       <div className="flex items-center gap-3 mb-4 text-[11px] text-(--text-tertiary)">
         <span>
-          <span className="text-(--success-text) font-semibold">{stats.healthy}</span> healthy
+          <span className="text-(--success-text) font-semibold">{stats.healthy}</span> {t("workspaces.stats.healthy")}
         </span>
         <span>·</span>
         <span>
-          <span className="text-(--warning-text) font-semibold">{stats.warning}</span> warning
+          <span className="text-(--warning-text) font-semibold">{stats.warning}</span> {t("workspaces.stats.warning")}
         </span>
         <span>·</span>
         <span>
-          <span className="text-(--danger-text) font-semibold">{stats.error}</span> error
+          <span className="text-(--danger-text) font-semibold">{stats.error}</span> {t("workspaces.stats.error")}
         </span>
         <span>·</span>
-        <span>{stats.total} total</span>
+        <span>{t("workspaces.stats.total", { count: stats.total })}</span>
         {favorites.size > 0 && (
           <>
             <span>·</span>
             <span>
-              <span className="text-(--warning-text) font-semibold">{favorites.size}</span> starred
+              <span className="text-(--warning-text) font-semibold">{favorites.size}</span> {t("workspaces.stats.starred")}
             </span>
           </>
         )}
@@ -343,33 +345,33 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onClear={() => setSearch("")}
-          placeholder="Search workspaces or agents..."
+          placeholder={t("workspaces.searchPlaceholder")}
           className="flex-1 max-w-[320px]"
         />
         <Button size="sm" variant="ghost" onClick={reload}>
           <RefreshCw className="w-3 h-3" />
-          Refresh
+          {t("workspaces.refresh")}
         </Button>
       </div>
 
       <h2 className="text-[14px] font-semibold text-(--text-primary) m-0 mb-3">
-        Active Workspaces
+        {t("workspaces.activeWorkspaces")}
       </h2>
 
       {loading ? (
         <div className="card-legacy empty-state">
-          <p>Loading workspaces…</p>
+          <p>{t("workspaces.loading")}</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="card-legacy empty-state">
           <p>
             {workspaces.length === 0
-              ? "No workspaces yet."
-              : `No workspaces match "${search}".`}
+              ? t("workspaces.emptyNone")
+              : t("workspaces.emptyNoMatch", { query: search })}
           </p>
           {workspaces.length === 0 && (
             <Button variant="primary" onClick={() => setQuickOpen(true)}>
-              Connect your first workspace
+              {t("workspaces.connectFirst")}
             </Button>
           )}
         </div>
@@ -395,7 +397,7 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
       {copiedSlug && (
         <div className="fixed bottom-6 right-6 px-3 py-2 bg-(--success-bg) text-(--success-text) rounded-sm text-[11px] flex items-center gap-1.5 shadow-md">
           <Check className="w-3 h-3" />
-          Copied
+          {t("workspaces.copied")}
         </div>
       )}
 
@@ -414,7 +416,7 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
         onClose={() => setRenameTarget(null)}
         onSaved={(id, name) => {
           setAliases((a) => ({ ...a, [id]: name }))
-          showToast("Workspace renamed", "success")
+          showToast(t("workspaces.toast.renamed"), "success")
         }}
       />
 
@@ -422,16 +424,17 @@ export default function Workspaces({ showToast }: Props): React.JSX.Element {
         open={!!removeTarget}
         title={
           removeTarget
-            ? `Remove workspace "${aliases[removeTarget.id] || removeTarget.name || removeTarget.slug || removeTarget.id}"?`
+            ? t("workspaces.remove.title", {
+                name:
+                  aliases[removeTarget.id] ||
+                  removeTarget.name ||
+                  removeTarget.slug ||
+                  removeTarget.id,
+              })
             : ""
         }
-        description={
-          <>
-            Connected agents will be disconnected and the workspace will be
-            soft-deleted on the server. This cannot be undone.
-          </>
-        }
-        confirmLabel="Remove"
+        description={<>{t("workspaces.remove.description")}</>}
+        confirmLabel={t("workspaces.remove.confirm")}
         busy={removing}
         onConfirm={performRemove}
         onCancel={() => !removing && setRemoveTarget(null)}

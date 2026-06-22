@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 import { Button } from "../ui/Button"
 import type { InstallPhase } from "../../types"
@@ -16,12 +17,14 @@ import type { InstallJob } from "../../store/install"
  *   verifying                                  → Validating
  *   done                                       → Completed
  */
+// Stage ids only; the user-facing labels live in the i18n catalog under
+// `install.progress.stages.<key>` and are resolved with t() at render time.
 const STAGES = [
-  { key: "downloading", label: "Downloading" },
-  { key: "extracting", label: "Extracting" },
-  { key: "installing", label: "Installing dependencies" },
-  { key: "validating", label: "Validating" },
-  { key: "completed", label: "Completed" },
+  { key: "downloading" },
+  { key: "extracting" },
+  { key: "installing" },
+  { key: "validating" },
+  { key: "completed" },
 ] as const
 
 type StageKey = (typeof STAGES)[number]["key"]
@@ -61,6 +64,7 @@ export function StagedProgress({
   onRetry,
   onDismiss,
 }: StagedProgressProps): React.JSX.Element {
+  const { t } = useTranslation()
   const [logOpen, setLogOpen] = useState(false)
   const errored = job.phase === "error"
   const current = useMemo(
@@ -69,30 +73,33 @@ export function StagedProgress({
   )
   const pct = stageProgressPct(current, errored)
   const verbLabel =
-    job.verb === "uninstall" ? "Uninstall"
-    : job.verb === "rollback" ? "Rollback"
-    : job.verb === "update" ? "Update"
-    : "Install"
+    job.verb === "uninstall" ? t("install.progress.verb.uninstall")
+    : job.verb === "rollback" ? t("install.progress.verb.rollback")
+    : job.verb === "update" ? t("install.progress.verb.update")
+    : t("install.progress.verb.install")
 
   return (
     <div className={cn("rounded-(--radius) border border-(--border) bg-(--bg-card) shadow-sm overflow-hidden", className)}>
       <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
         <div className="min-w-0">
           <div className="text-xs font-semibold uppercase tracking-wider text-(--text-secondary)">
-            {verbLabel} progress
+            {t("install.progress.verbProgress", { verb: verbLabel })}
           </div>
           <div className="mt-0.5 text-[12.5px] text-(--text-primary) truncate" title={job.detail}>
             {errored
-              ? job.error || "Failed"
-              : job.detail || (current >= 0 ? STAGES[Math.min(current, STAGES.length - 1)].label : "Starting…")}
+              ? job.error || t("install.progress.failed")
+              : job.detail ||
+                (current >= 0
+                  ? t(`install.progress.stages.${STAGES[Math.min(current, STAGES.length - 1)].key}`)
+                  : t("install.progress.starting"))}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {errored && onRetry && (
-            <Button size="sm" variant="primary" onClick={onRetry}>Retry</Button>
+            <Button size="sm" variant="primary" onClick={onRetry}>{t("install.progress.retry")}</Button>
           )}
           {onCopyLog && (
-            <Button size="sm" variant="ghost" onClick={onCopyLog}>Copy log</Button>
+            <Button size="sm" variant="ghost" onClick={onCopyLog}>{t("install.progress.copyLog")}</Button>
           )}
           <Button
             size="sm"
@@ -100,10 +107,10 @@ export function StagedProgress({
             onClick={() => setLogOpen((v) => !v)}
             aria-expanded={logOpen}
           >
-            {logOpen ? "Hide log" : "Show log"}
+            {logOpen ? t("install.progress.hideLog") : t("install.progress.showLog")}
           </Button>
           {onDismiss && (job.phase === "done" || job.phase === "error") && (
-            <Button size="sm" variant="ghost" onClick={onDismiss}>Dismiss</Button>
+            <Button size="sm" variant="ghost" onClick={onDismiss}>{t("install.progress.dismiss")}</Button>
           )}
         </div>
       </div>
@@ -157,9 +164,9 @@ export function StagedProgress({
                     : isErrorHere ? "text-(--danger-text)"
                     : "text-(--text-tertiary)",
                   )}
-                  title={stage.label}
+                  title={t(`install.progress.stages.${stage.key}`)}
                 >
-                  {stage.label}
+                  {t(`install.progress.stages.${stage.key}`)}
                 </span>
               </div>
             </li>
@@ -172,7 +179,7 @@ export function StagedProgress({
           <pre
             className="log-viewer m-0 max-h-60 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug"
           >
-            {job.log || (errored ? job.error || "No log captured." : "Waiting for output…")}
+            {job.log || (errored ? job.error || t("install.progress.noLog") : t("install.progress.waitingForOutput"))}
           </pre>
         </div>
       )}
@@ -186,20 +193,21 @@ interface MiniBannerProps {
 }
 
 export function InstallMiniBanner({ job, onOpen }: MiniBannerProps): React.JSX.Element {
+  const { t } = useTranslation()
   const errored = job.phase === "error"
   const current = deriveStageIndex(job.phase, job.detail || "")
   const pct = stageProgressPct(current, errored)
   const verb =
-    job.verb === "uninstall" ? "Uninstalling"
-    : job.verb === "rollback" ? "Rolling back"
-    : job.verb === "update" ? "Updating"
-    : "Installing"
+    job.verb === "uninstall" ? t("install.progress.mini.uninstalling")
+    : job.verb === "rollback" ? t("install.progress.mini.rollingBack")
+    : job.verb === "update" ? t("install.progress.mini.updating")
+    : t("install.progress.mini.installing")
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      title="Click to view full progress"
+      title={t("install.progress.mini.tooltip")}
       className={cn(
         "fixed bottom-4 right-4 z-30 w-[300px] cursor-pointer text-left",
         "rounded-(--radius) border border-(--border) bg-(--bg-card) shadow-lg",
@@ -215,7 +223,7 @@ export function InstallMiniBanner({ job, onOpen }: MiniBannerProps): React.JSX.E
           "text-[10.5px] font-medium tracking-wide shrink-0",
           errored ? "text-(--danger-text)" : "text-(--text-tertiary)",
         )}>
-          {errored ? "FAILED" : current >= 4 ? "DONE" : `${pct}%`}
+          {errored ? t("install.progress.mini.failedStatus") : current >= 4 ? t("install.progress.mini.doneStatus") : `${pct}%`}
         </span>
       </div>
       <div className="h-1 rounded-full bg-(--bg-input) overflow-hidden">
@@ -228,7 +236,12 @@ export function InstallMiniBanner({ job, onOpen }: MiniBannerProps): React.JSX.E
         />
       </div>
       <span className="text-[11px] text-(--text-tertiary) truncate" title={job.detail}>
-        {errored ? job.error || "Failed" : job.detail || (current >= 0 ? STAGES[Math.min(current, STAGES.length - 1)].label : "Starting…")}
+        {errored
+          ? job.error || t("install.progress.failed")
+          : job.detail ||
+            (current >= 0
+              ? t(`install.progress.stages.${STAGES[Math.min(current, STAGES.length - 1)].key}`)
+              : t("install.progress.starting"))}
       </span>
     </button>
   )

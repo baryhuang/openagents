@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Eye, EyeOff, Copy, Trash2, Pencil, Check, Link2 } from "lucide-react"
 import { Button } from "../ui/Button"
 import { Badge } from "../ui/Badge"
@@ -26,6 +27,7 @@ export function CredentialCard({
   revealed: string | null
   testing: boolean
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const platform = getPlatform(cred.provider)
   const [copied, setCopied] = useState(false)
 
@@ -67,7 +69,7 @@ export function CredentialCard({
             </Badge>
             {cred.shared && (
               <Badge variant="info" className="!text-[9px] !py-[1px] !px-[6px]">
-                shared
+                {t("credentials.card.shared")}
               </Badge>
             )}
             {cred.scopes?.map((s) => (
@@ -90,7 +92,7 @@ export function CredentialCard({
                     cred.lastTestOk ? "text-(--success-text)" : "text-(--danger-text)"
                   }
                 >
-                  Tested {lastTest} {cred.lastTestOk ? "✓" : "✗"}
+                  {t("credentials.card.tested", { date: lastTest })} {cred.lastTestOk ? "✓" : "✗"}
                 </span>
               </>
             )}
@@ -106,12 +108,12 @@ export function CredentialCard({
           size="icon"
           variant="ghost"
           onClick={onReveal}
-          title={revealed ? "Hide" : "Reveal"}
+          title={revealed ? t("credentials.card.hide") : t("credentials.card.reveal")}
         >
           {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
         </Button>
         {revealed && (
-          <Button size="icon" variant="ghost" onClick={copySecret} title="Copy">
+          <Button size="icon" variant="ghost" onClick={copySecret} title={t("credentials.card.copy")}>
             {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           </Button>
         )}
@@ -121,19 +123,19 @@ export function CredentialCard({
 
       <div className="flex gap-2 mt-1 flex-wrap">
         <Button size="sm" onClick={onTest} disabled={testing}>
-          {testing ? "Testing..." : "Test"}
+          {testing ? t("credentials.card.testing") : t("credentials.card.test")}
         </Button>
         <Button size="sm" onClick={onApply}>
           <Link2 className="w-3 h-3" />
-          Apply to agent
+          {t("credentials.card.applyToAgent")}
         </Button>
         <Button size="sm" onClick={onEdit}>
           <Pencil className="w-3 h-3" />
-          Edit
+          {t("credentials.card.edit")}
         </Button>
         <Button size="sm" variant="destructive" onClick={onRemove}>
           <Trash2 className="w-3 h-3" />
-          Remove
+          {t("credentials.card.remove")}
         </Button>
       </div>
     </div>

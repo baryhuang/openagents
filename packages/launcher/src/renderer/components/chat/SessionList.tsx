@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react"
 import { Plus, Search, Trash2 } from "lucide-react"
+import { useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 import { cn } from "../../lib/utils"
 import { Button } from "../ui/Button"
 import type { ChatSessionMeta, Workspace } from "../../types"
@@ -16,15 +18,15 @@ interface SessionListProps {
   onNewChat: () => void
 }
 
-function relativeTime(iso: string | null): string {
+function relativeTime(iso: string | null, t: TFunction): string {
   if (!iso) return ""
-  const t = Date.parse(iso)
-  if (!t) return ""
-  const diff = Date.now() - t
-  if (diff < 60_000) return "just now"
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)} min ago`
-  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`
-  if (diff < 86_400_000 * 7) return `${Math.round(diff / 86_400_000)}d ago`
+  const parsed = Date.parse(iso)
+  if (!parsed) return ""
+  const diff = Date.now() - parsed
+  if (diff < 60_000) return t("chat.sessionList.justNow")
+  if (diff < 3_600_000) return t("chat.sessionList.minAgo", { count: Math.round(diff / 60_000) })
+  if (diff < 86_400_000) return t("chat.sessionList.hoursAgo", { count: Math.round(diff / 3_600_000) })
+  if (diff < 86_400_000 * 7) return t("chat.sessionList.daysAgo", { count: Math.round(diff / 86_400_000) })
   return new Date(iso).toLocaleDateString()
 }
 
@@ -39,6 +41,7 @@ export default function SessionList({
   onClearAll,
   onNewChat,
 }: SessionListProps): React.JSX.Element {
+  const { t } = useTranslation()
   const [query, setQuery] = useState("")
 
   const visible = useMemo(() => {
@@ -60,7 +63,7 @@ export default function SessionList({
       {/* Header */}
       <div className="px-4 py-4 flex items-center justify-between gap-2">
         <h2 className="m-0 text-[16px] font-semibold tracking-tight text-(--text-primary)">
-          Conversations
+          {t("chat.sessionList.title")}
         </h2>
         <div className="flex items-center gap-1">
           {selectedWorkspaceId && (
@@ -68,7 +71,7 @@ export default function SessionList({
               variant="ghost"
               size="icon"
               onClick={onClearAll}
-              title="Clear all sessions"
+              title={t("chat.sessionList.clearAll")}
               className="h-7 w-7 text-(--text-tertiary) hover:enabled:text-(--danger-text)"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -79,7 +82,7 @@ export default function SessionList({
             size="icon"
             onClick={onNewChat}
             disabled={!selectedWorkspaceId}
-            title="New chat"
+            title={t("chat.sessionList.newChat")}
             className="h-7 w-7"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -98,7 +101,7 @@ export default function SessionList({
             "focus:border-(--accent) focus:bg-(--bg-card)",
           )}
         >
-          <option value="">— select workspace —</option>
+          <option value="">{t("chat.sessionList.selectWorkspace")}</option>
           {workspaces.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name || w.slug}
@@ -119,7 +122,7 @@ export default function SessionList({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search conversations..."
+            placeholder={t("chat.sessionList.searchPlaceholder")}
             className="bg-transparent border-0 outline-none flex-1 text-[12px] text-(--text-primary) placeholder:text-(--text-tertiary)"
           />
         </div>
@@ -130,8 +133,8 @@ export default function SessionList({
         {visible.length === 0 ? (
           <div className="px-3 py-8 text-[12px] text-(--text-tertiary) text-center">
             {sessions.length === 0
-              ? "No saved sessions yet."
-              : "No conversations match."}
+              ? t("chat.sessionList.noSavedSessions")
+              : t("chat.sessionList.noMatches")}
           </div>
         ) : (
           visible.map((s) => {
@@ -168,7 +171,7 @@ export default function SessionList({
                       e.stopPropagation()
                       onDeleteSession(s.workspaceId, s.channelName)
                     }}
-                    title="Delete"
+                    title={t("chat.sessionList.delete")}
                     className={cn(
                       "h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity",
                       "text-(--text-tertiary) hover:enabled:text-(--danger-text)",
@@ -189,7 +192,7 @@ export default function SessionList({
                   </div>
                 )}
                 <div className="text-[11px] text-(--text-tertiary) mt-1">
-                  {relativeTime(s.lastMessageAt)}
+                  {relativeTime(s.lastMessageAt, t)}
                 </div>
               </div>
             )

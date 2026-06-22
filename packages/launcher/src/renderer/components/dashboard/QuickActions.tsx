@@ -7,6 +7,7 @@ import {
   FolderPlus,
   Plug,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
 
 interface Props {
@@ -30,31 +31,32 @@ export function QuickActions({
   hasRunning,
   hasIdle,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <Button size="sm" onClick={onStartAll} disabled={!hasIdle}>
         <Play className="w-3 h-3" />
-        Start all
+        {t("dashboard.quickActions.startAll")}
       </Button>
       <Button size="sm" onClick={onStopAll} disabled={!hasRunning}>
         <Square className="w-3 h-3" />
-        Stop all
+        {t("dashboard.quickActions.stopAll")}
       </Button>
       <Button size="sm" onClick={onOpenChat}>
         <MessageSquare className="w-3 h-3" />
-        Open chat
+        {t("dashboard.quickActions.openChat")}
       </Button>
       <Button size="sm" onClick={onNewWorkspace}>
         <FolderPlus className="w-3 h-3" />
-        New workspace
+        {t("dashboard.quickActions.newWorkspace")}
       </Button>
       <Button size="sm" onClick={onAddConnection}>
         <Plug className="w-3 h-3" />
-        Add connection
+        {t("dashboard.quickActions.addConnection")}
       </Button>
       <Button size="sm" variant="primary" onClick={onNewAgent}>
         <Plus className="w-3 h-3" />
-        New agent
+        {t("dashboard.quickActions.newAgent")}
       </Button>
     </div>
   )

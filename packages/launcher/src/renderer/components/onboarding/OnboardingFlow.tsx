@@ -13,6 +13,7 @@ import {
   Search,
   AlertTriangle,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
 import { Input } from "../ui/Input"
 import { PasswordInput } from "../ui/PasswordInput"
@@ -49,6 +50,7 @@ export function OnboardingFlow({
   onClose: () => void
   showToast: (msg: string, type?: ToastType) => void
 }): React.JSX.Element | null {
+  const { t } = useTranslation()
   const [step, setStep] = useState<Step>(() => {
     try {
       const raw = localStorage.getItem(STEP_KEY)
@@ -90,7 +92,9 @@ export function OnboardingFlow({
   const [saving, setSaving] = useState(false)
 
   // Step 3 (workspace) + provisioning.
-  const [workspaceName, setWorkspaceName] = useState("My Workspace")
+  const [workspaceName, setWorkspaceName] = useState(() =>
+    t("onboarding.flow.workspace.defaultName"),
+  )
   const [provisioning, setProvisioning] = useState(false)
 
   // Step 4 (launch).
@@ -297,7 +301,7 @@ export function OnboardingFlow({
   const testEnvConnection = async (): Promise<void> => {
     if (!selectedEntry || selectedEntry.envFields.length === 0) return
     if (hasMissingRequired(selectedEntry.envFields, envValues)) {
-      showToast("Fill in the required fields first", "warning")
+      showToast(t("onboarding.flow.toast.fillRequiredFields"), "warning")
       return
     }
     setTesting(true)
@@ -309,9 +313,14 @@ export function OnboardingFlow({
         r.success
           ? {
               ok: true,
-              detail: r.model ? `${r.model} responded` : "Connection looks good",
+              detail: r.model
+                ? t("onboarding.flow.test.modelResponded", { model: r.model })
+                : t("onboarding.flow.test.connectionLooksGood"),
             }
-          : { ok: false, detail: r.error || "Test failed" },
+          : {
+              ok: false,
+              detail: r.error || t("onboarding.flow.test.testFailed"),
+            },
       )
     } catch (e) {
       setTestResult({ ok: false, detail: (e as Error).message })
@@ -324,7 +333,7 @@ export function OnboardingFlow({
     if (!selectedEntry?.loginCommand) return
     try {
       await window.api.openTerminal(selectedEntry.loginCommand)
-      showToast("Login terminal opened. Complete login there.", "success")
+      showToast(t("onboarding.flow.toast.loginTerminalOpened"), "success")
       setCheckingLogin(true)
       for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 2000))
@@ -356,7 +365,7 @@ export function OnboardingFlow({
     // required key fields (which carry pre-seeded base-URL/model defaults).
     if (usingApiKeyPath) {
       if (hasMissingRequired(selectedEntry.envFields, envValues)) {
-        showToast("Fill in the required fields first", "warning")
+        showToast(t("onboarding.flow.toast.fillRequiredFields"), "warning")
         return
       }
       setSaving(true)
@@ -384,7 +393,7 @@ export function OnboardingFlow({
     if (!selectedEntry) return
     const name = workspaceName.trim()
     if (includeWorkspace && !name) {
-      showToast("Enter a workspace name, or skip this step", "warning")
+      showToast(t("onboarding.flow.toast.enterWorkspaceName"), "warning")
       return
     }
     setProvisioning(true)
@@ -396,7 +405,12 @@ export function OnboardingFlow({
       })
       if (res.workspaceName) {
         capture("workspace_created", { source: "onboarding" })
-        showToast(`Workspace "${res.workspaceName}" created`, "success")
+        showToast(
+          t("onboarding.flow.toast.workspaceCreated", {
+            name: res.workspaceName,
+          }),
+          "success",
+        )
       }
       if (res.warning) showToast(res.warning, "warning")
       window.api.signalReload()
@@ -426,11 +440,17 @@ export function OnboardingFlow({
           return
         }
         if (a && a.state === "error") {
-          setLaunchResult({ ok: false, detail: a.last_error || "Agent errored" })
+          setLaunchResult({
+            ok: false,
+            detail: a.last_error || t("onboarding.flow.launchResult.agentErrored"),
+          })
           return
         }
       }
-      setLaunchResult({ ok: true, detail: "Started — still warming up." })
+      setLaunchResult({
+        ok: true,
+        detail: t("onboarding.flow.launchResult.startedWarmingUp"),
+      })
     } catch (e) {
       setLaunchResult({ ok: false, detail: (e as Error).message })
     } finally {
@@ -507,7 +527,8 @@ export function OnboardingFlow({
           <FooterShell>
             <span />
             <Button variant="primary" onClick={goNext}>
-              Get started <ChevronRight className="w-4 h-4" />
+              {t("onboarding.flow.footer.getStarted")}{" "}
+              <ChevronRight className="w-4 h-4" />
             </Button>
           </FooterShell>
         )
@@ -515,7 +536,7 @@ export function OnboardingFlow({
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
-              <ChevronLeft className="w-4 h-4" /> Back
+              <ChevronLeft className="w-4 h-4" /> {t("onboarding.flow.footer.back")}
             </Button>
             <Button
               variant="primary"
@@ -524,11 +545,13 @@ export function OnboardingFlow({
             >
               {installing ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Installing…
+                  <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                  {t("onboarding.flow.footer.installing")}
                 </>
               ) : (
                 <>
-                  Continue <ChevronRight className="w-4 h-4" />
+                  {t("onboarding.flow.footer.continue")}{" "}
+                  <ChevronRight className="w-4 h-4" />
                 </>
               )}
             </Button>
@@ -546,7 +569,7 @@ export function OnboardingFlow({
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
-              <ChevronLeft className="w-4 h-4" /> Back
+              <ChevronLeft className="w-4 h-4" /> {t("onboarding.flow.footer.back")}
             </Button>
             <Button
               variant="primary"
@@ -555,11 +578,13 @@ export function OnboardingFlow({
             >
               {saving ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+                  <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                  {t("onboarding.flow.footer.saving")}
                 </>
               ) : (
                 <>
-                  Save & continue <ChevronRight className="w-4 h-4" />
+                  {t("onboarding.flow.footer.saveAndContinue")}{" "}
+                  <ChevronRight className="w-4 h-4" />
                 </>
               )}
             </Button>
@@ -570,7 +595,7 @@ export function OnboardingFlow({
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
-              <ChevronLeft className="w-4 h-4" /> Back
+              <ChevronLeft className="w-4 h-4" /> {t("onboarding.flow.footer.back")}
             </Button>
             <div className="flex items-center gap-2">
               <Button
@@ -578,7 +603,7 @@ export function OnboardingFlow({
                 onClick={() => void provisionAndContinue(false)}
                 disabled={provisioning}
               >
-                Skip for now
+                {t("onboarding.flow.footer.skipForNow")}
               </Button>
               <Button
                 variant="primary"
@@ -587,11 +612,13 @@ export function OnboardingFlow({
               >
                 {provisioning ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Creating…
+                    <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                    {t("onboarding.flow.footer.creating")}
                   </>
                 ) : (
                   <>
-                    Create <ChevronRight className="w-4 h-4" />
+                    {t("onboarding.flow.footer.create")}{" "}
+                    <ChevronRight className="w-4 h-4" />
                   </>
                 )}
               </Button>
@@ -602,16 +629,17 @@ export function OnboardingFlow({
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
-              <ChevronLeft className="w-4 h-4" /> Back
+              <ChevronLeft className="w-4 h-4" /> {t("onboarding.flow.footer.back")}
             </Button>
             {launchResult?.ok ? (
               <Button variant="primary" onClick={() => close(true)}>
-                Go to Dashboard <ChevronRight className="w-4 h-4" />
+                {t("onboarding.flow.footer.goToDashboard")}{" "}
+                <ChevronRight className="w-4 h-4" />
               </Button>
             ) : launchResult ? (
               <div className="flex items-center gap-2">
                 <Button variant="ghost" onClick={() => close(true)}>
-                  Finish anyway
+                  {t("onboarding.flow.footer.finishAnyway")}
                 </Button>
                 <Button
                   variant="primary"
@@ -620,10 +648,11 @@ export function OnboardingFlow({
                 >
                   {launching ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Launching…
+                      <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                      {t("onboarding.flow.footer.launching")}
                     </>
                   ) : (
-                    "Retry launch"
+                    t("onboarding.flow.footer.retryLaunch")
                   )}
                 </Button>
               </div>
@@ -631,10 +660,11 @@ export function OnboardingFlow({
               <Button variant="primary" onClick={launchAgent} disabled={launching}>
                 {launching ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Launching…
+                    <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                    {t("onboarding.flow.footer.launching")}
                   </>
                 ) : (
-                  "Launch agent"
+                  t("onboarding.flow.footer.launchAgent")
                 )}
               </Button>
             )}
@@ -664,7 +694,14 @@ export function OnboardingFlow({
 // ─── Layout shells ────────────────────────────────────────────
 
 function ProgressBar({ step }: { step: Step }): React.JSX.Element {
-  const labels = ["Welcome", "Agent", "Configure", "Workspace", "Launch"]
+  const { t } = useTranslation()
+  const labels = [
+    t("onboarding.flow.progress.welcome"),
+    t("onboarding.flow.progress.agent"),
+    t("onboarding.flow.progress.configure"),
+    t("onboarding.flow.progress.workspace"),
+    t("onboarding.flow.progress.launch"),
+  ]
   return (
     <div className="shrink-0 px-8 pt-6 pb-4 border-b border-(--border) bg-(--bg-card)">
       <div className="flex items-center gap-3 max-w-180 mx-auto">
@@ -743,30 +780,31 @@ function StepHeader({
 // ─── Step bodies ──────────────────────────────────────────────
 
 function WelcomeStep(): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <>
       <StepHeader
         icon={<Sparkles className="w-5 h-5" />}
-        title="Welcome to OpenAgents Launcher"
-        subtitle="Run, configure, and orchestrate AI coding agents from one place."
+        title={t("onboarding.flow.welcome.title")}
+        subtitle={t("onboarding.flow.welcome.subtitle")}
       />
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 list-none m-0 p-0">
         {[
           {
             icon: <Cpu className="w-4 h-4" />,
-            label: "Install agents (Claude, Codex, Gemini, Kimi…)",
+            label: t("onboarding.flow.welcome.benefits.install"),
           },
           {
             icon: <KeyRound className="w-4 h-4" />,
-            label: "Manage API keys and credentials in one encrypted store",
+            label: t("onboarding.flow.welcome.benefits.credentials"),
           },
           {
             icon: <Layers className="w-4 h-4" />,
-            label: "Spin up workspaces and chat with running agents",
+            label: t("onboarding.flow.welcome.benefits.workspaces"),
           },
           {
             icon: <Rocket className="w-4 h-4" />,
-            label: "Connect to GitHub, Slack, Discord, Linear and more",
+            label: t("onboarding.flow.welcome.benefits.connect"),
           },
         ].map((b) => (
           <li
@@ -779,20 +817,22 @@ function WelcomeStep(): React.JSX.Element {
         ))}
       </ul>
       <p className="mt-6 text-[12px] text-(--text-tertiary)">
-        We'll have you running your first agent in under two minutes.
+        {t("onboarding.flow.welcome.footnote")}
       </p>
     </>
   )
 }
 
-const INSTALL_PHASE_LABEL: Record<string, string> = {
-  preparing: "Preparing…",
-  downloading: "Downloading…",
-  installing: "Installing…",
-  verifying: "Finalizing…",
-  done: "Done",
-  error: "Failed",
-}
+// Phase ids map to labels in the i18n catalog under
+// `onboarding.flow.installPhase.<id>`; translated at render time.
+const INSTALL_PHASE_IDS = [
+  "preparing",
+  "downloading",
+  "installing",
+  "verifying",
+  "done",
+  "error",
+] as const
 
 function AgentSelectionStep({
   agents,
@@ -817,24 +857,29 @@ function AgentSelectionStep({
   installPhase: string | null
   installDetail: string | null
 }): React.JSX.Element {
+  const { t } = useTranslation()
+  const phaseId = INSTALL_PHASE_IDS.includes(
+    (installPhase || "preparing") as (typeof INSTALL_PHASE_IDS)[number],
+  )
+    ? installPhase || "preparing"
+    : "installing"
   return (
     <>
       <StepHeader
         icon={<Cpu className="w-5 h-5" />}
-        title="Pick your first agent"
-        subtitle="Only agents your installed runtime can run are shown. You can install more later from the Install tab."
+        title={t("onboarding.flow.agentSelection.title")}
+        subtitle={t("onboarding.flow.agentSelection.subtitle")}
       />
       {installing && (
         <div className="flex items-start gap-2.5 mb-4 px-3.5 py-3 rounded-(--radius-sm) bg-(--accent-bg) border border-(--accent-border)">
           <Loader2 className="w-4 h-4 mt-0.5 shrink-0 animate-spin text-(--accent)" />
           <div className="min-w-0">
             <div className="text-[12px] font-semibold text-(--text-primary)">
-              {INSTALL_PHASE_LABEL[installPhase || "preparing"] ||
-                "Installing…"}
+              {t(`onboarding.flow.installPhase.${phaseId}`)}
             </div>
             <div className="text-[11px] text-(--text-secondary) truncate">
               {installDetail ||
-                "First-time installs can take a few minutes — downloading the runtime and dependencies."}
+                t("onboarding.flow.agentSelection.installingDetail")}
             </div>
           </div>
         </div>
@@ -843,7 +888,7 @@ function AgentSelectionStep({
         <Search className="w-3.5 h-3.5 text-(--text-tertiary)" />
         <input
           className="flex-1 bg-transparent border-0 outline-none text-[13px]"
-          placeholder="Search agents…"
+          placeholder={t("onboarding.flow.agentSelection.searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -852,19 +897,20 @@ function AgentSelectionStep({
       <ul className="grid grid-cols-1 sm:grid-cols-2 auto-rows-fr gap-2.5 list-none m-0 p-0">
         {loading && agents.length === 0 && (
           <li className="col-span-1 sm:col-span-2 text-center text-[12px] text-(--text-tertiary) py-6 flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading agents…
+            <Loader2 className="w-4 h-4 animate-spin" />{" "}
+            {t("onboarding.flow.agentSelection.loadingAgents")}
           </li>
         )}
         {!loading && agents.length === 0 && (
           <li className="col-span-1 sm:col-span-2 text-center text-[12px] text-(--text-tertiary) py-6 flex flex-col items-center gap-3">
             <span>
               {search.trim()
-                ? "No agents match your search."
-                : "The agent runtime is still installing — this can take a minute on first launch."}
+                ? t("onboarding.flow.agentSelection.noMatch")
+                : t("onboarding.flow.agentSelection.stillInstalling")}
             </span>
             {!search.trim() && (
               <Button size="sm" variant="ghost" onClick={onRetry}>
-                Retry
+                {t("onboarding.flow.agentSelection.retry")}
               </Button>
             )}
           </li>
@@ -892,17 +938,18 @@ function AgentSelectionStep({
                       </span>
                       {c.featured && (
                         <span className="text-[9px] uppercase px-1 py-0.5 rounded-sm bg-(--accent-bg) text-(--accent) font-bold">
-                          Featured
+                          {t("onboarding.flow.agentSelection.featured")}
                         </span>
                       )}
                       {c.installed && (
                         <span className="text-[9px] uppercase px-1 py-0.5 rounded-sm bg-(--success-bg) text-(--success-text) font-bold">
-                          Installed
+                          {t("onboarding.flow.agentSelection.installed")}
                         </span>
                       )}
                     </div>
                     <div className="text-[11px] leading-snug text-(--text-secondary) line-clamp-2 mt-1 min-h-[2lh]">
-                      {c.description || "—"}
+                      {c.description ||
+                        t("onboarding.flow.agentSelection.noDescription")}
                     </div>
                   </div>
                 </div>
@@ -938,16 +985,20 @@ function ApiKeyStep({
   checkingLogin: boolean
   cliInstalled: boolean | null
 }): React.JSX.Element {
-  const label = entry?.label || entry?.name || "this agent"
+  const { t } = useTranslation()
+  const label =
+    entry?.label || entry?.name || t("onboarding.flow.apiKey.thisAgent")
   const mode = entry?.authMode ?? "none"
   const hasLogin = !!entry?.loginCommand
   const hasEnvFields = !!entry && entry.envFields.length > 0
   const subtitle =
     mode === "env"
-      ? `Configure ${label}. Saved to ~/.openagents/env/ and injected into the agent automatically.`
+      ? t("onboarding.flow.apiKey.subtitleEnv", { label })
       : mode === "login"
-        ? `${label} signs in through its own CLI${hasEnvFields ? " — or enter an API key below instead." : "."}`
-        : `${label} doesn't need any environment configuration.`
+        ? hasEnvFields
+          ? t("onboarding.flow.apiKey.subtitleLoginWithKey", { label })
+          : t("onboarding.flow.apiKey.subtitleLogin", { label })
+        : t("onboarding.flow.apiKey.subtitleNone", { label })
 
   // Claude Code refuses to run under cmd.exe on Windows; the launcher opens
   // PowerShell, but if the CLI also needs bash the user must have Git for
@@ -976,7 +1027,11 @@ function ApiKeyStep({
             <FieldInput
               value={value}
               onChange={(e) => onChangeValue(f.name, e.target.value)}
-              placeholder={f.placeholder || f.default || `Enter ${f.name}…`}
+              placeholder={
+                f.placeholder ||
+                f.default ||
+                t("onboarding.flow.apiKey.fieldPlaceholder", { name: f.name })
+              }
             />
           </div>
         )
@@ -989,10 +1044,11 @@ function ApiKeyStep({
       <Button size="sm" onClick={onTest} disabled={testing}>
         {testing ? (
           <>
-            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Testing…
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />{" "}
+            {t("onboarding.flow.apiKey.testing")}
           </>
         ) : (
-          "Test connection"
+          t("onboarding.flow.apiKey.testConnection")
         )}
       </Button>
       {entry?.docsUrl && (
@@ -1004,7 +1060,7 @@ function ApiKeyStep({
           }}
           className="text-[12px] text-(--accent) hover:underline"
         >
-          Where do I get a key?
+          {t("onboarding.flow.apiKey.whereKey")}
         </a>
       )}
     </div>
@@ -1015,7 +1071,7 @@ function ApiKeyStep({
       {loggedIn ? (
         <div className="flex items-center gap-2 text-[13px] mb-3 text-(--success-text)">
           <span>✓</span>
-          <strong>Detected an active login</strong>
+          <strong>{t("onboarding.flow.apiKey.detectedLogin")}</strong>
         </div>
       ) : cliInstalled === false ? (
         // Login can't succeed until the CLI exists. Onboarding installs the
@@ -1024,28 +1080,32 @@ function ApiKeyStep({
         <div className="flex items-center gap-2 text-[13px] mb-3 text-(--warning-text)">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           <span>
-            <strong>{label} isn't installed yet</strong> — install it first, then
-            log in.
+            <strong>
+              {t("onboarding.flow.apiKey.notInstalledYet", { label })}
+            </strong>
+            {t("onboarding.flow.apiKey.notInstalledHint")}
           </span>
         </div>
       ) : cliInstalled === true ? (
         <div className="flex items-center gap-2 text-[13px] mb-3 text-(--text-secondary)">
           <span>✓</span>
-          <span>{label} is installed — not signed in yet.</span>
+          <span>
+            {t("onboarding.flow.apiKey.installedNotSignedIn", { label })}
+          </span>
         </div>
       ) : null}
       <p className="text-[12px] text-(--text-secondary) m-0 mb-3">
-        {label} signs in through its own CLI. Open a terminal and run{" "}
-        <code className="inline-code">{entry.loginCommand}</code> to authenticate.
-        When the CLI says you're signed in, come back and click{" "}
-        <strong>Save & continue</strong>.
+        {t("onboarding.flow.apiKey.loginInstructionsPrefix", { label })}
+        <code className="inline-code">{entry.loginCommand}</code>
+        {t("onboarding.flow.apiKey.loginInstructionsMid")}
+        <strong>{t("onboarding.flow.apiKey.saveAndContinue")}</strong>
+        {t("onboarding.flow.apiKey.loginInstructionsSuffix")}
       </p>
       {showWindowsShellNote && (
         <div className="flex items-start gap-2 text-[11px] text-(--text-secondary) mb-3 p-2.5 rounded-sm bg-(--bg-input)">
           <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-(--warning-text)" />
           <span>
-            Claude Code on Windows needs PowerShell (opened for you) or Git for
-            Windows. If login fails, install{" "}
+            {t("onboarding.flow.apiKey.windowsShellNotePrefix")}
             <a
               href="https://git-scm.com/downloads/win"
               onClick={(e) => {
@@ -1054,9 +1114,9 @@ function ApiKeyStep({
               }}
               className="text-(--accent) hover:underline"
             >
-              Git for Windows
-            </a>{" "}
-            or{" "}
+              {t("onboarding.flow.apiKey.gitForWindows")}
+            </a>
+            {t("onboarding.flow.apiKey.windowsShellNoteOr")}
             <a
               href="https://aka.ms/powershell"
               onClick={(e) => {
@@ -1065,9 +1125,9 @@ function ApiKeyStep({
               }}
               className="text-(--accent) hover:underline"
             >
-              PowerShell 7
-            </a>{" "}
-            and retry.
+              {t("onboarding.flow.apiKey.powershell7")}
+            </a>
+            {t("onboarding.flow.apiKey.windowsShellNoteSuffix")}
           </span>
         </div>
       )}
@@ -1079,22 +1139,22 @@ function ApiKeyStep({
       >
         {checkingLogin ? (
           <>
-            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Waiting for login…
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />{" "}
+            {t("onboarding.flow.apiKey.waitingForLogin")}
           </>
         ) : loggedIn ? (
-          "Re-open login terminal"
+          t("onboarding.flow.apiKey.reopenLoginTerminal")
         ) : (
-          "Open login terminal"
+          t("onboarding.flow.apiKey.openLoginTerminal")
         )}
       </Button>
       <p className="mt-3 text-[11px] text-(--text-tertiary) m-0">
-        We can't reliably detect every CLI login, so this step never blocks you —
-        if the agent isn't actually signed in, the Launch step will surface it.
+        {t("onboarding.flow.apiKey.detectionNote")}
       </p>
       {hasEnvFields && (
         <div className="mt-4 pt-4 border-t border-(--border)">
           <p className="text-[12px] font-medium m-0 mb-3">
-            Prefer an API key? Enter it instead:
+            {t("onboarding.flow.apiKey.preferApiKey")}
           </p>
           {envInputs}
           {testRow}
@@ -1107,13 +1167,14 @@ function ApiKeyStep({
     <>
       <StepHeader
         icon={<KeyRound className="w-5 h-5" />}
-        title="Configure agent"
+        title={t("onboarding.flow.apiKey.title")}
         subtitle={subtitle}
       />
 
       {!entry ? (
         <div className="flex items-center gap-2 text-[12px] text-(--text-tertiary) py-6">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading configuration…
+          <Loader2 className="w-4 h-4 animate-spin" />{" "}
+          {t("onboarding.flow.apiKey.loadingConfiguration")}
         </div>
       ) : mode === "env" ? (
         <>
@@ -1122,10 +1183,11 @@ function ApiKeyStep({
             <Button size="sm" onClick={onTest} disabled={testing}>
               {testing ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Testing…
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />{" "}
+                  {t("onboarding.flow.apiKey.testing")}
                 </>
               ) : (
-                "Test connection"
+                t("onboarding.flow.apiKey.testConnection")
               )}
             </Button>
             {hasLogin && (
@@ -1136,10 +1198,10 @@ function ApiKeyStep({
                 disabled={checkingLogin}
               >
                 {checkingLogin
-                  ? "Waiting for login…"
+                  ? t("onboarding.flow.apiKey.waitingForLogin")
                   : loggedIn
-                    ? "Re-login via CLI"
-                    : "Or log in via CLI"}
+                    ? t("onboarding.flow.apiKey.reloginViaCli")
+                    : t("onboarding.flow.apiKey.orLoginViaCli")}
               </Button>
             )}
             {entry.docsUrl && (
@@ -1151,7 +1213,7 @@ function ApiKeyStep({
                 }}
                 className="text-[12px] text-(--accent) hover:underline"
               >
-                Where do I get a key?
+                {t("onboarding.flow.apiKey.whereKey")}
               </a>
             )}
           </div>
@@ -1160,8 +1222,9 @@ function ApiKeyStep({
         loginBlock
       ) : (
         <div className="p-4 rounded-(--radius-sm) bg-(--success-bg) text-(--success-text) text-[12px]">
-          No configuration needed. Click <strong>Save & continue</strong> to move
-          on.
+          {t("onboarding.flow.apiKey.noConfigNeededPrefix")}
+          <strong>{t("onboarding.flow.apiKey.saveAndContinue")}</strong>
+          {t("onboarding.flow.apiKey.noConfigNeededSuffix")}
         </div>
       )}
 
@@ -1174,7 +1237,9 @@ function ApiKeyStep({
               : "bg-(--danger-bg) text-(--danger-text)",
           )}
         >
-          {testResult.ok ? "✓ Connected" : "✗ Failed"}
+          {testResult.ok
+            ? t("onboarding.flow.apiKey.connected")
+            : t("onboarding.flow.apiKey.failed")}
           {testResult.detail && (
             <span className="ml-1.5 opacity-80">— {testResult.detail}</span>
           )}
@@ -1191,26 +1256,28 @@ function WorkspaceStep({
   name: string
   setName: (v: string) => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <>
       <StepHeader
         icon={<Layers className="w-5 h-5" />}
-        title="Create a workspace"
-        subtitle="A workspace is where agents collaborate. This is optional — you can skip it and connect one later."
+        title={t("onboarding.flow.workspace.title")}
+        subtitle={t("onboarding.flow.workspace.subtitle")}
       />
       <label className="block text-[12px] font-medium mb-1.5">
-        Workspace name
+        {t("onboarding.flow.workspace.nameLabel")}
       </label>
       <Input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="My Workspace"
+        placeholder={t("onboarding.flow.workspace.namePlaceholder")}
       />
       <p className="mt-3 text-[11px] text-(--text-tertiary)">
-        We'll create a new workspace at{" "}
-        <code className="inline-code">workspace.openagents.org</code> and bind
-        your first agent to it. Prefer to do this later? Use{" "}
-        <strong>Skip for now</strong>.
+        {t("onboarding.flow.workspace.hintPrefix")}
+        <code className="inline-code">workspace.openagents.org</code>
+        {t("onboarding.flow.workspace.hintMid")}
+        <strong>{t("onboarding.flow.footer.skipForNow")}</strong>
+        {t("onboarding.flow.workspace.hintSuffix")}
       </p>
     </>
   )
@@ -1225,12 +1292,13 @@ function LaunchStep({
   launching: boolean
   result: null | { ok: boolean; detail?: string }
 }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <>
       <StepHeader
         icon={<Rocket className="w-5 h-5" />}
-        title="Launch your agent"
-        subtitle={`Start ${agentName} and verify it reaches a healthy state.`}
+        title={t("onboarding.flow.launch.title")}
+        subtitle={t("onboarding.flow.launch.subtitle", { agentName })}
       />
       <div className="p-4 rounded-(--radius-sm) bg-(--bg-card) border border-(--border)">
         <div className="flex items-center gap-2 text-[12px]">
@@ -1246,7 +1314,9 @@ function LaunchStep({
                 : "bg-(--danger-bg) text-(--danger-text)",
             )}
           >
-            {result.ok ? "Agent is healthy and running" : "Agent did not start"}
+            {result.ok
+              ? t("onboarding.flow.launch.healthy")
+              : t("onboarding.flow.launch.didNotStart")}
             {result.detail && (
               <span className="ml-1.5 opacity-80">— {result.detail}</span>
             )}
@@ -1254,7 +1324,9 @@ function LaunchStep({
         )}
         {!result && !launching && (
           <p className="mt-3 text-[12px] text-(--text-secondary) m-0">
-            Click <strong>Launch agent</strong> below to start it now.
+            {t("onboarding.flow.launch.clickToStartPrefix")}
+            <strong>{t("onboarding.flow.footer.launchAgent")}</strong>
+            {t("onboarding.flow.launch.clickToStartSuffix")}
           </p>
         )}
       </div>

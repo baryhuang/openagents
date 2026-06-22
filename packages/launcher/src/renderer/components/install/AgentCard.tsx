@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import AgentIcon from "../AgentIcon"
 import { Badge } from "../ui/Badge"
 import { Button } from "../ui/Button"
@@ -30,15 +31,16 @@ export function AgentCard({
   onInstall,
   onUninstall,
 }: AgentCardProps): React.JSX.Element {
+  const { t } = useTranslation()
   const isComingSoon = !!entry.comingSoon
   const isInstalled = entry.installed
   const isManaged = entry.managed !== false
   const isBusy = !!job && job.phase !== "done" && job.phase !== "error"
   const verbLabel =
-    job?.verb === "uninstall" ? "Uninstalling…"
-    : job?.verb === "rollback" ? "Rolling back…"
-    : job?.verb === "update" ? "Updating…"
-    : "Installing…"
+    job?.verb === "uninstall" ? t("install.card.verb.uninstalling")
+    : job?.verb === "rollback" ? t("install.card.verb.rollingBack")
+    : job?.verb === "update" ? t("install.card.verb.updating")
+    : t("install.card.verb.installing")
   const stage = stageOf(job)
 
   return (
@@ -64,21 +66,21 @@ export function AgentCard({
             {entry.label || entry.name}
           </div>
           {entry.featured && (
-            <div className="text-[10.5px] text-(--accent)" title="Featured">★ Featured</div>
+            <div className="text-[10.5px] text-(--accent)" title={t("install.card.featuredTitle")}>{t("install.card.featured")}</div>
           )}
         </div>
         {hasUpdate && (
           <span
             className="text-[10px] px-2 py-0.5 rounded-[10px] bg-(--warning-bg) text-(--warning-text)"
-            title="An update is available"
+            title={t("install.card.updateAvailable")}
           >
-            Update
+            {t("install.card.updateBadge")}
           </span>
         )}
       </div>
 
       <p className="text-[11.5px] text-(--text-secondary) leading-snug line-clamp-2 overflow-hidden m-0">
-        {entry.description || "No description."}
+        {entry.description || t("install.card.noDescription")}
       </p>
 
       <div className="flex flex-wrap gap-1">
@@ -95,18 +97,18 @@ export function AgentCard({
       <div className="flex items-center justify-between mt-auto text-[11px]">
         <div className="flex items-center gap-1.5">
           {isComingSoon ? (
-            <Badge variant="default">Coming soon</Badge>
+            <Badge variant="default">{t("install.card.comingSoon")}</Badge>
           ) : isInstalled ? (
             isManaged
-              ? <Badge variant="success">Installed</Badge>
-              : <Badge variant="info" title="Installed outside OpenAgents (system/global)">Global</Badge>
+              ? <Badge variant="success">{t("install.card.installed")}</Badge>
+              : <Badge variant="info" title={t("install.card.globalTitle")}>{t("install.card.global")}</Badge>
           ) : (
-            <span className="text-(--text-tertiary)">Not installed</span>
+            <span className="text-(--text-tertiary)">{t("install.card.notInstalled")}</span>
           )}
         </div>
         {isBusy && stage && (
           <span className="text-[10.5px] text-(--accent) truncate" title={job?.detail}>
-            {stage.replace(/-/g, " ")}…
+            {t(`install.progress.stages.${stage}`)}…
           </span>
         )}
       </div>
@@ -116,25 +118,25 @@ export function AgentCard({
         onClick={(e) => e.stopPropagation()}
       >
         {isComingSoon ? (
-          <Button size="sm" disabled>Coming soon</Button>
+          <Button size="sm" disabled>{t("install.card.comingSoon")}</Button>
         ) : isBusy ? (
           <Button size="sm" disabled>{verbLabel}</Button>
         ) : !isInstalled ? (
           <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); onInstall() }}>
-            Install
+            {t("install.card.install")}
           </Button>
         ) : isManaged ? (
           <>
             <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); onInstall() }}>
-              Update
+              {t("install.card.update")}
             </Button>
             <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); onUninstall() }}>
-              Uninstall
+              {t("install.card.uninstall")}
             </Button>
           </>
         ) : (
           <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); onInstall() }}>
-            Reinstall
+            {t("install.card.reinstall")}
           </Button>
         )}
       </div>

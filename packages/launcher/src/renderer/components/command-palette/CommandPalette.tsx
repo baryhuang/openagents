@@ -21,6 +21,7 @@ import {
   Cpu,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { useUiStore } from "../../store/ui"
 import { useAgentsStore } from "../../store/agents"
 import { useThemeStore, type ThemeMode } from "../../store/theme"
@@ -74,6 +75,7 @@ function pushHistory(id: string): void {
 }
 
 export function CommandPalette(): React.JSX.Element | null {
+  const { t } = useTranslation()
   const setCurrentTab = useUiStore((s) => s.setCurrentTab)
   const goToInstallList = useUiStore((s) => s.goToInstallList)
   const setInstallFocusAgent = useUiStore((s) => s.setInstallFocusAgent)
@@ -116,22 +118,22 @@ export function CommandPalette(): React.JSX.Element | null {
   // Build commands
   const commands: Command[] = useMemo(() => {
     const navTabs: Array<[string, string, React.JSX.Element]> = [
-      ["dashboard", "Dashboard", <LayoutDashboard key="d" className="w-3.5 h-3.5" />],
-      ["chat", "Chat", <MessageSquare key="c" className="w-3.5 h-3.5" />],
-      ["agents", "Agents", <Cpu key="a" className="w-3.5 h-3.5" />],
-      ["workspaces", "Workspaces", <Layers key="w" className="w-3.5 h-3.5" />],
-      ["connections", "Connections", <Plug key="cn" className="w-3.5 h-3.5" />],
-      ["credentials", "Credentials", <KeyRound key="k" className="w-3.5 h-3.5" />],
-      ["github", "GitHub", <Github key="g" className="w-3.5 h-3.5" />],
-      ["install", "Install", <Download key="i" className="w-3.5 h-3.5" />],
-      ["logs", "Logs", <FileText key="l" className="w-3.5 h-3.5" />],
-      ["settings", "Settings", <SettingsIcon key="s" className="w-3.5 h-3.5" />],
+      ["dashboard", t("commandPalette.nav.dashboard"), <LayoutDashboard key="d" className="w-3.5 h-3.5" />],
+      ["chat", t("commandPalette.nav.chat"), <MessageSquare key="c" className="w-3.5 h-3.5" />],
+      ["agents", t("commandPalette.nav.agents"), <Cpu key="a" className="w-3.5 h-3.5" />],
+      ["workspaces", t("commandPalette.nav.workspaces"), <Layers key="w" className="w-3.5 h-3.5" />],
+      ["connections", t("commandPalette.nav.connections"), <Plug key="cn" className="w-3.5 h-3.5" />],
+      ["credentials", t("commandPalette.nav.credentials"), <KeyRound key="k" className="w-3.5 h-3.5" />],
+      ["github", t("commandPalette.nav.github"), <Github key="g" className="w-3.5 h-3.5" />],
+      ["install", t("commandPalette.nav.install"), <Download key="i" className="w-3.5 h-3.5" />],
+      ["logs", t("commandPalette.nav.logs"), <FileText key="l" className="w-3.5 h-3.5" />],
+      ["settings", t("commandPalette.nav.settings"), <SettingsIcon key="s" className="w-3.5 h-3.5" />],
     ]
 
     const navCmds: Command[] = navTabs.map(([id, label, icon]) => ({
       id: `nav:${id}`,
-      title: `Go to ${label}`,
-      group: "Navigation",
+      title: t("commandPalette.commands.goTo", { label }),
+      group: t("commandPalette.groups.navigation"),
       icon,
       run: () => {
         if (id === "install") goToInstallList()
@@ -144,9 +146,9 @@ export function CommandPalette(): React.JSX.Element | null {
       const isRunning = ["online", "running", "idle"].includes(a.state)
       agentCmds.push({
         id: `agent:open:${a.name}`,
-        title: `Open agent: ${a.name}`,
+        title: t("commandPalette.commands.openAgent", { name: a.name }),
         subtitle: a.type,
-        group: "Agents",
+        group: t("commandPalette.groups.agents"),
         icon: <Cpu className="w-3.5 h-3.5" />,
         run: () => {
           setCurrentTab("agents")
@@ -156,16 +158,16 @@ export function CommandPalette(): React.JSX.Element | null {
       if (isRunning) {
         agentCmds.push({
           id: `agent:stop:${a.name}`,
-          title: `Stop agent: ${a.name}`,
-          group: "Agents",
+          title: t("commandPalette.commands.stopAgent", { name: a.name }),
+          group: t("commandPalette.groups.agents"),
           icon: <Square className="w-3.5 h-3.5" />,
           run: () => void window.api.stopAgent(a.name),
         })
       } else {
         agentCmds.push({
           id: `agent:start:${a.name}`,
-          title: `Start agent: ${a.name}`,
-          group: "Agents",
+          title: t("commandPalette.commands.startAgent", { name: a.name }),
+          group: t("commandPalette.groups.agents"),
           icon: <Play className="w-3.5 h-3.5" />,
           run: () => void window.api.startAgent(a.name),
         })
@@ -175,52 +177,52 @@ export function CommandPalette(): React.JSX.Element | null {
     const actionCmds: Command[] = [
       {
         id: "action:start-all",
-        title: "Start all agents",
-        group: "Actions",
+        title: t("commandPalette.commands.startAll"),
+        group: t("commandPalette.groups.actions"),
         icon: <Play className="w-3.5 h-3.5" />,
         run: () => void window.api.startAll(),
       },
       {
         id: "action:stop-all",
-        title: "Stop all agents",
-        group: "Actions",
+        title: t("commandPalette.commands.stopAll"),
+        group: t("commandPalette.groups.actions"),
         icon: <Square className="w-3.5 h-3.5" />,
         run: () => void window.api.stopAll(),
       },
       {
         id: "action:install-agent",
-        title: "Install new agent",
-        group: "Actions",
+        title: t("commandPalette.commands.installAgent"),
+        group: t("commandPalette.groups.actions"),
         icon: <Plus className="w-3.5 h-3.5" />,
         run: () => goToInstallList(),
       },
       {
         id: "action:new-workspace",
-        title: "New workspace",
-        group: "Actions",
+        title: t("commandPalette.commands.newWorkspace"),
+        group: t("commandPalette.groups.actions"),
         icon: <Folder className="w-3.5 h-3.5" />,
         run: () => setCurrentTab("workspaces"),
       },
     ]
 
-    const themeCmds: Command[] = (["light", "dark", "system"] as ThemeMode[]).map((t) => ({
-      id: `theme:${t}`,
-      title: `Theme: ${t[0].toUpperCase()}${t.slice(1)}`,
-      group: "Appearance",
+    const themeCmds: Command[] = (["light", "dark", "system"] as ThemeMode[]).map((m) => ({
+      id: `theme:${m}`,
+      title: t("commandPalette.commands.theme", { mode: t(`commandPalette.themes.${m}`) }),
+      group: t("commandPalette.groups.appearance"),
       icon:
-        t === "dark" ? (
+        m === "dark" ? (
           <Moon className="w-3.5 h-3.5" />
-        ) : t === "light" ? (
+        ) : m === "light" ? (
           <Sun className="w-3.5 h-3.5" />
         ) : (
           <Monitor className="w-3.5 h-3.5" />
         ),
-      subtitle: mode === t ? "Current" : undefined,
-      run: () => setMode(t),
+      subtitle: mode === m ? t("commandPalette.current") : undefined,
+      run: () => setMode(m),
     }))
 
     return [...navCmds, ...agentCmds, ...actionCmds, ...themeCmds]
-  }, [agents, setCurrentTab, goToInstallList, setInstallFocusAgent, mode, setMode])
+  }, [agents, setCurrentTab, goToInstallList, setInstallFocusAgent, mode, setMode, t])
 
   const ranked = useMemo(() => {
     if (!query.trim()) {
@@ -229,7 +231,7 @@ export function CommandPalette(): React.JSX.Element | null {
       const recent = history
         .map((id) => byId.get(id))
         .filter((c): c is Command => !!c)
-        .map((c) => ({ ...c, group: "Recent" }))
+        .map((c) => ({ ...c, group: t("commandPalette.groups.recent") }))
       const seen = new Set(recent.map((c) => c.id))
       return [...recent, ...commands.filter((c) => !seen.has(c.id))]
     }
@@ -238,7 +240,7 @@ export function CommandPalette(): React.JSX.Element | null {
       .filter((x) => x.s > 0)
       .sort((a, b) => b.s - a.s)
       .map((x) => x.c)
-  }, [query, commands])
+  }, [query, commands, t])
 
   // Group rendering — collapse to flat array but track group changes for headers
   const grouped = useMemo(() => {
@@ -319,7 +321,7 @@ export function CommandPalette(): React.JSX.Element | null {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Type a command, agent, or page…"
+            placeholder={t("commandPalette.placeholder")}
             className="flex-1 bg-transparent border-0 outline-none text-[14px] text-(--text-primary) placeholder:text-(--text-tertiary)"
           />
           <kbd className="text-[10px] text-(--text-tertiary) bg-(--bg-input) px-1.5 py-0.5 rounded-sm">
@@ -333,7 +335,7 @@ export function CommandPalette(): React.JSX.Element | null {
         >
           {grouped.length === 0 && (
             <li className="px-4 py-6 text-center text-[12px] text-(--text-tertiary)">
-              No commands match.
+              {t("commandPalette.empty")}
             </li>
           )}
           {grouped.map((entry, i) =>
@@ -380,16 +382,16 @@ export function CommandPalette(): React.JSX.Element | null {
           <div className="flex items-center gap-3">
             <span>
               <kbd className="bg-(--bg-input) px-1 py-0.5 rounded-sm mr-1">↑↓</kbd>
-              Navigate
+              {t("commandPalette.footer.navigate")}
             </span>
             <span>
               <kbd className="bg-(--bg-input) px-1 py-0.5 rounded-sm mr-1">⏎</kbd>
-              Run
+              {t("commandPalette.footer.run")}
             </span>
           </div>
           <span>
             <kbd className="bg-(--bg-input) px-1 py-0.5 rounded-sm mr-1">⌘K</kbd>
-            Toggle
+            {t("commandPalette.footer.toggle")}
           </span>
         </div>
       </div>

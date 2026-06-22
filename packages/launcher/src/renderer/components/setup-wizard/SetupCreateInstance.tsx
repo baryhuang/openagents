@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import { Input } from "../ui/Input"
 import { Button } from "../ui/Button"
 import { WizardStepShell } from "./WizardStepShell"
@@ -27,10 +28,11 @@ export function SetupCreateInstance({
   onCancel,
   section = "all",
 }: SetupCreateInstanceProps): React.JSX.Element {
+  const { t } = useTranslation()
   const body = (
     <>
       <div className="form-group mb-0">
-        <label>Agent name</label>
+        <label>{t("onboarding.wizard.createInstance.agentNameLabel")}</label>
         <Input
           value={agentName}
           onChange={(e) => setAgentName(e.target.value)}
@@ -38,8 +40,7 @@ export function SetupCreateInstance({
         />
       </div>
       <p className="hint m-0">
-        Used as the local identifier — you can rename or remove it later from
-        the Agents tab.
+        {t("onboarding.wizard.createInstance.hint")}
       </p>
     </>
   )
@@ -50,9 +51,13 @@ export function SetupCreateInstance({
         onClick={onSubmit}
         disabled={submitting || !agentName.trim()}
       >
-        {submitting ? "Creating…" : "Create agent"}
+        {submitting
+          ? t("onboarding.wizard.createInstance.creating")
+          : t("onboarding.wizard.createInstance.createAgent")}
       </Button>
-      <Button onClick={onCancel}>Finish later</Button>
+      <Button onClick={onCancel}>
+        {t("onboarding.wizard.createInstance.finishLater")}
+      </Button>
     </div>
   )
 

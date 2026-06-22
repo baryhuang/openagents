@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Modal, ModalActions } from "../ui/Modal"
 import { Button } from "../ui/Button"
 import { PlatformLogo } from "./PlatformLogo"
@@ -26,6 +27,7 @@ export function ConnectionTestDialog({
   onClose: () => void
   onAfterRun?: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ConnectionTestResult | null>(null)
   const platform = connection ? getPlatform(connection.platform) : undefined
@@ -61,15 +63,15 @@ export function ConnectionTestDialog({
       <div className="flex flex-col items-center py-2">
         {platform && <PlatformLogo platform={platform} size={44} />}
         <h3 className="text-[17px] font-bold tracking-[-0.02em] mt-3 mb-1 text-center">
-          Test {platform?.label || connection?.platform}
+          {t("connections.test.title", { platform: platform?.label || connection?.platform })}
         </h3>
         <p className="text-[12px] text-(--text-tertiary) text-center m-0">
-          Pings the platform's API with the saved credential.
+          {t("connections.test.subtitle")}
         </p>
 
         <div className="w-full mt-5 mb-2 flex flex-col items-center gap-2">
           {running && (
-            <div className="text-[12px] text-(--text-secondary)">Running probe…</div>
+            <div className="text-[12px] text-(--text-secondary)">{t("connections.test.running")}</div>
           )}
           {result && (
             <>
@@ -78,7 +80,7 @@ export function ConnectionTestDialog({
               />
               {result.account && (
                 <div className="text-[12px] text-(--text-secondary)">
-                  Account: <strong>{result.account}</strong>
+                  {t("connections.test.account")}<strong>{result.account}</strong>
                 </div>
               )}
               {result.detail && (
@@ -92,10 +94,10 @@ export function ConnectionTestDialog({
 
         <ModalActions>
           <Button onClick={runTest} disabled={running}>
-            {running ? "Testing..." : "Run again"}
+            {running ? t("connections.test.testing") : t("connections.test.runAgain")}
           </Button>
           <Button variant="primary" onClick={onClose}>
-            Done
+            {t("connections.test.done")}
           </Button>
         </ModalActions>
       </div>

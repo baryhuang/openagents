@@ -1,0 +1,14 @@
+{
+  "appName": "OpenAgents",
+  "loading": "Loading…",
+  "import": "Import",
+  "export": "Export",
+  "reset": "Reset",
+  "reveal": "Reveal",
+  "cancel": "Cancel",
+  "download": "Download",
+  "documentation": "Documentation",
+  "none": "(none)",
+  "notInstalled": "Not installed",
+  "checking": "Checking..."
+}

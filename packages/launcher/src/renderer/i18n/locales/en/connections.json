@@ -1,0 +1,90 @@
+{
+  "title": "Connections",
+  "subtitle": "— Authorizations to external platforms (encrypted on disk)",
+  "stats": {
+    "connected": "connected",
+    "platforms": "{{count}} platforms"
+  },
+  "search": {
+    "placeholder": "Search platforms...",
+    "noResults": "No platforms match \"{{query}}\"."
+  },
+  "filters": {
+    "all": "All",
+    "connected": "Connected",
+    "disconnected": "Disconnected"
+  },
+  "toast": {
+    "disconnected": "Disconnected",
+    "error": "Error: {{message}}",
+    "pasteToken": "Paste a token or API key",
+    "saveCredentialFailed": "Failed to save credential",
+    "connected": "{{platform}} connected",
+    "testFailed": "Saved, but test failed: {{detail}}"
+  },
+  "disconnect": {
+    "title": "Disconnect {{platform}}?",
+    "descriptionBefore": "Linked agents will lose access to ",
+    "descriptionAfter": ". The stored credential is kept and can be reused.",
+    "confirm": "Disconnect"
+  },
+  "status": {
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "expired": "Expired",
+    "unauthorized": "Unauthorized",
+    "rate_limited": "Rate limited",
+    "offline": "Offline",
+    "error": "Error"
+  },
+  "card": {
+    "synced": "Synced {{time}}",
+    "account": "Account: ",
+    "connect": "Connect",
+    "test": "Test",
+    "reconfigure": "Reconfigure",
+    "disconnect": "Disconnect"
+  },
+  "relativeTime": {
+    "never": "never",
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+  "test": {
+    "title": "Test {{platform}}",
+    "subtitle": "Pings the platform's API with the saved credential.",
+    "running": "Running probe…",
+    "account": "Account: ",
+    "testing": "Testing...",
+    "runAgain": "Run again",
+    "done": "Done"
+  },
+  "oauth": {
+    "openTitle": "Open {{platform}} authorization page in browser",
+    "connectViaBrowser": "Connect via browser"
+  },
+  "dialog": {
+    "reconnectTitle": "Reconnect {{platform}}",
+    "connectTitle": "Connect {{platform}}",
+    "credential": "Credential",
+    "addNewCredential": "+ Add new credential",
+    "credentialLabel": "Credential label",
+    "defaultLabel": "{{platform}} default",
+    "tokenOrApiKey": "Token / API key",
+    "pasteSecret": "Paste your {{platform}} secret",
+    "whereToGet": "Where do I get this?",
+    "accountHint": "Account hint (optional)",
+    "accountHintPlaceholder": "user@example.com or org/repo",
+    "suggestedScopes": "Suggested scopes: ",
+    "connectedAs": "Connected as {{account}}",
+    "connectedOk": "Connected",
+    "resultError": "{{status}} — {{detail}}",
+    "resultStatus": "{{status}}",
+    "cancel": "Cancel",
+    "connecting": "Connecting...",
+    "saveAndTest": "Save & Test",
+    "connect": "Connect"
+  }
+}

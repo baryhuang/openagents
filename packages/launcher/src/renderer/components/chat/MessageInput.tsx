@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/Button'
 import type { Attachment, WorkspaceParticipant } from '../../types'
@@ -45,6 +46,7 @@ export default function MessageInput({
   onSend,
   onUpload,
 }: MessageInputProps): React.JSX.Element {
+  const { t } = useTranslation()
   const [value, setValue] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [sending, setSending] = useState(false)
@@ -171,7 +173,7 @@ export default function MessageInput({
       >
         {dragOver && (
           <div className="absolute inset-1 pointer-events-none flex items-center justify-center rounded-xl border-2 border-dashed border-(--accent) bg-(--bg-card)/95 text-(--accent) text-[12px] font-semibold z-10">
-            Drop file to attach
+            {t('chat.input.dropToAttach')}
           </div>
         )}
 
@@ -188,7 +190,7 @@ export default function MessageInput({
                   variant="ghost"
                   size="icon"
                   onClick={() => removeAttachment(i)}
-                  title="Remove"
+                  title={t('chat.input.remove')}
                   className="ml-0.5 h-4 w-4 rounded-full text-(--text-tertiary) hover:enabled:text-(--danger-text)"
                 >
                   <CloseIcon className="w-2.5 h-2.5" />
@@ -197,7 +199,7 @@ export default function MessageInput({
             ))}
             {uploadingCount > 0 && (
               <span className="text-[11px] text-(--text-tertiary) self-center px-1">
-                Uploading {uploadingCount}…
+                {t('chat.input.uploading', { count: uploadingCount })}
               </span>
             )}
           </div>
@@ -220,7 +222,7 @@ export default function MessageInput({
             size="icon"
             onClick={() => fileRef.current?.click()}
             disabled={disabled || sending}
-            title="Attach file"
+            title={t('chat.input.attachFile')}
             className="shrink-0 h-9 w-9 rounded-full text-(--text-tertiary) hover:enabled:text-(--text-primary)"
           >
             <PaperclipIcon className="w-4.5 h-4.5" />
@@ -232,7 +234,7 @@ export default function MessageInput({
             onChange={onChange}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder={disabled ? 'Select a workspace to start chatting…' : 'Message your agents… (Shift+Enter for newline)'}
+            placeholder={disabled ? t('chat.input.placeholderDisabled') : t('chat.input.placeholder')}
             disabled={disabled || sending}
             rows={1}
             className={cn(
@@ -247,7 +249,7 @@ export default function MessageInput({
             size="icon"
             onClick={() => void handleSend()}
             disabled={!canSend}
-            title="Send (Enter)"
+            title={t('chat.input.send')}
             className="shrink-0 h-9 w-9 rounded-full"
           >
             <ArrowUpIcon className="w-4 h-4" />
@@ -257,7 +259,7 @@ export default function MessageInput({
         {mentionState?.open && filteredParticipants.length > 0 && (
           <div className="absolute bottom-full left-0 mb-2 z-20 w-[260px] bg-(--bg-card) border border-(--border) rounded-(--radius) shadow-(--shadow-md) overflow-hidden">
             <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-(--text-tertiary) bg-(--bg-input)">
-              Mention agent
+              {t('chat.input.mentionAgent')}
             </div>
             {filteredParticipants.map((p) => (
               <button
@@ -279,7 +281,7 @@ export default function MessageInput({
       </div>
 
       <div className="mt-2 text-center text-[11px] text-(--text-tertiary)">
-        <code className="font-mono text-(--text-secondary)">@mention</code> agents to direct messages · Attach files with the clip icon · Press <kbd className="px-1 py-0.5 rounded bg-(--bg-input) text-[10px]">Enter</kbd> to send
+        <code className="font-mono text-(--text-secondary)">{t('chat.input.hintMention')}</code> {t('chat.input.hintDirect')} <kbd className="px-1 py-0.5 rounded bg-(--bg-input) text-[10px]">{t('chat.input.hintEnterKey')}</kbd> {t('chat.input.hintToSend')}
       </div>
     </div>
   )

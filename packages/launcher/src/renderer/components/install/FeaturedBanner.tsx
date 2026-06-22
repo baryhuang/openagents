@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import AgentIcon from "../AgentIcon"
 import type { CatalogEntry } from "../../types"
 
@@ -8,22 +9,23 @@ interface Props {
 }
 
 export function FeaturedBanner({ catalog, onOpen }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const hero =
     catalog.find((c) => c.featured && !c.installed) ||
     catalog.find((c) => c.featured) ||
     catalog[0] ||
     null
 
-  const title = hero?.label || hero?.name || "Discover AI agents"
+  const title = hero?.label || hero?.name || t("install.featuredBanner.defaultTitle")
   const description =
     hero?.description ||
     hero?.long_description ||
-    "Browse, install, and update AI coding agents from the OpenAgents catalog."
+    t("install.featuredBanner.defaultDescription")
   const ctaLabel = hero
     ? hero.installed
-      ? "Open"
-      : "Install Now"
-    : "Browse all"
+      ? t("install.featuredBanner.open")
+      : t("install.featuredBanner.installNow")
+    : t("install.featuredBanner.browseAll")
 
   return (
     <div className="relative box-border rounded-xl pl-8 pr-45 py-7 shadow-[0_4px_20px_rgba(99,102,241,0.25)] bg-[linear-gradient(135deg,#6366f1_0%,#4f46e5_50%,#7c3aed_100%)]">
@@ -36,7 +38,7 @@ export function FeaturedBanner({ catalog, onOpen }: Props): React.JSX.Element {
       </div>
 
       <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/85 mb-3">
-        FEATURED
+        {t("install.featuredBanner.eyebrow")}
       </div>
 
       <h2 className="m-0 text-[26px] font-extrabold leading-[1.15] tracking-[-0.02em] text-white">

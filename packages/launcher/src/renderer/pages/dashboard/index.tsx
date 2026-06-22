@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useCallback, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
+import { useTranslation } from "react-i18next"
 import { ArrowRight } from "lucide-react"
 import { useAgentsStore } from "../../store/agents"
 import { useUiStore } from "../../store/ui"
@@ -36,6 +37,7 @@ function SkeletonCard(): React.JSX.Element {
 export default function Dashboard({
   showToast,
 }: DashboardProps): React.JSX.Element {
+  const { t } = useTranslation()
   const {
     agents,
     setAgents,
@@ -206,21 +208,21 @@ export default function Dashboard({
       const isRunning = ["online", "running", "idle"].includes(agent.state)
       if (isRunning) {
         await window.api.stopAgent(agent.name)
-        showToast(`Stopping ${agent.name}...`, "info")
+        showToast(t("dashboard.agentToggle.stopping", { name: agent.name }), "info")
         const stopWaits = [400, 800, 1500, 2500, 3000, 3000]
         for (const w of stopWaits) {
           await new Promise((r) => setTimeout(r, w))
           const status = await window.api.agentStatus()
           const a = status[agent.name]
           if (!a || a.state === "stopped") {
-            showToast(`${agent.name} stopped`, "success")
+            showToast(t("dashboard.agentToggle.stopped", { name: agent.name }), "success")
             break
           }
           refresh()
         }
       } else {
         await window.api.startAgent(agent.name)
-        showToast(`Starting ${agent.name}...`, "info")
+        showToast(t("dashboard.agentToggle.starting", { name: agent.name }), "info")
         const startWaits = [
           500, 1000, 1500, 2500, 3000, 3000, 3000, 3000, 3000, 3000,
         ]
@@ -229,14 +231,14 @@ export default function Dashboard({
           const status = await window.api.agentStatus()
           const a = status[agent.name]
           if (a && ["running", "online"].includes(a.state)) {
-            showToast(`${agent.name} is now running`, "success")
+            showToast(t("dashboard.agentToggle.running", { name: agent.name }), "success")
             break
           }
           refresh()
         }
       }
     } catch (err: unknown) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("dashboard.agentToggle.error", { message: (err as Error).message }), "error")
     } finally {
       removePendingAction(agent.name)
       refresh()
@@ -251,20 +253,20 @@ export default function Dashboard({
   const stopAllRunning = async (): Promise<void> => {
     try {
       await window.api.stopAll()
-      showToast("Stopping all agents…", "info")
+      showToast(t("dashboard.agentToggle.stoppingAll"), "info")
       refresh()
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("dashboard.agentToggle.error", { message: (err as Error).message }), "error")
     }
   }
 
   const startAllIdle = async (): Promise<void> => {
     try {
       await window.api.startAll()
-      showToast("Starting all agents…", "info")
+      showToast(t("dashboard.agentToggle.startingAll"), "info")
       refresh()
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`, "error")
+      showToast(t("dashboard.agentToggle.error", { message: (err as Error).message }), "error")
     }
   }
 
@@ -291,7 +293,7 @@ export default function Dashboard({
 
   return (
     <section className="flex flex-col h-full">
-      <TopBar title="Dashboard" showSearch />
+      <TopBar title={t("dashboard.title")} showSearch />
 
       <div className="flex-1 overflow-y-auto px-9 py-6">
       <StatsOverview
@@ -330,8 +332,8 @@ export default function Dashboard({
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-(--text-primary)">
               {pendingUpdates.length === 1
-                ? `Update available for ${pendingUpdates[0].name}`
-                : `${pendingUpdates.length} agent updates available`}
+                ? t("dashboard.updates.oneAvailable", { name: pendingUpdates[0].name })
+                : t("dashboard.updates.manyAvailable", { count: pendingUpdates.length })}
             </div>
             <div className="text-(--text-secondary) truncate">
               {pendingUpdates
@@ -350,7 +352,7 @@ export default function Dashboard({
                   if (u.latest) ignoreUpdate(u.name, u.latest)
                 }}
               >
-                Ignore
+                {t("dashboard.updates.ignore")}
               </Button>
               <Button
                 size="sm"
@@ -360,7 +362,7 @@ export default function Dashboard({
                   if (u.latest) snoozeUpdate(u.name, u.latest)
                 }}
               >
-                Later
+                {t("dashboard.updates.later")}
               </Button>
             </>
           )}
@@ -374,7 +376,9 @@ export default function Dashboard({
               setCurrentTab("install")
             }}
           >
-            {pendingUpdates.length === 1 ? "Update now" : "View"}
+            {pendingUpdates.length === 1
+              ? t("dashboard.updates.updateNow")
+              : t("dashboard.updates.view")}
           </Button>
         </div>
       )}
@@ -382,14 +386,14 @@ export default function Dashboard({
       {/* Active agents */}
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-[14px] font-semibold text-(--text-primary) m-0">
-          Active Agents
+          {t("dashboard.activeAgents.title")}
         </h2>
         <button
           type="button"
           onClick={() => setCurrentTab("agents")}
           className="text-[12px] text-(--accent) hover:underline bg-transparent border-0 cursor-pointer p-0 flex items-center gap-1"
         >
-          View all
+          {t("dashboard.activeAgents.viewAll")}
           <ArrowRight className="w-3 h-3" />
         </button>
       </div>
@@ -402,10 +406,10 @@ export default function Dashboard({
       ) : agents.length === 0 ? (
         <div className="bg-(--bg-card) border border-(--border) rounded-(--radius) p-8 text-center mb-6">
           <p className="text-[13px] text-(--text-secondary) mb-3 m-0">
-            No agents configured yet.
+            {t("dashboard.activeAgents.empty")}
           </p>
           <Button variant="primary" onClick={() => goToInstallList()}>
-            Install your first agent
+            {t("dashboard.activeAgents.installFirst")}
           </Button>
         </div>
       ) : (

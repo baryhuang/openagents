@@ -1,0 +1,21 @@
+{
+  "confirmDialog": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "working": "Working..."
+  },
+  "passwordInput": {
+    "hideValue": "Hide value",
+    "showValue": "Show value",
+    "hide": "Hide",
+    "show": "Show"
+  },
+  "topBar": {
+    "openCommandPalette": "Open command palette",
+    "searchPlaceholder": "Search agents, workspaces…"
+  },
+  "errorBoundary": {
+    "title": "The launcher hit a rendering error",
+    "tryAgain": "Try again"
+  }
+}

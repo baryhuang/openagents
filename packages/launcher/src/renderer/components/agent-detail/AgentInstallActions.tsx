@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
 import type { CatalogEntry, InstalledAgentRecord } from "../../types"
 import type { InstallJob } from "../../store/install"
@@ -48,6 +49,7 @@ export function AgentInstallActions({
   onRollback,
   onOpenWizard,
 }: AgentInstallActionsProps): React.JSX.Element {
+  const { t } = useTranslation()
   const isInstalled = entry.installed
   const isManaged = entry.managed !== false
   const isBusy =
@@ -66,51 +68,51 @@ export function AgentInstallActions({
   const canRollback = hasOtherHistory || hasOtherPrev
 
   const busyLabel =
-    job?.verb === "uninstall" ? "Uninstalling…"
-    : job?.verb === "rollback" ? "Rolling back…"
-    : job?.verb === "update" ? "Updating…"
-    : "Installing…"
+    job?.verb === "uninstall" ? t("agents.actions.uninstalling")
+    : job?.verb === "rollback" ? t("agents.actions.rollingBack")
+    : job?.verb === "update" ? t("agents.actions.updating")
+    : t("agents.actions.installing")
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
       {/* Not installed → single primary */}
       {!isInstalled && (
         <Button size="default" variant="primary" onClick={onInstall} disabled={isBusy}>
-          {isBusy ? busyLabel : "Install"}
+          {isBusy ? busyLabel : t("agents.actions.install")}
         </Button>
       )}
 
       {/* Managed install with an actual update available */}
       {isInstalled && isManaged && hasUpdate && (
         <Button size="default" variant="primary" onClick={onUpdate} disabled={isBusy}>
-          {isBusy ? busyLabel : `Update to v${latestVersion}`}
+          {isBusy ? busyLabel : t("agents.actions.updateToVersion", { version: latestVersion })}
         </Button>
       )}
 
       {/* Global / unmanaged install — surface a Reinstall instead of Update */}
       {isInstalled && !isManaged && (
         <Button size="default" variant="primary" onClick={onInstall} disabled={isBusy}>
-          {isBusy ? busyLabel : "Reinstall"}
+          {isBusy ? busyLabel : t("agents.actions.reinstall")}
         </Button>
       )}
 
       {/* Secondary utilities (visible when installed in any mode) */}
       {isInstalled && onOpenWizard && (
         <Button size="default" variant="default" onClick={onOpenWizard} disabled={isBusy}>
-          Setup wizard
+          {t("agents.actions.setupWizard")}
         </Button>
       )}
 
       {isInstalled && isManaged && canRollback && (
         <Button size="default" variant="default" onClick={onRollback} disabled={isBusy}>
-          Roll back
+          {t("agents.actions.rollBack")}
         </Button>
       )}
 
       {/* Destructive at the end, proper variant — no fake ghost-with-red-text */}
       {isInstalled && isManaged && (
         <Button size="default" variant="destructive" onClick={onUninstall} disabled={isBusy}>
-          Uninstall
+          {t("agents.actions.uninstall")}
         </Button>
       )}
     </div>

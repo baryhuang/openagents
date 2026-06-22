@@ -1,0 +1,75 @@
+{
+  "title": "GitHub",
+  "subtitle": "— 将智能体绑定到仓库，呈现最近的 issue / PR",
+  "refresh": "刷新",
+  "bindRepo": "绑定仓库",
+  "filterPlaceholder": "按智能体或仓库筛选…",
+  "empty": {
+    "title": "尚无 GitHub 绑定",
+    "description": "将智能体连接到 GitHub 仓库，以呈现最近的 issue / PR，并让智能体通过其绑定的令牌发布评论。",
+    "bindFirst": "绑定首个仓库"
+  },
+  "credentialLine": "凭据：{{label}} · 绑定于 {{time}}",
+  "missingCredential": "（凭据缺失）",
+  "refreshBinding": "刷新",
+  "editBinding": "编辑绑定",
+  "unbind": "解除绑定",
+  "tabs": {
+    "issues": "Issue（{{count}}）",
+    "pulls": "Pull request（{{count}}）"
+  },
+  "issues": {
+    "loading": "加载中…",
+    "empty": "没有开放的 issue。",
+    "by": "由 {{user}} 创建",
+    "updated": "更新于 {{time}}",
+    "replyPlaceholder": "以绑定的智能体身份回复…",
+    "posting": "发布中…",
+    "comment": "评论",
+    "openOnGitHub": "在 GitHub 上打开"
+  },
+  "pulls": {
+    "loading": "加载中…",
+    "empty": "没有开放的 pull request。",
+    "draft": "草稿",
+    "by": "由 {{user}} 创建",
+    "updated": "更新于 {{time}}",
+    "openOnGitHub": "在 GitHub 上打开"
+  },
+  "time": {
+    "secondsAgo": "{{count}} 秒前",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  },
+  "toast": {
+    "unbound": "已解除绑定 {{name}}",
+    "commentPosted": "已在 #{{number}} 发布评论",
+    "commentFailed": "发布评论失败",
+    "bound": "已绑定 {{owner}}/{{repo}} → {{name}}"
+  },
+  "unbindConfirm": {
+    "title": "解除绑定 {{name}}？",
+    "description": "这将移除与 {{owner}}/{{repo}} 的关联，但凭据本身会被保留。",
+    "confirm": "解除绑定"
+  },
+  "dialog": {
+    "titleEdit": "更新 GitHub 绑定",
+    "titleCreate": "将智能体绑定到 GitHub 仓库",
+    "agentLabel": "智能体",
+    "noAgents": "（无智能体）",
+    "repoLabel": "仓库",
+    "repoHint": "支持 owner/name、完整 URL 或 git@github.com:owner/name.git",
+    "repoPlaceholder": "anthropics/claude-code",
+    "credentialLabel": "凭据",
+    "credentialHint": "请先在“凭据”中添加 GitHub 凭据。",
+    "noCredentials": "（无 GitHub 凭据）",
+    "errorChooseAgent": "请选择要绑定的智能体",
+    "errorEnterRepo": "请输入仓库（owner/name 或 URL）",
+    "errorPickCredential": "请选择一个 GitHub 凭据",
+    "errorBindFailed": "绑定仓库失败",
+    "binding": "绑定中...",
+    "update": "更新",
+    "bind": "绑定"
+  }
+}

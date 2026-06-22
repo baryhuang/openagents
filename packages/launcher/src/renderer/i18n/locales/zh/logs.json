@@ -1,0 +1,51 @@
+{
+  "title": "日志",
+  "subtitle": "— 守护进程与代理输出，支持级别与时间线视图",
+  "view": {
+    "list": "列表",
+    "timeline": "时间线"
+  },
+  "allAgents": "全部代理",
+  "searchPlaceholder": "搜索…",
+  "toggleLevel": "切换 {{level}}",
+  "actions": {
+    "refresh": "刷新",
+    "copy": "复制",
+    "export": "导出",
+    "clear": "清除",
+    "auto": "自动"
+  },
+  "json": {
+    "show": "显示 JSON",
+    "hide": "隐藏 JSON",
+    "toggle": "切换"
+  },
+  "empty": {
+    "noLogs": "暂无日志。启动一个代理即可在此查看输出。",
+    "noMatch": "没有符合当前筛选条件的日志行。"
+  },
+  "timeline": {
+    "noTimestamp": "（无时间戳）"
+  },
+  "toast": {
+    "copied": "日志已复制到剪贴板",
+    "copyFailed": "复制日志失败",
+    "exported": "已导出日志",
+    "exportFailed": "导出失败：{{message}}",
+    "deleted": "已从所选范围删除 {{count}} 行日志"
+  },
+  "clearModal": {
+    "title": "清除日志",
+    "description": "删除 daemon.log 中时间戳落在所选时间范围内的日志条目。",
+    "startTime": "开始时间",
+    "endTime": "结束时间",
+    "cancel": "取消",
+    "delete": "删除",
+    "deleting": "正在删除...",
+    "errors": {
+      "invalidRange": "请选择有效的开始和结束时间。",
+      "startAfterEnd": "开始时间必须早于结束时间。",
+      "generic": "清除日志失败。"
+    }
+  }
+}

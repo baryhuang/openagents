@@ -7,6 +7,7 @@ import {
   Github,
   MessageSquare,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import type { NotifRecord } from "../../types"
 import { cn } from "../../lib/utils"
 
@@ -83,6 +84,7 @@ export function ActivityFeed({
   uiActivity,
   notifications,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const items: FeedItem[] = []
 
   for (const n of notifications.slice(0, 50)) {
@@ -117,15 +119,15 @@ export function ActivityFeed({
     <div className="flex flex-col h-full bg-(--bg-card) border border-(--border) rounded-(--radius) px-4 py-3.5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-[13px] font-semibold text-(--text-primary) m-0">
-          Activity
+          {t("dashboard.activity.title")}
         </h3>
         <span className="text-[10px] text-(--text-tertiary)">
-          {items.length} entries
+          {t("dashboard.activity.entryCount", { count: items.length })}
         </span>
       </div>
       {items.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-[11px] text-(--text-tertiary) text-center py-6">
-          No activity yet. Start an agent to see events.
+          {t("dashboard.activity.empty")}
         </div>
       ) : (
         <ul className="m-0 p-0 list-none flex-1 min-h-0 overflow-y-auto">

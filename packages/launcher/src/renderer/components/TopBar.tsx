@@ -1,5 +1,6 @@
 import React from "react"
 import { Search } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../lib/utils"
 
 interface Props {
@@ -19,6 +20,7 @@ export function TopBar({
   showSearch = false,
   className,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const triggerPalette = (): void => {
     const evt = new KeyboardEvent("keydown", {
       key: "k",
@@ -58,11 +60,11 @@ export function TopBar({
               "rounded-(--radius-sm) bg-(--bg-card) border border-(--border)",
               "hover:border-(--border-hover) transition-colors cursor-pointer text-left",
             )}
-            title="Open command palette"
+            title={t("ui.topBar.openCommandPalette")}
           >
             <Search className="w-3.5 h-3.5 text-(--text-tertiary)" />
             <span className="flex-1 text-[12px] text-(--text-tertiary)">
-              Search agents, workspaces…
+              {t("ui.topBar.searchPlaceholder")}
             </span>
             <kbd className="text-[10px] bg-(--bg-input) text-(--text-secondary) px-1.5 py-0.5 rounded-sm">
               ⌘K

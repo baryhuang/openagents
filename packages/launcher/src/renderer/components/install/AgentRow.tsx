@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import AgentIcon from "../AgentIcon"
 import { Badge } from "../ui/Badge"
 import { Button } from "../ui/Button"
@@ -25,15 +26,16 @@ export function AgentRow({
   onInstall,
   onUninstall,
 }: AgentRowProps): React.JSX.Element {
+  const { t } = useTranslation()
   const isComingSoon = !!entry.comingSoon
   const isInstalled = entry.installed
   const isManaged = entry.managed !== false
   const isBusy = !!job && job.phase !== "done" && job.phase !== "error"
   const verbLabel =
-    job?.verb === "uninstall" ? "Uninstalling…"
-    : job?.verb === "rollback" ? "Rolling back…"
-    : job?.verb === "update" ? "Updating…"
-    : "Installing…"
+    job?.verb === "uninstall" ? t("install.card.verb.uninstalling")
+    : job?.verb === "rollback" ? t("install.card.verb.rollingBack")
+    : job?.verb === "update" ? t("install.card.verb.updating")
+    : t("install.card.verb.installing")
   const stage = stageOf(job)
 
   return (
@@ -80,21 +82,21 @@ export function AgentRow({
       <div className="shrink-0 flex items-center gap-2">
         {isBusy && stage && (
           <span className="text-[10.5px] text-(--accent)" title={job?.detail}>
-            {stage.replace(/-/g, " ")}…
+            {t(`install.progress.stages.${stage}`)}…
           </span>
         )}
         {isComingSoon ? (
-          <Badge variant="default">Coming soon</Badge>
+          <Badge variant="default">{t("install.card.comingSoon")}</Badge>
         ) : isInstalled ? (
           isManaged
-            ? <Badge variant="success">Installed</Badge>
-            : <Badge variant="info" title="Installed outside OpenAgents (system/global)">Global</Badge>
+            ? <Badge variant="success">{t("install.card.installed")}</Badge>
+            : <Badge variant="info" title={t("install.card.globalTitle")}>{t("install.card.global")}</Badge>
         ) : (
-          <Badge variant="warning">Not installed</Badge>
+          <Badge variant="warning">{t("install.card.notInstalled")}</Badge>
         )}
         {hasUpdate && (
           <span className="text-[10px] px-[7px] py-0.5 rounded-[10px] bg-(--warning-bg) text-(--warning-text)">
-            Update
+            {t("install.card.updateBadge")}
           </span>
         )}
       </div>
@@ -104,25 +106,25 @@ export function AgentRow({
         onClick={(e) => e.stopPropagation()}
       >
         {isComingSoon ? (
-          <Button size="sm" disabled>Coming soon</Button>
+          <Button size="sm" disabled>{t("install.card.comingSoon")}</Button>
         ) : isBusy ? (
           <Button size="sm" disabled>{verbLabel}</Button>
         ) : !isInstalled ? (
           <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); onInstall() }}>
-            Install
+            {t("install.card.install")}
           </Button>
         ) : isManaged ? (
           <>
             <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); onInstall() }}>
-              Update
+              {t("install.card.update")}
             </Button>
             <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); onUninstall() }}>
-              Uninstall
+              {t("install.card.uninstall")}
             </Button>
           </>
         ) : (
           <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); onInstall() }}>
-            Reinstall
+            {t("install.card.reinstall")}
           </Button>
         )}
       </div>

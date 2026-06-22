@@ -1,5 +1,6 @@
 import React from "react"
 import { Cpu, MessageSquare, Layers, Download, TrendingUp, TrendingDown } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 import type { Agent, ConnectionRecord, AgentUpdateInfo } from "../../types"
 
@@ -40,6 +41,7 @@ export function StatsOverview({
   className,
   onClickUpdates,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   void connections // reserved for future card
   const running = agents.filter((a) =>
     ["online", "running", "idle"].includes(a.state),
@@ -61,41 +63,44 @@ export function StatsOverview({
     const up = pct > 0
     return {
       direction: up ? ("up" as const) : ("down" as const),
-      text: `${up ? "▲" : "▼"} ${Math.abs(pct)}% vs avg`,
+      text: t("dashboard.stats.trendVsAvg", {
+        symbol: up ? "▲" : "▼",
+        pct: Math.abs(pct),
+      }),
       color: up ? "var(--success-text)" : "var(--danger-text)",
     }
   })()
 
   const cards: CardSpec[] = [
     {
-      label: "Running Agents",
+      label: t("dashboard.stats.runningAgents"),
       value: running,
       icon: <Cpu className="w-3.5 h-3.5" />,
       iconColor: "var(--success-text)",
       trend: undefined,
     },
     {
-      label: "Messages Today",
+      label: t("dashboard.stats.messagesToday"),
       value: todayMessageCount,
       icon: <MessageSquare className="w-3.5 h-3.5" />,
       iconColor: "var(--accent)",
       trend: messagesTrend,
     },
     {
-      label: "Active Workspaces",
+      label: t("dashboard.stats.activeWorkspaces"),
       value: workspaceCount,
       icon: <Layers className="w-3.5 h-3.5" />,
       iconColor: "var(--accent)",
     },
     {
-      label: "Installed Agents",
+      label: t("dashboard.stats.installedAgents"),
       value: installedCount ?? agents.length,
       icon: <Download className="w-3.5 h-3.5" />,
       iconColor: "var(--accent)",
       link:
         pendingUpdateCount && pendingUpdateCount > 0
           ? {
-              text: `${pendingUpdateCount} update${pendingUpdateCount === 1 ? "" : "s"} available`,
+              text: t("dashboard.stats.updatesAvailable", { count: pendingUpdateCount }),
               onClick: onClickUpdates || ((): void => {}),
             }
           : undefined,

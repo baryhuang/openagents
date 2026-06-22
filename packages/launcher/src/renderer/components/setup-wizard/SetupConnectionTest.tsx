@@ -1,4 +1,5 @@
 import React from "react"
+import { useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
 import { WizardStepShell } from "./WizardStepShell"
 
@@ -18,6 +19,7 @@ export function SetupConnectionTest({
   onBack,
   section = "all",
 }: SetupConnectionTestProps): React.JSX.Element {
+  const { t } = useTranslation()
   const body = (
     <>
       <p className={`text-[13px] m-0 ${ok ? "test-success" : "test-error"}`}>
@@ -25,17 +27,19 @@ export function SetupConnectionTest({
       </p>
       <p className="hint m-0">
         {ok
-          ? "Connection looks good. Pick a name for your first agent instance."
-          : "You can go back and adjust the configuration, or skip the test."}
+          ? t("onboarding.wizard.connectionTest.okHint")
+          : t("onboarding.wizard.connectionTest.failHint")}
       </p>
     </>
   )
   const footer = (
     <div className="form-actions mt-0">
       <Button variant="primary" onClick={onNext}>
-        Next: Create agent
+        {t("onboarding.wizard.connectionTest.nextCreateAgent")}
       </Button>
-      <Button onClick={onBack}>Back</Button>
+      <Button onClick={onBack}>
+        {t("onboarding.wizard.connectionTest.back")}
+      </Button>
     </div>
   )
 

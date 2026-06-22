@@ -1,4 +1,5 @@
 import React from "react"
+import { Trans, useTranslation } from "react-i18next"
 import { Modal, ModalTitle } from "../ui/Modal"
 import { Button } from "../ui/Button"
 import AgentIcon from "../AgentIcon"
@@ -37,11 +38,14 @@ export function InstallConfirmModal({
   onConfirm,
   onCancel,
 }: InstallConfirmModalProps): React.JSX.Element | null {
+  const { t } = useTranslation()
   if (!entry) return null
 
   const platformKey = detectPlatform()
   const installCmd = entry.install?.[platformKey]
-  const verbLabel = verb === "update" ? "Update" : "Install"
+  const verbLabel = verb === "update"
+    ? t("agents.installConfirm.update")
+    : t("agents.installConfirm.install")
   const label = entry.label || entry.name
 
   return (
@@ -49,15 +53,17 @@ export function InstallConfirmModal({
       <div className="flex flex-col items-center py-2">
         <AgentIcon type={entry.name} size={40} />
         <ModalTitle className="mt-3 text-center">
-          {verbLabel} {label}?
+          {t("agents.installConfirm.confirmTitle", { verb: verbLabel, name: label })}
         </ModalTitle>
         <p className="hint mt-3 mb-2 text-center max-w-90">
           {installCmd ? (
-            <>
-              This will run the following command on your system:
-            </>
+            <>{t("agents.installConfirm.willRunCommand")}</>
           ) : (
-            <>This will {verb} <strong>{label}</strong> on your system.</>
+            <Trans
+              i18nKey="agents.installConfirm.willInstall"
+              values={{ verb: verbLabel.toLowerCase(), name: label }}
+              components={{ 1: <strong /> }}
+            />
           )}
         </p>
         {installCmd && (
@@ -69,7 +75,7 @@ export function InstallConfirmModal({
           <Button variant="primary" onClick={onConfirm}>
             {verbLabel}
           </Button>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{t("agents.installConfirm.cancel")}</Button>
         </div>
       </div>
     </Modal>

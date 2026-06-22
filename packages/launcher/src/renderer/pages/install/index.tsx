@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
+import { Trans, useTranslation } from "react-i18next"
 import AgentDetail from "../../components/agent-detail/AgentDetail"
 import SetupWizard from "../../components/setup-wizard/SetupWizard"
 import {
@@ -32,6 +33,7 @@ interface InstallProps {
 }
 
 function SkeletonCard(): React.JSX.Element {
+  // Purely decorative shimmer placeholders — no user-facing text.
   return (
     <div className="flex flex-col gap-2 px-4.5 py-4 min-h-[170px] bg-(--bg-card) border border-(--border) rounded-(--radius) shadow-sm">
       <div className="skeleton-shimmer rounded-full h-3 w-[60%] mb-2" />
@@ -52,6 +54,7 @@ function SkeletonCard(): React.JSX.Element {
 export default function Install({
   showToast,
 }: InstallProps): React.JSX.Element {
+  const { t } = useTranslation()
   const { prefs, setView, setSort, setCategory } = useMarketplacePrefs()
   const [catalog, setCatalog] = useState<CatalogEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -178,12 +181,19 @@ export default function Install({
         throwIfInstallFailed(result)
         capture("agent_installed", { agent_type: entry.name, verb })
         showToast(
-          `${entry.label || entry.name} ${verb === "update" ? "updated" : "installed"}`,
+          verb === "update"
+            ? t("install.toast.updated", { name: entry.label || entry.name })
+            : t("install.toast.installed", { name: entry.label || entry.name }),
           "success",
         )
         if (!wasInstalled && verb === "install") maybeOpenWizard(entry)
       } catch (e: unknown) {
-        showToast(`${verb} failed: ${installErrorMessage(e)}`, "error")
+        showToast(
+          verb === "update"
+            ? t("install.toast.updateFailed", { error: installErrorMessage(e) })
+            : t("install.toast.installFailed", { error: installErrorMessage(e) }),
+          "error",
+        )
       }
     },
     [showToast, installedList, maybeOpenWizard],
@@ -220,9 +230,15 @@ export default function Install({
             /* non-fatal — uninstall already succeeded */
           }
         }
-        showToast(`${entry.label || entry.name} uninstalled`, "success")
+        showToast(
+          t("install.toast.uninstalled", { name: entry.label || entry.name }),
+          "success",
+        )
       } catch (e: unknown) {
-        showToast(`Uninstall failed: ${(e as Error).message}`, "error")
+        showToast(
+          t("install.toast.uninstallFailed", { error: (e as Error).message }),
+          "error",
+        )
       } finally {
         await loadAll()
       }
@@ -338,8 +354,8 @@ export default function Install({
   return (
     <section className="flex flex-col h-full">
       <TopBar
-        title="Marketplace"
-        subtitle="— Discover and install AI agents"
+        title={t("install.topbar.title")}
+        subtitle={t("install.topbar.subtitle")}
         showSearch
       />
       <div className="flex-1 overflow-y-auto px-9 py-6 flex flex-col gap-3.5">
@@ -347,13 +363,16 @@ export default function Install({
 
         <div className="flex items-baseline justify-between">
           <h2 className="text-[14px] font-semibold text-(--text-primary) m-0">
-            All agents
+            {t("install.allAgents")}
           </h2>
           {loading ? (
             <span className="skeleton-shimmer rounded-full h-3 w-30" />
           ) : (
             <span className="hint m-0">
-              {catalog.length} agents · {installedList.length} installed
+              {t("install.stats", {
+                total: catalog.length,
+                installed: installedList.length,
+              })}
             </span>
           )}
         </div>
@@ -381,7 +400,7 @@ export default function Install({
           </div>
         ) : filteredSorted.length === 0 ? (
           <div className="py-10 text-center">
-            <p className="hint m-0">No agents match the current filters.</p>
+            <p className="hint m-0">{t("install.empty.noMatch")}</p>
             {(search || prefs.category !== "all") && (
               <Button
                 size="sm"
@@ -392,7 +411,7 @@ export default function Install({
                 }}
                 className="mt-2"
               >
-                Reset filters
+                {t("install.empty.resetFilters")}
               </Button>
             )}
           </div>
@@ -476,17 +495,22 @@ function UninstallConfirmModal({
   onConfirm: (wipeEnv: boolean) => void
   onCancel: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [wipeEnv, setWipeEnv] = useState(false)
+  const name = entry.label || entry.name
   return (
     <Modal open onClose={onCancel}>
       <div className="flex flex-col items-center py-2">
         <AgentIcon type={entry.name} size={40} />
         <ModalTitle className="mt-3 text-center">
-          Uninstall {entry.label || entry.name}?
+          {t("install.uninstallModal.title", { name })}
         </ModalTitle>
         <p className="hint mt-3 mb-4 text-center">
-          This will remove <strong>{entry.label || entry.name}</strong> from
-          your system. Configured agents of this type may stop working.
+          <Trans
+            i18nKey="install.uninstallModal.description"
+            values={{ name }}
+            components={{ 1: <strong /> }}
+          />
         </p>
         <button
           type="button"
@@ -499,18 +523,17 @@ function UninstallConfirmModal({
             className="mt-0.5"
           />
           <span className="text-[12px] leading-snug text-(--text-secondary)">
-            Also remove saved environment variables{" "}
+            {t("install.uninstallModal.wipeEnv")}{" "}
             <span className="text-(--text-tertiary)">
-              (API keys, model selection — kept by default and reappear in the
-              setup wizard on reinstall)
+              {t("install.uninstallModal.wipeEnvHint")}
             </span>
           </span>
         </button>
         <div className="form-actions justify-center mt-0">
           <Button variant="destructive" onClick={() => onConfirm(wipeEnv)}>
-            Uninstall
+            {t("install.uninstallModal.confirm")}
           </Button>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{t("install.uninstallModal.cancel")}</Button>
         </div>
       </div>
     </Modal>
