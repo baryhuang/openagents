@@ -306,6 +306,14 @@ const HOSTED_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
 }
 
 /**
+ * Amp's "signed out" marker. Amp has no dedicated status/whoami command, so the
+ * sign-in probe and the API-key test both run `amp usage` (credit balance) and
+ * look for this error, which Amp prints verbatim when unauthenticated:
+ *   "Error: Invalid or missing API key. Run 'amp login' to authenticate."
+ */
+const AMP_LOGGED_OUT = /invalid or missing api key|run ['"]?amp login/i
+
+/**
  * Agents that support BOTH paths: an API key the launcher collects (see
  * LAUNCHER_AUTH_OVERRIDES) AND their CLI's own browser sign-in. Claude Code is
  * the canonical example — `claude auth login` signs in via claude.ai (a Pro/Max
@@ -346,6 +354,21 @@ const DUAL_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
     statusArgs: ["login", "status"],
     loggedInPattern: /logged in using/i,
   },
+  amp: {
+    // Amp (Sourcegraph) authenticates against Sourcegraph's own service, two
+    // ways: `amp login` opens the browser sign-in (token stored in
+    // ~/.config/amp/settings.json), or the user sets AMP_API_KEY directly (an
+    // access token from ampcode.com/settings — see the registry env_config).
+    // Amp ships no status/whoami command, so the sign-in probe runs `amp usage`
+    // (it prints the credit balance when authenticated and AMP_LOGGED_OUT's
+    // error otherwise); a negative match on that error means signed in. A saved
+    // AMP_API_KEY is honored separately by _reconcileAgentHealth (it counts as
+    // configured credentials), so readiness is "installed AND (signed in OR has
+    // a key)" just like the other dual-login agents.
+    loginCommand: "amp login",
+    statusArgs: ["usage"],
+    loggedOutPattern: AMP_LOGGED_OUT,
+  },
 }
 
 /**
@@ -355,7 +378,7 @@ const DUAL_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
  * an API key, so they're a rougher first-run experience than the key-only
  * agents; keep onboarding to the smoother options.
  */
-const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes", "goose", "copilot", "cline"])
+const ONBOARDING_HIDDEN = new Set<string>(["cursor", "hermes", "amp"])
 
 /**
  * The agents the launcher/workspace core officially supports today, in the
@@ -376,15 +399,11 @@ const CORE_AGENTS: readonly string[] = [
   "hermes",
   "kimi",
   "gemini",
-  "aider",
-  // Goose is supported as a creatable Workspace agent but is BETA: the Headless
-  // stream-json integration is complete and unit-tested, real end-to-end runs
-  // are still pending. It's kept out of the first-run onboarding wizard via
-  // ONBOARDING_HIDDEN (like cursor/hermes) but is installable/creatable from the
-  // Install tab so it can be exercised. Marked Beta in its registry description.
-  "goose",
-  "copilot",
-  "cline",
+  // Amp (Sourcegraph): external curl install + `amp login`/AMP_API_KEY auth.
+  // Installable from the Install tab but kept out of first-run onboarding via
+  // ONBOARDING_HIDDEN (like cursor/hermes). aider/goose/copilot/cline are
+  // intentionally NOT in this set — they stay "coming soon" (visible but not
+  // installable) so the supported download list is the 8 core agents + amp.
   "amp",
 ]
 const CORE_AGENT_ORDER = new Map<string, number>(
@@ -638,15 +657,10 @@ async function testLLMConnection(
       }
     }
 
-    // ── Amp: authenticates against Sourcegraph's own service (AMP_API_KEY or
-    // `amp login`); there is no OpenAI-style endpoint to probe here. ──
-    if (pick("AMP_API_KEY") && !anthropicKey && !openaiKey) {
-      return {
-        success: false,
-        error:
-          "Amp signs in through Sourcegraph's own service — there's no key endpoint to test here. Save the key (or run `amp login`) and launch the agent to verify.",
-      }
-    }
+    // Amp authenticates against Sourcegraph's own service (AMP_API_KEY or `amp
+    // login`) and has no OpenAI-style endpoint to probe, so its key is verified
+    // by running the CLI itself — see AgentManager.testLLM / _testAmpConnection,
+    // which intercepts AMP_API_KEY before this generic HTTP path is reached.
 
     // ── Anthropic (Claude) ──
     if (anthropicKey && !openaiKey) {
@@ -1724,6 +1738,7 @@ export class AgentManager extends EventEmitter {
       agent: "cursor",
       hermes: "hermes",
       claude: "claude",
+      amp: "amp",
     }
     const type = base ? BINARY_TO_TYPE[base] : undefined
     if (!type) return cmd
@@ -2242,12 +2257,98 @@ export class AgentManager extends EventEmitter {
   }
 
   async testLLM(env: Record<string, string>): Promise<LLMTestResult> {
+    // Amp signs in against Sourcegraph's own service — there's no OpenAI-style
+    // endpoint to probe — so when the user supplies an AMP_API_KEY we verify it
+    // the way Amp itself does: run the installed CLI's `amp usage`. (Browser
+    // sign-in via `amp login` is detected separately by the dual-login probe.)
+    if ((env.AMP_API_KEY || "").trim()) {
+      return this._testAmpConnection(env)
+    }
     // Run the test in-launcher rather than delegating to the installed core's
     // testLLM: the core that ships on a user's machine is often older and only
     // probes the OpenAI-compatible path, so Claude/Gemini keys come back as
     // "No API key provided". testLLMConnection covers every provider and works
     // even before the core is installed.
     return testLLMConnection(env)
+  }
+
+  /**
+   * Verify an Amp API key the way Amp itself does. Amp authenticates against
+   * Sourcegraph's own service (no OpenAI-style endpoint to probe), so we run the
+   * installed CLI's `amp usage` with the key injected: it prints the account's
+   * credit balance for a valid token and AMP_LOGGED_OUT's error otherwise. Falls
+   * back to an honest message when the CLI isn't installed yet — install Amp
+   * first, then test (or run `amp login`).
+   */
+  private _testAmpConnection(
+    env: Record<string, string>,
+  ): Promise<LLMTestResult> {
+    return new Promise((resolve) => {
+      const bin = this.resolveBinary("amp")
+      if (!bin) {
+        resolve({
+          success: false,
+          error:
+            "Amp CLI not found — install Amp first, then test (or run `amp login`).",
+        })
+        return
+      }
+      const childEnv: NodeJS.ProcessEnv = { ...process.env }
+      const key = (env.AMP_API_KEY || "").trim()
+      if (key) childEnv.AMP_API_KEY = key
+      const url = (env.AMP_URL || "").trim()
+      if (url) childEnv.AMP_URL = url
+
+      let out = ""
+      let settled = false
+      const done = (r: LLMTestResult): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(r)
+      }
+      let child: ReturnType<typeof spawn>
+      try {
+        child = spawn(bin, ["usage"], {
+          stdio: ["ignore", "pipe", "pipe"],
+          env: childEnv,
+        })
+      } catch (e) {
+        done({
+          success: false,
+          error: (e as Error)?.message || "Failed to run amp",
+        })
+        return
+      }
+      const timer = setTimeout(() => {
+        try {
+          child.kill()
+        } catch {}
+        done({ success: false, error: "Request timed out" })
+      }, 15000)
+      child.stdout?.on("data", (c: Buffer) => (out += c.toString("utf-8")))
+      child.stderr?.on("data", (c: Buffer) => (out += c.toString("utf-8")))
+      child.on("error", (e) =>
+        done({ success: false, error: e?.message || "Failed to run amp" }),
+      )
+      child.on("close", () => {
+        if (AMP_LOGGED_OUT.test(out)) {
+          done({
+            success: false,
+            error:
+              "Invalid or missing Amp API key — check the key or run `amp login`.",
+          })
+          return
+        }
+        // Strip terminal control sequences amp emits, then surface a short
+        // snippet of the usage/balance line as confirmation.
+        const clean = out
+          .replace(/\x1b\[[0-9;=?]*[a-zA-Z]/g, "")
+          .replace(/\s+/g, " ")
+          .trim()
+        done({ success: true, model: "amp", response: clean.slice(0, 80) })
+      })
+    })
   }
 
   signalReload(): void {
