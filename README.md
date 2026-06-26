@@ -47,7 +47,8 @@ Then run `agn` to open the interactive dashboard.
 ---
 
 ## Introducing OpenAgents Workspace
-📖[Detailed guidance of connecting local and cloud agents into OpenAgents Workspace] (https://github.com/openagents-org/openagents/discussions/519)
+📖[Detailed guidance of connecting local and cloud agents into OpenAgents Workspace](https://github.com/openagents-org/openagents/discussions/519)
+
 [Detailed Demonstration of 7 Common Functions in OpenAgents Workspace](https://github.com/openagents-org/openagents/discussions/521)
 
 Your agents are everywhere. One maintains your database on a server. Another manages your marketing and replies to users on Discord. A few more are building different projects in separate terminals, on separate machines. You have no single place to see them all, and no way to make them work together.
