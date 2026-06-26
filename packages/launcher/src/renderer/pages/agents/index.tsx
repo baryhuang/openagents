@@ -224,6 +224,20 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
     }
   }
 
+  // Open a terminal in the agent's working folder, launching its CLI so the
+  // user can interact with the agent directly on the command line.
+  const openAgentChat = async (agent: Agent): Promise<void> => {
+    try {
+      capture("agent_chat_opened", { type: agent.type })
+      await window.api.openAgentTerminal(agent.name)
+    } catch (err: unknown) {
+      showToast(
+        t("agents.list.toast.error", { message: (err as Error).message }),
+        "error",
+      )
+    }
+  }
+
   return (
     <section className="flex flex-col h-full">
       <TopBar
@@ -333,6 +347,15 @@ export default function Agents({ showToast }: AgentsProps): React.JSX.Element {
                           ? t("agents.list.stop")
                           : t("agents.list.start")}
                     </Button>
+                    {agent.hasCli && (
+                      <Button
+                        size="sm"
+                        onClick={() => void openAgentChat(agent)}
+                      >
+                        <Terminal className="w-3.5 h-3.5" />{" "}
+                        {t("agents.list.chat")}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       onClick={() => {
@@ -468,12 +491,23 @@ function NewAgentDialog({
   const [selectedType, setSelectedType] = useState("")
   const [agentName, setAgentName] = useState("")
   const [agentPath, setAgentPath] = useState("")
+  // Once the user browses/edits the folder, stop auto-syncing it to the name.
+  const [folderTouched, setFolderTouched] = useState(false)
+  const [homeDir, setHomeDir] = useState("")
   const [loading, setLoading] = useState(false)
   const setCurrentTab = useUiStore.getState().setCurrentTab
+
+  // Default the working folder to the user's home directory — a sensible,
+  // easy-to-find root the user can then narrow to a specific project.
+  const defaultFolderFor = useCallback((): string => homeDir, [homeDir])
 
   useEffect(() => {
     if (!open) return
     setLoading(true)
+    window.api
+      .listPaths()
+      .then((p) => setHomeDir(p?.home || ""))
+      .catch(() => {})
     Promise.all([window.api.getCatalog(), window.api.getSupportedAgentTypes()])
       .then(([cat, types]) => {
         setCatalog(cat)
@@ -495,6 +529,27 @@ function NewAgentDialog({
     }
   }, [selectedType])
 
+  // Prefill the folder with the default until the user picks/edits their own.
+  useEffect(() => {
+    if (folderTouched) return
+    const def = defaultFolderFor()
+    if (def && def !== agentPath) setAgentPath(def)
+  }, [folderTouched, defaultFolderFor, agentPath])
+
+  const browseFolder = async (): Promise<void> => {
+    try {
+      const picked = await window.api.selectDirectory(
+        agentPath || homeDir || undefined,
+      )
+      if (picked) {
+        setFolderTouched(true)
+        setAgentPath(picked)
+      }
+    } catch (err: unknown) {
+      showToast((err as Error).message, "error")
+    }
+  }
+
   const supportedSet = new Set(supportedTypes)
   const supportedInstalled = catalog.filter(
     (c) => c.installed && supportedSet.has(c.name),
@@ -511,11 +566,15 @@ function NewAgentDialog({
       )
       return
     }
+    if (!agentPath.trim()) {
+      showToast(t("agents.newDialog.toast.selectFolder"), "warning")
+      return
+    }
     try {
       await window.api.addAgent({
         name,
         type: selectedType,
-        path: agentPath.trim() || undefined,
+        path: agentPath.trim(),
       })
       showToast(t("agents.newDialog.toast.created", { name }), "success")
       onCreated(name, selectedType)
@@ -575,13 +634,22 @@ function NewAgentDialog({
             </div>
             <div className="form-group">
               <label htmlFor="agent-working-directory">{t("agents.newDialog.workingDirectory")}</label>
-              <input
-                id="agent-working-directory"
-                type="text"
-                value={agentPath}
-                onChange={(e) => setAgentPath(e.target.value)}
-                placeholder={t("agents.newDialog.workingDirectoryPlaceholder")}
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  id="agent-working-directory"
+                  type="text"
+                  className="flex-1"
+                  value={agentPath}
+                  onChange={(e) => {
+                    setFolderTouched(true)
+                    setAgentPath(e.target.value)
+                  }}
+                  placeholder={t("agents.newDialog.workingDirectoryPlaceholder")}
+                />
+                <Button onClick={() => void browseFolder()}>
+                  {t("agents.newDialog.browse")}
+                </Button>
+              </div>
             </div>
             <div className="form-actions">
               <Button variant="primary" onClick={doCreate}>

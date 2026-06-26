@@ -1529,6 +1529,25 @@ function setupIPC(): void {
     requireManager().createWorkspace(name),
   )
 
+  // Native folder picker for onboarding's "Create your first agent" step. The
+  // chosen directory becomes the agent's working directory. Returns null when
+  // the user cancels.
+  ipcMain.handle("dialog:select-directory", async (_e, defaultPath?: string) => {
+    const { dialog } = require("electron")
+    const win = BrowserWindow.getFocusedWindow() || mainWindow
+    const opts = {
+      properties: ["openDirectory", "createDirectory"] as Array<
+        "openDirectory" | "createDirectory"
+      >,
+      ...(defaultPath ? { defaultPath } : {}),
+    }
+    const result = win
+      ? await dialog.showOpenDialog(win, opts)
+      : await dialog.showOpenDialog(opts)
+    if (result.canceled || !result.filePaths?.length) return null
+    return result.filePaths[0]
+  })
+
   // ── Onboarding ──
   // Runnable-only picker + atomic, verified provisioning. See agent-manager.ts.
   ipcMain.handle("onboarding:agents", async () => {
@@ -1948,7 +1967,10 @@ function setupIPC(): void {
   })
 
   ipcMain.handle("shell:open-external", (_e, url) => shell.openExternal(url))
-  ipcMain.handle("shell:open-terminal", (_e, cmd) => {
+  // Open a terminal running `cmd`, optionally cd'd into `cwd` first. Shared by
+  // the CLI-login flow (no cwd) and the per-agent "Chat" button, which opens an
+  // interactive CLI session inside the agent's working folder.
+  const runTerminal = (cmd: string, cwd?: string): void => {
     const { spawn } = require("child_process")
     // Resolve hosted-login CLIs (Cursor/Hermes) to an ABSOLUTE binary path so
     // the login terminal never depends on PATH. The Windows native installer
@@ -2016,6 +2038,7 @@ function setupIPC(): void {
           "@echo off",
           "chcp 65001 >nul",
           `set "PATH=${allBins};%PATH%"`,
+          ...(cwd ? [`cd /d "${cwd}"`] : []),
           resolvedCmd,
         ]
         const tmpCmd = path.join(
@@ -2048,7 +2071,11 @@ function setupIPC(): void {
         "/usr/local/bin",
       ].join(":")
       const setPath = `export PATH=${allBins}:$PATH`
-      const fullCmd = `${setPath} && ${resolvedCmd}`.replace(/"/g, '\\"')
+      const cdPart = cwd ? `cd "${cwd}" && ` : ""
+      const fullCmd = `${setPath} && ${cdPart}${resolvedCmd}`.replace(
+        /"/g,
+        '\\"',
+      )
       spawn(
         "osascript",
         ["-e", `tell app "Terminal" to do script "${fullCmd}"`],
@@ -2058,12 +2085,48 @@ function setupIPC(): void {
       const terminals = ["x-terminal-emulator", "gnome-terminal", "xterm"]
       for (const term of terminals) {
         try {
-          spawn(term, ["-e", resolvedCmd], { detached: true, stdio: "ignore" })
+          spawn(term, ["-e", resolvedCmd], {
+            detached: true,
+            stdio: "ignore",
+            ...(cwd ? { cwd } : {}),
+          })
           return
         } catch {}
       }
     }
+  }
+
+  ipcMain.handle("shell:open-terminal", (_e, cmd) => runTerminal(cmd))
+
+  // Per-agent "Chat" entry: open a terminal in the agent's working folder and
+  // launch its CLI interactively. The agent's binary is resolved to an absolute
+  // path via the core's installer (PATH is also injected as a fallback), and
+  // the cwd is the agent's configured path or its default workspace dir.
+  ipcMain.handle("shell:open-agent-terminal", (_e, agentName: string) => {
+    if (!agentManager) throw new Error("Agent manager not ready")
+    const agents = agentManager.getAgents() as Array<{
+      name: string
+      type?: string
+      path?: string
+    }>
+    const agent = agents.find((a) => a.name === agentName)
+    if (!agent) throw new Error(`Agent '${agentName}' not found`)
+    const type = agent.type || ""
+    // Require a real CLI binary — API-only agents (e.g. kimi) have none and
+    // can't be driven interactively from a terminal.
+    const binary = agentManager.resolveBinary(type)
+    if (!binary)
+      throw new Error(
+        `Agent type '${type}' has no interactive CLI to open.`,
+      )
+    const cwd = agent.path || os.homedir()
+    try {
+      fs.mkdirSync(cwd, { recursive: true })
+    } catch {}
+    // Quote the binary so a space in its path survives the shell.
+    runTerminal(/\s/.test(binary) ? `"${binary}"` : binary, cwd)
   })
+
   ipcMain.handle("shell:exec", (_e, cmd) => {
     const { execSync: exec } = require("child_process")
     const sh =

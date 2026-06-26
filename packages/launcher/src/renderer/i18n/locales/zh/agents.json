@@ -12,6 +12,7 @@
     "starting": "正在启动…",
     "stop": "停止",
     "start": "启动",
+    "chat": "对话",
     "configure": "配置",
     "disconnect": "断开连接",
     "openWorkspace": "打开工作区",
@@ -47,11 +48,13 @@
     "cancel": "取消",
     "agentType": "智能体类型",
     "agentName": "智能体名称",
-    "workingDirectory": "工作目录（可选）",
+    "workingDirectory": "工作目录",
     "workingDirectoryPlaceholder": "/path/to/project",
+    "browse": "浏览…",
     "create": "创建",
     "toast": {
       "invalidName": "智能体名称只能包含字母、数字、连字符和下划线",
+      "selectFolder": "请为该智能体选择一个工作文件夹",
       "created": "智能体 '{{name}}' 已创建",
       "error": "错误：{{message}}"
     }

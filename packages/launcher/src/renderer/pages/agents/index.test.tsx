@@ -41,6 +41,11 @@ function installApi(overrides: Partial<Api> = {}): Api {
       .mockResolvedValue({ slug: "joined-ws", id: "id-1" }),
     signalReload: vi.fn().mockResolvedValue(undefined),
     openExternal: vi.fn(),
+    // NewAgentDialog prefills the working folder from the OS home dir and lets
+    // the user browse for one; agent rows with a CLI can open a terminal.
+    listPaths: vi.fn().mockResolvedValue({ home: "/home/test" }),
+    selectDirectory: vi.fn().mockResolvedValue(null),
+    openAgentTerminal: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
   ;(window as unknown as { api: Api }).api = api

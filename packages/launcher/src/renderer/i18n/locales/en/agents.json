@@ -12,6 +12,7 @@
     "starting": "Starting...",
     "stop": "Stop",
     "start": "Start",
+    "chat": "Chat",
     "configure": "Configure",
     "disconnect": "Disconnect",
     "openWorkspace": "Open Workspace",
@@ -47,11 +48,13 @@
     "cancel": "Cancel",
     "agentType": "Agent type",
     "agentName": "Agent name",
-    "workingDirectory": "Working directory (optional)",
+    "workingDirectory": "Working directory",
     "workingDirectoryPlaceholder": "/path/to/project",
+    "browse": "Browse…",
     "create": "Create",
     "toast": {
       "invalidName": "Agent name can only contain letters, numbers, hyphens, and underscores",
+      "selectFolder": "Choose a working folder for the agent",
       "created": "Agent '{{name}}' created",
       "error": "Error: {{message}}"
     }

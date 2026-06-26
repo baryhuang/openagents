@@ -166,9 +166,11 @@ export function AgentCard({
             {isPending ? t("dashboard.agentCard.starting") : t("dashboard.agentCard.start")}
           </Button>
         )}
-        <Button size="sm" variant="primary" onClick={onOpenChat}>
-          {t("dashboard.agentCard.openChat")}
-        </Button>
+        {agent.hasCli && (
+          <Button size="sm" variant="primary" onClick={onOpenChat}>
+            {t("dashboard.agentCard.openChat")}
+          </Button>
+        )}
       </div>
     </div>
   )

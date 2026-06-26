@@ -12,6 +12,9 @@ import {
   Cpu,
   Search,
   AlertTriangle,
+  FolderOpen,
+  Link2,
+  Plus,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
@@ -91,23 +94,34 @@ export function OnboardingFlow({
   >(null)
   const [saving, setSaving] = useState(false)
 
-  // Step 3 (workspace) + provisioning.
+  // Step 3 (create your first agent): an explicit name + working folder. The
+  // name is no longer auto-derived as "<type>-1" — the user names the agent and
+  // chooses where it runs.
+  const [agentName, setAgentName] = useState("")
+  const [agentFolder, setAgentFolder] = useState("")
+  // Once the user edits/browses the folder, stop auto-syncing it to the name so
+  // we never clobber a deliberate choice.
+  const [folderTouched, setFolderTouched] = useState(false)
+  const [homeDir, setHomeDir] = useState("")
+  const [creatingAgent, setCreatingAgent] = useState(false)
+
+  // Step 4 (connect workspace): create a new one or paste an invite to an
+  // existing one. Both are optional.
+  const [wsMode, setWsMode] = useState<"create" | "existing">("create")
   const [workspaceName, setWorkspaceName] = useState(() =>
     t("onboarding.flow.workspace.defaultName"),
   )
+  const [wsInvite, setWsInvite] = useState("")
   const [provisioning, setProvisioning] = useState(false)
-
-  // Step 4 (launch).
-  const [launching, setLaunching] = useState(false)
-  const [launchResult, setLaunchResult] = useState<
-    null | { ok: boolean; detail?: string }
-  >(null)
 
   const selectedEntry = useMemo(
     () => agents.find((a) => a.name === selectedAgent) || null,
     [agents, selectedAgent],
   )
-  const finishedAgentName = useMemo(() => `${selectedAgent}-1`, [selectedAgent])
+
+  // Default the working folder to the user's home directory — a sensible,
+  // easy-to-find root the user can then narrow to a specific project.
+  const defaultFolderFor = useCallback((): string => homeDir, [homeDir])
 
   // Whether the user is taking the API-key path (vs the CLI login). In "env"
   // mode the key is the only path, so always. In "login" mode (dual-auth agents
@@ -231,6 +245,37 @@ export function OnboardingFlow({
       cancelled = true
     }
   }, [open, step, selectedEntry])
+
+  // Resolve ~/.openagents once we reach the create-agent step, so the folder
+  // field can prefill a sensible default working directory.
+  useEffect(() => {
+    if (!open || step !== 3 || homeDir) return
+    window.api
+      .listPaths()
+      .then((p) => setHomeDir(p?.home || ""))
+      .catch(() => {})
+  }, [open, step, homeDir])
+
+  // Suggest "<type>-1" as the editable agent name (the user can rename it).
+  useEffect(() => {
+    if (!open || step !== 3 || !selectedAgent) return
+    if (!agentName) setAgentName(`${selectedAgent}-1`)
+  }, [open, step, selectedAgent, agentName])
+
+  // Prefill the folder with the default until the user picks/edits their own.
+  useEffect(() => {
+    if (!open || step !== 3 || folderTouched) return
+    const def = defaultFolderFor()
+    if (def && def !== agentFolder) setAgentFolder(def)
+  }, [open, step, folderTouched, defaultFolderFor, agentFolder])
+
+  // The workspace step binds to the agent created in the previous step. If a
+  // resumed session lands here without a known agent name, go back and create
+  // one first rather than failing the bind on an empty name.
+  useEffect(() => {
+    if (!open || step !== 4) return
+    if (!agentName.trim()) setStep(3)
+  }, [open, step, agentName])
 
   const close = useCallback(
     (markComplete = false) => {
@@ -381,18 +426,70 @@ export function OnboardingFlow({
       return
     }
     // login / none modes (no key entered): never block. If the agent isn't
-    // actually authed yet, the Launch step's real health check will surface it.
+    // actually authed yet, it'll surface when the agent is started later.
     goNext()
   }
 
-  // Atomic provisioning: register the agent (verified) and optionally create +
-  // bind a workspace, all in one main-process call. Replaces the old fragile
-  // create→add→connect sequence that swallowed errors and produced the
-  // "Agent 'x-1' not found" toast.
-  const provisionAndContinue = async (includeWorkspace: boolean): Promise<void> => {
+  const refreshAgentsStore = async (): Promise<void> => {
+    window.api.signalReload()
+    await window.api
+      .listAgents()
+      .then((a) => useAgentsStore.getState().setAgents(a))
+      .catch(() => {})
+  }
+
+  const browseFolder = async (): Promise<void> => {
+    try {
+      const picked = await window.api.selectDirectory(agentFolder || homeDir || undefined)
+      if (picked) {
+        setFolderTouched(true)
+        setAgentFolder(picked)
+      }
+    } catch (e) {
+      showToast((e as Error).message, "error")
+    }
+  }
+
+  // Step 3 — register the agent with its chosen name + working folder. No
+  // workspace yet; that's the next (optional) step. Verified + idempotent in
+  // the main process.
+  const createAgentAndContinue = async (): Promise<void> => {
     if (!selectedEntry) return
-    const name = workspaceName.trim()
-    if (includeWorkspace && !name) {
+    const name = agentName.trim()
+    const folder = agentFolder.trim()
+    if (!name) {
+      showToast(t("onboarding.flow.toast.enterAgentName"), "warning")
+      return
+    }
+    if (!folder) {
+      showToast(t("onboarding.flow.toast.selectFolder"), "warning")
+      return
+    }
+    setCreatingAgent(true)
+    try {
+      await window.api.provisionFirstAgent({
+        agentType: selectedEntry.name,
+        agentName: name,
+        path: folder,
+        workspaceName: null,
+      })
+      capture("onboarding_agent_created")
+      await refreshAgentsStore()
+      goNext()
+    } catch (e) {
+      showToast((e as Error).message, "error")
+    } finally {
+      setCreatingAgent(false)
+    }
+  }
+
+  // Step 4 — create a brand new workspace and bind the agent to it. Re-uses
+  // provisionFirstAgent (the agent already exists, so add is a no-op) so the
+  // create + persist + bind sequence stays atomic in one main-process call.
+  const createWorkspaceAndFinish = async (): Promise<void> => {
+    if (!selectedEntry) return
+    const wsName = workspaceName.trim()
+    if (!wsName) {
       showToast(t("onboarding.flow.toast.enterWorkspaceName"), "warning")
       return
     }
@@ -400,25 +497,20 @@ export function OnboardingFlow({
     try {
       const res = await window.api.provisionFirstAgent({
         agentType: selectedEntry.name,
-        agentName: finishedAgentName,
-        workspaceName: includeWorkspace ? name : null,
+        agentName: agentName.trim(),
+        path: agentFolder.trim() || null,
+        workspaceName: wsName,
       })
       if (res.workspaceName) {
         capture("workspace_created", { source: "onboarding" })
         showToast(
-          t("onboarding.flow.toast.workspaceCreated", {
-            name: res.workspaceName,
-          }),
+          t("onboarding.flow.toast.workspaceCreated", { name: res.workspaceName }),
           "success",
         )
       }
       if (res.warning) showToast(res.warning, "warning")
-      window.api.signalReload()
-      await window.api
-        .listAgents()
-        .then((a) => useAgentsStore.getState().setAgents(a))
-        .catch(() => {})
-      goNext()
+      await refreshAgentsStore()
+      close(true)
     } catch (e) {
       showToast((e as Error).message, "error")
     } finally {
@@ -426,35 +518,34 @@ export function OnboardingFlow({
     }
   }
 
-  const launchAgent = async (): Promise<void> => {
-    setLaunching(true)
-    setLaunchResult(null)
+  // Step 4 — connect to an EXISTING workspace from a pasted invite link/token:
+  // register the network locally, then bind the agent to it.
+  const connectExistingWorkspaceAndFinish = async (): Promise<void> => {
+    const invite = wsInvite.trim()
+    if (!invite) {
+      showToast(t("onboarding.flow.toast.enterWorkspaceLink"), "warning")
+      return
+    }
+    setProvisioning(true)
     try {
-      await window.api.startAgent(finishedAgentName)
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 1500))
-        const status = await window.api.agentStatus()
-        const a = status[finishedAgentName]
-        if (a && ["running", "online", "idle"].includes(a.state)) {
-          setLaunchResult({ ok: true })
-          return
-        }
-        if (a && a.state === "error") {
-          setLaunchResult({
-            ok: false,
-            detail: a.last_error || t("onboarding.flow.launchResult.agentErrored"),
-          })
-          return
-        }
-      }
-      setLaunchResult({
-        ok: true,
-        detail: t("onboarding.flow.launchResult.startedWarmingUp"),
-      })
+      const isUrl = /^https?:\/\//i.test(invite)
+      const ws = await window.api.registerWorkspaceFromToken(
+        isUrl ? { url: invite } : { token: invite },
+      )
+      const slug = ws?.slug
+      if (!slug) throw new Error(t("onboarding.flow.toast.workspaceResolveFailed"))
+      await window.api.connectWorkspace(agentName.trim(), slug)
+      capture("workspace_connected", { source: "onboarding" })
+      showToast(
+        t("onboarding.flow.toast.workspaceConnected", { name: ws.name || slug }),
+        "success",
+      )
+      await refreshAgentsStore()
+      close(true)
     } catch (e) {
-      setLaunchResult({ ok: false, detail: (e as Error).message })
+      showToast((e as Error).message, "error")
     } finally {
-      setLaunching(false)
+      setProvisioning(false)
     }
   }
 
@@ -506,13 +597,28 @@ export function OnboardingFlow({
           />
         )
       case 3:
-        return <WorkspaceStep name={workspaceName} setName={setWorkspaceName} />
+        return (
+          <CreateAgentStep
+            agentLabel={selectedEntry?.label || selectedEntry?.name || ""}
+            name={agentName}
+            setName={setAgentName}
+            folder={agentFolder}
+            setFolder={(v) => {
+              setFolderTouched(true)
+              setAgentFolder(v)
+            }}
+            onBrowse={browseFolder}
+          />
+        )
       case 4:
         return (
-          <LaunchStep
-            agentName={finishedAgentName}
-            launching={launching}
-            result={launchResult}
+          <ConnectWorkspaceStep
+            mode={wsMode}
+            setMode={setWsMode}
+            workspaceName={workspaceName}
+            setWorkspaceName={setWorkspaceName}
+            invite={wsInvite}
+            setInvite={setWsInvite}
           />
         )
       default:
@@ -592,6 +698,7 @@ export function OnboardingFlow({
         )
       }
       case 3:
+        // Create the agent (name + folder) or skip straight into the app.
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
@@ -600,24 +707,26 @@ export function OnboardingFlow({
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
-                onClick={() => void provisionAndContinue(false)}
-                disabled={provisioning}
+                onClick={() => close(true)}
+                disabled={creatingAgent}
               >
-                {t("onboarding.flow.footer.skipForNow")}
+                {t("onboarding.flow.footer.skipToApp")}
               </Button>
               <Button
                 variant="primary"
-                onClick={() => void provisionAndContinue(true)}
-                disabled={provisioning || !workspaceName.trim()}
+                onClick={createAgentAndContinue}
+                disabled={
+                  creatingAgent || !agentName.trim() || !agentFolder.trim()
+                }
               >
-                {provisioning ? (
+                {creatingAgent ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />{" "}
                     {t("onboarding.flow.footer.creating")}
                   </>
                 ) : (
                   <>
-                    {t("onboarding.flow.footer.create")}{" "}
+                    {t("onboarding.flow.footer.createAndContinue")}{" "}
                     <ChevronRight className="w-4 h-4" />
                   </>
                 )}
@@ -625,51 +734,49 @@ export function OnboardingFlow({
             </div>
           </FooterShell>
         )
-      case 4:
+      case 4: {
+        // Connect a workspace (new or existing) or skip into the app.
+        const wsSubmit =
+          wsMode === "create"
+            ? createWorkspaceAndFinish
+            : connectExistingWorkspaceAndFinish
+        const wsDisabled =
+          provisioning ||
+          (wsMode === "create" ? !workspaceName.trim() : !wsInvite.trim())
         return (
           <FooterShell>
             <Button variant="ghost" onClick={goBack}>
               <ChevronLeft className="w-4 h-4" /> {t("onboarding.flow.footer.back")}
             </Button>
-            {launchResult?.ok ? (
-              <Button variant="primary" onClick={() => close(true)}>
-                {t("onboarding.flow.footer.goToDashboard")}{" "}
-                <ChevronRight className="w-4 h-4" />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => close(true)}
+                disabled={provisioning}
+              >
+                {t("onboarding.flow.footer.skipToApp")}
               </Button>
-            ) : launchResult ? (
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" onClick={() => close(true)}>
-                  {t("onboarding.flow.footer.finishAnyway")}
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={launchAgent}
-                  disabled={launching}
-                >
-                  {launching ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />{" "}
-                      {t("onboarding.flow.footer.launching")}
-                    </>
-                  ) : (
-                    t("onboarding.flow.footer.retryLaunch")
-                  )}
-                </Button>
-              </div>
-            ) : (
-              <Button variant="primary" onClick={launchAgent} disabled={launching}>
-                {launching ? (
+              <Button variant="primary" onClick={wsSubmit} disabled={wsDisabled}>
+                {provisioning ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />{" "}
-                    {t("onboarding.flow.footer.launching")}
+                    {wsMode === "create"
+                      ? t("onboarding.flow.footer.creating")
+                      : t("onboarding.flow.footer.connecting")}
                   </>
                 ) : (
-                  t("onboarding.flow.footer.launchAgent")
+                  <>
+                    {wsMode === "create"
+                      ? t("onboarding.flow.footer.createAndFinish")
+                      : t("onboarding.flow.footer.connectAndFinish")}{" "}
+                    <ChevronRight className="w-4 h-4" />
+                  </>
                 )}
               </Button>
-            )}
+            </div>
           </FooterShell>
         )
+      }
       default:
         return <FooterShell />
     }
@@ -699,8 +806,8 @@ function ProgressBar({ step }: { step: Step }): React.JSX.Element {
     t("onboarding.flow.progress.welcome"),
     t("onboarding.flow.progress.agent"),
     t("onboarding.flow.progress.configure"),
-    t("onboarding.flow.progress.workspace"),
-    t("onboarding.flow.progress.launch"),
+    t("onboarding.flow.progress.createAgent"),
+    t("onboarding.flow.progress.connectWorkspace"),
   ]
   return (
     <div className="shrink-0 px-8 pt-6 pb-4 border-b border-(--border) bg-(--bg-card)">
@@ -1249,87 +1356,166 @@ function ApiKeyStep({
   )
 }
 
-function WorkspaceStep({
+function CreateAgentStep({
+  agentLabel,
   name,
   setName,
+  folder,
+  setFolder,
+  onBrowse,
 }: {
+  agentLabel: string
   name: string
   setName: (v: string) => void
+  folder: string
+  setFolder: (v: string) => void
+  onBrowse: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   return (
     <>
       <StepHeader
-        icon={<Layers className="w-5 h-5" />}
-        title={t("onboarding.flow.workspace.title")}
-        subtitle={t("onboarding.flow.workspace.subtitle")}
+        icon={<Cpu className="w-5 h-5" />}
+        title={t("onboarding.flow.createAgent.title")}
+        subtitle={t("onboarding.flow.createAgent.subtitle", {
+          label: agentLabel || t("onboarding.flow.apiKey.thisAgent"),
+        })}
       />
       <label className="block text-[12px] font-medium mb-1.5">
-        {t("onboarding.flow.workspace.nameLabel")}
+        {t("onboarding.flow.createAgent.nameLabel")}
       </label>
       <Input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder={t("onboarding.flow.workspace.namePlaceholder")}
+        placeholder={t("onboarding.flow.createAgent.namePlaceholder")}
       />
-      <p className="mt-3 text-[11px] text-(--text-tertiary)">
-        {t("onboarding.flow.workspace.hintPrefix")}
-        <code className="inline-code">workspace.openagents.org</code>
-        {t("onboarding.flow.workspace.hintMid")}
-        <strong>{t("onboarding.flow.footer.skipForNow")}</strong>
-        {t("onboarding.flow.workspace.hintSuffix")}
+      <p className="mt-1.5 text-[11px] text-(--text-tertiary)">
+        {t("onboarding.flow.createAgent.nameHint")}
+      </p>
+
+      <label className="block text-[12px] font-medium mb-1.5 mt-5">
+        {t("onboarding.flow.createAgent.folderLabel")}
+      </label>
+      <div className="flex items-center gap-2">
+        <Input
+          value={folder}
+          onChange={(e) => setFolder(e.target.value)}
+          placeholder={t("onboarding.flow.createAgent.folderPlaceholder")}
+          className="flex-1"
+        />
+        <Button size="sm" variant="ghost" onClick={onBrowse}>
+          <FolderOpen className="w-3.5 h-3.5" />{" "}
+          {t("onboarding.flow.createAgent.browse")}
+        </Button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-(--text-tertiary)">
+        {t("onboarding.flow.createAgent.folderHint")}
       </p>
     </>
   )
 }
 
-function LaunchStep({
-  agentName,
-  launching,
-  result,
+function ConnectWorkspaceStep({
+  mode,
+  setMode,
+  workspaceName,
+  setWorkspaceName,
+  invite,
+  setInvite,
 }: {
-  agentName: string
-  launching: boolean
-  result: null | { ok: boolean; detail?: string }
+  mode: "create" | "existing"
+  setMode: (m: "create" | "existing") => void
+  workspaceName: string
+  setWorkspaceName: (v: string) => void
+  invite: string
+  setInvite: (v: string) => void
 }): React.JSX.Element {
   const { t } = useTranslation()
+  const options: Array<{
+    id: "create" | "existing"
+    icon: React.JSX.Element
+    title: string
+    desc: string
+  }> = [
+    {
+      id: "create",
+      icon: <Plus className="w-4 h-4" />,
+      title: t("onboarding.flow.connectWorkspace.createTitle"),
+      desc: t("onboarding.flow.connectWorkspace.createDesc"),
+    },
+    {
+      id: "existing",
+      icon: <Link2 className="w-4 h-4" />,
+      title: t("onboarding.flow.connectWorkspace.existingTitle"),
+      desc: t("onboarding.flow.connectWorkspace.existingDesc"),
+    },
+  ]
   return (
     <>
       <StepHeader
-        icon={<Rocket className="w-5 h-5" />}
-        title={t("onboarding.flow.launch.title")}
-        subtitle={t("onboarding.flow.launch.subtitle", { agentName })}
+        icon={<Layers className="w-5 h-5" />}
+        title={t("onboarding.flow.connectWorkspace.title")}
+        subtitle={t("onboarding.flow.connectWorkspace.subtitle")}
       />
-      <div className="p-4 rounded-(--radius-sm) bg-(--bg-card) border border-(--border)">
-        <div className="flex items-center gap-2 text-[12px]">
-          <Cpu className="w-4 h-4 text-(--accent)" />
-          <span className="font-medium">{agentName}</span>
-        </div>
-        {result && (
-          <div
-            className={cn(
-              "mt-3 px-3 py-2 rounded-sm text-[12px]",
-              result.ok
-                ? "bg-(--success-bg) text-(--success-text)"
-                : "bg-(--danger-bg) text-(--danger-text)",
-            )}
-          >
-            {result.ok
-              ? t("onboarding.flow.launch.healthy")
-              : t("onboarding.flow.launch.didNotStart")}
-            {result.detail && (
-              <span className="ml-1.5 opacity-80">— {result.detail}</span>
-            )}
-          </div>
-        )}
-        {!result && !launching && (
-          <p className="mt-3 text-[12px] text-(--text-secondary) m-0">
-            {t("onboarding.flow.launch.clickToStartPrefix")}
-            <strong>{t("onboarding.flow.footer.launchAgent")}</strong>
-            {t("onboarding.flow.launch.clickToStartSuffix")}
-          </p>
-        )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-5">
+        {options.map((o) => {
+          const active = o.id === mode
+          return (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => setMode(o.id)}
+              className={cn(
+                "text-left p-3 rounded-(--radius-sm) border bg-(--bg-card) cursor-pointer transition-colors",
+                active
+                  ? "border-(--accent) ring-2 ring-(--accent-border)"
+                  : "border-(--border) hover:border-(--border-hover)",
+              )}
+            >
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-(--text-primary)">
+                <span className="text-(--accent)">{o.icon}</span>
+                {o.title}
+              </div>
+              <div className="mt-1 text-[11px] leading-snug text-(--text-secondary)">
+                {o.desc}
+              </div>
+            </button>
+          )
+        })}
       </div>
+
+      {mode === "create" ? (
+        <>
+          <label className="block text-[12px] font-medium mb-1.5">
+            {t("onboarding.flow.workspace.nameLabel")}
+          </label>
+          <Input
+            value={workspaceName}
+            onChange={(e) => setWorkspaceName(e.target.value)}
+            placeholder={t("onboarding.flow.workspace.namePlaceholder")}
+          />
+          <p className="mt-3 text-[11px] text-(--text-tertiary)">
+            {t("onboarding.flow.workspace.hintPrefix")}
+            <code className="inline-code">workspace.openagents.org</code>
+            {t("onboarding.flow.connectWorkspace.createInputHint")}
+          </p>
+        </>
+      ) : (
+        <>
+          <label className="block text-[12px] font-medium mb-1.5">
+            {t("onboarding.flow.connectWorkspace.inviteLabel")}
+          </label>
+          <Input
+            value={invite}
+            onChange={(e) => setInvite(e.target.value)}
+            placeholder={t("onboarding.flow.connectWorkspace.invitePlaceholder")}
+          />
+          <p className="mt-3 text-[11px] text-(--text-tertiary)">
+            {t("onboarding.flow.connectWorkspace.inviteHint")}
+          </p>
+        </>
+      )}
     </>
   )
 }

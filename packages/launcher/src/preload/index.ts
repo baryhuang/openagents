@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld('api', {
   createWorkspace: (name: string) => ipcRenderer.invoke('workspace:create', name),
   getOnboardingAgents: () => ipcRenderer.invoke('onboarding:agents'),
   consumeOnboardingReset: () => ipcRenderer.invoke('onboarding:consume-reset'),
-  provisionFirstAgent: (opts: { agentType: string; agentName: string; workspaceName?: string | null }) =>
+  provisionFirstAgent: (opts: { agentType: string; agentName: string; path?: string | null; workspaceName?: string | null }) =>
     ipcRenderer.invoke('onboarding:provision', opts),
   registerWorkspaceFromToken: (input: { url?: string; token?: string; slug?: string }) =>
     ipcRenderer.invoke('workspace:register-from-token', input),
@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('api', {
   resetSettings: () => ipcRenderer.invoke('settings:reset'),
   listPaths: () => ipcRenderer.invoke('paths:list'),
   showPath: (p: string) => ipcRenderer.invoke('paths:show', p),
+  selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('dialog:select-directory', defaultPath),
 
   healthCheck: (type: string) => ipcRenderer.invoke('agents:health-check', type),
   refreshLogin: (type: string) => ipcRenderer.invoke('agents:login-refresh', type),
@@ -76,6 +77,7 @@ contextBridge.exposeInMainWorld('api', {
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   shellExec: (cmd: string) => ipcRenderer.invoke('shell:exec', cmd),
   openTerminal: (cmd: string) => ipcRenderer.invoke('shell:open-terminal', cmd),
+  openAgentTerminal: (agentName: string) => ipcRenderer.invoke('shell:open-agent-terminal', agentName),
   updateCore: () => ipcRenderer.invoke('core:update'),
 
   // ── Launcher self-update ──
