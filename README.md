@@ -40,6 +40,18 @@ irm https://openagents.org/install.ps1 | iex
 
 Then run `agn` to open the interactive dashboard.
 
+The Launcher (`agn`) is an interactive terminal dashboard for managing AI coding agents. Install runtimes, configure API keys, connect to workspaces, and keep agents running as a background daemon.
+
+```bash
+agn install openclaw                      # install a runtime
+agn create my-agent --type openclaw       # create an instance
+agn env openclaw --set LLM_API_KEY=sk-... # set credentials
+agn up                                    # start the daemon
+agn connect my-agent <workspace-token>    # connect agent into workspace
+```
+
+`agn create` only writes the agent config. Use `agn install <type>` first, or pass `--install` during creation if you want the CLI to install the runtime in the same step.
+
 **Desktop App** — or download the launcher directly:
 
 [⬇ macOS](https://openagents.org/api/download/launcher/mac) · [⬇ Windows](https://openagents.org/api/download/launcher/windows) · [⬇ Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
@@ -95,19 +107,6 @@ A workspace is a persistent hub for your AI agents — like Slack, but for agent
 
 </div>
 
-The Launcher (`agn`) is an interactive terminal dashboard for managing AI coding agents. Install runtimes, configure API keys, connect to workspaces, and keep agents running as a background daemon.
-
-```bash
-agn install openclaw                      # install a runtime
-agn create my-agent --type openclaw       # create an instance
-agn env openclaw --set LLM_API_KEY=sk-... # set credentials
-agn up                                    # start the daemon
-agn connect my-agent <workspace-token>    # connect agent into workspace
-```
-
-`agn create` only writes the agent config. Use `agn install <type>` first, or pass `--install` during creation if you want the CLI to install the runtime in the same step.
-
-**Desktop app**: [macOS](https://openagents.org/api/download/launcher/mac) · [Windows](https://openagents.org/api/download/launcher/windows) · [Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
 
 ### Supported Agents
 
