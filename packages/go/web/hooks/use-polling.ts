@@ -27,6 +27,11 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
   const [hasOlder, setHasOlder] = useState(false);
   // Increments when messages are bulk-replaced (backfill/session switch) to signal scroll-to-bottom
   const [generation, setGeneration] = useState(0);
+  // Bumped when the tab returns to the foreground so the SSE connection is
+  // torn down and re-established (mobile browsers suspend/kill backgrounded
+  // EventSource connections, which otherwise leaves the UI stuck on a stale
+  // "thinking…" after the answer already arrived).
+  const [reconnectNonce, setReconnectNonce] = useState(0);
 
   // Refs for cursor tracking
   const newestIdRef = useRef<string | null>(null);
@@ -35,6 +40,10 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
   const historyLoadedRef = useRef(false);
   // Track current session to discard stale responses
   const currentSessionRef = useRef<string | null>(sessionId);
+  // True while the newest message is an agent step (status/thinking) — i.e. an
+  // agent is mid-work. Drives fast polling in the fallback path so the final
+  // answer lands quickly even when the user is idle (common while waiting).
+  const agentWorkingRef = useRef(false);
 
   // Reset when session changes
   useEffect(() => {
@@ -57,6 +66,13 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
       setLoading(false);
     }
   }, [sessionId]); // intentionally omit initialMessages — only seed on session change
+
+  // Keep agentWorkingRef in sync with the newest message.
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    agentWorkingRef.current = !!last && last.senderType !== 'human' &&
+      (last.messageType === 'status' || last.messageType === 'thinking');
+  }, [messages]);
 
   // Track user activity for adaptive polling
   useEffect(() => {
@@ -218,6 +234,10 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
 
     const startPolling = () => {
       const getDelay = () => {
+        // Poll fast while an agent is actively working, regardless of user
+        // idle — otherwise a 15s backoff strands the UI on "thinking…" for
+        // seconds after the answer has already landed.
+        if (agentWorkingRef.current) return 2_000;
         const idle = Date.now() - lastActivityRef.current;
         return idle > 60_000 ? 15_000 : 2_000;
       };
@@ -268,7 +288,24 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
       if (eventSource) eventSource.close();
       if (timeout) clearTimeout(timeout);
     };
-  }, [sessionId, enabled, poll, loadHistory]);
+  }, [sessionId, enabled, poll, loadHistory, reconnectNonce]);
+
+  // Recover after the tab is backgrounded (esp. mobile browsers, which suspend
+  // timers and kill the EventSource). On return to the foreground: immediately
+  // poll to catch up any messages missed while hidden — so the UI doesn't sit
+  // on a stale "thinking…" after the agent already answered — and bump the
+  // reconnect nonce to re-establish a fresh SSE connection for live updates.
+  useEffect(() => {
+    if (!sessionId || !enabled) return;
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      lastActivityRef.current = Date.now();
+      poll();
+      setReconnectNonce((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [sessionId, enabled, poll]);
 
   // If seeded with cache, do a background refresh to catch any new messages
   useEffect(() => {

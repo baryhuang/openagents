@@ -159,9 +159,17 @@ async def _lazy_async_client():
     return _async_redis
 
 
-async def subscribe_events(channel: str) -> AsyncGenerator[bytes, None]:
+async def subscribe_events(channel: str) -> AsyncGenerator[Optional[bytes], None]:
     """Async generator that yields messages from a Redis pub/sub channel.
-    Yields raw bytes. Caller is responsible for cleanup."""
+
+    Yields raw ``bytes`` for each message, and ``None`` on idle ticks (roughly
+    once a second when no message is pending). The idle tick lets SSE consumers
+    emit keepalives and check for client disconnect even during long quiet
+    periods — without it, a stream that goes silent (e.g. an agent thinking on a
+    slow tool) sends zero bytes, and proxies / mobile networks drop the idle
+    connection, stranding the client on a stale "thinking…" state.
+
+    Caller is responsible for cleanup."""
     client = await _lazy_async_client()
     if client is None:
         return
@@ -173,6 +181,7 @@ async def subscribe_events(channel: str) -> AsyncGenerator[bytes, None]:
             if msg and msg["type"] == "message":
                 yield msg["data"]
             else:
+                yield None
                 await asyncio.sleep(0.05)
     except Exception as e:
         logger.debug("Redis subscribe error on %s: %s", channel, e)

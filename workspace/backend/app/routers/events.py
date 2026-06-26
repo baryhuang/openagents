@@ -733,17 +733,25 @@ async def stream_events(
         keepalive_interval = 30
         last_keepalive = asyncio.get_event_loop().time()
 
+        # subscribe_events yields raw event bytes, plus None on idle ticks
+        # (~1/s). The idle tick is what lets us emit keepalives and notice a
+        # disconnected client during long quiet periods — previously both were
+        # gated behind an actual event arriving, so a silent stream sent zero
+        # bytes and proxies dropped the connection, leaving clients stuck on
+        # "thinking…".
         async for data in cache.subscribe_events(f"ws:{workspace_id}:events"):
             if await request.is_disconnected():
                 break
-            try:
-                event = _json.loads(data)
-                if target_prefix and event.get("target", "") != target_prefix:
-                    continue
-                event_id = event.get("id", "")
-                yield f"id: {event_id}\ndata: {data.decode()}\n\n"
-            except Exception:
-                continue
+
+            if data is not None:
+                try:
+                    event = _json.loads(data)
+                    if not (target_prefix and event.get("target", "") != target_prefix):
+                        event_id = event.get("id", "")
+                        yield f"id: {event_id}\ndata: {data.decode()}\n\n"
+                        last_keepalive = asyncio.get_event_loop().time()
+                except Exception:
+                    pass
 
             now = asyncio.get_event_loop().time()
             if now - last_keepalive >= keepalive_interval:
