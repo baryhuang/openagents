@@ -141,9 +141,18 @@ async def _invoke_image_agent(
     import re
     channel_target = event_data.get("target", "")
     agent_name = cloud_config.agent_name
-    prompt = event_data.get("payload", {}).get("content", "")
-    prompt = re.sub(r"@\S+\s*", "", prompt).strip()
+    instruction = event_data.get("payload", {}).get("content", "")
+    instruction = re.sub(r"@\S+\s*", "", instruction).strip()
 
+    if not instruction:
+        return
+
+    # Resolve referential instructions ("based on the content above") into a
+    # concrete prompt using recent channel history. Falls back to the raw
+    # instruction when no router LLM / no context is available.
+    prompt = await _compose_image_prompt(
+        db, workspace_id, channel_target, agent_name, instruction,
+    )
     if not prompt:
         return
 
@@ -171,7 +180,7 @@ async def _invoke_image_agent(
 
     await _post_response(
         db, workspace_id, channel_target, agent_name,
-        f"Here's the generated image for: *{prompt[:100]}*",
+        f"Here's the generated image for: *{instruction[:100]}*",
         depth=0,
         attachments=[{
             "file_id": file_id,
@@ -265,6 +274,81 @@ def _build_conversation_context(
             messages.append({"role": "assistant", "content": content})
 
     return messages
+
+
+async def _compose_image_prompt(
+    db, workspace_id: str, channel_target: str, agent_name: str, instruction: str,
+) -> str:
+    """Turn a (possibly referential) instruction like "make an image of
+    cherie's brief above" into a concrete, self-contained image prompt by
+    reading recent channel history.
+
+    Image agents used to render the literal instruction text — so a request
+    like "generate an image based on the content above" produced a picture
+    of that sentence, because the image path never read context (unlike the
+    chat path). Here we feed recent messages + the instruction to a small
+    LLM and ask for the final image prompt, mirroring _invoke_chat_agent.
+
+    Falls back to the raw instruction when no router LLM is configured, when
+    there is no prior context to resolve against, or on any error — prompt
+    composition must never block image generation.
+    """
+    api_key = config.ROUTER_LLM_API_KEY or config.ANTHROPIC_API_KEY
+    if not (config.ROUTER_LLM_ENABLED and api_key):
+        return instruction
+
+    context = _build_conversation_context(db, workspace_id, channel_target, agent_name)
+    if not context:
+        return instruction
+
+    provider = config.ROUTER_LLM_PROVIDER
+    model = config.ROUTER_LLM_MODEL or (
+        "gpt-4o-mini" if provider == "openai" else "claude-haiku-4-5-20251001"
+    )
+
+    system_prompt = (
+        "You write prompts for an image-generation model. Read the recent "
+        "conversation, then turn the user's latest image request into ONE "
+        "concrete, self-contained image prompt.\n"
+        "- Resolve references such as 'the content above', \"cherie's brief\", "
+        "or 'mkt-bot's summary' to the ACTUAL text from the conversation.\n"
+        "- Include the real content/text that should appear in the image.\n"
+        "- Preserve any explicit layout, style, format, or aspect-ratio "
+        "instructions from the request.\n"
+        "- Output ONLY the final image prompt — no preamble, no explanation, "
+        "no surrounding quotes."
+    )
+    messages = list(context)
+    messages.append({
+        "role": "user",
+        "content": f"Image request: {instruction}\n\nWrite the final image prompt.",
+    })
+
+    try:
+        composed = await chat_completion(
+            api_key=api_key,
+            provider=provider,
+            model=model,
+            messages=messages,
+            system_prompt=system_prompt,
+            max_tokens=1200,
+            base_url=config.ROUTER_LLM_BASE_URL or None,
+        )
+        composed = (composed or "").strip()
+        if composed:
+            logger.info(
+                "cloud_agent: composed image prompt from %d context msg(s) "
+                "(%d -> %d chars)",
+                len(context), len(instruction), len(composed),
+            )
+            return composed
+        return instruction
+    except Exception as exc:
+        logger.warning(
+            "cloud_agent: image prompt composition failed, using raw instruction: %s",
+            exc,
+        )
+        return instruction
 
 
 async def _upload_image(
