@@ -1,19 +1,11 @@
 import React from "react"
-import {
-  Play,
-  Square,
-  MessageSquare,
-  Plus,
-  FolderPlus,
-  Plug,
-} from "lucide-react"
+import { Play, Square, Plus, FolderPlus, Plug } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Button } from "../ui/Button"
 
 interface Props {
   onStartAll: () => void
   onStopAll: () => void
-  onOpenChat: () => void
   onNewWorkspace: () => void
   onAddConnection: () => void
   onNewAgent: () => void
@@ -24,7 +16,6 @@ interface Props {
 export function QuickActions({
   onStartAll,
   onStopAll,
-  onOpenChat,
   onNewWorkspace,
   onAddConnection,
   onNewAgent,
@@ -41,10 +32,6 @@ export function QuickActions({
       <Button size="sm" onClick={onStopAll} disabled={!hasRunning}>
         <Square className="w-3 h-3" />
         {t("dashboard.quickActions.stopAll")}
-      </Button>
-      <Button size="sm" onClick={onOpenChat}>
-        <MessageSquare className="w-3 h-3" />
-        {t("dashboard.quickActions.openChat")}
       </Button>
       <Button size="sm" onClick={onNewWorkspace}>
         <FolderPlus className="w-3 h-3" />

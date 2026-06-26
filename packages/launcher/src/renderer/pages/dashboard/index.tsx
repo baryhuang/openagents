@@ -245,9 +245,18 @@ export default function Dashboard({
     }
   }
 
+  // The in-app chat view is gone — "chat" now means an interactive CLI session
+  // in the agent's working folder. Open a terminal for the agent instead of
+  // navigating to a removed tab.
   const openChatForAgent = (agent: Agent): void => {
-    setInstallFocusAgent(agent.name)
-    setCurrentTab("chat")
+    void window.api
+      .openAgentTerminal(agent.name)
+      .catch((err: unknown) =>
+        showToast(
+          t("dashboard.agentToggle.error", { message: (err as Error).message }),
+          "error",
+        ),
+      )
   }
 
   const stopAllRunning = async (): Promise<void> => {
@@ -319,7 +328,6 @@ export default function Dashboard({
           hasIdle={hasIdle}
           onStartAll={() => void startAllIdle()}
           onStopAll={() => void stopAllRunning()}
-          onOpenChat={() => setCurrentTab("chat")}
           onNewWorkspace={() => setCurrentTab("workspaces")}
           onAddConnection={() => setCurrentTab("connections")}
           onNewAgent={() => goToInstallList()}

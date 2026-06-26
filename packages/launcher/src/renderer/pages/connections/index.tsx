@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
+import { Sparkles } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { useTranslation } from "react-i18next"
 import { SearchInput } from "../../components/ui/SearchInput"
@@ -106,6 +107,18 @@ export default function Connections({ showToast }: Props): React.JSX.Element {
       />
 
       <div className="flex-1 overflow-y-auto px-9 py-6">
+
+      <div className="flex items-start gap-2.5 mb-5 px-3.5 py-3 rounded-(--radius-sm) bg-(--accent-bg) border border-(--accent-border)">
+        <Sparkles className="w-4 h-4 mt-0.5 shrink-0 text-(--accent)" />
+        <div className="min-w-0">
+          <div className="text-[12px] font-semibold text-(--text-primary)">
+            {t("connections.banner.title")}
+          </div>
+          <div className="text-[11px] text-(--text-secondary) mt-0.5">
+            {t("connections.banner.body")}
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center gap-2 mb-5">
         <SearchInput

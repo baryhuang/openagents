@@ -414,6 +414,43 @@ jobs:
       - name: List release artifacts
         run: ls -la artifacts/
 
+      - name: Verify local artifacts match update metadata (pre-upload)
+        # Fail BEFORE publishing if any installer on disk doesn't match the
+        # sha512/size recorded in its latest*.yml. Catches build/merge/sign-rehash
+        # mismatches (the metadata describing a different build than the binary)
+        # so a known-bad release is never created. Upload truncation is caught
+        # separately by the post-upload check below.
+        run: |
+          set -euo pipefail
+          pip install --quiet pyyaml
+          python3 - <<'PY'
+          import base64, hashlib, glob, os, sys, yaml
+          errors, checked = [], 0
+          for y in sorted(glob.glob("artifacts/latest*.yml")):
+              doc = yaml.safe_load(open(y))
+              for f in doc.get("files", []):
+                  url = f.get("url")
+                  if not url:
+                      continue
+                  path = os.path.join("artifacts", url)
+                  if not os.path.exists(path):
+                      errors.append(f"{os.path.basename(y)} :: {url}: referenced file missing from artifacts/")
+                      continue
+                  data = open(path, "rb").read()
+                  got_size, got_sha = len(data), base64.b64encode(hashlib.sha512(data).digest()).decode()
+                  checked += 1
+                  if f.get("size") is not None and got_size != f["size"]:
+                      errors.append(f"{os.path.basename(y)} :: {url}: size {got_size} != yml {f['size']}")
+                  if f.get("sha512") and got_sha != f["sha512"]:
+                      errors.append(f"{os.path.basename(y)} :: {url}: sha512 mismatch (binary != yml)")
+          if errors:
+              print("::error::Local artifact/metadata mismatch — refusing to publish:")
+              for e in errors:
+                  print("::error::  " + e)
+              sys.exit(1)
+          print(f"OK: {checked} local installer(s) match their latest*.yml sha512/size.")
+          PY
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -422,3 +459,53 @@ jobs:
           prerelease: false
           files: artifacts/*
           generate_release_notes: true
+
+      - name: Verify published release assets match update metadata (post-upload)
+        # The actual bug behind "sha512 checksum mismatch" we hit on win-x64
+        # v0.8.8: the .exe upload to the Release was TRUNCATED (114046048 bytes
+        # on GitHub vs 114509934 in latest.yml), so every client's hash check
+        # failed. A pre-upload check can't see that — verify the PUBLISHED bytes
+        # by downloading each file referenced by latest*.yml back from the
+        # Release and asserting size + sha512. Fails the job loudly (the release
+        # is already public, so re-run / re-publish to fix) on any mismatch.
+        env:
+          GH_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pip install --quiet pyyaml
+          python3 - <<'PY'
+          import base64, hashlib, glob, os, sys, time, urllib.request, yaml
+          tag, repo = os.environ["GH_TAG"], os.environ["GH_REPO"]
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+          def fetch(url):
+              last = None
+              for attempt in range(4):
+                  try:
+                      with urllib.request.urlopen(url, timeout=120) as r:
+                          return r.read()
+                  except Exception as e:  # noqa: BLE001
+                      last = e
+                      time.sleep(5 * (attempt + 1))
+              raise last
+          errors, checked = [], 0
+          for y in sorted(glob.glob("artifacts/latest*.yml")):
+              doc = yaml.safe_load(open(y))
+              for f in doc.get("files", []):
+                  url = f.get("url")
+                  if not url:
+                      continue
+                  data = fetch(f"{base}/{url}")
+                  got_size, got_sha = len(data), base64.b64encode(hashlib.sha512(data).digest()).decode()
+                  checked += 1
+                  if f.get("size") is not None and got_size != f["size"]:
+                      errors.append(f"{os.path.basename(y)} :: {url}: published size {got_size} != yml {f['size']}")
+                  if f.get("sha512") and got_sha != f["sha512"]:
+                      errors.append(f"{os.path.basename(y)} :: {url}: published sha512 mismatch (asset != yml)")
+          if errors:
+              print("::error::Published asset/metadata mismatch — clients will get 'sha512 checksum mismatch'. Re-publish this release:")
+              for e in errors:
+                  print("::error::  " + e)
+              sys.exit(1)
+          print(f"OK: {checked} published asset(s) match their latest*.yml sha512/size.")
+          PY

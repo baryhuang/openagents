@@ -29,8 +29,8 @@
       "welcome": "Welcome",
       "agent": "Agent",
       "configure": "Configure",
-      "workspace": "Workspace",
-      "launch": "Launch"
+      "createAgent": "Create agent",
+      "connectWorkspace": "Workspace"
     },
     "footer": {
       "getStarted": "Get started",
@@ -40,8 +40,13 @@
       "saving": "Saving…",
       "saveAndContinue": "Save & continue",
       "skipForNow": "Skip for now",
+      "skipToApp": "Skip",
       "creating": "Creating…",
       "create": "Create",
+      "createAndContinue": "Create agent",
+      "createAndFinish": "Create & finish",
+      "connecting": "Connecting…",
+      "connectAndFinish": "Connect & finish",
       "goToDashboard": "Go to Dashboard",
       "finishAnyway": "Finish anyway",
       "launching": "Launching…",
@@ -51,8 +56,13 @@
     "toast": {
       "fillRequiredFields": "Fill in the required fields first",
       "loginTerminalOpened": "Login terminal opened. Complete login there.",
+      "enterAgentName": "Enter a name for your agent",
+      "selectFolder": "Choose a folder for your agent",
       "enterWorkspaceName": "Enter a workspace name, or skip this step",
-      "workspaceCreated": "Workspace \"{{name}}\" created"
+      "enterWorkspaceLink": "Paste a workspace invite link or token",
+      "workspaceResolveFailed": "Couldn't resolve that workspace — check the link or token",
+      "workspaceCreated": "Workspace \"{{name}}\" created",
+      "workspaceConnected": "Connected to workspace \"{{name}}\""
     },
     "test": {
       "modelResponded": "{{model}} responded",
@@ -123,7 +133,7 @@
       "waitingForLogin": "Waiting for login…",
       "reopenLoginTerminal": "Re-open login terminal",
       "openLoginTerminal": "Open login terminal",
-      "detectionNote": "We can't reliably detect every CLI login, so this step never blocks you — if the agent isn't actually signed in, the Launch step will surface it.",
+      "detectionNote": "We can't reliably detect every CLI login, so this step never blocks you — if the agent isn't actually signed in, you'll see it when you start the agent later.",
       "preferApiKey": "Prefer an API key? Enter it instead:",
       "loadingConfiguration": "Loading configuration…",
       "reloginViaCli": "Re-login via CLI",
@@ -134,22 +144,33 @@
       "failed": "✗ Failed"
     },
     "workspace": {
-      "title": "Create a workspace",
-      "subtitle": "A workspace is where agents collaborate. This is optional — you can skip it and connect one later.",
       "nameLabel": "Workspace name",
       "namePlaceholder": "My Workspace",
       "defaultName": "My Workspace",
-      "hintPrefix": "We'll create a new workspace at ",
-      "hintMid": " and bind your first agent to it. Prefer to do this later? Use ",
-      "hintSuffix": "."
+      "hintPrefix": "We'll create a new workspace at "
     },
-    "launch": {
-      "title": "Launch your agent",
-      "subtitle": "Start {{agentName}} and verify it reaches a healthy state.",
-      "healthy": "Agent is healthy and running",
-      "didNotStart": "Agent did not start",
-      "clickToStartPrefix": "Click ",
-      "clickToStartSuffix": " below to start it now."
+    "createAgent": {
+      "title": "Create your first agent",
+      "subtitle": "Give your {{label}} agent a name and pick the folder it should run in.",
+      "nameLabel": "Agent name",
+      "namePlaceholder": "e.g. claude-1",
+      "nameHint": "The local identifier for this agent — you can rename it later from the Agents tab.",
+      "folderLabel": "Working folder",
+      "folderPlaceholder": "Choose where this agent runs…",
+      "folderHint": "The agent runs in this directory. We'll create it if it doesn't exist yet.",
+      "browse": "Browse…"
+    },
+    "connectWorkspace": {
+      "title": "Connect a workspace",
+      "subtitle": "A workspace is where agents collaborate. This is optional — you can skip it and connect one later.",
+      "createTitle": "Create a new workspace",
+      "createDesc": "Spin up a fresh workspace and bind this agent to it.",
+      "existingTitle": "Connect an existing one",
+      "existingDesc": "Join a workspace you've been invited to with a link or token.",
+      "createInputHint": " and bind your agent to it.",
+      "inviteLabel": "Invite link or token",
+      "invitePlaceholder": "https://workspace.openagents.org/… or a token",
+      "inviteHint": "Paste the workspace link or token you were given. We'll register it and bind your agent."
     }
   },
   "wizard": {

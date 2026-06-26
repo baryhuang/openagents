@@ -177,6 +177,15 @@ export function setupAutoUpdater(opts: {
   emit({ supported: true })
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
+  // Always pull the full installer and verify its sha512 directly, never the
+  // block-by-block differential path. The delta downloader reassembles the new
+  // installer from the locally-installed file plus changed blocks fetched via
+  // many small HTTP range requests; on flaky / China networks (and whenever a
+  // published .blockmap doesn't correspond byte-for-byte to the published
+  // installer) the reassembled file fails its sha512 check — surfacing as
+  // "sha512 checksum mismatch". A single full download + verify is far more
+  // robust here and only costs bandwidth on the (user-driven) download.
+  autoUpdater.disableDifferentialDownload = true
   autoUpdater.logger = {
     info: (m: unknown) => _log(`[updater] ${String(m)}`),
     warn: (m: unknown) => _log(`[updater] WARN ${String(m)}`),

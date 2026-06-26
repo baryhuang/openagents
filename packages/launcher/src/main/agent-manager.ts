@@ -1416,6 +1416,11 @@ export class AgentManager extends EventEmitter {
           this._healthByType.get(type) || null,
         ),
         runtimeMismatch,
+        // Whether this agent type has an interactive CLI binary we can open a
+        // terminal session against. API-only types (kimi, openclaw — run via the
+        // core's generic LLM runner) resolve to no binary, so the renderer hides
+        // the "Chat" action for them.
+        hasCli: !!this.resolveBinary(type),
       }
     })
     this._agentsCache = { value, at: now }
@@ -2677,6 +2682,7 @@ export class AgentManager extends EventEmitter {
   async provisionFirstAgent(opts: {
     agentType: string
     agentName: string
+    path?: string | null
     workspaceName?: string | null
   }): Promise<{
     agentName: string
@@ -2705,9 +2711,32 @@ export class AgentManager extends EventEmitter {
     const agentExists = (): boolean =>
       (listAgents.call(this._connector) || []).some((a) => a.name === name)
 
+    // The chosen working directory becomes the agent's spawn cwd. It must exist
+    // before the daemon starts the agent (a missing cwd makes spawn fail). The
+    // folder picker returns existing dirs, but a prefilled default may not exist
+    // yet, so create it here. Only set on first registration — re-calls (e.g.
+    // the workspace step reusing this method) keep the path chosen earlier.
+    const agentPath = (opts.path || "").trim()
+    if (agentPath) {
+      try {
+        fs.mkdirSync(agentPath, { recursive: true })
+      } catch (e) {
+        throw new Error(
+          `Could not create the agent folder '${agentPath}': ${
+            (e as Error).message
+          }`,
+        )
+      }
+    }
+
     if (!agentExists()) {
       const addAgent = this._connector!.addAgent as (o: unknown) => void
-      addAgent.call(this._connector, { name, type, role: "worker" })
+      addAgent.call(this._connector, {
+        name,
+        type,
+        role: "worker",
+        ...(agentPath ? { path: agentPath } : {}),
+      })
       this._agentsCache = { value: [], at: 0 }
     }
     if (!agentExists()) {

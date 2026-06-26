@@ -4,8 +4,6 @@ import {
   Cpu,
   Layers,
   Plug,
-  KeyRound,
-  Github,
   Download,
   FileText,
   Settings as SettingsIcon,
@@ -14,7 +12,6 @@ import {
   Sun,
   Monitor,
   HelpCircle,
-  MessageSquare,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { useTranslation } from "react-i18next"
@@ -42,10 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "install", icon: <Download className="w-4 h-4" />, section: "manage" },
   { id: "agents", icon: <Cpu className="w-4 h-4" />, section: "manage" },
   { id: "workspaces", icon: <Layers className="w-4 h-4" />, section: "manage" },
-  { id: "chat", icon: <MessageSquare className="w-4 h-4" />, section: "manage" },
   { id: "connections", icon: <Plug className="w-4 h-4" />, section: "manage" },
-  { id: "credentials", icon: <KeyRound className="w-4 h-4" />, section: "manage" },
-  { id: "github", icon: <Github className="w-4 h-4" />, section: "manage" },
   { id: "logs", icon: <FileText className="w-4 h-4" />, section: "system" },
   { id: "settings", icon: <SettingsIcon className="w-4 h-4" />, section: "system" },
 ]

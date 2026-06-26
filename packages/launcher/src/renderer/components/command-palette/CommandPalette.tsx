@@ -3,7 +3,6 @@ import ReactDOM from "react-dom"
 import {
   Search,
   LayoutDashboard,
-  MessageSquare,
   Settings as SettingsIcon,
   Layers,
   Plug,
@@ -119,7 +118,6 @@ export function CommandPalette(): React.JSX.Element | null {
   const commands: Command[] = useMemo(() => {
     const navTabs: Array<[string, string, React.JSX.Element]> = [
       ["dashboard", t("commandPalette.nav.dashboard"), <LayoutDashboard key="d" className="w-3.5 h-3.5" />],
-      ["chat", t("commandPalette.nav.chat"), <MessageSquare key="c" className="w-3.5 h-3.5" />],
       ["agents", t("commandPalette.nav.agents"), <Cpu key="a" className="w-3.5 h-3.5" />],
       ["workspaces", t("commandPalette.nav.workspaces"), <Layers key="w" className="w-3.5 h-3.5" />],
       ["connections", t("commandPalette.nav.connections"), <Plug key="cn" className="w-3.5 h-3.5" />],

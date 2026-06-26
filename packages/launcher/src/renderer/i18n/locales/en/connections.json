@@ -1,6 +1,10 @@
 {
   "title": "Connections",
   "subtitle": "— Authorizations to external platforms (encrypted on disk)",
+  "banner": {
+    "title": "Connections are coming soon",
+    "body": "This area is still under active development — platform integrations aren't fully wired up yet. Feel free to look around; full support is on the way."
+  },
   "stats": {
     "connected": "connected",
     "platforms": "{{count}} platforms"

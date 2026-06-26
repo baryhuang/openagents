@@ -25,6 +25,9 @@ export interface Agent {
   restarts?: number
   env?: Record<string, string>
   path?: string
+  // True when the agent type has an interactive CLI that can be opened in a
+  // terminal. API-only types (e.g. kimi) are false — the "Chat" action hides.
+  hasCli?: boolean
 }
 
 export interface EnvField {
@@ -377,6 +380,7 @@ declare global {
       provisionFirstAgent(opts: {
         agentType: string
         agentName: string
+        path?: string | null
         workspaceName?: string | null
       }): Promise<{
         agentName: string
@@ -411,12 +415,14 @@ declare global {
         openagentsHome: string
       }>
       showPath(path: string): Promise<boolean>
+      selectDirectory(defaultPath?: string): Promise<string | null>
       healthCheck(type: string): Promise<HealthCheck>
       refreshLogin(type: string): Promise<HealthCheck>
       clearLoginKey(type: string, agentName?: string): Promise<{ success: boolean }>
       openExternal(url: string): Promise<void>
       shellExec(cmd: string): Promise<string>
       openTerminal(cmd: string): Promise<void>
+      openAgentTerminal(agentName: string): Promise<void>
       updateCore(): Promise<{ success: boolean; version?: string; error?: string }>
       onCoreUpdate(cb: (info: { current: string; latest: string }) => void): void
 
