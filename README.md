@@ -38,9 +38,8 @@ curl -fsSL https://openagents.org/install.sh | bash
 irm https://openagents.org/install.ps1 | iex
 ```
 
-Then run `agn` to open the interactive dashboard.
-
-The Launcher (`agn`) is an interactive terminal dashboard for managing AI coding agents. Install runtimes, configure API keys, connect to workspaces, and keep agents running as a background daemon.
+Then run the launcher (`agn`) to open the interactive dashboard for managing AI coding agents. 
+Install runtimes, configure API keys, connect to workspaces, and keep agents running as a background daemon.
 
 ```bash
 agn install openclaw                      # install a runtime
