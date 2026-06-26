@@ -143,6 +143,9 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
     },
+    "portable": {
+      "artifactName": "OpenAgents-Launcher-${version}-${os}-${arch}-portable.${ext}"
+    },
     "linux": {
       "target": [
         {
